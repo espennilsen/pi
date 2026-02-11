@@ -268,13 +268,6 @@ export function start(port: number = 4100): string {
 				return;
 			}
 
-			// Dashboard
-			if (pathname === "/" || pathname === "") {
-				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-				res.end(dashboardHtml);
-				return;
-			}
-
 			// Meta API: list mounts
 			if (pathname === "/_api/mounts") {
 				res.writeHead(200, { "Content-Type": "application/json" });
@@ -307,6 +300,14 @@ export function start(port: number = 4100): string {
 				}
 				const subPath = pathname.slice(bestMatch.prefix.length) || "/";
 				await bestMatch.handler(req, res, subPath);
+				return;
+			}
+
+			// Dashboard fallback — serves built-in dashboard when no mount
+			// claims the root. Extensions can override `/` by mounting there.
+			if (pathname === "/" || pathname === "") {
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end(dashboardHtml);
 				return;
 			}
 

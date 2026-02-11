@@ -10,8 +10,33 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus } from "./server.ts";
 import type { MountConfig } from "./server.ts";
+
+interface WebServerSettings {
+	autostart: boolean;
+	port: number;
+}
+
+function resolveSettings(cwd: string): WebServerSettings {
+	try {
+		const agentDir = getAgentDir();
+		const sm = SettingsManager.create(cwd, agentDir);
+		const global = sm.getGlobalSettings() as Record<string, any>;
+		const project = sm.getProjectSettings() as Record<string, any>;
+		const cfg = {
+			...(global?.["pi-webserver"] ?? {}),
+			...(project?.["pi-webserver"] ?? {}),
+		};
+		return {
+			autostart: cfg.autostart ?? false,
+			port: cfg.port ?? 4100,
+		};
+	} catch {
+		return { autostart: false, port: 4100 };
+	}
+}
 
 export default function (pi: ExtensionAPI) {
 	// ── Event bus integration ────────────────────────────────────
@@ -208,6 +233,8 @@ export default function (pi: ExtensionAPI) {
 
 	// Pick up auth from env vars and notify other extensions
 	pi.on("session_start", async (_event, ctx) => {
+		const settings = resolveSettings(ctx.cwd);
+
 		const envAuth = process.env.PI_WEB_AUTH;
 		if (envAuth) {
 			const colon = envAuth.indexOf(":");
@@ -229,6 +256,12 @@ export default function (pi: ExtensionAPI) {
 		if (envApiReadToken) {
 			setApiReadToken(envApiReadToken);
 			ctx.ui.notify("API read token configured from API_READ_TOKEN", "info");
+		}
+
+		// Autostart if configured
+		if (settings.autostart && !isRunning()) {
+			const url = start(settings.port);
+			ctx.ui.notify(`Web server auto-started: ${url}`, "info");
 		}
 
 		pi.events.emit("web:ready", {});

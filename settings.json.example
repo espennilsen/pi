@@ -9,6 +9,12 @@
     "npm:@juanibiapina/pi-powerbar"
   ],
 
+  "// ── pi-webserver ────────────────────────────────────": "",
+  "pi-webserver": {
+    "autostart": true,
+    "port": 4100
+  },
+
   "// ── pi-telemetry ──────────────────────────────────────": "",
   "telemetry": {
     "mode": "on",

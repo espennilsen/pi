@@ -57,7 +57,18 @@ Shared HTTP server that other extensions mount route handlers on — one port, o
 |---|---|
 | **Web UI** | Dashboard at `http://localhost:4100/` |
 | **Commands** | `/web`, `/web <port>`, `/web stop`, `/web status`, `/web auth`, `/web api` |
-| **Settings** | None (env vars only) |
+| **Settings** | `pi-webserver` key |
+
+Settings (`pi-webserver` key):
+
+```jsonc
+{
+  "pi-webserver": {
+    "autostart": true,    // Start the web server automatically on session start
+    "port": 4100          // Port to listen on (default: 4100)
+  }
+}
+```
 
 Environment variables:
 

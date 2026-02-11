@@ -1,12 +1,13 @@
 /**
  * pi-channels — Subprocess runner for the chat bridge.
  *
- * Spawns `pi -p --no-session <prompt>` to process a single prompt.
+ * Spawns `pi -p --no-session [@files...] <prompt>` to process a single prompt.
+ * Supports file attachments (images, documents) via the @file syntax.
  * Same pattern as pi-cron and pi-heartbeat.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import type { RunResult } from "../types.ts";
+import type { RunResult, IncomingAttachment } from "../types.ts";
 
 export interface RunOptions {
 	prompt: string;
@@ -14,16 +15,26 @@ export interface RunOptions {
 	timeoutMs: number;
 	model?: string | null;
 	signal?: AbortSignal;
+	/** File attachments to include via @file args. */
+	attachments?: IncomingAttachment[];
 }
 
 export function runPrompt(options: RunOptions): Promise<RunResult> {
-	const { prompt, cwd, timeoutMs, model, signal } = options;
+	const { prompt, cwd, timeoutMs, model, signal, attachments } = options;
 
 	return new Promise((resolve) => {
 		const startTime = Date.now();
 
 		const args = ["-p", "--no-session"];
 		if (model) args.push("--model", model);
+
+		// Add file attachments as @file args before the prompt
+		if (attachments?.length) {
+			for (const att of attachments) {
+				args.push(`@${att.path}`);
+			}
+		}
+
 		args.push(prompt);
 
 		let child: ChildProcess;

@@ -9,6 +9,7 @@
 
 import type {
 	IncomingMessage,
+	IncomingAttachment,
 	QueuedPrompt,
 	SenderSession,
 	BridgeConfig,
@@ -85,7 +86,14 @@ export class ChatBridge {
 		if (!this.running) return;
 
 		const text = message.text?.trim();
-		if (!text) return;
+		const hasAttachments = message.attachments && message.attachments.length > 0;
+		if (!text && !hasAttachments) return;
+
+		// Rejected messages (too large, unsupported type) — send back directly
+		if (message.metadata?.rejected) {
+			this.sendReply(message.adapter, message.sender, text || "⚠️ Unsupported message.");
+			return;
+		}
 
 		const senderKey = `${message.adapter}:${message.sender}`;
 
@@ -96,8 +104,8 @@ export class ChatBridge {
 			this.sessions.set(senderKey, session);
 		}
 
-		// Bot commands
-		if (this.config.commands && isCommand(text)) {
+		// Bot commands (only for text-only messages)
+		if (text && !hasAttachments && this.config.commands && isCommand(text)) {
 			const reply = handleCommand(text, session, this.commandContext());
 			if (reply !== null) {
 				this.sendReply(message.adapter, message.sender, reply);
@@ -122,7 +130,8 @@ export class ChatBridge {
 			id: nextId(),
 			adapter: message.adapter,
 			sender: message.sender,
-			text,
+			text: text || "Describe this.",
+			attachments: message.attachments,
 			metadata: message.metadata,
 			enqueuedAt: Date.now(),
 		};
@@ -169,6 +178,7 @@ export class ChatBridge {
 				timeoutMs: this.config.timeoutMs,
 				model: this.config.model,
 				signal: ac.signal,
+				attachments: prompt.attachments,
 			});
 
 			typing.stop();

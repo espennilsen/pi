@@ -19,6 +19,19 @@ export interface ChannelMessage {
 
 // ── Incoming message (from external → pi) ───────────────────────
 
+export interface IncomingAttachment {
+	/** Attachment type */
+	type: "image" | "document";
+	/** Local file path (temporary, downloaded by the adapter) */
+	path: string;
+	/** Original filename (if available) */
+	filename?: string;
+	/** MIME type */
+	mimeType?: string;
+	/** File size in bytes */
+	size?: number;
+}
+
 export interface IncomingMessage {
 	/** Which adapter received this */
 	adapter: string;
@@ -26,6 +39,8 @@ export interface IncomingMessage {
 	sender: string;
 	/** Message text */
 	text: string;
+	/** File attachments (images, documents) */
+	attachments?: IncomingAttachment[];
 	/** Adapter-specific metadata (message ID, username, timestamp, etc.) */
 	metadata?: Record<string, unknown>;
 }
@@ -100,6 +115,7 @@ export interface QueuedPrompt {
 	adapter: string;
 	sender: string;
 	text: string;
+	attachments?: IncomingAttachment[];
 	metadata?: Record<string, unknown>;
 	enqueuedAt: number;
 }

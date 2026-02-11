@@ -67,5 +67,45 @@
     "vaultPath": "~/path/to/obsidian/vault",
     "vaultName": "my-vault",
     "apiUrl": "http://127.0.0.1:27123"
+  },
+
+  "// ── pi-heartbeat ─────────────────────────────────────": "",
+  "pi-heartbeat": {
+    "enabled": false,
+    "intervalMinutes": 15,
+    "activeHours": { "start": "08:00", "end": "22:00" },
+    "route": "ops",
+    "showOk": false,
+    "prompt": null
+  },
+
+  "// ── pi-jobs ──────────────────────────────────────────": "",
+  "pi-jobs": {
+    "dbPath": "jobs/jobs.db"
+  },
+
+  "// ── pi-memory ────────────────────────────────────────": "",
+  "pi-memory": {
+    "path": ""
+  },
+
+  "// ── pi-projects ──────────────────────────────────────": "",
+  "pi-projects": {
+    "devDir": "~/Dev",
+    "autoScan": true,
+    "dbPath": "projects/projects.db"
+  },
+
+  "// ── pi-subagent ──────────────────────────────────────": "",
+  "pi-subagent": {
+    "maxConcurrent": 4,
+    "maxTotal": 8,
+    "timeoutMs": 600000,
+    "model": null
+  },
+
+  "// ── pi-workon ────────────────────────────────────────": "",
+  "pi-workon": {
+    "devDir": "~/Dev"
   }
 }

@@ -28,6 +28,8 @@ Copy `settings.json.example` to `settings.json` and customize. The top-level key
 }
 ```
 
+Environment variables can be provided in `.env` / `.env.local` files (loaded by pi-dotenv) — see `.env.example` for all supported variables.
+
 ## Extensions
 
 ### pi-dotenv
@@ -119,7 +121,7 @@ Personal CRM with contacts, companies, groups, interactions, reminders, and CSV 
 
 | | |
 |---|---|
-| **Web UI** | `/crm` (6 pages: Contacts, Companies, Groups, Interactions, Reminders, Upcoming) |
+| **Web UI** | `/crm` (pages: Dashboard, Contacts, Companies, Groups, Interactions, Reminders, Upcoming) |
 | **API** | `/api/crm/*` |
 | **Tool** | `crm` — 16 actions: `search`, `contact`, `add_contact`, `update_contact`, `delete_contact`, `log_interaction`, `add_reminder`, `upcoming`, `add_relationship`, `list_companies`, `add_company`, `list_groups`, `add_to_group`, `remove_from_group`, `export_csv`, `import_csv` |
 | **Data** | `~/.pi/agent/db/crm.db` (default) |
@@ -138,7 +140,7 @@ Settings (`pi-personal-crm` key):
 
 ### pi-channels
 
-Two-way messaging — routes messages between the agent and external services (Telegram, webhooks, custom adapters). Used by pi-cron and pi-calendar for notifications.
+Two-way messaging — routes messages between the agent and external services (Telegram, webhooks, custom adapters). Used by pi-cron, pi-calendar, and pi-heartbeat for notifications.
 
 | | |
 |---|---|
@@ -185,12 +187,164 @@ Cron scheduler — runs recurring prompts as isolated `pi -p` subprocesses.
 
 | | |
 |---|---|
+| **Web UI** | `/cron` |
 | **Tool** | `cron` — actions: `list`, `add`, `update`, `remove`, `enable`, `disable`, `run` |
 | **Commands** | `/cron on`, `/cron off`, `/cron` (status) |
 | **Data** | `~/.pi/agent/pi-cron.tab` (plain text crontab) |
 | **Settings** | None |
 
 The scheduler is **off by default**. Start with `pi --cron` or `/cron on` at runtime. Only one Pi instance can run the scheduler (lock file at `~/.pi/agent/pi-cron.lock`). Job output is delivered via pi-channels.
+
+---
+
+### pi-heartbeat
+
+Periodic health check — runs a configurable prompt on an interval as an isolated subprocess. If the agent responds with `HEARTBEAT_OK`, the result is suppressed. Otherwise, the alert is delivered via pi-channels.
+
+| | |
+|---|---|
+| **Commands** | `/heartbeat on`, `/heartbeat off`, `/heartbeat` (status) |
+| **Flags** | `--heartbeat` (enable on startup) |
+| **Settings** | `pi-heartbeat` key |
+
+Reads `HEARTBEAT.md` from the current working directory as a checklist of things to verify. If missing, a generic health check is performed.
+
+Settings (`pi-heartbeat` key):
+
+```jsonc
+{
+  "pi-heartbeat": {
+    "enabled": false,           // Enable on startup (or use --heartbeat flag)
+    "intervalMinutes": 15,      // How often to run
+    "activeHours": {            // Only run during these hours (null = always)
+      "start": "08:00",
+      "end": "22:00"
+    },
+    "route": "ops",             // pi-channels route for alerts
+    "showOk": false,            // Also notify on HEARTBEAT_OK
+    "prompt": null              // Custom prompt (overrides HEARTBEAT.md)
+  }
+}
+```
+
+---
+
+### pi-jobs
+
+Agent run telemetry and cost tracking. Automatically records every agent invocation with token usage, cost, duration, and tool call stats. Also tracks subprocess runs from pi-cron, pi-heartbeat, and pi-subagent.
+
+| | |
+|---|---|
+| **Web UI** | `/jobs` |
+| **Tool** | `jobs` — actions: `stats`, `recent`, `cost_report`, `models`, `tools` |
+| **Commands** | `/jobs [channel]` |
+| **Data** | `~/.pi/agent/jobs/jobs.db` (default) |
+
+Settings (`pi-jobs` key):
+
+```jsonc
+{
+  "pi-jobs": {
+    "dbPath": "jobs/jobs.db"   // Relative to agent dir, or absolute
+  }
+}
+```
+
+Tool parameters: `action` (required), `period` (today/week/month/all), `channel` (tui/cron/heartbeat/subagent), `limit` (for recent).
+
+---
+
+### pi-memory
+
+Persistent memory system — curated long-term facts, daily append-only logs, and full-text search across all memory files.
+
+| | |
+|---|---|
+| **Tools** | `memory_read` — read MEMORY.md or daily logs; `memory_write` — append daily or update long-term; `memory_search` — full-text search |
+| **Data** | `MEMORY.md` + `memory/YYYY-MM-DD.md` in base path |
+| **Settings** | `pi-memory` key |
+
+Memory is stored as plain Markdown files. `MEMORY.md` holds curated long-term memory (preferences, decisions, facts). `memory/YYYY-MM-DD.md` files are daily append-only logs for session notes and running context. MEMORY.md and recent daily logs are automatically injected into the system prompt.
+
+Settings (`pi-memory` key):
+
+```jsonc
+{
+  "pi-memory": {
+    "path": "~/notes/memory"   // Base directory (defaults to cwd)
+  }
+}
+```
+
+---
+
+### pi-projects
+
+Project tracking dashboard — auto-discovers git repos in configurable source directories, shows git status (branch, dirty files, ahead/behind), and provides a web dashboard.
+
+| | |
+|---|---|
+| **Web UI** | `/projects` |
+| **Tool** | `projects` — actions: `list`, `scan`, `hide`, `unhide`, `sources` |
+| **Commands** | `/projects [search]` |
+| **Data** | `~/.pi/agent/projects/projects.db` (default) |
+
+Settings (`pi-projects` key):
+
+```jsonc
+{
+  "pi-projects": {
+    "devDir": "~/Dev",                  // Root directory to scan for projects
+    "autoScan": true,                   // Auto-scan on startup
+    "dbPath": "projects/projects.db"    // Relative to agent dir, or absolute
+  }
+}
+```
+
+---
+
+### pi-subagent
+
+Parallel task delegation — spawn isolated pi subprocesses for single, parallel, and chained execution. Discovers agent profiles from `~/.pi/agent/agents/*.md` and `.pi/agents/*.md`.
+
+| | |
+|---|---|
+| **Tool** | `subagent` — modes: `single`, `parallel`, `chain` |
+| **Settings** | `pi-subagent` key |
+
+Settings (`pi-subagent` key):
+
+```jsonc
+{
+  "pi-subagent": {
+    "maxConcurrent": 4,     // Max parallel subagents
+    "maxTotal": 8,          // Max total subagents per session
+    "timeoutMs": 600000,    // Timeout per subagent (10 min)
+    "model": null           // Override model for subagents (null = use default)
+  }
+}
+```
+
+---
+
+### pi-workon
+
+Project context switching — resolve project paths, detect tech stacks, scaffold `AGENTS.md` and `.pi/` configuration, and load project context (git status, td issues).
+
+| | |
+|---|---|
+| **Tools** | `workon` — actions: `switch`, `status`, `list`; `project_init` — actions: `detect`, `init`, `batch` |
+| **Settings** | `pi-workon` key |
+
+Settings (`pi-workon` key):
+
+```jsonc
+{
+  "pi-workon": {
+    "devDir": "~/Dev"   // Base directory to scan for projects
+  }
+}
+```
 
 ---
 

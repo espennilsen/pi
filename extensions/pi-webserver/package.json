@@ -1,0 +1,27 @@
+{
+  "name": "pi-webserver",
+  "version": "0.1.0",
+  "description": "Shared web server extension for pi coding agents",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi-webserver.git"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

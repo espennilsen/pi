@@ -1,0 +1,233 @@
+<!-- ══════════ GROUPS PAGE ══════════ -->
+<div id="page-groups" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>📂 Groups</h1>
+    <div style="flex: 1"></div>
+    <button class="btn btn-primary" onclick="showCreateGroupModal()">+ New Group</button>
+  </div>
+
+  <div class="split-view">
+    <div>
+      <div class="contact-list" id="groupsList">
+        <div class="empty-state"><p>No groups yet</p></div>
+      </div>
+    </div>
+    <div>
+      <div class="detail-panel" id="groupDetailPanel">
+        <div class="empty-state"><p>Select a group to view members</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Group Modal -->
+<div class="modal" id="createGroupModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">New Group</h2>
+      <button class="modal-close" onclick="closeModal('createGroupModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="createGroupForm" onsubmit="saveNewGroup(event)">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input type="text" id="createGroupName" class="form-input" required placeholder="Group name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input type="text" id="createGroupDesc" class="form-input" placeholder="Optional description">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('createGroupModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('createGroupForm').dispatchEvent(new Event('submit'))">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Member to Group Modal -->
+<div class="modal" id="addMemberModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Member</h2>
+      <button class="modal-close" onclick="closeModal('addMemberModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Contact</label>
+        <select id="addMemberContact" class="form-select"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('addMemberModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="addMemberToCurrentGroup()">Add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Groups Page ───────────────────────────────────────────────
+
+  let currentGroupId = null;
+  let pageGroups = [];
+
+  async function loadGroupsPage() {
+    try {
+      pageGroups = await (await fetch('api/crm/groups')).json();
+      renderGroupsPageList(pageGroups);
+      if (pageGroups.length > 0 && !currentGroupId) {
+        selectGroup(pageGroups[0].id);
+      } else if (currentGroupId) {
+        await loadGroupDetail(currentGroupId);
+      }
+    } catch (err) {
+      console.error('Failed to load groups:', err);
+    }
+  }
+
+  function renderGroupsPageList(groups) {
+    const list = document.getElementById('groupsList');
+    if (groups.length === 0) {
+      list.innerHTML = '<div class="empty-state"><p>No groups yet</p><p style="margin-top: 8px; font-size: 12px;">Click "+ New Group" to get started</p></div>';
+      return;
+    }
+    list.innerHTML = groups.map(g => `
+      <div class="group-item ${g.id === currentGroupId ? 'active' : ''}" onclick="selectGroup(${g.id})">
+        <div>
+          <div class="group-name">📂 ${esc(g.name)}</div>
+          ${g.description ? `<div class="group-desc">${esc(g.description)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function selectGroup(id) {
+    currentGroupId = id;
+    renderGroupsPageList(pageGroups);
+    await loadGroupDetail(id);
+  }
+
+  async function loadGroupDetail(id) {
+    try {
+      const members = await (await fetch(`api/crm/groups/${id}/members`)).json();
+      const group = pageGroups.find(g => g.id === id);
+      if (!group) return;
+      renderGroupDetail(group, members);
+    } catch (err) {
+      console.error('Failed to load group detail:', err);
+    }
+  }
+
+  function renderGroupDetail(group, members) {
+    document.getElementById('groupDetailPanel').innerHTML = `
+      <div class="detail-header">
+        <div>
+          <div class="detail-name">📂 ${esc(group.name)}</div>
+          ${group.description ? `<div class="detail-company">${esc(group.description)}</div>` : ''}
+          <div style="font-size: 12px; color: var(--fg3); margin-top: 4px;">${members.length} member${members.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn-sm" onclick="showAddMemberModal()">+ Add Member</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteGroupPage(${group.id})">🗑️ Delete</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Members</div>
+        ${members.length > 0 ? `
+          <div class="member-list">
+            ${members.map(m => `
+              <div class="member-item">
+                <div>
+                  <span class="member-name" onclick="selectContact(${m.id})">${esc(m.first_name)} ${esc(m.last_name)}</span>
+                  ${m.email ? `<div class="member-meta">📧 ${esc(m.email)}</div>` : ''}
+                  ${m.company_name ? `<div class="member-meta">@ ${esc(m.company_name)}</div>` : ''}
+                </div>
+                <button class="delete-icon" onclick="removeMemberFromGroup(${group.id}, ${m.id})" title="Remove from group">✕</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : '<div class="empty-state" style="padding: 20px;"><p>No members yet</p></div>'}
+      </div>
+    `;
+  }
+
+  // ── Create Group ─────────────────────────────────────────────
+
+  function showCreateGroupModal() {
+    document.getElementById('createGroupForm').reset();
+    showModal('createGroupModal');
+  }
+
+  async function saveNewGroup(e) {
+    e.preventDefault();
+    const data = {
+      name: document.getElementById('createGroupName').value,
+      description: document.getElementById('createGroupDesc').value || null,
+    };
+    try {
+      const group = await (await fetch('api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
+      closeModal('createGroupModal');
+      currentGroupId = group.id;
+      await loadGroupsPage();
+    } catch (err) {
+      console.error('Failed to create group:', err);
+      alert('Failed to create group');
+    }
+  }
+
+  async function deleteGroupPage(id) {
+    if (!confirm('Delete this group? Members will not be deleted.')) return;
+    try {
+      await fetch(`api/crm/groups/${id}`, { method: 'DELETE' });
+      currentGroupId = null;
+      document.getElementById('groupDetailPanel').innerHTML = '<div class="empty-state"><p>Group deleted</p></div>';
+      await loadGroupsPage();
+    } catch (err) {
+      console.error('Failed to delete group:', err);
+    }
+  }
+
+  // ── Add / Remove Members ─────────────────────────────────────
+
+  async function showAddMemberModal() {
+    if (!currentGroupId) return;
+    const [membersRes, contactsRes] = await Promise.all([
+      fetch(`api/crm/groups/${currentGroupId}/members`),
+      fetch('api/crm/contacts?limit=1000')
+    ]);
+    const members = await membersRes.json();
+    allContacts = await contactsRes.json();
+    const memberIds = new Set(members.map(m => m.id));
+    const available = allContacts.filter(c => !memberIds.has(c.id));
+
+    const select = document.getElementById('addMemberContact');
+    select.innerHTML = available.length > 0
+      ? available.map(c => `<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)}</option>`).join('')
+      : '<option value="" disabled>All contacts are already members</option>';
+    showModal('addMemberModal');
+  }
+
+  async function addMemberToCurrentGroup() {
+    const contactId = parseInt(document.getElementById('addMemberContact').value);
+    if (!contactId || !currentGroupId) return;
+    try {
+      await fetch(`api/crm/groups/${currentGroupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: contactId }) });
+      closeModal('addMemberModal');
+      await loadGroupDetail(currentGroupId);
+    } catch (err) {
+      console.error('Failed to add member:', err);
+    }
+  }
+
+  async function removeMemberFromGroup(groupId, contactId) {
+    if (!confirm('Remove this contact from the group?')) return;
+    try {
+      await fetch(`api/crm/groups/${groupId}/members/${contactId}`, { method: 'DELETE' });
+      await loadGroupDetail(groupId);
+    } catch (err) {
+      console.error('Failed to remove member:', err);
+    }
+  }
+</script>

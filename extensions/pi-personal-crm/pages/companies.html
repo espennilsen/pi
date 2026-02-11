@@ -1,0 +1,286 @@
+<!-- ══════════ COMPANIES PAGE ══════════ -->
+<div id="page-companies" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>🏢 Companies</h1>
+    <input type="text" id="companySearch" class="search-box" placeholder="Search companies...">
+    <div style="flex: 1"></div>
+    <button class="btn btn-primary" onclick="showAddCompanyModal()">+ New Company</button>
+  </div>
+
+  <div class="split-view">
+    <div>
+      <div class="contact-list" id="companyList">
+        <div class="empty-state"><p>No companies yet</p></div>
+      </div>
+    </div>
+    <div>
+      <div class="detail-panel" id="companyDetailPanel">
+        <div class="empty-state"><p>Select a company to view details</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Company Modal -->
+<div class="modal" id="companyModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title" id="companyModalTitle">New Company</h2>
+      <button class="modal-close" onclick="closeModal('companyModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="companyForm" onsubmit="saveCompany(event)">
+        <input type="hidden" id="editCompanyId">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input type="text" id="coName" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Industry</label>
+          <input type="text" id="coIndustry" class="form-input" placeholder="e.g. Technology, Finance">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Website</label>
+          <input type="url" id="coWebsite" class="form-input" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="coNotes" class="form-textarea"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('companyModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('companyForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let allCompaniesPage = [];
+  let currentCompanyId = null;
+
+  /** Render-time URL sanitizer — only allow http(s) hrefs */
+  function safeHref(url) {
+    if (!url) return '';
+    const s = url.trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    if (!s.includes('://')) return 'https://' + s;
+    return '';
+  }
+
+  // ── Extension Fields (read-only) ──────────────────────────────
+
+  function renderCompanyExtensionFields(fields) {
+    if (!Array.isArray(fields) || fields.length === 0) return '';
+
+    // Group by source
+    const bySource = {};
+    for (const f of fields) {
+      if (!bySource[f.source]) bySource[f.source] = [];
+      bySource[f.source].push(f);
+    }
+
+    return Object.entries(bySource).map(([source, fields]) => `
+      <div class="section">
+        <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>🔌 ${esc(source)}</span>
+          <span style="font-size: 10px; font-weight: 400; color: var(--fg3); text-transform: none; letter-spacing: 0;">via extension</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          ${fields.map(f => `
+            <div class="detail-field" style="gap: 10px;">
+              <span style="font-size: 12px; color: var(--fg3); min-width: 100px;">${esc(f.label || f.field_name)}</span>
+              ${renderCoExtFieldValue(f)}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderCoExtFieldValue(f) {
+    const v = f.field_value;
+    if (f.field_type === 'url' && v) {
+      const href = /^https?:\/\//i.test(v) ? v : '';
+      return href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color: var(--accent2);">${esc(v)}</a>` : `<span>${esc(v)}</span>`;
+    }
+    if (f.field_type === 'json' && v) {
+      try {
+        const pretty = JSON.stringify(JSON.parse(v), null, 2);
+        return `<pre style="margin: 0; font-size: 11px; color: var(--fg2); white-space: pre-wrap; max-height: 120px; overflow: auto;">${esc(pretty)}</pre>`;
+      } catch { /* fall through */ }
+    }
+    return `<span>${esc(v)}</span>`;
+  }
+
+  async function loadCompaniesPage(search) {
+    try {
+      const q = search ? `?q=${encodeURIComponent(search)}` : '';
+      const res = await fetch(`api/crm/companies${q}`);
+      allCompaniesPage = await res.json();
+      renderCompanyList(allCompaniesPage);
+      if (allCompaniesPage.length > 0 && !currentCompanyId) {
+        selectCompany(allCompaniesPage[0].id);
+      } else if (allCompaniesPage.length === 0) {
+        currentCompanyId = null;
+        document.getElementById('companyDetailPanel').innerHTML = '<div class="empty-state"><p>No companies found</p></div>';
+      }
+    } catch (err) {
+      console.error('Failed to load companies page:', err);
+    }
+  }
+
+  function renderCompanyList(companies) {
+    const list = document.getElementById('companyList');
+    if (companies.length === 0) {
+      list.innerHTML = '<div class="empty-state"><p>No companies found</p></div>';
+      return;
+    }
+    list.innerHTML = companies.map(c => `
+      <div class="contact-item ${c.id === currentCompanyId ? 'active' : ''}" onclick="selectCompany(${c.id})">
+        <div class="contact-name">🏢 ${esc(c.name)}</div>
+        <div class="contact-meta">
+          ${c.industry ? `<span>${esc(c.industry)}</span>` : ''}
+          ${c.website ? `<span>🔗 ${esc(c.website)}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function selectCompany(id) {
+    currentCompanyId = id;
+    renderCompanyList(allCompaniesPage);
+    await loadCompanyDetail(id);
+  }
+
+  async function loadCompanyDetail(id) {
+    try {
+      const company = allCompaniesPage.find(c => c.id === id);
+      if (!company) return;
+
+      const [membersRes, extFieldsRes] = await Promise.all([
+        fetch(`api/crm/contacts?company_id=${id}`),
+        fetch(`api/crm/companies/${id}/extension-fields`),
+      ]);
+      const members = await membersRes.json();
+      const extensionFields = await extFieldsRes.json();
+
+      const panel = document.getElementById('companyDetailPanel');
+      panel.innerHTML = `
+        <div class="detail-header">
+          <div style="flex: 1;">
+            <div class="detail-name">🏢 ${esc(company.name)}</div>
+            ${company.industry ? `<div class="detail-company">${esc(company.industry)}</div>` : ''}
+          </div>
+          <div class="detail-actions">
+            <button class="btn btn-sm" onclick="showEditCompanyModal(${company.id})">✏️ Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteCompanyAction(${company.id})">🗑️</button>
+          </div>
+        </div>
+
+        ${company.website ? `
+        <div class="section">
+          <div class="detail-field"><span class="detail-field-icon">🔗</span> <a href="${safeHref(company.website)}" target="_blank" rel="noopener" style="color: var(--accent2);">${esc(company.website)}</a></div>
+        </div>
+        ` : ''}
+
+        ${company.notes ? `
+        <div class="section">
+          <div class="section-title">Notes</div>
+          <div style="font-size: 13px; color: var(--fg2);">${esc(company.notes).replace(/\n/g, '<br>')}</div>
+        </div>
+        ` : ''}
+
+        <div class="section">
+          <div class="section-title">People (${members.length})</div>
+          ${members.length > 0 ? `
+            <div class="member-list">
+              ${members.map(m => {
+                const initials = (m.first_name.charAt(0) + (m.last_name || '').charAt(0)).toUpperCase();
+                return `
+                  <div class="member-item" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${m.id}), 100);" style="cursor: pointer;">
+                    <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0;">${esc(initials)}</div>
+                    <div style="flex: 1;">
+                      <div class="member-name">${esc(m.first_name)} ${esc(m.last_name || '')}</div>
+                      <div class="member-meta">${m.email ? esc(m.email) : ''}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : '<div class="empty-state" style="padding: 20px;"><p>No contacts at this company</p></div>'}
+        </div>
+
+        ${renderCompanyExtensionFields(extensionFields || [])}
+      `;
+    } catch (err) {
+      console.error('Failed to load company detail:', err);
+    }
+  }
+
+  function showAddCompanyModal() {
+    document.getElementById('companyModalTitle').textContent = 'New Company';
+    document.getElementById('companyForm').reset();
+    document.getElementById('editCompanyId').value = '';
+    showModal('companyModal');
+  }
+
+  function showEditCompanyModal(id) {
+    const company = allCompaniesPage.find(c => c.id === id);
+    if (!company) return;
+    document.getElementById('companyModalTitle').textContent = 'Edit Company';
+    document.getElementById('editCompanyId').value = company.id;
+    document.getElementById('coName').value = company.name;
+    document.getElementById('coIndustry').value = company.industry || '';
+    document.getElementById('coWebsite').value = company.website || '';
+    document.getElementById('coNotes').value = company.notes || '';
+    showModal('companyModal');
+  }
+
+  async function saveCompany(e) {
+    e.preventDefault();
+    const id = document.getElementById('editCompanyId').value;
+    const data = {
+      name: document.getElementById('coName').value,
+      industry: document.getElementById('coIndustry').value || null,
+      website: document.getElementById('coWebsite').value || null,
+      notes: document.getElementById('coNotes').value || null,
+    };
+
+    try {
+      if (id) {
+        await fetch(`api/crm/companies/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      } else {
+        const res = await fetch('api/crm/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const newCo = await res.json();
+        currentCompanyId = newCo.id;
+      }
+      closeModal('companyModal');
+      await loadCompaniesPage();
+      await loadCompanies(); // refresh contacts page datalist too
+      if (currentCompanyId) await selectCompany(currentCompanyId);
+    } catch (err) {
+      console.error('Failed to save company:', err);
+      alert('Failed to save company');
+    }
+  }
+
+  async function deleteCompanyAction(id) {
+    if (!confirm('Delete this company? Contacts will not be deleted.')) return;
+    try {
+      await fetch(`api/crm/companies/${id}`, { method: 'DELETE' });
+      currentCompanyId = null;
+      await loadCompaniesPage();
+      await loadCompanies();
+      document.getElementById('companyDetailPanel').innerHTML = '<div class="empty-state"><p>Company deleted</p></div>';
+    } catch (err) {
+      console.error('Failed to delete company:', err);
+    }
+  }
+
+  // Company search handler
+  document.getElementById('companySearch').addEventListener('input', (e) => {
+    loadCompaniesPage(e.target.value.trim());
+  });
+</script>

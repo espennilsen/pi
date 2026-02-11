@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRM</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+    --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+    --accent: #7c6ff0; --accent2: #9d8cf0;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --border: #2a2a3a; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+
+  /* ── Navbar ─────────────────────────────────────────── */
+  nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 0; position: sticky; top: 0; z-index: 900; }
+  nav .nav-brand { font-size: 16px; font-weight: 700; color: var(--accent); padding: 12px 16px 12px 0; margin-right: 8px; border-right: 1px solid var(--border); }
+  nav a { color: var(--fg2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 12px 16px; transition: all 0.15s; border-bottom: 2px solid transparent; }
+  nav a:hover { color: var(--fg); background: rgba(255,255,255,0.03); }
+  nav a.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  nav .nav-spacer { flex: 1; }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+  .split-view { display: grid; grid-template-columns: 400px 1fr; gap: 20px; }
+  @media (max-width: 1024px) { .split-view { grid-template-columns: 1fr; } }
+
+  /* ── Toolbar ────────────────────────────────────────── */
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar h1 { font-size: 18px; font-weight: 700; }
+  .search-box { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 12px; border-radius: var(--radius); font-size: 13px; width: 300px; }
+  .search-box:focus { outline: none; border-color: var(--accent); }
+  .btn { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+  /* ── Contact List ───────────────────────────────────── */
+  .contact-list { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; max-height: calc(100vh - 180px); overflow-y: auto; }
+  .contact-item { padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+  .contact-item:hover { background: var(--bg3); }
+  .contact-item.active { background: rgba(124,111,240,0.15); border-left: 3px solid var(--accent); }
+  .contact-item:last-child { border-bottom: none; }
+  .contact-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .contact-meta { font-size: 12px; color: var(--fg2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .contact-company { color: var(--fg3); }
+  .contact-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .tag { background: var(--bg3); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: var(--fg2); }
+
+  /* ── Contact Detail ─────────────────────────────────── */
+  .detail-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-height: calc(100vh - 180px); overflow-y: auto; }
+  .detail-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+  .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .contact-avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--bg3); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+  .detail-name { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  .detail-company { font-size: 14px; color: var(--fg2); margin-bottom: 12px; }
+  .detail-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+  .detail-field-icon { color: var(--fg3); width: 20px; text-align: center; }
+  .section { margin-top: 24px; }
+  .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--fg3); }
+
+  /* ── Timeline ───────────────────────────────────────── */
+  .timeline { border-left: 2px solid var(--border); padding-left: 0; }
+  .timeline-item { position: relative; padding-left: 32px; padding-bottom: 20px; }
+  .timeline-item:last-child { padding-bottom: 0; }
+  .timeline-dot { position: absolute; left: -9px; top: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--bg3); border: 3px solid var(--border); }
+  .timeline-dot.call { border-color: var(--blue); }
+  .timeline-dot.meeting { border-color: var(--green); }
+  .timeline-dot.email { border-color: var(--yellow); }
+  .timeline-dot.note { border-color: var(--accent); }
+  .timeline-dot.gift { border-color: var(--red); }
+  .timeline-dot.message { border-color: var(--accent2); }
+  .timeline-date { font-size: 11px; color: var(--fg3); margin-bottom: 4px; }
+  .timeline-content { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .timeline-type { display: inline-block; background: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; }
+  .timeline-type.call { color: var(--blue); }
+  .timeline-type.meeting { color: var(--green); }
+  .timeline-type.email { color: var(--yellow); }
+  .timeline-type.note { color: var(--accent); }
+  .timeline-type.gift { color: var(--red); }
+  .timeline-type.message { color: var(--accent2); }
+  .timeline-summary { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .timeline-notes { font-size: 12px; color: var(--fg2); }
+
+  /* ── Modal ──────────────────────────────────────────── */
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+  .modal.show { display: flex; }
+  .modal-content { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-title { font-size: 18px; font-weight: 700; }
+  .modal-close { background: none; border: none; color: var(--fg2); font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); }
+  .modal-close:hover { background: var(--bg3); color: var(--fg); }
+  .modal-body { padding: 20px; }
+  .form-group { margin-bottom: 16px; }
+  .form-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--fg2); }
+  .form-input, .form-textarea, .form-select { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; width: 100%; }
+  .form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent); }
+  .form-textarea { resize: vertical; min-height: 80px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+  .modal-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
+
+  /* ── Relationships & Reminders (contact detail) ─────── */
+  .rel-list, .rem-list { display: flex; flex-direction: column; gap: 8px; }
+  .rel-item, .rem-item { background: var(--bg3); border: 1px solid var(--border); padding: 10px 12px; border-radius: var(--radius); font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .rel-type, .rem-type { font-size: 11px; color: var(--fg3); text-transform: uppercase; }
+  .rel-name { font-weight: 600; }
+  .rel-item > div[onclick]:hover .rel-name { color: var(--accent2); }
+  .delete-icon { background: none; border: none; color: var(--fg3); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; opacity: 0.5; transition: all 0.15s; }
+  .delete-icon:hover { opacity: 1; color: var(--red); background: rgba(248,113,113,0.1); }
+
+  /* ── Page visibility ────────────────────────────────── */
+  .page { animation: fadeIn 0.15s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ── Groups Page ────────────────────────────────────── */
+  .group-item { padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; display: flex; justify-content: space-between; align-items: center; }
+  .group-item:hover { background: var(--bg3); }
+  .group-item.active { background: rgba(124,111,240,0.15); border-left: 3px solid var(--accent); }
+  .group-item:last-child { border-bottom: none; }
+  .group-name { font-weight: 600; font-size: 14px; }
+  .group-desc { font-size: 12px; color: var(--fg2); margin-top: 2px; }
+  .group-count { font-size: 11px; color: var(--fg3); background: var(--bg3); padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+
+  /* ── Interactions Page ──────────────────────────────── */
+  .interactions-grid { display: flex; flex-direction: column; gap: 8px; }
+  .interaction-row { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: flex-start; gap: 14px; transition: background 0.15s; }
+  .interaction-row:hover { background: var(--bg3); }
+  .interaction-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; background: var(--bg3); border: 2px solid var(--border); }
+  .interaction-icon.call { border-color: var(--blue); }
+  .interaction-icon.meeting { border-color: var(--green); }
+  .interaction-icon.email { border-color: var(--yellow); }
+  .interaction-icon.note { border-color: var(--accent); }
+  .interaction-icon.gift { border-color: var(--red); }
+  .interaction-icon.message { border-color: var(--accent2); }
+  .interaction-body { flex: 1; min-width: 0; }
+  .interaction-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+  .interaction-contact { font-weight: 600; font-size: 13px; color: var(--accent2); cursor: pointer; }
+  .interaction-contact:hover { text-decoration: underline; }
+  .interaction-time { font-size: 11px; color: var(--fg3); margin-left: auto; white-space: nowrap; }
+  .interaction-summary { font-size: 13px; font-weight: 500; }
+  .interaction-notes-text { font-size: 12px; color: var(--fg2); margin-top: 4px; }
+
+  /* ── Reminders Page ─────────────────────────────────── */
+  .reminders-grid { display: flex; flex-direction: column; gap: 8px; }
+  .reminder-row { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; gap: 14px; transition: background 0.15s; }
+  .reminder-row:hover { background: var(--bg3); }
+  .reminder-row.overdue { border-left: 3px solid var(--red); }
+  .reminder-row.soon { border-left: 3px solid var(--yellow); }
+  .reminder-row.upcoming { border-left: 3px solid var(--green); }
+  .reminder-type-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; background: var(--bg3); border: 2px solid var(--border); }
+  .reminder-body { flex: 1; min-width: 0; }
+  .reminder-contact-name { font-weight: 600; font-size: 13px; color: var(--accent2); cursor: pointer; }
+  .reminder-contact-name:hover { text-decoration: underline; }
+  .reminder-date-text { font-size: 13px; font-weight: 500; }
+  .reminder-message-text { font-size: 12px; color: var(--fg2); margin-top: 2px; }
+  .reminder-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+  .reminder-badge.overdue { background: rgba(248,113,113,0.15); color: var(--red); }
+  .reminder-badge.soon { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .reminder-badge.upcoming { background: rgba(74,222,128,0.15); color: var(--green); }
+
+  /* ── Group member list ──────────────────────────────── */
+  .member-list { display: flex; flex-direction: column; gap: 6px; }
+  .member-item { background: var(--bg3); border: 1px solid var(--border); padding: 10px 12px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .member-item:hover { border-color: var(--accent); }
+  .member-name { font-weight: 600; cursor: pointer; }
+  .member-name:hover { color: var(--accent2); }
+  .member-meta { font-size: 12px; color: var(--fg2); }
+
+  /* ── Upcoming Cards ─────────────────────────────────── */
+  .upcoming-section { margin-bottom: 24px; }
+  .upcoming-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .upcoming-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all 0.15s; }
+  .upcoming-card:hover { background: var(--bg3); border-color: var(--accent); }
+  .upcoming-icon { font-size: 28px; }
+  .upcoming-name { font-weight: 600; font-size: 14px; }
+  .upcoming-date { font-size: 12px; color: var(--fg2); }
+  .upcoming-days { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: auto; white-space: nowrap; }
+  .upcoming-days.soon { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .upcoming-days.today { background: rgba(74,222,128,0.15); color: var(--green); }
+  .upcoming-days.later { background: rgba(124,111,240,0.1); color: var(--accent2); }
+</style>
+</head>
+<body>
+
+<nav id="crmNav">
+  <span class="nav-brand">CRM</span>
+  <a href="#" data-page="contacts" class="active" onclick="navigateTo('contacts')">Contacts</a>
+  <a href="#" data-page="companies" onclick="navigateTo('companies')">Companies</a>
+  <a href="#" data-page="groups" onclick="navigateTo('groups')">Groups</a>
+  <a href="#" data-page="interactions" onclick="navigateTo('interactions')">Interactions</a>
+  <a href="#" data-page="reminders" onclick="navigateTo('reminders')">Reminders</a>
+  <a href="#" data-page="upcoming" onclick="navigateTo('upcoming')">Upcoming</a>
+  <div class="nav-spacer"></div>
+</nav>
+
+<!-- Shared globals & utilities — available to all page scripts -->
+<script>
+  let currentPage = 'contacts';
+  let currentContactId = null;
+  let allContacts = [];
+  let allGroups = [];
+
+  const typeIcons = { call: '📞', meeting: '🤝', email: '📧', note: '📝', gift: '🎁', message: '💬' };
+  const reminderIcons = { birthday: '🎂', anniversary: '💍', custom: '📌' };
+
+  function esc(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showModal(id) {
+    document.getElementById(id).classList.add('show');
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('show');
+  }
+
+  function navigateTo(page) {
+    currentPage = page;
+    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+    const el = document.getElementById('page-' + page);
+    if (el) el.style.display = '';
+    document.querySelectorAll('#crmNav a[data-page]').forEach(a => {
+      a.classList.toggle('active', a.dataset.page === page);
+    });
+    if (page === 'companies') loadCompaniesPage();
+    if (page === 'groups') loadGroupsPage();
+    if (page === 'interactions') loadInteractionsPage();
+    if (page === 'reminders') loadRemindersPage();
+    if (page === 'upcoming') loadUpcomingPage();
+  }
+
+  async function refreshContacts() {
+    const res = await fetch('api/crm/contacts?limit=1000');
+    allContacts = await res.json();
+    return allContacts;
+  }
+</script>
+
+<div class="container">
+<!-- PAGES -->
+</div>
+
+<!-- Bootstrap — runs after all page scripts are loaded -->
+<script>
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
+    }
+  });
+
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.remove('show');
+    });
+  });
+
+  // Start on contacts page
+  (async () => {
+    await loadContacts();
+    await loadCompanies();
+    document.getElementById('search').addEventListener('input', (e) => {
+      filterContacts(e.target.value.toLowerCase());
+    });
+  })();
+</script>
+
+</body>
+</html>

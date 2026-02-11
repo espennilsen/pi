@@ -1,0 +1,135 @@
+<!-- ══════════ UPCOMING PAGE ══════════ -->
+<div id="page-upcoming" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>📅 Upcoming</h1>
+    <div style="flex: 1"></div>
+    <label style="font-size: 13px; color: var(--fg2); display: flex; align-items: center; gap: 8px;">
+      Days ahead
+      <input type="number" id="upcomingDays" class="form-input" value="30" min="1" max="365" style="width: 80px;" onchange="loadUpcomingPage()">
+    </label>
+  </div>
+
+  <div id="upcomingContent">
+    <div class="empty-state"><p>Loading...</p></div>
+  </div>
+</div>
+
+<script>
+  async function loadUpcomingPage() {
+    const days = parseInt(document.getElementById('upcomingDays').value) || 30;
+    const content = document.getElementById('upcomingContent');
+
+    try {
+      const [remindersRes, contactsRes] = await Promise.all([
+        fetch('api/crm/reminders'),
+        fetch('api/crm/contacts?limit=5000')
+      ]);
+      const reminders = await remindersRes.json();
+      const contacts = await contactsRes.json();
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + days);
+
+      const items = [];
+
+      // Birthdays from contacts
+      for (const c of contacts) {
+        if (!c.birthday) continue;
+        const next = getNextOccurrence(c.birthday, today);
+        if (next && next <= endDate) {
+          const daysAway = Math.round((next - today) / 86400000);
+          items.push({ type: 'birthday', icon: '🎂', name: `${c.first_name} ${c.last_name || ''}`.trim(), date: next, daysAway, contactId: c.id });
+        }
+      }
+
+      // Anniversaries from contacts
+      for (const c of contacts) {
+        if (!c.anniversary) continue;
+        const next = getNextOccurrence(c.anniversary, today);
+        if (next && next <= endDate) {
+          const daysAway = Math.round((next - today) / 86400000);
+          items.push({ type: 'anniversary', icon: '💍', name: `${c.first_name} ${c.last_name || ''}`.trim(), date: next, daysAway, contactId: c.id });
+        }
+      }
+
+      // Reminders — skip birthday/anniversary reminders for contacts that
+      // already contributed an item from their contact fields above to avoid duplicates
+      const contactFieldItems = new Set(items.map(i => `${i.contactId}:${i.type}`));
+      for (const r of reminders) {
+        const rDate = new Date(r.reminder_date + 'T00:00:00');
+        if (rDate >= today && rDate <= endDate) {
+          if ((r.reminder_type === 'birthday' || r.reminder_type === 'anniversary') &&
+              contactFieldItems.has(`${r.contact_id}:${r.reminder_type}`)) {
+            continue;
+          }
+          const daysAway = Math.round((rDate - today) / 86400000);
+          const contactName = r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : 'Unknown';
+          const icon = r.reminder_type === 'birthday' ? '🎂' : r.reminder_type === 'anniversary' ? '💍' : '📌';
+          items.push({ type: r.reminder_type, icon, name: contactName, date: rDate, daysAway, contactId: r.contact_id, message: r.message });
+        }
+      }
+
+      // Sort by date
+      items.sort((a, b) => a.daysAway - b.daysAway);
+
+      if (items.length === 0) {
+        content.innerHTML = `<div class="empty-state" style="margin-top: 40px;"><p>Nothing upcoming in the next ${days} days</p></div>`;
+        return;
+      }
+
+      // Group by time period
+      const todayItems = items.filter(i => i.daysAway === 0);
+      const thisWeek = items.filter(i => i.daysAway > 0 && i.daysAway <= 7);
+      const later = items.filter(i => i.daysAway > 7);
+
+      let html = '';
+      if (todayItems.length > 0) {
+        html += `<div class="upcoming-section"><div class="section-title" style="margin-bottom: 12px;">🎉 Today</div><div class="upcoming-grid">${todayItems.map(i => renderUpcomingCard(i, 'today')).join('')}</div></div>`;
+      }
+      if (thisWeek.length > 0) {
+        html += `<div class="upcoming-section"><div class="section-title" style="margin-bottom: 12px;">📅 This Week</div><div class="upcoming-grid">${thisWeek.map(i => renderUpcomingCard(i, 'soon')).join('')}</div></div>`;
+      }
+      if (later.length > 0) {
+        html += `<div class="upcoming-section"><div class="section-title" style="margin-bottom: 12px;">🗓️ Later</div><div class="upcoming-grid">${later.map(i => renderUpcomingCard(i, 'later')).join('')}</div></div>`;
+      }
+
+      content.innerHTML = html;
+    } catch (err) {
+      console.error('Failed to load upcoming:', err);
+      content.innerHTML = '<div class="empty-state"><p>Failed to load upcoming events</p></div>';
+    }
+  }
+
+  function renderUpcomingCard(item, urgency) {
+    const dateStr = item.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const daysLabel = item.daysAway === 0 ? 'Today' : item.daysAway === 1 ? 'Tomorrow' : `In ${item.daysAway} days`;
+    return `
+      <div class="upcoming-card" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${item.contactId}), 100);">
+        <div class="upcoming-icon">${item.icon}</div>
+        <div>
+          <div class="upcoming-name">${esc(item.name)}</div>
+          <div class="upcoming-date">${esc(dateStr)}${item.message ? ' — ' + esc(item.message) : ''}</div>
+        </div>
+        <div class="upcoming-days ${urgency}">${daysLabel}</div>
+      </div>
+    `;
+  }
+
+  function getNextOccurrence(dateStr, today) {
+    try {
+      const parts = dateStr.split('-');
+      const month = parseInt(parts[1]) - 1;
+      const day = parseInt(parts[2]);
+      let next = new Date(today.getFullYear(), month, day);
+      // If the month rolled over (e.g. Feb 29 in a non-leap year → Mar 1), pin to Feb 28
+      if (next.getMonth() !== month) next = new Date(today.getFullYear(), month + 1, 0);
+      if (next < today) {
+        next = new Date(today.getFullYear() + 1, month, day);
+        if (next.getMonth() !== month) next = new Date(today.getFullYear() + 1, month + 1, 0);
+      }
+      return next;
+    } catch { return null; }
+  }
+</script>

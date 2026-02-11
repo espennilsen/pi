@@ -1,0 +1,17 @@
+{
+  "lastChangelogVersion": "0.52.9",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.2-codex",
+  "defaultThinkingLevel": "high",
+  "packages": [
+    "npm:@juanibiapina/pi-powerbar"
+  ],
+  "telemetry": {
+    "mode": "off",
+    "level": "INFO"
+  },
+  "tdWebui": {
+    "crossProjectRoot": "~/Dev",
+    "crossProjectDepth": 1
+  }
+}

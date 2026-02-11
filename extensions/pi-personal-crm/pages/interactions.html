@@ -1,0 +1,217 @@
+<!-- ══════════ INTERACTIONS PAGE ══════════ -->
+<div id="page-interactions" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>💬 Interactions</h1>
+    <input type="text" id="interactionsSearch" class="search-box" placeholder="Search interactions...">
+    <select id="interactionsTypeFilter" class="form-select" style="width: 160px; padding: 6px 12px;" onchange="filterInteractionsPage()">
+      <option value="">All types</option>
+      <option value="call">📞 Call</option>
+      <option value="meeting">🤝 Meeting</option>
+      <option value="email">📧 Email</option>
+      <option value="note">📝 Note</option>
+      <option value="gift">🎁 Gift</option>
+      <option value="message">💬 Message</option>
+    </select>
+    <div style="flex: 1"></div>
+    <button class="btn btn-primary" onclick="toggleAddInteractionForm()">+ Add</button>
+  </div>
+
+  <!-- Inline add form (hidden by default) -->
+  <div id="addInteractionForm" style="display: none; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px;">
+    <form onsubmit="submitNewInteraction(event)">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Contact *</label>
+          <input type="text" id="intContactSearch" class="form-input" placeholder="Type to search..." list="intContactsList" required autocomplete="off">
+          <datalist id="intContactsList"></datalist>
+          <input type="hidden" id="intContactId">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select id="intType" class="form-select" required>
+            <option value="call">📞 Call</option>
+            <option value="meeting">🤝 Meeting</option>
+            <option value="email">📧 Email</option>
+            <option value="note" selected>📝 Note</option>
+            <option value="gift">🎁 Gift</option>
+            <option value="message">💬 Message</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Summary *</label>
+        <input type="text" id="intSummary" class="form-input" placeholder="Brief description of the interaction" required>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="intNotes" class="form-textarea" rows="2" placeholder="Additional details (optional)"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="datetime-local" id="intDate" class="form-input">
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" class="btn" onclick="toggleAddInteractionForm()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Interaction</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="interactionsPageList">
+    <div class="empty-state"><p>Loading interactions...</p></div>
+  </div>
+</div>
+
+<script>
+  // ── Interactions Page ─────────────────────────────────────────
+
+  let allPageInteractions = [];
+
+  async function loadInteractionsPage() {
+    try {
+      allPageInteractions = await (await fetch('api/crm/interactions')).json();
+      filterInteractionsPage();
+    } catch (err) {
+      console.error('Failed to load interactions:', err);
+    }
+  }
+
+  function filterInteractionsPage() {
+    const search = (document.getElementById('interactionsSearch').value || '').toLowerCase();
+    const typeFilter = document.getElementById('interactionsTypeFilter').value;
+
+    let filtered = allPageInteractions;
+    if (typeFilter) filtered = filtered.filter(i => i.interaction_type === typeFilter);
+    if (search) {
+      filtered = filtered.filter(i =>
+        i.summary.toLowerCase().includes(search) ||
+        (i.notes && i.notes.toLowerCase().includes(search)) ||
+        (i.first_name && i.first_name.toLowerCase().includes(search)) ||
+        (i.last_name && i.last_name.toLowerCase().includes(search))
+      );
+    }
+    renderInteractionsPage(filtered);
+  }
+
+  function renderInteractionsPage(interactions) {
+    const container = document.getElementById('interactionsPageList');
+    if (interactions.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No interactions found</p></div>';
+      return;
+    }
+
+    container.innerHTML = `<div class="interactions-grid">${interactions.map(i => `
+      <div class="interaction-row">
+        <div class="interaction-icon ${esc(i.interaction_type)}">${typeIcons[i.interaction_type] || '💬'}</div>
+        <div class="interaction-body">
+          <div class="interaction-header">
+            <span class="interaction-contact" onclick="selectContact(${i.contact_id})">${esc(i.first_name)} ${esc(i.last_name)}</span>
+            <span class="timeline-type ${esc(i.interaction_type)}">${esc(i.interaction_type)}</span>
+            <span class="interaction-time">${new Date(i.happened_at).toLocaleString()}</span>
+          </div>
+          <div class="interaction-summary">${esc(i.summary)}</div>
+          ${i.notes ? `<div class="interaction-notes-text">${esc(i.notes)}</div>` : ''}
+        </div>
+        <button class="delete-icon" onclick="deleteInteractionPage(${i.id})" title="Delete">✕</button>
+      </div>
+    `).join('')}</div>`;
+  }
+
+  async function deleteInteractionPage(id) {
+    if (!confirm('Delete this interaction?')) return;
+    try {
+      await fetch(`api/crm/interactions/${id}`, { method: 'DELETE' });
+      await loadInteractionsPage();
+    } catch (err) {
+      console.error('Failed to delete interaction:', err);
+    }
+  }
+
+  // ── Add Interaction Form ──────────────────────────────────────
+
+  function toggleAddInteractionForm() {
+    const form = document.getElementById('addInteractionForm');
+    const visible = form.style.display !== 'none';
+    form.style.display = visible ? 'none' : 'block';
+    if (!visible) {
+      // Populate contact datalist and set default date to now
+      populateContactDatalist();
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('intDate').value = now.toISOString().slice(0, 16);
+      document.getElementById('intContactSearch').focus();
+    }
+  }
+
+  async function populateContactDatalist() {
+    const dl = document.getElementById('intContactsList');
+    // Ensure contacts are loaded (they're fetched at bootstrap, but just in case)
+    if (!allContacts || allContacts.length === 0) await refreshContacts();
+    const contacts = allContacts || [];
+    dl.innerHTML = contacts.map(c => {
+      const name = `${c.first_name} ${c.last_name || ''}`.trim();
+      const extra = c.company_name ? ` (${c.company_name})` : '';
+      return `<option value="${esc(name + extra)}" data-id="${c.id}">`;
+    }).join('');
+  }
+
+  function resolveContactId() {
+    const input = document.getElementById('intContactSearch').value.trim();
+    const contacts = allContacts || [];
+    // Match by display string
+    const match = contacts.find(c => {
+      const name = `${c.first_name} ${c.last_name || ''}`.trim();
+      const extra = c.company_name ? ` (${c.company_name})` : '';
+      return input === name || input === name + extra;
+    });
+    return match ? match.id : null;
+  }
+
+  async function submitNewInteraction(e) {
+    e.preventDefault();
+    const contactId = resolveContactId();
+    if (!contactId) {
+      alert('Please select a valid contact from the list.');
+      document.getElementById('intContactSearch').focus();
+      return;
+    }
+
+    const body = {
+      contact_id: contactId,
+      interaction_type: document.getElementById('intType').value,
+      summary: document.getElementById('intSummary').value.trim(),
+      notes: document.getElementById('intNotes').value.trim() || undefined,
+      happened_at: document.getElementById('intDate').value
+        ? new Date(document.getElementById('intDate').value).toISOString()
+        : undefined,
+    };
+
+    try {
+      const res = await fetch('api/crm/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Error: ' + (err.error || 'Failed to save'));
+        return;
+      }
+      // Reset form and hide
+      document.getElementById('intContactSearch').value = '';
+      document.getElementById('intSummary').value = '';
+      document.getElementById('intNotes').value = '';
+      document.getElementById('intDate').value = '';
+      document.getElementById('addInteractionForm').style.display = 'none';
+      // Reload list
+      await loadInteractionsPage();
+    } catch (err) {
+      alert('Failed to save interaction: ' + err.message);
+    }
+  }
+
+  // Set up search listener
+  document.getElementById('interactionsSearch').addEventListener('input', () => filterInteractionsPage());
+</script>

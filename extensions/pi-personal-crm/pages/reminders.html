@@ -1,0 +1,142 @@
+<!-- ══════════ REMINDERS PAGE ══════════ -->
+<div id="page-reminders" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>🔔 Reminders</h1>
+    <select id="remindersFilter" class="form-select" style="width: 180px; padding: 6px 12px;" onchange="loadRemindersPage()">
+      <option value="upcoming">Upcoming (30 days)</option>
+      <option value="all">All reminders</option>
+    </select>
+    <div style="flex: 1"></div>
+    <button class="btn btn-primary" onclick="showAddReminderPageModal()">+ New Reminder</button>
+  </div>
+
+  <div id="remindersPageList">
+    <div class="empty-state"><p>Loading reminders...</p></div>
+  </div>
+</div>
+
+<!-- Add Reminder Modal (reminders page — pick a contact) -->
+<div class="modal" id="reminderPageModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Reminder</h2>
+      <button class="modal-close" onclick="closeModal('reminderPageModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="reminderPageForm" onsubmit="saveReminderPage(event)">
+        <div class="form-group">
+          <label class="form-label">Contact *</label>
+          <select id="reminderPageContact" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select id="reminderPageType" class="form-select" required>
+            <option value="birthday">🎂 Birthday</option>
+            <option value="anniversary">💍 Anniversary</option>
+            <option value="custom">📌 Custom</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date *</label>
+          <input type="date" id="reminderPageDate" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <input type="text" id="reminderPageMessage" class="form-input" placeholder="Optional reminder message">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('reminderPageModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('reminderPageForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Reminders Page ────────────────────────────────────────────
+
+  let allPageReminders = [];
+
+  async function loadRemindersPage() {
+    try {
+      const filter = document.getElementById('remindersFilter').value;
+      const url = filter === 'upcoming' ? 'api/crm/reminders/upcoming?days=30' : 'api/crm/reminders';
+      allPageReminders = await (await fetch(url)).json();
+      renderRemindersPage(allPageReminders);
+    } catch (err) {
+      console.error('Failed to load reminders:', err);
+    }
+  }
+
+  function renderRemindersPage(reminders) {
+    const container = document.getElementById('remindersPageList');
+    if (reminders.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No reminders found</p></div>';
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const soonDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+
+    container.innerHTML = `<div class="reminders-grid">${reminders.map(r => {
+      let status = 'upcoming';
+      if (r.reminder_date < today) status = 'overdue';
+      else if (r.reminder_date <= soonDate) status = 'soon';
+      const statusLabel = status === 'overdue' ? 'Overdue' : status === 'soon' ? 'This week' : r.reminder_type;
+
+      return `
+        <div class="reminder-row ${status}">
+          <div class="reminder-type-icon">${reminderIcons[r.reminder_type] || '📌'}</div>
+          <div class="reminder-body">
+            <span class="reminder-contact-name" onclick="selectContact(${r.contact_id})">${esc(r.first_name)} ${esc(r.last_name)}</span>
+            <div class="reminder-date-text">${esc(r.reminder_date)}</div>
+            ${r.message ? `<div class="reminder-message-text">${esc(r.message)}</div>` : ''}
+          </div>
+          <span class="reminder-badge ${status}">${statusLabel}</span>
+          <button class="delete-icon" onclick="deleteReminderPage(${r.id})" title="Delete">✕</button>
+        </div>
+      `;
+    }).join('')}</div>`;
+  }
+
+  // ── Add Reminder (page-level) ────────────────────────────────
+
+  async function showAddReminderPageModal() {
+    document.getElementById('reminderPageForm').reset();
+    const contacts = await refreshContacts();
+    const select = document.getElementById('reminderPageContact');
+    select.innerHTML = contacts.map(c =>
+      `<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)}</option>`
+    ).join('');
+    showModal('reminderPageModal');
+  }
+
+  async function saveReminderPage(e) {
+    e.preventDefault();
+    const data = {
+      contact_id: parseInt(document.getElementById('reminderPageContact').value),
+      reminder_type: document.getElementById('reminderPageType').value,
+      reminder_date: document.getElementById('reminderPageDate').value,
+      message: document.getElementById('reminderPageMessage').value || null,
+    };
+    try {
+      await fetch('api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      closeModal('reminderPageModal');
+      await loadRemindersPage();
+    } catch (err) {
+      console.error('Failed to save reminder:', err);
+      alert('Failed to save reminder');
+    }
+  }
+
+  async function deleteReminderPage(id) {
+    if (!confirm('Delete this reminder?')) return;
+    try {
+      await fetch(`api/crm/reminders/${id}`, { method: 'DELETE' });
+      await loadRemindersPage();
+    } catch (err) {
+      console.error('Failed to delete reminder:', err);
+    }
+  }
+</script>

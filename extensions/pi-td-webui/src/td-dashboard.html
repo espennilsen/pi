@@ -1,0 +1,90 @@
+<!-- Toolbar -->
+<div class="td-toolbar">
+  <div class="td-view-toggle">
+    <button class="active" onclick="tdUI.setView('board')" id="td-view-board">Board</button>
+    <button onclick="tdUI.setView('table')" id="td-view-table">Table</button>
+  </div>
+  <select id="td-filter-type" onchange="tdUI.reload()">
+    <option value="">All types</option>
+    <option value="task">Task</option>
+    <option value="bug">Bug</option>
+    <option value="feature">Feature</option>
+    <option value="epic">Epic</option>
+    <option value="chore">Chore</option>
+  </select>
+  <select id="td-filter-priority" onchange="tdUI.reload()">
+    <option value="">All priorities</option>
+    <option value="P0">P0 — Critical</option>
+    <option value="P1">P1 — High</option>
+    <option value="P2">P2 — Medium</option>
+    <option value="P3">P3 — Low</option>
+    <option value="P4">P4 — Minimal</option>
+  </select>
+  <label style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
+    <input type="checkbox" id="td-show-closed" onchange="tdUI.reload()"> Closed
+  </label>
+  <input type="text" class="td-search" id="td-search" placeholder="Search..." oninput="tdUI.filterLocal()">
+  <button class="btn-create-td" onclick="tdModal.open()">+ New Issue</button>
+</div>
+
+<!-- Board view -->
+<div class="td-board" id="td-board"></div>
+
+<!-- Table view (hidden by default) -->
+<div class="td-table-wrap" id="td-table" style="display:none;">
+  <table>
+    <thead><tr>
+      <th class="td-sortable" onclick="tdUI.sortBy('id')">ID <span class="td-sort-icon" data-col="id"></span></th>
+      <th class="td-sortable" onclick="tdUI.sortBy('priority')">Priority <span class="td-sort-icon" data-col="priority"></span></th>
+      <th class="td-sortable" onclick="tdUI.sortBy('type')">Type <span class="td-sort-icon" data-col="type"></span></th>
+      <th class="td-sortable" onclick="tdUI.sortBy('title')">Title <span class="td-sort-icon" data-col="title"></span></th>
+      <th class="td-sortable" onclick="tdUI.sortBy('status')">Status <span class="td-sort-icon" data-col="status"></span></th>
+      <th>Labels</th>
+      <th>Activity</th>
+      <th class="td-sortable" onclick="tdUI.sortBy('updated_at')">Updated <span class="td-sort-icon" data-col="updated_at"></span></th>
+    </tr></thead>
+    <tbody id="td-table-body"></tbody>
+  </table>
+  <div class="td-pagination" id="td-pagination"></div>
+</div>
+
+<!-- Detail panel -->
+<div class="td-detail-overlay" id="td-detail-overlay">
+  <div class="td-detail-panel" id="td-detail-panel"></div>
+</div>
+
+<!-- Create / Edit modal -->
+<div class="td-modal-overlay" id="td-modal-overlay">
+  <div class="td-modal">
+    <h3 id="td-modal-title">New Issue</h3>
+    <label><span>Title</span><input type="text" id="td-f-title" placeholder="Issue title"></label>
+    <label><span>Description</span><textarea id="td-f-desc" placeholder="Optional description..."></textarea></label>
+    <div class="td-modal-row">
+      <label><span>Type</span>
+        <select id="td-f-type">
+          <option value="task">Task</option>
+          <option value="bug">Bug</option>
+          <option value="feature">Feature</option>
+          <option value="epic">Epic</option>
+          <option value="chore">Chore</option>
+        </select>
+      </label>
+      <label><span>Priority</span>
+        <select id="td-f-priority">
+          <option value="P2">P2 — Medium</option>
+          <option value="P0">P0 — Critical</option>
+          <option value="P1">P1 — High</option>
+          <option value="P3">P3 — Low</option>
+          <option value="P4">P4 — Minimal</option>
+        </select>
+      </label>
+    </div>
+    <label><span>Labels</span><input type="text" id="td-f-labels" placeholder="Comma-separated labels"></label>
+    <label><span>Parent</span><input type="text" id="td-f-parent" placeholder="Parent issue ID (optional)"></label>
+    <div class="error-msg" id="td-f-error"></div>
+    <div class="td-modal-buttons">
+      <button class="btn-cancel" onclick="tdModal.close()">Cancel</button>
+      <button class="btn-save" id="td-f-save" onclick="tdModal.save()">Create</button>
+    </div>
+  </div>
+</div>

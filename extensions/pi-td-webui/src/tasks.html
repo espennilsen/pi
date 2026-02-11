@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hannah — Tasks</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+    --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+    --accent: #7c6ff0; --accent2: #9d8cf0;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --border: #2a2a3a; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  /* ── Shared badge/status styles ─────────────────────── */
+  .td-status { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .td-status.open { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .td-status.in_progress { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .td-status.in_review { background: rgba(168,85,247,0.15); color: #a855f7; }
+  .td-status.blocked { background: rgba(239,68,68,0.15); color: var(--red); }
+  .td-status.closed { background: rgba(74,222,128,0.15); color: var(--green); }
+
+  .td-priority { font-size: 11px; font-weight: 700; }
+  .td-priority.P0 { color: var(--red); }
+  .td-priority.P1 { color: var(--yellow); }
+  .td-priority.P2 { color: var(--blue); }
+  .td-priority.P3 { color: var(--fg2); }
+  .td-priority.P4 { color: var(--fg3); }
+
+  .td-type { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(136,136,152,0.1); color: var(--fg2); }
+  .td-type.bug { background: rgba(239,68,68,0.1); color: var(--red); }
+  .td-type.feature { background: rgba(96,165,250,0.1); color: var(--blue); }
+  .td-type.epic { background: rgba(168,85,247,0.1); color: #a855f7; }
+
+  .td-label { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(136,136,152,0.15); color: var(--fg2); margin-right: 3px; }
+
+  /* ── Toolbar ────────────────────────────────────────── */
+  .td-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .td-toolbar select, .td-toolbar input {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg2); color: var(--fg); font-size: 12px; font-family: inherit;
+  }
+  .td-toolbar select:focus, .td-toolbar input:focus { outline: none; border-color: var(--accent); }
+  .td-toolbar .td-search { width: 200px; }
+
+  .btn-create-td {
+    padding: 6px 14px; border: 1px solid var(--accent); border-radius: 6px;
+    background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; margin-left: auto;
+  }
+  .btn-create-td:hover { opacity: 0.85; }
+
+  .td-view-toggle { display: flex; gap: 2px; background: var(--bg2); border-radius: 6px; padding: 2px; }
+  .td-view-toggle button {
+    padding: 4px 10px; border: none; border-radius: 4px; background: transparent;
+    color: var(--fg2); font-size: 11px; cursor: pointer; transition: all 0.15s;
+  }
+  .td-view-toggle button.active { background: var(--accent); color: var(--bg); }
+
+  /* ── Board view ─────────────────────────────────────── */
+  .td-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .td-column { background: var(--bg2); border-radius: 8px; padding: 12px; min-height: 120px; }
+  .td-column-header { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg3); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .td-column-count { background: rgba(136,136,152,0.2); padding: 1px 6px; border-radius: 10px; font-size: 10px; }
+  .td-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+    margin-bottom: 8px; cursor: pointer; transition: all 0.15s;
+  }
+  .td-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  .td-card-title { font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.3; }
+  .td-card-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .td-card-id { font-family: "SF Mono", "Fira Code", monospace; font-size: 10px; color: var(--fg3); }
+
+  /* ── Table view ─────────────────────────────────────── */
+  .td-table-wrap { overflow-x: auto; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .td-table-wrap table { width: 100%; border-collapse: collapse; }
+  .td-table-wrap th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg3); border-bottom: 1px solid var(--border); background: var(--bg2); position: sticky; top: 0; white-space: nowrap; }
+  .td-table-wrap th.td-sortable { cursor: pointer; user-select: none; transition: color 0.15s; }
+  .td-table-wrap th.td-sortable:hover { color: var(--fg1, #e0e0e0); }
+  .td-sort-icon { font-size: 9px; margin-left: 2px; opacity: 0.4; }
+  .td-sort-icon.active { opacity: 1; color: var(--accent, #60a5fa); }
+  .td-table-wrap td { padding: 8px 10px; border-bottom: 1px solid rgba(136,136,152,0.1); font-size: 13px; vertical-align: top; }
+  .td-table-wrap tr:hover { background: rgba(136,136,152,0.04); }
+
+  /* Pagination */
+  .td-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px; gap: 12px; border-top: 1px solid var(--border); }
+  .td-pag-info { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+  .td-pag-buttons { display: flex; gap: 2px; }
+  .td-pag-btn {
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg2); color: var(--fg2); font-size: 12px; cursor: pointer;
+    transition: all 0.15s; min-width: 32px; text-align: center;
+  }
+  .td-pag-btn:hover:not(:disabled):not(.active) { background: var(--border); color: var(--fg); }
+  .td-pag-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .td-pag-btn:disabled { opacity: 0.3; cursor: default; }
+  .td-pag-size {
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg2); color: var(--fg2); font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .td-pag-size:focus { outline: none; border-color: var(--accent); }
+
+  .td-id { font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; color: var(--accent2); cursor: pointer; }
+  .td-id:hover { text-decoration: underline; }
+  .td-title { font-weight: 500; }
+
+  /* ── Detail panel ───────────────────────────────────── */
+  .td-detail-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    justify-content: center; align-items: flex-start; padding-top: 60px;
+  }
+  .td-detail-overlay.open { display: flex; }
+  .td-detail-panel {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; width: 600px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .td-detail-panel h3 { margin: 0 0 4px 0; font-size: 18px; }
+  .td-detail-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .td-detail-section { margin-bottom: 16px; }
+  .td-detail-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg3); margin: 0 0 6px 0; }
+  .td-detail-section p, .td-detail-section pre { font-size: 13px; color: var(--fg2); margin: 0; line-height: 1.5; }
+  .td-detail-section pre { background: var(--bg2); padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .td-desc { font-size: 13px; color: var(--fg2); line-height: 1.6; }
+  .td-desc .td-code-block { display: block; background: var(--bg2); padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 6px 0; font-size: 12px; }
+  .td-desc .td-desc-bullet { color: var(--accent); margin-left: 8px; }
+  .td-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .td-detail-actions button {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg2); color: var(--fg2); font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .td-detail-actions button:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .td-detail-actions .btn-close-detail { margin-left: auto; background: transparent; }
+
+  /* ── Create modal ───────────────────────────────────── */
+  .td-modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    justify-content: center; align-items: center;
+  }
+  .td-modal-overlay.open { display: flex; }
+  .td-modal {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; width: 500px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .td-modal h3 { margin: 0 0 16px 0; font-size: 16px; color: var(--fg); }
+  .td-modal label { display: block; margin-bottom: 12px; font-size: 12px; color: var(--fg2); }
+  .td-modal label span { display: block; margin-bottom: 4px; font-weight: 600; }
+  .td-modal input, .td-modal select, .td-modal textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg2); color: var(--fg); font-size: 13px; font-family: inherit; box-sizing: border-box;
+  }
+  .td-modal textarea { min-height: 80px; resize: vertical; }
+  .td-modal input:focus, .td-modal select:focus, .td-modal textarea:focus { outline: none; border-color: var(--accent); }
+  .td-modal-row { display: flex; gap: 12px; }
+  .td-modal-row label { flex: 1; }
+  .td-modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .td-modal-buttons button {
+    padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+  }
+  .td-modal-buttons .btn-cancel { background: var(--bg2); color: var(--fg2); border: 1px solid var(--border); }
+  .td-modal-buttons .btn-cancel:hover { background: var(--border); }
+  .td-modal-buttons .btn-save { background: var(--accent); color: var(--bg); }
+  .td-modal-buttons .btn-save:hover { opacity: 0.85; }
+  .td-modal .error-msg { color: var(--red); font-size: 12px; margin-top: 8px; display: none; }
+
+  /* ── Handoff ──────────────────────────────────────── */
+  .td-handoff-group { margin-bottom: 8px; }
+  .td-handoff-group ul { margin: 4px 0 0 0; padding-left: 20px; }
+  .td-handoff-group li { font-size: 12px; color: var(--fg); margin-bottom: 3px; line-height: 1.4; }
+  .td-handoff-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .td-handoff-done { color: #4ade80; }
+  .td-handoff-remaining { color: #facc15; }
+  .td-handoff-decisions { color: #60a5fa; }
+  .td-handoff-uncertain { color: #fb923c; }
+  .td-handoff-meta {
+    font-size: 11px; color: var(--fg3); margin-bottom: 8px; display: block;
+  }
+
+  /* ── Activity log ───────────────────────────────────── */
+  .td-logs { max-height: 300px; overflow-y: auto; }
+  .td-log-entry {
+    display: flex; gap: 8px; align-items: baseline; padding: 6px 0;
+    border-bottom: 1px solid rgba(136,136,152,0.08); font-size: 12px;
+  }
+  .td-log-entry:last-child { border-bottom: none; }
+  .td-log-type {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 3px; white-space: nowrap; flex-shrink: 0;
+  }
+  .td-log-progress .td-log-type { background: #1a3a1a; color: #4ade80; }
+  .td-log-blocker .td-log-type { background: #3a1a1a; color: #f87171; }
+
+  /* ── Add activity form ─────────────────────────────── */
+  .td-add-log-form { margin-top: 8px; }
+  .td-add-log-form textarea { width: 100%; min-height: 60px; resize: vertical; background: var(--bg2); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+  .td-add-log-form textarea:focus { outline: none; border-color: var(--accent); }
+  .td-add-log-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+  .td-add-log-row select { background: var(--bg2); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 12px; }
+  .td-add-log-row button { background: var(--accent); color: var(--bg); border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+  .td-add-log-row button:hover { opacity: 0.85; }
+  .td-add-log-toggle { background: none; border: 1px solid var(--border); color: var(--fg2); padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-top: 8px; }
+  .td-add-log-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .td-log-decision .td-log-type { background: #1a2a3a; color: #60a5fa; }
+  .td-log-hypothesis .td-log-type { background: #3a2a1a; color: #fb923c; }
+  .td-log-tried .td-log-type { background: #2a2a3a; color: #a78bfa; }
+  .td-log-result .td-log-type { background: #1a3a3a; color: #2dd4bf; }
+  .td-log-security .td-log-type { background: #3a1a2a; color: #f472b6; }
+  .td-log-message { color: var(--fg2); flex: 1; line-height: 1.4; }
+  .td-log-time { color: var(--fg3); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+
+  /* ── Badges ─────────────────────────────────────────── */
+  .td-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+  .td-badge-log { background: rgba(74,222,128,0.1); color: #4ade80; }
+  .td-badge-handoff { background: rgba(96,165,250,0.1); color: #60a5fa; }
+  .td-badge-project { background: rgba(251,191,36,0.1); color: #fbbf24; font-weight: 600; }
+  .td-card-last-log { font-size: 11px; color: var(--fg3); margin-top: 6px; line-height: 1.3; }
+
+  /* ── Review action buttons ──────────────────────────── */
+  .td-detail-actions .btn-approve { background: rgba(74,222,128,0.15); color: #4ade80; border-color: #4ade80; }
+  .td-detail-actions .btn-approve:hover { background: #4ade80; color: var(--bg); }
+  .td-detail-actions .btn-reject { background: rgba(239,68,68,0.15); color: #f87171; border-color: #f87171; }
+  .td-detail-actions .btn-reject:hover { background: #f87171; color: var(--bg); }
+  .td-detail-actions .btn-review { background: rgba(168,85,247,0.15); color: #a855f7; border-color: #a855f7; }
+  .td-detail-actions .btn-review:hover { background: #a855f7; color: var(--bg); }
+  .td-review-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .td-review-form textarea {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+    font: 13px/1.5 var(--font); resize: vertical; min-height: 60px;
+  }
+  .td-review-form textarea:focus { outline: none; border-color: var(--accent); }
+  .td-review-form textarea::placeholder { color: var(--fg3); }
+
+  /* ── Git state ──────────────────────────────────────── */
+  .td-git-state { font-size: 12px; color: var(--fg2); line-height: 1.5; }
+  .td-git-state code { font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; background: var(--bg2); padding: 1px 4px; border-radius: 3px; }
+
+  /* ── Sessions ───────────────────────────────────────── */
+  .td-sessions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .td-session-tag { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: rgba(136,136,152,0.1); color: var(--fg2); font-family: "SF Mono", "Fira Code", monospace; }
+
+  .td-empty { text-align: center; padding: 40px 20px; color: var(--fg3); }
+  .td-empty p { margin: 8px 0; font-size: 13px; }
+
+  /* ── Tree view ──────────────────────────────────────── */
+  .td-tree { padding: 8px 0; }
+  .td-tree-node { position: relative; }
+  .td-tree-children { padding-left: 28px; position: relative; }
+  .td-tree-children::before {
+    content: ''; position: absolute; left: 12px; top: 0; bottom: 12px;
+    border-left: 1px solid var(--border);
+  }
+  .td-tree-item {
+    position: relative; display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; margin: 2px 0; border-radius: 6px; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .td-tree-item:hover { background: var(--bg2); }
+  .td-tree-children > .td-tree-node > .td-tree-item::before {
+    content: ''; position: absolute; left: -16px; top: 50%;
+    width: 14px; border-top: 1px solid var(--border);
+  }
+  .td-tree-toggle {
+    width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--fg3); cursor: pointer; flex-shrink: 0;
+    border-radius: 3px; transition: all 0.12s; user-select: none;
+  }
+  .td-tree-toggle:hover { background: var(--bg3); color: var(--fg); }
+  .td-tree-toggle.leaf { visibility: hidden; }
+  .td-tree-item-id { font-family: "SF Mono", "Fira Code", monospace; font-size: 10px; color: var(--fg3); flex-shrink: 0; }
+  .td-tree-item-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .td-tree-ref {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 10px; margin: 2px 0; font-size: 11px; color: var(--fg3); font-style: italic;
+    cursor: pointer; border-radius: 4px; transition: background 0.12s;
+  }
+  .td-tree-ref:hover { background: var(--bg2); color: var(--fg2); }
+  .td-tree-ref::before {
+    content: '↗'; font-style: normal; color: var(--accent); font-size: 12px;
+  }
+  .td-tree-children > .td-tree-ref::before { content: none; }
+  .td-tree-children > .td-tree-ref { padding-left: 26px; }
+  .td-tree-children > .td-tree-ref::after {
+    content: ''; position: absolute; left: -16px; top: 50%;
+    width: 14px; border-top: 1px solid var(--border);
+  }
+  .td-tree-stats {
+    display: flex; gap: 16px; padding: 8px 10px; margin-bottom: 8px;
+    font-size: 12px; color: var(--fg3); border-bottom: 1px solid var(--border);
+  }
+  .td-tree-stats span { display: flex; align-items: center; gap: 4px; }
+  .td-tree-legend { display: flex; gap: 12px; }
+  .td-tree-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--fg3); }
+  .td-tree-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .td-tree-edge-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+  }
+  .td-tree-edge-badge.depends_on { background: rgba(251,191,36,0.12); color: var(--yellow); }
+  .td-tree-edge-badge.parent_child { background: rgba(168,85,247,0.12); color: #a855f7; }
+
+  /* ── Detail dependency tree ─────────────────────────── */
+  .td-detail-deps { display: flex; gap: 16px; flex-wrap: wrap; }
+  .td-detail-deps-col { flex: 1; min-width: 200px; }
+  .td-detail-deps-col h5 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg3); margin: 0 0 6px 0; }
+  .td-dep-item {
+    display: flex; align-items: center; gap: 6px; padding: 5px 8px; margin: 2px 0;
+    border-radius: 5px; cursor: pointer; transition: background 0.12s; font-size: 12px;
+  }
+  .td-dep-item:hover { background: var(--bg2); }
+  .td-dep-item .td-tree-item-id { font-family: "SF Mono", "Fira Code", monospace; font-size: 10px; color: var(--fg3); }
+  .td-dep-item .td-dep-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .td-dep-none { font-size: 12px; color: var(--fg3); font-style: italic; padding: 4px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Toolbar -->
+  <div class="td-toolbar">
+    <div class="td-view-toggle">
+      <button class="active" onclick="tdUI.setView('board')" id="td-view-board">Board</button>
+      <button onclick="tdUI.setView('table')" id="td-view-table">Table</button>
+      <button onclick="tdUI.setView('tree')" id="td-view-tree">Tree</button>
+    </div>
+    <select id="td-filter-type" onchange="tdUI.reload()">
+      <option value="">All types</option>
+      <option value="task">Task</option>
+      <option value="bug">Bug</option>
+      <option value="feature">Feature</option>
+      <option value="epic">Epic</option>
+      <option value="chore">Chore</option>
+    </select>
+    <select id="td-filter-priority" onchange="tdUI.reload()">
+      <option value="">All priorities</option>
+      <option value="P0">P0 — Critical</option>
+      <option value="P1">P1 — High</option>
+      <option value="P2">P2 — Medium</option>
+      <option value="P3">P3 — Low</option>
+      <option value="P4">P4 — Minimal</option>
+    </select>
+    <label style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
+      <input type="checkbox" id="td-show-closed" onchange="tdUI.reload()"> Closed
+    </label>
+    <label id="td-global-toggle-wrap" style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
+      <input type="checkbox" id="td-global-toggle" onchange="tdUI.reload()"> All Projects
+    </label>
+    <select id="td-filter-project" onchange="tdUI.reload()" style="display:none;">
+      <option value="">All projects</option>
+    </select>
+    <input type="text" class="td-search" id="td-search" placeholder="Search..." oninput="tdUI.filterLocal()">
+    <button class="btn-create-td" onclick="tdModal.open()">+ New Issue</button>
+  </div>
+
+  <!-- Board view -->
+  <div class="td-board" id="td-board"></div>
+
+  <!-- Table view (hidden by default) -->
+  <div class="td-table-wrap" id="td-table" style="display:none;">
+    <table>
+      <thead><tr>
+        <th class="td-sortable td-col-project" onclick="tdUI.sortBy('project')" style="display:none;">Project <span class="td-sort-icon" data-col="project"></span></th>
+        <th class="td-sortable" onclick="tdUI.sortBy('id')">ID <span class="td-sort-icon" data-col="id"></span></th>
+        <th class="td-sortable" onclick="tdUI.sortBy('priority')">Priority <span class="td-sort-icon" data-col="priority"></span></th>
+        <th class="td-sortable" onclick="tdUI.sortBy('type')">Type <span class="td-sort-icon" data-col="type"></span></th>
+        <th class="td-sortable" onclick="tdUI.sortBy('title')">Title <span class="td-sort-icon" data-col="title"></span></th>
+        <th class="td-sortable" onclick="tdUI.sortBy('status')">Status <span class="td-sort-icon" data-col="status"></span></th>
+        <th>Labels</th>
+        <th>Activity</th>
+        <th class="td-sortable" onclick="tdUI.sortBy('updated_at')">Updated <span class="td-sort-icon" data-col="updated_at"></span></th>
+      </tr></thead>
+      <tbody id="td-table-body"></tbody>
+    </table>
+    <div class="td-pagination" id="td-pagination"></div>
+  </div>
+
+  <!-- Tree view (hidden by default) -->
+  <div class="td-tree" id="td-tree" style="display:none;"></div>
+
+  <!-- Detail panel -->
+  <div class="td-detail-overlay" id="td-detail-overlay">
+    <div class="td-detail-panel" id="td-detail-panel"></div>
+  </div>
+
+  <!-- Create modal -->
+  <div class="td-modal-overlay" id="td-modal-overlay">
+    <div class="td-modal">
+      <h3 id="td-modal-title">New Issue</h3>
+      <label><span>Title</span><input type="text" id="td-f-title" placeholder="Issue title"></label>
+      <label><span>Description</span><textarea id="td-f-desc" placeholder="Optional description..."></textarea></label>
+      <div class="td-modal-row">
+        <label><span>Type</span>
+          <select id="td-f-type">
+            <option value="task">Task</option>
+            <option value="bug">Bug</option>
+            <option value="feature">Feature</option>
+            <option value="epic">Epic</option>
+            <option value="chore">Chore</option>
+          </select>
+        </label>
+        <label><span>Priority</span>
+          <select id="td-f-priority">
+            <option value="P2">P2 — Medium</option>
+            <option value="P0">P0 — Critical</option>
+            <option value="P1">P1 — High</option>
+            <option value="P3">P3 — Low</option>
+            <option value="P4">P4 — Minimal</option>
+          </select>
+        </label>
+      </div>
+      <label><span>Labels</span><input type="text" id="td-f-labels" placeholder="Comma-separated labels"></label>
+      <label><span>Parent</span><input type="text" id="td-f-parent" placeholder="Parent issue ID (optional)"></label>
+      <div class="error-msg" id="td-f-error"></div>
+      <div class="td-modal-buttons">
+        <button class="btn-cancel" onclick="tdModal.close()">Cancel</button>
+        <button class="btn-save" id="td-f-save" onclick="tdModal.save()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+/**
+ * Format a description string with basic markdown-like rendering.
+ * Handles: literal \n → newlines, ```code blocks```, `inline code`,
+ * **bold**, *italic*, - bullet lists, ## headings.
+ */
+function formatDesc(raw) {
+  if (!raw) return '';
+  // Normalize literal \n sequences to actual newlines
+  var text = raw.replace(/\\n/g, '\n');
+
+  // Split by fenced code blocks first to protect them
+  var parts = text.split(/(```[\s\S]*?```)/);
+  var html = parts.map(function(part) {
+    // Fenced code block
+    if (part.indexOf('```') === 0 && part.lastIndexOf('```') > 2) {
+      var inner = part.slice(3, part.length - 3);
+      // Remove optional language hint on first line
+      var firstNL = inner.indexOf('\n');
+      if (firstNL !== -1 && firstNL < 20 && /^[a-z]*$/.test(inner.slice(0, firstNL).trim())) {
+        inner = inner.slice(firstNL + 1);
+      }
+      return '<code class="td-code-block">' + esc(inner) + '</code>';
+    }
+    // Regular text — process line by line
+    return part.split('\n').map(function(line) {
+      // Headings
+      if (/^#{1,4}\s/.test(line)) {
+        var level = line.match(/^(#+)/)[1].length;
+        var content = inlineFormat(line.replace(/^#+\s*/, ''));
+        return '<strong style="font-size:' + (16 - level) + 'px">' + content + '</strong>';
+      }
+      // Bullet list items
+      if (/^\s*[-*]\s/.test(line)) {
+        return '<span class="td-desc-bullet">•</span> ' + inlineFormat(line.replace(/^\s*[-*]\s/, ''));
+      }
+      // Regular line
+      return inlineFormat(line);
+    }).join('<br>');
+  }).join('');
+
+  return html;
+}
+
+/** Inline formatting: **bold**, *italic*, `code` */
+function inlineFormat(line) {
+  var s = esc(line);
+  // Bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic (single *)
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code style="background:var(--bg2);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+  return s;
+}
+function ago(iso) {
+  if (!iso) return '—';
+  var s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+var crossProjectEnabled = false;
+var crossProjectDepth = 1;
+
+async function fetchConfig() {
+  try {
+    var resp = await fetch('/api/td/config');
+    if (resp.ok) {
+      var data = await resp.json();
+      crossProjectEnabled = !!data.crossProjectEnabled;
+      crossProjectDepth = Number(data.crossProjectDepth) || 1;
+    } else {
+      crossProjectEnabled = false;
+    }
+  } catch(e) { crossProjectEnabled = false; }
+
+  var toggleWrap = document.getElementById('td-global-toggle-wrap');
+  if (toggleWrap) toggleWrap.style.display = crossProjectEnabled ? '' : 'none';
+  var toggle = document.getElementById('td-global-toggle');
+  if (toggle && !crossProjectEnabled) toggle.checked = false;
+}
+
+// ── Task UI ──────────────────────────────────────────────────────
+(function() {
+  var issues = [];
+  var globalMode = false;
+  var globalProjects = [];
+  var sortColumn = 'updated_at';
+  var sortDirection = 'desc';
+  var currentPage = 1;
+  var pageSize = 25;
+  var currentView = 'board';
+  var treeData = null; // cached tree response
+  var treeCollapsed = {}; // id -> bool
+  var BOARD_COLUMNS = ['open', 'in_progress', 'in_review', 'blocked', 'closed'];
+  var COLUMN_LABELS = { open: 'Open', in_progress: 'In Progress', in_review: 'In Review', blocked: 'Blocked', closed: 'Closed' };
+
+  function updateProjectFilter() {
+    var select = document.getElementById('td-filter-project');
+    var current = select.value;
+    var opts = '<option value="">All projects</option>';
+    globalProjects.forEach(function(p) {
+      opts += '<option value="' + esc(p) + '"' + (p === current ? ' selected' : '') + '>' + esc(p) + '</option>';
+    });
+    select.innerHTML = opts;
+  }
+
+  async function fetchIssues() {
+    globalMode = crossProjectEnabled && document.getElementById('td-global-toggle').checked;
+    var params = new URLSearchParams();
+    var type = document.getElementById('td-filter-type').value;
+    var priority = document.getElementById('td-filter-priority').value;
+    var showClosed = document.getElementById('td-show-closed').checked;
+    if (type) params.set('type', type);
+    if (priority) params.set('priority', priority);
+    if (showClosed) params.set('all', '1');
+
+    if (globalMode) {
+      var project = document.getElementById('td-filter-project').value;
+      if (project) params.set('project', project);
+      try {
+        var resp = await fetch('/api/td/global?' + params.toString());
+        if (!resp.ok) {
+          issues = [];
+          globalProjects = [];
+        } else {
+          var data = await resp.json();
+          issues = Array.isArray(data.issues) ? data.issues : [];
+          globalProjects = Array.isArray(data.projects) ? data.projects : [];
+        }
+        updateProjectFilter();
+      } catch(e) {
+        issues = [];
+        globalProjects = [];
+        updateProjectFilter();
+      }
+    } else {
+      try {
+        var resp = await fetch('/api/td?' + params.toString());
+        if (!resp.ok) {
+          issues = [];
+        } else {
+          var data = await resp.json();
+          issues = Array.isArray(data) ? data : [];
+        }
+      } catch(e) { issues = []; }
+      globalProjects = [];
+    }
+
+    // Show/hide project filter and project column
+    document.getElementById('td-filter-project').style.display = globalMode ? '' : 'none';
+    document.querySelectorAll('.td-col-project').forEach(function(el) {
+      el.style.display = globalMode ? '' : 'none';
+    });
+  }
+
+  async function fetchIssueDetail(id) {
+    try {
+      var resp = await fetch('/api/td/detail?id=' + encodeURIComponent(id));
+      return await resp.json();
+    } catch(e) { return null; }
+  }
+
+  window.tdUI = {
+    setView: function(view) {
+      currentView = view;
+      document.getElementById('td-view-board').classList.toggle('active', view === 'board');
+      document.getElementById('td-view-table').classList.toggle('active', view === 'table');
+      document.getElementById('td-view-tree').classList.toggle('active', view === 'tree');
+      document.getElementById('td-board').style.display = view === 'board' ? 'grid' : 'none';
+      document.getElementById('td-table').style.display = view === 'table' ? 'block' : 'none';
+      document.getElementById('td-tree').style.display = view === 'tree' ? 'block' : 'none';
+      if (view === 'tree' && !treeData) fetchTree();
+      else render();
+    },
+    reload: async function() {
+      await fetchIssues();
+      if (currentView === 'tree') { await fetchTree(); return; }
+      currentPage = 1;
+      render();
+    },
+    filterLocal: function() {
+      currentPage = 1;
+      render(); // tree view re-renders from treeData with new filters
+    },
+    sortBy: function(column) {
+      if (sortColumn === column) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortColumn = column;
+        sortDirection = column === 'updated_at' ? 'desc' : 'asc';
+      }
+      currentPage = 1;
+      render();
+    },
+    goToPage: function(page) {
+      currentPage = page;
+      render();
+    },
+    setPageSize: function(size) {
+      pageSize = size;
+      currentPage = 1;
+      render();
+    },
+    toggleTreeNode: function(id) {
+      treeCollapsed[id] = !treeCollapsed[id];
+      renderTree();
+    },
+    showDetail: async function(id, project) {
+      // Ensure tree data is loaded for dependency display
+      if (!treeData) {
+        try { var resp = await fetch('/api/td/tree'); treeData = await resp.json(); } catch(e) { treeData = { nodes: [], edges: [] }; }
+      }
+      if (globalMode && project) {
+        // In global mode, show read-only detail from cross-project data
+        var issue = issues.find(function(i) { return i.id === id && i.project === project; });
+        if (issue) renderDetail(issue, true);
+        return;
+      }
+      var detail = await fetchIssueDetail(id);
+      if (!detail) return;
+      renderDetail(detail, false);
+    },
+    closeDetail: function() {
+      document.getElementById('td-detail-overlay').classList.remove('open');
+    },
+    updateStatus: async function(id, newStatus) {
+      try {
+        await fetch('/api/td', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, status: newStatus })
+        });
+        tdUI.closeDetail();
+        await tdUI.reload();
+      } catch(e) {}
+    },
+    reviewIssue: async function(id, message) {
+      try {
+        var body = { id: id };
+        if (message) body.message = message;
+        await fetch('/api/td/review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        tdUI.closeDetail();
+        await tdUI.reload();
+      } catch(e) {}
+    },
+    submitReviewForm: function(id) {
+      var el = document.getElementById('td-review-message');
+      var message = el ? el.value.trim() : '';
+      tdUI.reviewIssue(id, message || undefined);
+    },
+    approveIssue: async function(id) {
+      try {
+        await fetch('/api/td/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id })
+        });
+        tdUI.closeDetail();
+        await tdUI.reload();
+      } catch(e) {}
+    },
+    rejectIssue: async function(id, reason) {
+      if (!reason) reason = prompt('Rejection reason:');
+      if (!reason) return;
+      try {
+        await fetch('/api/td/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, reason: reason })
+        });
+        tdUI.closeDetail();
+        await tdUI.reload();
+      } catch(e) {}
+    },
+    deleteIssue: async function(id) {
+      if (!confirm('Delete issue ' + id + '?')) return;
+      try {
+        await fetch('/api/td', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id })
+        });
+        tdUI.closeDetail();
+        await tdUI.reload();
+      } catch(e) {}
+    },
+    toggleAddLog: function() {
+      var form = document.getElementById('td-add-log-form');
+      if (form) {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        if (form.style.display === 'block') form.querySelector('textarea').focus();
+      }
+    },
+    submitLog: async function(id) {
+      var msgEl = document.getElementById('td-add-log-message');
+      var typeEl = document.getElementById('td-add-log-type');
+      var message = msgEl ? msgEl.value.trim() : '';
+      if (!message) return;
+      try {
+        var resp = await fetch('/api/td/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, message: message, type: typeEl ? typeEl.value : 'progress' })
+        });
+        if (resp.ok) {
+          // Re-fetch and re-render detail
+          var detail = await fetchIssueDetail(id);
+          if (detail) renderDetail(detail, false);
+        }
+      } catch(e) {}
+    }
+  };
+
+  function getFilteredIssues() {
+    var search = (document.getElementById('td-search').value || '').toLowerCase().trim();
+    if (!search) return issues;
+    return issues.filter(function(i) {
+      return i.title.toLowerCase().includes(search) ||
+             i.id.toLowerCase().includes(search) ||
+             (i.description || '').toLowerCase().includes(search) ||
+             (i.project || '').toLowerCase().includes(search) ||
+             (i.labels || []).some(function(l) { return l.toLowerCase().includes(search); });
+    });
+  }
+
+  // ── Tree view ──────────────────────────────────────────────
+
+  async function fetchTree() {
+    try {
+      var resp = await fetch('/api/td/tree');
+      treeData = await resp.json();
+    } catch(e) { treeData = { nodes: [], edges: [] }; }
+    render();
+  }
+
+  function renderTree() {
+    var el = document.getElementById('td-tree');
+    if (!treeData || !treeData.nodes.length) {
+      el.innerHTML = '<div class="td-empty"><p>No issues found</p></div>';
+      return;
+    }
+
+    var showClosed = document.getElementById('td-show-closed').checked;
+    var search = (document.getElementById('td-search').value || '').toLowerCase().trim();
+    var typeFilter = document.getElementById('td-filter-type').value;
+    var prioFilter = document.getElementById('td-filter-priority').value;
+
+    // Build lookup
+    var nodeMap = {};
+    treeData.nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+    // Filter nodes
+    var visibleIds = {};
+    treeData.nodes.forEach(function(n) {
+      if (!showClosed && n.status === 'closed') return;
+      if (typeFilter && n.type !== typeFilter) return;
+      if (prioFilter && n.priority !== prioFilter) return;
+      if (search) {
+        var match = n.title.toLowerCase().includes(search) ||
+          n.id.toLowerCase().includes(search) ||
+          (n.labels || []).some(function(l) { return l.toLowerCase().includes(search); });
+        if (!match) return;
+      }
+      visibleIds[n.id] = true;
+    });
+
+    // Also include ancestors so tree structure is intact
+    var ancestorsAdded = true;
+    while (ancestorsAdded) {
+      ancestorsAdded = false;
+      treeData.edges.forEach(function(e) {
+        if (visibleIds[e.target] && !visibleIds[e.source] && nodeMap[e.source]) {
+          if (showClosed || nodeMap[e.source].status !== 'closed') {
+            visibleIds[e.source] = true;
+            ancestorsAdded = true;
+          }
+        }
+      });
+    }
+
+    // Build children map from edges (source → targets)
+    var childrenOf = {};
+    var hasParent = {};
+    treeData.edges.forEach(function(e) {
+      if (!visibleIds[e.source] || !visibleIds[e.target]) return;
+      if (!childrenOf[e.source]) childrenOf[e.source] = [];
+      childrenOf[e.source].push({ id: e.target, type: e.type });
+      hasParent[e.target] = true;
+    });
+
+    // Sort children: P0 first, then by title
+    var PRI = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 };
+    Object.keys(childrenOf).forEach(function(k) {
+      childrenOf[k].sort(function(a, b) {
+        var na = nodeMap[a.id], nb = nodeMap[b.id];
+        if (!na || !nb) return 0;
+        var pa = PRI[na.priority] != null ? PRI[na.priority] : 9;
+        var pb = PRI[nb.priority] != null ? PRI[nb.priority] : 9;
+        if (pa !== pb) return pa - pb;
+        return na.title.localeCompare(nb.title);
+      });
+    });
+
+    // Find roots: visible nodes that aren't a target of any visible edge
+    var roots = [];
+    treeData.nodes.forEach(function(n) {
+      if (visibleIds[n.id] && !hasParent[n.id]) roots.push(n.id);
+    });
+    roots.sort(function(a, b) {
+      var na = nodeMap[a], nb = nodeMap[b];
+      var pa = PRI[na.priority] != null ? PRI[na.priority] : 9;
+      var pb = PRI[nb.priority] != null ? PRI[nb.priority] : 9;
+      if (pa !== pb) return pa - pb;
+      return na.title.localeCompare(nb.title);
+    });
+
+    // Count stats
+    var totalVisible = Object.keys(visibleIds).length;
+    var depEdges = treeData.edges.filter(function(e) { return e.type === 'depends_on' && visibleIds[e.source] && visibleIds[e.target]; }).length;
+    var orphans = roots.filter(function(id) { return !childrenOf[id] || childrenOf[id].length === 0; });
+
+    // Render
+    var rendered = {}; // track which nodes we've fully rendered (for diamond dep refs)
+
+    function renderNode(id, edgeType) {
+      var node = nodeMap[id];
+      if (!node) return '';
+
+      // Diamond dep: already rendered elsewhere — show reference
+      if (rendered[id]) {
+        return '<div class="td-tree-ref" onclick="tdUI.showDetail(\'' + esc(id) + '\')" title="Already shown above">' +
+          '<span class="td-tree-item-id">' + esc(id) + '</span> ' +
+          esc(node.title.length > 50 ? node.title.substring(0, 50) + '…' : node.title) +
+          '</div>';
+      }
+      rendered[id] = true;
+
+      var children = childrenOf[id] || [];
+      var hasChildren = children.length > 0;
+      var collapsed = treeCollapsed[id];
+
+      var toggleIcon = hasChildren
+        ? (collapsed ? '▶' : '▼')
+        : '';
+      var toggleClass = hasChildren ? '' : ' leaf';
+      var toggleAttr = hasChildren ? ' onclick="event.stopPropagation(); tdUI.toggleTreeNode(\'' + esc(id) + '\')"' : '';
+
+      var labels = (node.labels || []).map(function(l) {
+        return '<span class="td-label">' + esc(l) + '</span>';
+      }).join('');
+
+      var edgeBadge = edgeType
+        ? '<span class="td-tree-edge-badge ' + esc(edgeType) + '">' + (edgeType === 'depends_on' ? 'dep' : 'child') + '</span>'
+        : '';
+
+      var html = '<div class="td-tree-node">';
+      html += '<div class="td-tree-item" onclick="tdUI.showDetail(\'' + esc(id) + '\')">';
+      html += '<span class="td-tree-toggle' + toggleClass + '"' + toggleAttr + '>' + toggleIcon + '</span>';
+      html += '<span class="td-tree-item-id">' + esc(id) + '</span>';
+      html += '<span class="td-priority ' + esc(node.priority) + '">' + esc(node.priority) + '</span>';
+      html += '<span class="td-status ' + esc(node.status) + '">' + esc(COLUMN_LABELS[node.status] || node.status) + '</span>';
+      html += edgeBadge;
+      html += '<span class="td-tree-item-title">' + esc(node.title) + '</span>';
+      html += labels;
+      html += '</div>';
+
+      if (hasChildren && !collapsed) {
+        html += '<div class="td-tree-children">';
+        children.forEach(function(child) {
+          html += renderNode(child.id, child.type);
+        });
+        html += '</div>';
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    var statsHtml = '<div class="td-tree-stats">' +
+      '<span>🌳 ' + roots.length + ' root' + (roots.length !== 1 ? 's' : '') + '</span>' +
+      '<span>📋 ' + totalVisible + ' issue' + (totalVisible !== 1 ? 's' : '') + '</span>' +
+      '<span>🔗 ' + depEdges + ' dependenc' + (depEdges !== 1 ? 'ies' : 'y') + '</span>' +
+      (orphans.length > 0 ? '<span style="color:var(--fg3)">(' + orphans.length + ' standalone)</span>' : '') +
+      '<div style="flex:1"></div>' +
+      '<div class="td-tree-legend">' +
+        '<span class="td-tree-legend-item"><span class="td-tree-edge-badge depends_on">dep</span> depends on</span>' +
+        '<span class="td-tree-legend-item"><span class="td-tree-edge-badge parent_child">child</span> epic child</span>' +
+      '</div>' +
+      '</div>';
+
+    var treeHtml = '';
+    roots.forEach(function(id) {
+      treeHtml += renderNode(id, null);
+    });
+
+    el.innerHTML = statsHtml + (treeHtml || '<div class="td-empty"><p>No dependency relationships found</p><p>Use <code>td dep add</code> to link issues</p></div>');
+  }
+
+  // ── Main render ───────────────────────────────────────────────
+
+  function render() {
+    var filtered = getFilteredIssues();
+    if (currentView === 'tree') { renderTree(); return; }
+    if (currentView === 'board') renderBoard(filtered);
+    else renderTable(filtered);
+    updateSortIcons();
+  }
+
+  function updateSortIcons() {
+    document.querySelectorAll('.td-sort-icon').forEach(function(el) {
+      var col = el.getAttribute('data-col');
+      if (col === sortColumn) {
+        el.textContent = sortDirection === 'asc' ? '▲' : '▼';
+        el.classList.add('active');
+      } else {
+        el.textContent = '';
+        el.classList.remove('active');
+      }
+    });
+  }
+
+  var PRIORITY_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 };
+  var STATUS_ORDER = { open: 0, in_progress: 1, in_review: 2, blocked: 3, closed: 4 };
+
+  function sortItems(items) {
+    return items.slice().sort(function(a, b) {
+      var va, vb;
+      if (sortColumn === 'priority') {
+        va = PRIORITY_ORDER[a.priority] != null ? PRIORITY_ORDER[a.priority] : 9;
+        vb = PRIORITY_ORDER[b.priority] != null ? PRIORITY_ORDER[b.priority] : 9;
+      } else if (sortColumn === 'status') {
+        va = STATUS_ORDER[a.status] != null ? STATUS_ORDER[a.status] : 9;
+        vb = STATUS_ORDER[b.status] != null ? STATUS_ORDER[b.status] : 9;
+      } else if (sortColumn === 'updated_at') {
+        va = a.updated_at || '';
+        vb = b.updated_at || '';
+      } else {
+        va = (a[sortColumn] || '').toString().toLowerCase();
+        vb = (b[sortColumn] || '').toString().toLowerCase();
+      }
+      var cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  function renderBoard(items) {
+    var el = document.getElementById('td-board');
+    var showClosed = document.getElementById('td-show-closed').checked;
+    var columns = showClosed ? BOARD_COLUMNS : BOARD_COLUMNS.filter(function(c) { return c !== 'closed'; });
+
+    if (items.length === 0) {
+      el.innerHTML = '<div class="td-empty"><p>No issues found</p><p>Create one with the + button above</p></div>';
+      return;
+    }
+
+    el.innerHTML = columns.map(function(status) {
+      var colItems = items.filter(function(i) { return i.status === status; });
+      return '<div class="td-column">' +
+        '<div class="td-column-header">' + esc(COLUMN_LABELS[status] || status) +
+        ' <span class="td-column-count">' + colItems.length + '</span></div>' +
+        (colItems.length === 0 ? '<div style="color:var(--fg3);font-size:12px;text-align:center;padding:20px 0;">—</div>' :
+        colItems.map(function(i) { return renderCard(i); }).join('')) +
+        '</div>';
+    }).join('');
+  }
+
+  function renderCard(issue) {
+    var labels = (issue.labels || []).map(function(l) {
+      return '<span class="td-label">' + esc(l) + '</span>';
+    }).join('');
+
+    var badges = '';
+    if (globalMode && issue.project) badges += '<span class="td-badge td-badge-project" title="Project: ' + esc(issue.project) + '">📂 ' + esc(issue.project) + '</span>';
+    if (issue.log_count) badges += '<span class="td-badge td-badge-log" title="' + issue.log_count + ' log entries">📝 ' + issue.log_count + '</span>';
+    if (issue.has_handoff) badges += '<span class="td-badge td-badge-handoff" title="Has handoff">🤝</span>';
+
+    var lastLog = '';
+    if (issue.last_log) {
+      lastLog = '<div class="td-card-last-log">' + esc(issue.last_log.message.substring(0, 80)) + (issue.last_log.message.length > 80 ? '…' : '') + '</div>';
+    }
+
+    var onclick = globalMode && issue.project
+      ? 'tdUI.showDetail(\'' + esc(issue.id) + '\',\'' + esc(issue.project) + '\')'
+      : 'tdUI.showDetail(\'' + esc(issue.id) + '\')';
+
+    return '<div class="td-card" onclick="' + onclick + '">' +
+      '<div class="td-card-title">' + esc(issue.title) + '</div>' +
+      '<div class="td-card-meta">' +
+        '<span class="td-card-id">' + esc(issue.id) + '</span>' +
+        '<span class="td-priority ' + esc(issue.priority) + '">' + esc(issue.priority) + '</span>' +
+        '<span class="td-type ' + esc(issue.type) + '">' + esc(issue.type) + '</span>' +
+        labels +
+        badges +
+      '</div>' +
+      lastLog +
+      '</div>';
+  }
+
+  function renderTable(items) {
+    var el = document.getElementById('td-table-body');
+    items = sortItems(items);
+    var totalItems = items.length;
+
+    if (totalItems === 0) {
+      el.innerHTML = '<tr><td colspan="' + (globalMode ? 9 : 8) + '" style="color:var(--fg3);text-align:center;padding:24px">No issues found</td></tr>';
+      renderPagination(0);
+      return;
+    }
+
+    var totalPages = Math.ceil(totalItems / pageSize);
+    if (currentPage > totalPages) currentPage = totalPages;
+    var start = (currentPage - 1) * pageSize;
+    var pageItems = items.slice(start, start + pageSize);
+
+    el.innerHTML = pageItems.map(function(i) {
+      var labels = (i.labels || []).map(function(l) {
+        return '<span class="td-label">' + esc(l) + '</span>';
+      }).join('');
+
+      var activity = '';
+      if (i.log_count) activity += '<span class="td-badge td-badge-log">📝 ' + i.log_count + '</span>';
+      if (i.has_handoff) activity += '<span class="td-badge td-badge-handoff">🤝</span>';
+
+      var projectCol = globalMode ? '<td><span class="td-badge td-badge-project">' + esc(i.project || '') + '</span></td>' : '';
+      var onclick = globalMode && i.project
+        ? 'tdUI.showDetail(\'' + esc(i.id) + '\',\'' + esc(i.project) + '\')'
+        : 'tdUI.showDetail(\'' + esc(i.id) + '\')';
+
+      return '<tr>' +
+        projectCol +
+        '<td><span class="td-id" onclick="' + onclick + '">' + esc(i.id) + '</span></td>' +
+        '<td><span class="td-priority ' + esc(i.priority) + '">' + esc(i.priority) + '</span></td>' +
+        '<td><span class="td-type ' + esc(i.type) + '">' + esc(i.type) + '</span></td>' +
+        '<td><span class="td-title">' + esc(i.title) + '</span></td>' +
+        '<td><span class="td-status ' + esc(i.status) + '">' + esc(COLUMN_LABELS[i.status] || i.status) + '</span></td>' +
+        '<td>' + labels + '</td>' +
+        '<td>' + (activity || '<span style="color:var(--fg3)">—</span>') + '</td>' +
+        '<td>' + ago(i.updated_at) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    renderPagination(totalItems);
+  }
+
+  function renderPagination(totalItems) {
+    var pag = document.getElementById('td-pagination');
+    if (!pag) return;
+    if (totalItems <= pageSize) {
+      pag.innerHTML = totalItems > 0 ? '<span class="td-pag-info">' + totalItems + ' issue' + (totalItems !== 1 ? 's' : '') + '</span>' : '';
+      return;
+    }
+    var totalPages = Math.ceil(totalItems / pageSize);
+    var start = (currentPage - 1) * pageSize + 1;
+    var end = Math.min(currentPage * pageSize, totalItems);
+
+    var buttons = '';
+    buttons += '<button class="td-pag-btn" ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="tdUI.goToPage(1)" title="First">«</button>';
+    buttons += '<button class="td-pag-btn" ' + (currentPage <= 1 ? 'disabled' : '') + ' onclick="tdUI.goToPage(' + (currentPage - 1) + ')" title="Previous">‹</button>';
+
+    var startPage = Math.max(1, currentPage - 2);
+    var endPage = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+
+    for (var p = startPage; p <= endPage; p++) {
+      buttons += '<button class="td-pag-btn' + (p === currentPage ? ' active' : '') + '" onclick="tdUI.goToPage(' + p + ')">' + p + '</button>';
+    }
+
+    buttons += '<button class="td-pag-btn" ' + (currentPage >= totalPages ? 'disabled' : '') + ' onclick="tdUI.goToPage(' + (currentPage + 1) + ')" title="Next">›</button>';
+    buttons += '<button class="td-pag-btn" ' + (currentPage >= totalPages ? 'disabled' : '') + ' onclick="tdUI.goToPage(' + totalPages + ')" title="Last">»</button>';
+
+    pag.innerHTML =
+      '<span class="td-pag-info">' + start + '–' + end + ' of ' + totalItems + '</span>' +
+      '<div class="td-pag-buttons">' + buttons + '</div>' +
+      '<select class="td-pag-size" onchange="tdUI.setPageSize(Number(this.value))">' +
+        [10, 25, 50, 100].map(function(n) {
+          return '<option value="' + n + '"' + (n === pageSize ? ' selected' : '') + '>' + n + ' / page</option>';
+        }).join('') +
+      '</select>';
+  }
+
+  function buildDepHtml(issueId) {
+    if (!treeData || !treeData.edges.length) return '';
+    var nodeMap = {};
+    treeData.nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+    // Upstream: issues that this issue depends on (where this issue is the target)
+    var upstream = [];
+    // Downstream: issues that depend on this issue (where this issue is the source)
+    var downstream = [];
+
+    treeData.edges.forEach(function(e) {
+      if (e.target === issueId && nodeMap[e.source]) {
+        upstream.push({ node: nodeMap[e.source], type: e.type });
+      }
+      if (e.source === issueId && nodeMap[e.target]) {
+        downstream.push({ node: nodeMap[e.target], type: e.type });
+      }
+    });
+
+    if (!upstream.length && !downstream.length) return '';
+
+    function depItem(node, edgeType) {
+      var badge = '<span class="td-tree-edge-badge ' + esc(edgeType) + '">' + (edgeType === 'depends_on' ? 'dep' : 'child') + '</span>';
+      return '<div class="td-dep-item" onclick="tdUI.showDetail(\'' + esc(node.id) + '\')">' +
+        '<span class="td-tree-item-id">' + esc(node.id) + '</span>' +
+        '<span class="td-priority ' + esc(node.priority) + '">' + esc(node.priority) + '</span>' +
+        '<span class="td-status ' + esc(node.status) + '">' + esc(COLUMN_LABELS[node.status] || node.status) + '</span>' +
+        badge +
+        '<span class="td-dep-title">' + esc(node.title) + '</span>' +
+        '</div>';
+    }
+
+    var html = '<div class="td-detail-section"><h4>🔗 Dependencies</h4><div class="td-detail-deps">';
+
+    if (upstream.length) {
+      html += '<div class="td-detail-deps-col"><h5>⬆ Depends on (' + upstream.length + ')</h5>';
+      upstream.forEach(function(d) { html += depItem(d.node, d.type); });
+      html += '</div>';
+    }
+
+    if (downstream.length) {
+      html += '<div class="td-detail-deps-col"><h5>⬇ Depended on by (' + downstream.length + ')</h5>';
+      downstream.forEach(function(d) { html += depItem(d.node, d.type); });
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function renderDetail(issue, readOnly) {
+    var panel = document.getElementById('td-detail-panel');
+    var id = issue.id;
+    var labels = (issue.labels || []).map(function(l) {
+      return '<span class="td-label">' + esc(l) + '</span>';
+    }).join('') || '<span style="color:var(--fg3)">none</span>';
+
+    // Context-aware action buttons based on current status
+    var statusButtons = '';
+    if (readOnly) {
+      statusButtons = '<span style="color:var(--fg3);font-size:12px;">Read-only (cross-project view)</span>';
+    } else if (issue.status === 'in_review') {
+      statusButtons =
+        '<button class="btn-approve" onclick="tdUI.approveIssue(\'' + esc(id) + '\')">✓ Approve</button>' +
+        '<button class="btn-reject" onclick="tdUI.rejectIssue(\'' + esc(id) + '\')">✗ Reject</button>';
+    } else if (issue.status === 'in_progress') {
+      statusButtons =
+        '<div class="td-review-form">' +
+          '<textarea id="td-review-message" placeholder="Handoff message (optional)..." rows="3"></textarea>' +
+          '<button class="btn-review" onclick="tdUI.submitReviewForm(\'' + esc(id) + '\')">Submit for Review</button>' +
+        '</div>' +
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'blocked\')">Blocked</button>' +
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'open\')">Back to Open</button>';
+    } else if (issue.status === 'open') {
+      statusButtons =
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'in_progress\')">Start</button>' +
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'blocked\')">Blocked</button>';
+    } else if (issue.status === 'blocked') {
+      statusButtons =
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'open\')">Unblock</button>' +
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'in_progress\')">Resume</button>';
+    } else if (issue.status === 'closed') {
+      statusButtons =
+        '<button onclick="tdUI.updateStatus(\'' + esc(id) + '\', \'open\')">Reopen</button>';
+    }
+
+    // Handoff section
+    var handoffHtml = '';
+    if (issue.handoff) {
+      var h = issue.handoff;
+      var parts = [];
+      if (h.done && h.done.length) {
+        parts.push('<div class="td-handoff-group"><strong class="td-handoff-label td-handoff-done">✓ Done</strong><ul>' +
+          h.done.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul></div>');
+      }
+      if (h.remaining && h.remaining.length) {
+        parts.push('<div class="td-handoff-group"><strong class="td-handoff-label td-handoff-remaining">⏳ Remaining</strong><ul>' +
+          h.remaining.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul></div>');
+      }
+      if (h.decisions && h.decisions.length) {
+        parts.push('<div class="td-handoff-group"><strong class="td-handoff-label td-handoff-decisions">📋 Decisions</strong><ul>' +
+          h.decisions.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul></div>');
+      }
+      if (h.uncertain && h.uncertain.length) {
+        parts.push('<div class="td-handoff-group"><strong class="td-handoff-label td-handoff-uncertain">❓ Uncertain</strong><ul>' +
+          h.uncertain.map(function(d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul></div>');
+      }
+      if (parts.length) {
+        var handoffMeta = h.session ? '<span class="td-handoff-meta">Session: ' + esc(h.session) + (h.timestamp ? ' · ' + ago(h.timestamp) : '') + '</span>' : '';
+        handoffHtml = '<div class="td-detail-section"><h4>🤝 Handoff</h4>' + handoffMeta + parts.join('') + '</div>';
+      }
+    }
+
+    // Activity log section
+    var logsHtml = '';
+    if (issue.logs && issue.logs.length) {
+      var logItems = issue.logs.map(function(l) {
+        var typeClass = 'td-log-' + (l.type || 'progress');
+        var typeLabel = (l.type || 'progress').charAt(0).toUpperCase() + (l.type || 'progress').slice(1);
+        return '<div class="td-log-entry ' + typeClass + '">' +
+          '<span class="td-log-type">' + esc(typeLabel) + '</span>' +
+          '<span class="td-log-message">' + esc(l.message) + '</span>' +
+          '<span class="td-log-time">' + ago(l.timestamp) + '</span>' +
+        '</div>';
+      });
+      logsHtml = '<div class="td-detail-section"><h4>📝 Activity Log (' + issue.logs.length + ')</h4><div class="td-logs">' + logItems.join('') + '</div></div>';
+    }
+
+    // Add activity form (only in non-read-only mode)
+    var addLogHtml = '';
+    if (!readOnly) {
+      addLogHtml = '<div class="td-detail-section">' +
+        '<button class="td-add-log-toggle" onclick="tdUI.toggleAddLog()">+ Add Activity</button>' +
+        '<div id="td-add-log-form" class="td-add-log-form" style="display:none;">' +
+          '<textarea id="td-add-log-message" placeholder="What happened?"></textarea>' +
+          '<div class="td-add-log-row">' +
+            '<select id="td-add-log-type">' +
+              '<option value="progress">Progress</option>' +
+              '<option value="decision">Decision</option>' +
+              '<option value="blocker">Blocker</option>' +
+              '<option value="hypothesis">Hypothesis</option>' +
+              '<option value="tried">Tried</option>' +
+              '<option value="result">Result</option>' +
+            '</select>' +
+            '<button onclick="tdUI.submitLog(\'' + esc(id) + '\')">Add</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    // Git state section
+    var gitHtml = '';
+    if (issue.git) {
+      var g = issue.git;
+      var gitParts = [];
+      if (g.start_branch) gitParts.push('Started on <code>' + esc(g.start_branch) + '</code>');
+      if (g.current_branch && g.current_branch !== g.start_branch) gitParts.push('Current: <code>' + esc(g.current_branch) + '</code>');
+      if (g.start_commit) gitParts.push('Start: <code>' + esc(g.start_commit.substring(0, 7)) + '</code>');
+      if (g.current_commit) gitParts.push('Head: <code>' + esc(g.current_commit.substring(0, 7)) + '</code>');
+      if (g.commits_since_start) gitParts.push('+' + g.commits_since_start + ' commits');
+      if (g.files_changed) gitParts.push(g.files_changed + ' files changed');
+      if (g.additions || g.deletions) gitParts.push('<span style="color:#4ade80">+' + (g.additions || 0) + '</span> <span style="color:#f87171">-' + (g.deletions || 0) + '</span>');
+      if (gitParts.length) {
+        gitHtml = '<div class="td-detail-section"><h4>Git State</h4><div class="td-git-state">' + gitParts.join(' · ') + '</div></div>';
+      }
+    }
+
+    // Sessions section
+    var sessionsHtml = '';
+    if (issue.sessions && issue.sessions.length) {
+      var tags = issue.sessions.map(function(s) {
+        var label = esc(s.session_id);
+        if (s.role) label += ' (' + esc(s.role) + ')';
+        return '<span class="td-session-tag">' + label + '</span>';
+      });
+      sessionsHtml = '<div class="td-detail-section"><h4>Sessions</h4><div class="td-sessions">' + tags.join('') + '</div></div>';
+    }
+
+    panel.innerHTML =
+      '<h3>' + esc(issue.title) + '</h3>' +
+      (issue.project ? '<div style="margin:-8px 0 8px;"><span class="td-badge td-badge-project">📂 ' + esc(issue.project) + '</span></div>' : '') +
+      '<div class="td-detail-meta">' +
+        '<span class="td-card-id">' + esc(issue.id) + '</span>' +
+        '<span class="td-status ' + esc(issue.status) + '">' + esc(COLUMN_LABELS[issue.status] || issue.status) + '</span>' +
+        '<span class="td-priority ' + esc(issue.priority) + '">' + esc(issue.priority) + '</span>' +
+        '<span class="td-type ' + esc(issue.type) + '">' + esc(issue.type) + '</span>' +
+        (issue.points ? '<span style="color:var(--fg3);font-size:11px">' + issue.points + ' pts</span>' : '') +
+      '</div>' +
+      (issue.description ? '<div class="td-detail-section"><h4>Description</h4><div class="td-desc">' + formatDesc(issue.description) + '</div></div>' : '') +
+      (issue.acceptance ? '<div class="td-detail-section"><h4>Acceptance Criteria</h4><div class="td-desc">' + formatDesc(issue.acceptance) + '</div></div>' : '') +
+      buildDepHtml(issue.id) +
+      handoffHtml +
+      logsHtml +
+      addLogHtml +
+      gitHtml +
+      sessionsHtml +
+      '<div class="td-detail-section"><h4>Labels</h4><p>' + labels + '</p></div>' +
+      '<div class="td-detail-section"><h4>Details</h4><p>' +
+        'Created: ' + ago(issue.created_at) + '<br>' +
+        'Updated: ' + ago(issue.updated_at) +
+        (issue.parent_id ? '<br>Parent: <span class="td-id" onclick="tdUI.showDetail(\'' + esc(issue.parent_id) + '\')">' + esc(issue.parent_id) + '</span>' : '') +
+        (issue.implementer_session ? '<br>Implementer: ' + esc(issue.implementer_session) : '') +
+      '</p></div>' +
+      (statusButtons ? '<div class="td-detail-section"><h4>Actions</h4><div class="td-detail-actions">' + statusButtons + '</div></div>' : '') +
+      '<div class="td-detail-actions">' +
+        (readOnly ? '' : '<button style="color:var(--red);border-color:var(--red);" onclick="tdUI.deleteIssue(\'' + esc(issue.id) + '\')">Delete</button>') +
+        '<button class="btn-close-detail" onclick="tdUI.closeDetail()">Close</button>' +
+      '</div>';
+
+    document.getElementById('td-detail-overlay').classList.add('open');
+  }
+
+  document.getElementById('td-detail-overlay').addEventListener('click', function(e) {
+    if (e.target === this) tdUI.closeDetail();
+  });
+
+  // ── Create modal ──────────────────────────────────────
+
+  window.tdModal = {
+    open: function() {
+      document.getElementById('td-modal-title').textContent = 'New Issue';
+      document.getElementById('td-f-title').value = '';
+      document.getElementById('td-f-desc').value = '';
+      document.getElementById('td-f-type').value = 'task';
+      document.getElementById('td-f-priority').value = 'P2';
+      document.getElementById('td-f-labels').value = '';
+      document.getElementById('td-f-parent').value = '';
+      document.getElementById('td-f-error').style.display = 'none';
+      document.getElementById('td-modal-overlay').classList.add('open');
+    },
+    close: function() {
+      document.getElementById('td-modal-overlay').classList.remove('open');
+    },
+    save: async function() {
+      var title = document.getElementById('td-f-title').value.trim();
+      var errEl = document.getElementById('td-f-error');
+      if (!title) {
+        errEl.textContent = 'Title is required.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      var body = {
+        title: title,
+        description: document.getElementById('td-f-desc').value.trim() || undefined,
+        type: document.getElementById('td-f-type').value,
+        priority: document.getElementById('td-f-priority').value,
+        labels: document.getElementById('td-f-labels').value.trim() || undefined,
+        parent: document.getElementById('td-f-parent').value.trim() || undefined
+      };
+
+      try {
+        var resp = await fetch('/api/td', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+          errEl.textContent = data.error || 'Request failed';
+          errEl.style.display = 'block';
+          return;
+        }
+        tdModal.close();
+        await tdUI.reload();
+      } catch(e) {
+        errEl.textContent = 'Network error: ' + e.message;
+        errEl.style.display = 'block';
+      }
+    }
+  };
+
+  document.getElementById('td-modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) tdModal.close();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      if (document.getElementById('td-detail-overlay').classList.contains('open')) tdUI.closeDetail();
+      else if (document.getElementById('td-modal-overlay').classList.contains('open')) tdModal.close();
+    }
+  });
+
+  // Initial load + auto-refresh
+  async function loadTd() {
+    await fetchConfig();
+    await fetchIssues();
+    if (currentView === 'tree') await fetchTree();
+    else render();
+  }
+  loadTd();
+  setInterval(loadTd, 30000);
+})();
+</script>
+</body>
+</html>

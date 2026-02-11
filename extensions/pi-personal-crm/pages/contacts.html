@@ -1,0 +1,730 @@
+<!-- ══════════ CONTACTS PAGE ══════════ -->
+<div id="page-contacts" class="page">
+  <div class="toolbar">
+    <h1>📇 Contacts</h1>
+    <input type="text" id="search" class="search-box" placeholder="Search contacts...">
+    <div style="flex: 1"></div>
+    <button class="btn" onclick="exportCsv()">⬇ Export</button>
+    <button class="btn" onclick="document.getElementById('csvFileInput').click()">⬆ Import</button>
+    <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importCsv(event)">
+    <button class="btn btn-primary" onclick="showAddContactModal()">+ New Contact</button>
+  </div>
+
+  <div class="split-view">
+    <div>
+      <div class="contact-list" id="contactList">
+        <div class="empty-state">
+          <p>No contacts yet</p>
+          <p style="margin-top: 8px; font-size: 12px;">Click "+ New Contact" to get started</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="detail-panel" id="detailPanel">
+        <div class="empty-state">
+          <p>Select a contact to view details</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Contact Modal -->
+<div class="modal" id="contactModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title" id="contactModalTitle">New Contact</h2>
+      <button class="modal-close" onclick="closeModal('contactModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="contactForm" onsubmit="saveContact(event)">
+        <input type="hidden" id="contactId">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">First Name *</label>
+            <input type="text" id="firstName" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name</label>
+            <input type="text" id="lastName" class="form-input">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="email" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" id="phone" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company</label>
+          <input type="text" id="companyName" class="form-input" list="companies">
+          <datalist id="companies"></datalist>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Birthday</label>
+            <input type="date" id="birthday" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Anniversary</label>
+            <input type="date" id="anniversary" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags (comma-separated)</label>
+          <input type="text" id="tags" class="form-input" placeholder="client, vip, developer">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="notes" class="form-textarea"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('contactModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('contactForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Interaction Modal (contact detail) -->
+<div class="modal" id="interactionModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Log Interaction</h2>
+      <button class="modal-close" onclick="closeModal('interactionModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="interactionForm" onsubmit="saveInteraction(event)">
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select id="interactionType" class="form-select" required>
+            <option value="call">📞 Call</option>
+            <option value="meeting">🤝 Meeting</option>
+            <option value="email">📧 Email</option>
+            <option value="note">📝 Note</option>
+            <option value="gift">🎁 Gift</option>
+            <option value="message">💬 Message</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Summary *</label>
+          <input type="text" id="interactionSummary" class="form-input" required placeholder="Brief description">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="interactionNotes" class="form-textarea"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date & Time</label>
+          <input type="datetime-local" id="happenedAt" class="form-input">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('interactionModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('interactionForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Reminder Modal (contact detail) -->
+<div class="modal" id="reminderModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Reminder</h2>
+      <button class="modal-close" onclick="closeModal('reminderModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="reminderForm" onsubmit="saveReminder(event)">
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select id="reminderType" class="form-select" required>
+            <option value="birthday">🎂 Birthday</option>
+            <option value="anniversary">💍 Anniversary</option>
+            <option value="custom">📌 Custom</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date *</label>
+          <input type="date" id="reminderDate" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <input type="text" id="reminderMessage" class="form-input" placeholder="Optional reminder message">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('reminderModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('reminderForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Relationship Modal -->
+<div class="modal" id="relationshipModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Relationship</h2>
+      <button class="modal-close" onclick="closeModal('relationshipModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="relationshipForm" onsubmit="saveRelationship(event)">
+        <div class="form-group">
+          <label class="form-label">Related Contact *</label>
+          <select id="relatedContactId" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Relationship Type *</label>
+          <input type="text" id="relationshipType" class="form-input" required placeholder="spouse, colleague, friend, parent, child..." list="relTypes">
+          <datalist id="relTypes">
+            <option value="spouse">
+            <option value="partner">
+            <option value="parent">
+            <option value="child">
+            <option value="sibling">
+            <option value="colleague">
+            <option value="friend">
+            <option value="manager">
+            <option value="mentor">
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <input type="text" id="relationshipNotes" class="form-input" placeholder="Optional notes">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('relationshipModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('relationshipForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group Management Modal (contact detail) -->
+<div class="modal" id="groupModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Manage Groups</h2>
+      <button class="modal-close" onclick="closeModal('groupModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="groupList" style="margin-bottom: 16px;"></div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="newGroupName" class="form-input" placeholder="New group name..." style="flex: 1;">
+        <button class="btn btn-primary" onclick="addToNewGroup()">+ Add</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('groupModal')">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Contacts Page ─────────────────────────────────────────────
+
+  async function loadContacts() {
+    try {
+      allContacts = await (await fetch('api/crm/contacts?limit=1000')).json();
+      renderContacts(allContacts);
+      if (allContacts.length > 0 && !currentContactId) {
+        selectContact(allContacts[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load contacts:', err);
+    }
+  }
+
+  function filterContacts(query) {
+    if (!query) { renderContacts(allContacts); return; }
+    const filtered = allContacts.filter(c =>
+      c.first_name.toLowerCase().includes(query) ||
+      (c.last_name && c.last_name.toLowerCase().includes(query)) ||
+      (c.email && c.email.toLowerCase().includes(query)) ||
+      (c.company_name && c.company_name.toLowerCase().includes(query)) ||
+      (c.tags && c.tags.toLowerCase().includes(query))
+    );
+    renderContacts(filtered);
+  }
+
+  function renderContacts(contacts) {
+    const list = document.getElementById('contactList');
+    if (contacts.length === 0) {
+      list.innerHTML = '<div class="empty-state"><p>No contacts found</p></div>';
+      return;
+    }
+    list.innerHTML = contacts.map(c => `
+      <div class="contact-item ${c.id === currentContactId ? 'active' : ''}" onclick="selectContact(${c.id})">
+        <div class="contact-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
+        <div class="contact-meta">
+          ${c.email ? `<span>📧 ${esc(c.email)}</span>` : ''}
+          ${c.company_name ? `<span class="contact-company">@ ${esc(c.company_name)}</span>` : ''}
+        </div>
+        ${c.tags ? `<div class="contact-tags">${c.tags.split(',').map(t => `<span class="tag">${esc(t.trim())}</span>`).join('')}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function selectContact(id) {
+    currentContactId = id;
+    // If called from another page, switch to contacts
+    if (currentPage !== 'contacts') navigateTo('contacts');
+    renderContacts(allContacts);
+    await loadContactDetail(id);
+  }
+
+  async function loadContactDetail(id) {
+    try {
+      const data = await (await fetch(`api/crm/contacts/${id}`)).json();
+      renderContactDetail(data);
+    } catch (err) {
+      console.error('Failed to load contact detail:', err);
+    }
+  }
+
+  function renderContactDetail(data) {
+    const { contact, interactions, reminders, relationships, groups, extensionFields } = data;
+    const initials = `${contact.first_name.charAt(0)}${(contact.last_name || '').charAt(0)}`.toUpperCase();
+
+    const panel = document.getElementById('detailPanel');
+    panel.innerHTML = `
+      <div class="detail-header">
+        <div style="flex: 1;">
+          <div class="contact-avatar">${esc(initials)}</div>
+          <div class="detail-name">${esc(contact.first_name)} ${esc(contact.last_name)}</div>
+          ${contact.company_name ? `<div class="detail-company">@ ${esc(contact.company_name)}</div>` : ''}
+          ${contact.tags ? `<div class="contact-tags">${contact.tags.split(',').map(t => `<span class="tag">${esc(t.trim())}</span>`).join('')}</div>` : ''}
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn-sm" onclick="showEditContactModal(${contact.id})">✏️ Edit</button>
+          <button class="btn btn-sm" onclick="showInteractionModal()">+ Interaction</button>
+          <button class="btn btn-sm" onclick="showReminderModal()">+ Reminder</button>
+          <button class="btn btn-sm" onclick="showRelationshipModal()">+ Relationship</button>
+          <button class="btn btn-sm" onclick="showGroupModal()">📂 Groups</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteContact(${contact.id})">🗑️</button>
+        </div>
+      </div>
+
+      ${contact.email || contact.phone || contact.birthday || contact.anniversary ? `
+      <div class="section">
+        ${contact.email ? `<div class="detail-field"><span class="detail-field-icon">📧</span> ${esc(contact.email)}</div>` : ''}
+        ${contact.phone ? `<div class="detail-field"><span class="detail-field-icon">📞</span> ${esc(contact.phone)}</div>` : ''}
+        ${contact.birthday ? `<div class="detail-field"><span class="detail-field-icon">🎂</span> Birthday: ${esc(contact.birthday)}</div>` : ''}
+        ${contact.anniversary ? `<div class="detail-field"><span class="detail-field-icon">💍</span> Anniversary: ${esc(contact.anniversary)}</div>` : ''}
+      </div>
+      ` : ''}
+
+      ${contact.notes ? `
+      <div class="section">
+        <div class="section-title">Notes</div>
+        <div style="font-size: 13px; color: var(--fg2);">${esc(contact.notes).replace(/\n/g, '<br>')}</div>
+      </div>
+      ` : ''}
+
+      ${reminders.length > 0 ? `
+      <div class="section">
+        <div class="section-title">Reminders</div>
+        <div class="rem-list">
+          ${reminders.map(r => `
+            <div class="rem-item">
+              <div>
+                <div class="rem-type">${esc(r.reminder_type)}</div>
+                <div>${esc(r.reminder_date)}${r.message ? ` — ${esc(r.message)}` : ''}</div>
+              </div>
+              <button class="delete-icon" onclick="deleteReminder(${r.id})" title="Delete reminder">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      ${relationships.length > 0 ? `
+      <div class="section">
+        <div class="section-title">Relationships</div>
+        <div class="rel-list">
+          ${relationships.map(r => `
+            <div class="rel-item">
+              <div onclick="selectContact(${r.related_contact_id})" style="cursor: pointer;">
+                <div class="rel-type">${esc(r.relationship_type)}</div>
+                <div class="rel-name">${esc(r.first_name)} ${esc(r.last_name)}</div>
+              </div>
+              <button class="delete-icon" onclick="deleteRelationship(${r.id})" title="Delete relationship">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      ${groups && groups.length > 0 ? `
+      <div class="section">
+        <div class="section-title">Groups</div>
+        <div class="contact-tags" style="gap: 6px;">
+          ${groups.map(g => `<span class="tag" style="font-size: 12px; padding: 4px 8px;">📂 ${esc(g.name)}</span>`).join('')}
+        </div>
+      </div>
+      ` : ''}
+
+      ${renderExtensionFields(extensionFields || [])}
+
+      <div class="section">
+        <div class="section-title">Timeline</div>
+        ${interactions.length > 0 ? `
+          <div class="timeline">
+            ${interactions.map(i => `
+              <div class="timeline-item">
+                <div class="timeline-dot ${esc(i.interaction_type)}"></div>
+                <div class="timeline-date">${new Date(i.happened_at).toLocaleString()}</div>
+                <div class="timeline-content" style="position: relative;">
+                  <button class="delete-icon" onclick="deleteInteraction(${i.id})" title="Delete interaction" style="position: absolute; top: 8px; right: 8px;">✕</button>
+                  <div class="timeline-type ${esc(i.interaction_type)}">${esc(i.interaction_type)}</div>
+                  <div class="timeline-summary">${esc(i.summary)}</div>
+                  ${i.notes ? `<div class="timeline-notes">${esc(i.notes)}</div>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : '<div class="empty-state" style="padding: 20px;"><p>No interactions yet</p></div>'}
+      </div>
+    `;
+  }
+
+  // ── Extension Fields (read-only) ──────────────────────────────
+
+  function renderExtensionFields(fields) {
+    if (!fields || fields.length === 0) return '';
+
+    // Group by source
+    const bySource = {};
+    for (const f of fields) {
+      if (!bySource[f.source]) bySource[f.source] = [];
+      bySource[f.source].push(f);
+    }
+
+    return Object.entries(bySource).map(([source, fields]) => `
+      <div class="section">
+        <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>🔌 ${esc(source)}</span>
+          <span style="font-size: 10px; font-weight: 400; color: var(--fg3); text-transform: none; letter-spacing: 0;">via extension</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          ${fields.map(f => `
+            <div class="detail-field" style="gap: 10px;">
+              <span style="font-size: 12px; color: var(--fg3); min-width: 100px;">${esc(f.label || f.field_name)}</span>
+              ${renderExtFieldValue(f)}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderExtFieldValue(f) {
+    const v = f.field_value;
+    if (f.field_type === 'url' && v) {
+      const href = /^https?:\/\//i.test(v) ? v : '';
+      return href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color: var(--accent2);">${esc(v)}</a>` : `<span>${esc(v)}</span>`;
+    }
+    if (f.field_type === 'json' && v) {
+      try {
+        const pretty = JSON.stringify(JSON.parse(v), null, 2);
+        return `<pre style="margin: 0; font-size: 11px; color: var(--fg2); white-space: pre-wrap; max-height: 120px; overflow: auto;">${esc(pretty)}</pre>`;
+      } catch { /* fall through */ }
+    }
+    return `<span>${esc(v)}</span>`;
+  }
+
+  // ── Companies ────────────────────────────────────────────────
+
+  async function loadCompanies() {
+    try {
+      const companies = await (await fetch('api/crm/companies')).json();
+      document.getElementById('companies').innerHTML = companies.map(c => `<option value="${esc(c.name)}">`).join('');
+    } catch (err) {
+      console.error('Failed to load companies:', err);
+    }
+  }
+
+  // ── Contact CRUD ─────────────────────────────────────────────
+
+  function showAddContactModal() {
+    document.getElementById('contactModalTitle').textContent = 'New Contact';
+    document.getElementById('contactForm').reset();
+    document.getElementById('contactId').value = '';
+    showModal('contactModal');
+  }
+
+  async function showEditContactModal(id) {
+    const contact = allContacts.find(c => c.id === id);
+    if (!contact) return;
+    document.getElementById('contactModalTitle').textContent = 'Edit Contact';
+    document.getElementById('contactId').value = contact.id;
+    document.getElementById('firstName').value = contact.first_name;
+    document.getElementById('lastName').value = contact.last_name || '';
+    document.getElementById('email').value = contact.email || '';
+    document.getElementById('phone').value = contact.phone || '';
+    document.getElementById('companyName').value = contact.company_name || '';
+    document.getElementById('birthday').value = contact.birthday || '';
+    document.getElementById('anniversary').value = contact.anniversary || '';
+    document.getElementById('tags').value = contact.tags || '';
+    document.getElementById('notes').value = contact.notes || '';
+    showModal('contactModal');
+  }
+
+  async function saveContact(e, force = false) {
+    e.preventDefault();
+    const id = document.getElementById('contactId').value;
+    const data = {
+      first_name: document.getElementById('firstName').value,
+      last_name: document.getElementById('lastName').value || null,
+      email: document.getElementById('email').value || null,
+      phone: document.getElementById('phone').value || null,
+      company_name: document.getElementById('companyName').value || null,
+      birthday: document.getElementById('birthday').value || null,
+      anniversary: document.getElementById('anniversary').value || null,
+      tags: document.getElementById('tags').value || null,
+      notes: document.getElementById('notes').value || null,
+    };
+
+    try {
+      if (id) {
+        await fetch(`api/crm/contacts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      } else {
+        if (!force) {
+          const dupeRes = await fetch('api/crm/contacts/check-duplicates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name: data.first_name, last_name: data.last_name, email: data.email }) });
+          const { duplicates } = await dupeRes.json();
+          if (duplicates && duplicates.length > 0) {
+            const names = duplicates.map(d => `${d.first_name} ${d.last_name || ''} (${d.email || 'no email'}, ID: ${d.id})`).join('\n  ');
+            if (!confirm(`⚠️ Possible duplicate(s) found:\n  ${names}\n\nCreate anyway?`)) return;
+          }
+        }
+        const res = await fetch('api/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const newContact = await res.json();
+        currentContactId = newContact.id;
+      }
+      closeModal('contactModal');
+      await loadContacts();
+      if (currentContactId) await selectContact(currentContactId);
+    } catch (err) {
+      console.error('Failed to save contact:', err);
+      alert('Failed to save contact');
+    }
+  }
+
+  async function deleteContact(id) {
+    if (!confirm('Delete this contact? This cannot be undone.')) return;
+    try {
+      await fetch(`api/crm/contacts/${id}`, { method: 'DELETE' });
+      currentContactId = null;
+      await loadContacts();
+      document.getElementById('detailPanel').innerHTML = '<div class="empty-state"><p>Contact deleted</p></div>';
+    } catch (err) {
+      console.error('Failed to delete contact:', err);
+      alert('Failed to delete contact');
+    }
+  }
+
+  // ── Interaction (contact detail) ─────────────────────────────
+
+  function showInteractionModal() {
+    if (!currentContactId) return;
+    document.getElementById('interactionForm').reset();
+    document.getElementById('happenedAt').value = new Date().toISOString().slice(0, 16);
+    showModal('interactionModal');
+  }
+
+  async function saveInteraction(e) {
+    e.preventDefault();
+    const data = {
+      contact_id: currentContactId,
+      interaction_type: document.getElementById('interactionType').value,
+      summary: document.getElementById('interactionSummary').value,
+      notes: document.getElementById('interactionNotes').value || null,
+      happened_at: document.getElementById('happenedAt').value ? new Date(document.getElementById('happenedAt').value).toISOString() : null,
+    };
+    try {
+      await fetch('api/crm/interactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      closeModal('interactionModal');
+      await loadContactDetail(currentContactId);
+    } catch (err) {
+      console.error('Failed to save interaction:', err);
+      alert('Failed to save interaction');
+    }
+  }
+
+  // ── Reminder (contact detail) ────────────────────────────────
+
+  function showReminderModal() {
+    if (!currentContactId) return;
+    document.getElementById('reminderForm').reset();
+    showModal('reminderModal');
+  }
+
+  async function saveReminder(e) {
+    e.preventDefault();
+    const data = {
+      contact_id: currentContactId,
+      reminder_type: document.getElementById('reminderType').value,
+      reminder_date: document.getElementById('reminderDate').value,
+      message: document.getElementById('reminderMessage').value || null,
+    };
+    try {
+      await fetch('api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      closeModal('reminderModal');
+      await loadContactDetail(currentContactId);
+    } catch (err) {
+      console.error('Failed to save reminder:', err);
+      alert('Failed to save reminder');
+    }
+  }
+
+  // ── Relationship (contact detail) ────────────────────────────
+
+  function showRelationshipModal() {
+    if (!currentContactId) return;
+    document.getElementById('relationshipForm').reset();
+    const select = document.getElementById('relatedContactId');
+    select.innerHTML = allContacts
+      .filter(c => c.id !== currentContactId)
+      .map(c => `<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)}</option>`)
+      .join('');
+    if (select.options.length === 0) select.innerHTML = '<option value="" disabled>No other contacts available</option>';
+    showModal('relationshipModal');
+  }
+
+  async function saveRelationship(e) {
+    e.preventDefault();
+    const relatedId = parseInt(document.getElementById('relatedContactId').value);
+    if (!relatedId) return;
+    const data = {
+      contact_id: currentContactId,
+      related_contact_id: relatedId,
+      relationship_type: document.getElementById('relationshipType').value,
+      notes: document.getElementById('relationshipNotes').value || null,
+    };
+    try {
+      await fetch('api/crm/relationships', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      closeModal('relationshipModal');
+      await loadContactDetail(currentContactId);
+    } catch (err) {
+      console.error('Failed to save relationship:', err);
+      alert('Failed to save relationship');
+    }
+  }
+
+  // ── Group management (contact detail) ────────────────────────
+
+  async function showGroupModal() {
+    if (!currentContactId) return;
+    const [groupsRes, contactRes] = await Promise.all([fetch('api/crm/groups'), fetch(`api/crm/contacts/${currentContactId}`)]);
+    allGroups = await groupsRes.json();
+    const detail = await contactRes.json();
+    const contactGroupIds = new Set((detail.groups || []).map(g => g.id));
+    renderGroupList(contactGroupIds);
+    document.getElementById('newGroupName').value = '';
+    showModal('groupModal');
+  }
+
+  function renderGroupList(contactGroupIds) {
+    const list = document.getElementById('groupList');
+    if (allGroups.length === 0) {
+      list.innerHTML = '<div style="color: var(--fg3); font-size: 13px;">No groups yet. Create one below.</div>';
+      return;
+    }
+    list.innerHTML = allGroups.map(g => {
+      const isMember = contactGroupIds.has(g.id);
+      return `
+        <div class="rel-item" style="margin-bottom: 6px;">
+          <div>
+            <div style="font-weight: 600; font-size: 13px;">📂 ${esc(g.name)}</div>
+            ${g.description ? `<div style="font-size: 11px; color: var(--fg3);">${esc(g.description)}</div>` : ''}
+          </div>
+          ${isMember
+            ? `<button class="btn btn-sm btn-danger" onclick="toggleGroup(${g.id}, false)">Remove</button>`
+            : `<button class="btn btn-sm" onclick="toggleGroup(${g.id}, true)">Add</button>`}
+        </div>`;
+    }).join('');
+  }
+
+  async function toggleGroup(groupId, add) {
+    try {
+      if (add) {
+        await fetch(`api/crm/groups/${groupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
+      } else {
+        await fetch(`api/crm/groups/${groupId}/members/${currentContactId}`, { method: 'DELETE' });
+      }
+      await showGroupModal();
+      await loadContactDetail(currentContactId);
+    } catch (err) {
+      console.error('Failed to update group membership:', err);
+    }
+  }
+
+  async function addToNewGroup() {
+    const nameInput = document.getElementById('newGroupName');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    try {
+      const group = await (await fetch('api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).json();
+      await fetch(`api/crm/groups/${group.id}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
+      nameInput.value = '';
+      await showGroupModal();
+      await loadContactDetail(currentContactId);
+    } catch (err) {
+      console.error('Failed to create group:', err);
+      alert('Failed to create group');
+    }
+  }
+
+  // ── Import/Export ────────────────────────────────────────────
+
+  function exportCsv() { window.location.href = 'api/crm/contacts/export.csv'; }
+
+  async function importCsv(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    e.target.value = '';
+    try {
+      const result = await (await fetch('api/crm/contacts/import', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: text })).json();
+      let msg = `Import complete:\n✅ Created: ${result.created}\n⏭ Skipped: ${result.skipped}`;
+      if (result.duplicates && result.duplicates.length > 0) {
+        msg += `\n\n⚠️ Duplicates found (skipped):`;
+        for (const d of result.duplicates) msg += `\n  Row ${d.row}: "${d.incoming}" matches "${d.existing.first_name} ${d.existing.last_name || ''}" (ID: ${d.existing.id})`;
+      }
+      if (result.errors && result.errors.length > 0) msg += `\n\n❌ Errors:\n  ${result.errors.join('\n  ')}`;
+      alert(msg);
+      await loadContacts();
+      await loadCompanies();
+    } catch (err) {
+      console.error('Failed to import CSV:', err);
+      alert('Failed to import CSV');
+    }
+  }
+
+  // ── Delete helpers (contact detail) ──────────────────────────
+
+  async function deleteInteraction(id) {
+    if (!confirm('Delete this interaction?')) return;
+    try { await fetch(`api/crm/interactions/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    catch (err) { console.error('Failed to delete interaction:', err); }
+  }
+
+  async function deleteReminder(id) {
+    if (!confirm('Delete this reminder?')) return;
+    try { await fetch(`api/crm/reminders/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    catch (err) { console.error('Failed to delete reminder:', err); }
+  }
+
+  async function deleteRelationship(id) {
+    if (!confirm('Delete this relationship?')) return;
+    try { await fetch(`api/crm/relationships/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    catch (err) { console.error('Failed to delete relationship:', err); }
+  }
+</script>

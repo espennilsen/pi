@@ -1,0 +1,20 @@
+{
+  "name": "pi-cron",
+  "version": "0.2.0",
+  "description": "Cron scheduler extension for pi — schedule recurring prompts as isolated subprocesses",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "author": "Espen Nilsen",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@sinclair/typebox": "*"
+  }
+}

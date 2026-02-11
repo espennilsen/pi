@@ -140,12 +140,16 @@ Settings (`pi-personal-crm` key):
 
 ### pi-channels
 
-Two-way messaging — routes messages between the agent and external services (Telegram, webhooks, custom adapters). Used by pi-cron, pi-calendar, and pi-heartbeat for notifications.
+Two-way messaging — routes messages between the agent and external services (Telegram, webhooks, custom adapters). Used by pi-cron, pi-calendar, and pi-heartbeat for notifications. Includes a **chat bridge** that turns any bidirectional adapter into a full agent chat interface.
 
 | | |
 |---|---|
 | **Tool** | `notify` — actions: `send`, `list`, `test` |
+| **Commands** | `/chat-bridge [on|off|status]` |
+| **Flags** | `--chat-bridge` (enable bridge on startup) |
 | **Settings** | `pi-channels` key |
+
+When the chat bridge is enabled, incoming messages (e.g. from Telegram) are routed to the agent as isolated `pi -p` subprocess prompts. Responses are sent back to the same chat automatically. Messages are serialized per sender with typing indicators and bot commands (`/start`, `/help`, `/abort`, `/status`, `/new`).
 
 Settings (`pi-channels` key):
 
@@ -156,7 +160,7 @@ Settings (`pi-channels` key):
       "telegram": {
         "type": "telegram",
         "botToken": "env:TELEGRAM_BOT_TOKEN",  // "env:" prefix resolves env vars
-        "polling": false,                       // Enable incoming message polling
+        "polling": true,                        // Enable incoming message polling
         "parseMode": "Markdown",                // Telegram parse mode
         "pollingTimeout": 30,                   // Long-poll timeout in seconds
         "allowedChatIds": ["-100123456"]        // Restrict incoming to these chat IDs
@@ -172,6 +176,15 @@ Settings (`pi-channels` key):
     "routes": {
       "ops": { "adapter": "telegram", "recipient": "-100987654321" },
       "cron": { "adapter": "telegram", "recipient": "123456789" }
+    },
+    "bridge": {
+      "enabled": false,           // Enable chat bridge (or use --chat-bridge flag)
+      "maxQueuePerSender": 5,     // Max pending messages per sender
+      "timeoutMs": 300000,        // Subprocess timeout (5 min)
+      "maxConcurrent": 2,         // Max senders processed in parallel
+      "typingIndicators": true,   // Send typing indicators while processing
+      "commands": true,           // Handle /start, /help, /abort, /status, /new
+      "model": null               // Model override for subprocess (null = default)
     }
   }
 }

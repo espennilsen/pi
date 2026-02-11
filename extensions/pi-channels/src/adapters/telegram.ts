@@ -124,10 +124,28 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 		}
 	}
 
+	// ── Typing indicator ────────────────────────────────────
+
+	async function sendChatAction(chatId: string, action = "typing"): Promise<void> {
+		try {
+			await fetch(`${apiBase}/sendChatAction`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ chat_id: chatId, action }),
+			});
+		} catch {
+			// Best-effort — silently ignore
+		}
+	}
+
 	// ── Adapter ─────────────────────────────────────────────
 
 	return {
 		direction: "bidirectional" as const,
+
+		async sendTyping(recipient: string): Promise<void> {
+			await sendChatAction(recipient, "typing");
+		},
 
 		async send(message: ChannelMessage): Promise<void> {
 			const prefix = message.source ? `[${message.source}]\n` : "";

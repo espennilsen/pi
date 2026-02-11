@@ -48,6 +48,11 @@ export interface ChannelAdapter {
 	start?(onMessage: OnIncomingMessage): Promise<void>;
 	/** Stop listening. */
 	stop?(): Promise<void>;
+	/**
+	 * Send a typing/processing indicator.
+	 * Optional — only supported by adapters that have real-time presence (e.g. Telegram).
+	 */
+	sendTyping?(recipient: string): Promise<void>;
 }
 
 // ── Config (lives under "pi-channels" key in pi settings.json) ──
@@ -55,6 +60,23 @@ export interface ChannelAdapter {
 export interface AdapterConfig {
 	type: string;
 	[key: string]: unknown;
+}
+
+export interface BridgeConfig {
+	/** Enable the chat bridge (default: false). Also enabled via --chat-bridge flag. */
+	enabled?: boolean;
+	/** Max queued messages per sender before rejecting (default: 5). */
+	maxQueuePerSender?: number;
+	/** Subprocess timeout in ms (default: 300000 = 5 min). */
+	timeoutMs?: number;
+	/** Max senders processed concurrently (default: 2). */
+	maxConcurrent?: number;
+	/** Model override for subprocess (default: null = use default). */
+	model?: string | null;
+	/** Send typing indicators while processing (default: true). */
+	typingIndicators?: boolean;
+	/** Handle bot commands like /start, /help, /abort (default: true). */
+	commands?: boolean;
 }
 
 export interface ChannelConfig {
@@ -66,4 +88,39 @@ export interface ChannelConfig {
 	 * Lets cron jobs and other extensions use friendly names.
 	 */
 	routes?: Record<string, { adapter: string; recipient: string }>;
+	/** Chat bridge configuration. */
+	bridge?: BridgeConfig;
+}
+
+// ── Bridge types ────────────────────────────────────────────────
+
+/** A queued prompt waiting to be processed. */
+export interface QueuedPrompt {
+	id: string;
+	adapter: string;
+	sender: string;
+	text: string;
+	metadata?: Record<string, unknown>;
+	enqueuedAt: number;
+}
+
+/** Per-sender session state. */
+export interface SenderSession {
+	adapter: string;
+	sender: string;
+	displayName: string;
+	queue: QueuedPrompt[];
+	processing: boolean;
+	abortController: AbortController | null;
+	messageCount: number;
+	startedAt: number;
+}
+
+/** Result from a subprocess run. */
+export interface RunResult {
+	ok: boolean;
+	response: string;
+	error?: string;
+	durationMs: number;
+	exitCode: number;
 }

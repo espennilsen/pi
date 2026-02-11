@@ -7,6 +7,12 @@
  * Built-in adapters: telegram (bidirectional), webhook (outgoing)
  * Custom adapters: register via pi.events.emit("channel:register", ...)
  *
+ * Chat bridge: when enabled, incoming messages are routed to the agent
+ * as isolated subprocess prompts and responses are sent back. Enable via:
+ *   - --chat-bridge flag
+ *   - /chat-bridge on command
+ *   - settings.json: { "pi-channels": { "bridge": { "enabled": true } } }
+ *
  * Config in settings.json under "pi-channels":
  * {
  *   "pi-channels": {
@@ -15,6 +21,14 @@
  *     },
  *     "routes": {
  *       "ops": { "adapter": "telegram", "recipient": "-100987654321" }
+ *     },
+ *     "bridge": {
+ *       "enabled": false,
+ *       "maxQueuePerSender": 5,
+ *       "timeoutMs": 300000,
+ *       "maxConcurrent": 2,
+ *       "typingIndicators": true,
+ *       "commands": true
  *     }
  *   }
  * }
@@ -23,14 +37,23 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadConfig } from "./config.ts";
 import { ChannelRegistry } from "./registry.ts";
-import { registerChannelEvents } from "./events.ts";
+import { registerChannelEvents, setBridge } from "./events.ts";
 import { registerChannelTool } from "./tool.ts";
+import { ChatBridge } from "./bridge/bridge.ts";
 
 export default function (pi: ExtensionAPI) {
 	const registry = new ChannelRegistry();
+	let bridge: ChatBridge | null = null;
+
+	// ── Flag: --chat-bridge ───────────────────────────────────
+
+	pi.registerFlag("chat-bridge", {
+		description: "Enable the chat bridge on startup (incoming messages → agent → reply)",
+		type: "boolean",
+		default: false,
+	});
 
 	// ── Event API + cron integration ──────────────────────────
-	// Must register before session_start so onIncoming is wired
 
 	registerChannelEvents(pi, registry);
 
@@ -52,6 +75,75 @@ export default function (pi: ExtensionAPI) {
 		for (const err of startErrors) {
 			ctx.ui.notify(`pi-channels: ${err.adapter}: ${err.error}`, "warning");
 		}
+
+		// Initialize bridge
+		bridge = new ChatBridge(config.bridge, ctx.cwd, registry, pi.events);
+		setBridge(bridge);
+
+		const flagEnabled = pi.getFlag("--chat-bridge");
+		if (flagEnabled || config.bridge?.enabled) {
+			bridge.start();
+			ctx.ui.notify("pi-channels: Chat bridge started", "info");
+		}
+	});
+
+	pi.on("session_shutdown", async () => {
+		bridge?.stop();
+		setBridge(null);
+		await registry.stopAll();
+	});
+
+	// ── Command: /chat-bridge ─────────────────────────────────
+
+	pi.registerCommand("chat-bridge", {
+		description: "Manage chat bridge: /chat-bridge [on|off|status]",
+		getArgumentCompletions: (prefix: string) => {
+			return ["on", "off", "status"]
+				.filter(c => c.startsWith(prefix))
+				.map(c => ({ value: c, label: c }));
+		},
+		handler: async (args, ctx) => {
+			const cmd = args?.trim().toLowerCase();
+
+			if (cmd === "on") {
+				if (!bridge) {
+					ctx.ui.notify("Chat bridge not initialized — no channel config?", "warning");
+					return;
+				}
+				if (bridge.isActive()) {
+					ctx.ui.notify("Chat bridge is already running.", "info");
+					return;
+				}
+				bridge.start();
+				ctx.ui.notify("✓ Chat bridge started", "info");
+				return;
+			}
+
+			if (cmd === "off") {
+				if (!bridge?.isActive()) {
+					ctx.ui.notify("Chat bridge is not running.", "info");
+					return;
+				}
+				bridge.stop();
+				ctx.ui.notify("✓ Chat bridge stopped", "info");
+				return;
+			}
+
+			// Default: status
+			if (!bridge) {
+				ctx.ui.notify("Chat bridge: not initialized", "info");
+				return;
+			}
+
+			const stats = bridge.getStats();
+			const lines = [
+				`Chat bridge: ${stats.active ? "🟢 Active" : "⚪ Inactive"}`,
+				`Sessions: ${stats.sessions}`,
+				`Active prompts: ${stats.activePrompts}`,
+				`Queued: ${stats.totalQueued}`,
+			];
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
 	});
 
 	// ── LLM tool ──────────────────────────────────────────────

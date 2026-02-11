@@ -60,7 +60,7 @@ export function loadConfig(cwd: string): ChannelConfig {
 	const global = readJsonSafe(globalPath)[SETTINGS_KEY] as Record<string, unknown> | undefined;
 	const project = readJsonSafe(projectPath)[SETTINGS_KEY] as Record<string, unknown> | undefined;
 
-	// Project overrides global (shallow merge of adapters + routes)
+	// Project overrides global (shallow merge of adapters + routes + bridge)
 	const merged: ChannelConfig = {
 		adapters: {
 			...(global?.adapters as Record<string, unknown> ?? {}),
@@ -70,6 +70,10 @@ export function loadConfig(cwd: string): ChannelConfig {
 			...(global?.routes as Record<string, { adapter: string; recipient: string }> ?? {}),
 			...(project?.routes as Record<string, { adapter: string; recipient: string }> ?? {}),
 		},
+		bridge: {
+			...(global?.bridge as Record<string, unknown> ?? {}),
+			...(project?.bridge as Record<string, unknown> ?? {}),
+		} as ChannelConfig["bridge"],
 	};
 
 	return resolveEnvVars(merged) as ChannelConfig;

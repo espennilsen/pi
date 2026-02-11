@@ -35,7 +35,7 @@
       "telegram": {
         "type": "telegram",
         "botToken": "env:TELEGRAM_BOT_TOKEN",
-        "polling": false,
+        "polling": true,
         "parseMode": "Markdown"
       },
       "alerts": {
@@ -49,6 +49,15 @@
     "routes": {
       "ops": { "adapter": "telegram", "recipient": "-100987654321" },
       "cron": { "adapter": "telegram", "recipient": "123456789" }
+    },
+    "bridge": {
+      "enabled": false,
+      "maxQueuePerSender": 5,
+      "timeoutMs": 300000,
+      "maxConcurrent": 2,
+      "typingIndicators": true,
+      "commands": true,
+      "model": null
     }
   },
 

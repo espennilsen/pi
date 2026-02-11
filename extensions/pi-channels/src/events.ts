@@ -11,18 +11,32 @@
  *   channel:remove    — remove an adapter
  *   channel:list      — list adapters + routes
  *   channel:test      — test an adapter with a ping
+ *   bridge:*          — chat bridge lifecycle events
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { ChannelRegistry } from "./registry.ts";
-import type { ChannelAdapter, ChannelMessage } from "./types.ts";
+import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.ts";
+import type { ChatBridge } from "./bridge/bridge.ts";
+
+/** Reference to the active bridge, set by index.ts after construction. */
+let activeBridge: ChatBridge | null = null;
+
+export function setBridge(bridge: ChatBridge | null): void {
+	activeBridge = bridge;
+}
 
 export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistry): void {
 
-	// ── Incoming messages → channel:receive ──────────────────
+	// ── Incoming messages → channel:receive (+ bridge) ──────
 
-	registry.setOnIncoming((message) => {
+	registry.setOnIncoming((message: IncomingMessage) => {
 		pi.events.emit("channel:receive", message);
+
+		// Route to bridge if active
+		if (activeBridge?.isActive()) {
+			activeBridge.handleMessage(message);
+		}
 	});
 
 	// ── Auto-route cron job output ──────────────────────────

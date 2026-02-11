@@ -9,7 +9,8 @@ crm/
 telemetry/
 db/
 *.db
-*.db-Æ
+*.db-shm
+*.db-wal
 *.tab
 # ignore these in agent dir
 auth.json

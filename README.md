@@ -13,15 +13,6 @@ ln -s /path/to/this/repo ~/.pi/agent
   - `pi-channels`, `pi-cron`, `pi-kysely`, `pi-personal-crm`, `pi-td-webui`, `pi-telemetry`, `pi-webserver`
   - standalone scripts: `sample-tools.ts`, `web-fetch.ts`
 - `skills/` — custom agent skills (`workon`, `sample-skill`).
-- `prompts/` — custom prompt templates (if any).
-- `themes/` — custom themes (if any).
 - `settings.json` — default provider/model settings and package config.
-- `auth.json` — credentials (keep private).
-- `crm/`, `db/` — local SQLite data for tools.
-- `pi-cron.db`, `pi-cron.tab` — scheduled job storage.
-- `cache/`, `sessions/`, `telemetry/` — runtime cache/log data.
 
-## Notes
-
-- This repo is intended to be a personal Pi home directory, not a published package.
-- Review sensitive or machine-specific files before sharing.
+Runtime and sensitive files (`auth.json`, `cache/`, `sessions/`, `crm/`, `db/`, `telemetry/`, `*.db`, `*.tab`) are gitignored.

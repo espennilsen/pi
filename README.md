@@ -1,43 +1,27 @@
-# Pi Tools, Extensions, and Skills
+# Pi Agent Home
 
-This repo is a scaffold for a shareable pi package that bundles your custom tools (via extensions) and skills.
-
-## Structure
-
-```
-extensions/   # TypeScript extensions (tools, commands, hooks)
-skills/       # Agent Skills (SKILL.md directories)
-```
-
-## Local testing
-
-- Run a single extension:
-  ```bash
-  pi -e ./extensions/sample-tools.ts
-  ```
-- Load the whole package without installing:
-  ```bash
-  pi -e .
-  ```
-
-## Install as a package
-
-From this directory:
+This repository is my Pi coding agent home directory. I keep it under version control and symlink it to `~/.pi/agent` so Pi loads configuration, extensions, skills, and runtime state from here.
 
 ```bash
-pi install .
+ln -s /path/to/this/repo ~/.pi/agent
 ```
 
-Or from git/npm once published:
+## Contents
 
-```bash
-pi install git:github.com/you/your-repo
-pi install npm:@you/your-package
-```
+- `agents/` — agent profile prompt overrides (planner/reviewer/scout/worker).
+- `extensions/` — local extensions and packages:
+  - `pi-channels`, `pi-cron`, `pi-kysely`, `pi-personal-crm`, `pi-td-webui`, `pi-telemetry`, `pi-webserver`
+  - standalone scripts: `sample-tools.ts`, `web-fetch.ts`
+- `skills/` — custom agent skills (`workon`, `sample-skill`).
+- `prompts/` — custom prompt templates (if any).
+- `themes/` — custom themes (if any).
+- `settings.json` — default provider/model settings and package config.
+- `auth.json` — credentials (keep private).
+- `crm/`, `db/` — local SQLite data for tools.
+- `pi-cron.db`, `pi-cron.tab` — scheduled job storage.
+- `cache/`, `sessions/`, `telemetry/` — runtime cache/log data.
 
-## Customize
+## Notes
 
-- Update `package.json` (name, description, version)
-- Replace the sample extension in `extensions/`
-- Replace the sample skill in `skills/`
-- Update `LICENSE` with your name (or change the license)
+- This repo is intended to be a personal Pi home directory, not a published package.
+- Review sensitive or machine-specific files before sharing.

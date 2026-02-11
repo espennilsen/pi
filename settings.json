@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.52.9",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.2-codex",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-4-6",
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:@juanibiapina/pi-powerbar"

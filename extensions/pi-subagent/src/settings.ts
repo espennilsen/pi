@@ -1,0 +1,39 @@
+/**
+ * pi-subagent — Settings loader.
+ */
+
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import type { SubagentSettings } from "./types.ts";
+
+const SETTINGS_KEY = "pi-subagent";
+
+function readJsonSafe(filePath: string): Record<string, unknown> {
+	try {
+		return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+	} catch {
+		return {};
+	}
+}
+
+export function resolveSettings(cwd: string): SubagentSettings {
+	const globalPath = path.join(os.homedir(), ".pi", "agent", "settings.json");
+	const projectPath = path.join(cwd, ".pi", "settings.json");
+
+	const globalRaw = readJsonSafe(globalPath)[SETTINGS_KEY] as
+		| Record<string, unknown>
+		| undefined;
+	const projectRaw = readJsonSafe(projectPath)[SETTINGS_KEY] as
+		| Record<string, unknown>
+		| undefined;
+
+	const merged = { ...(globalRaw ?? {}), ...(projectRaw ?? {}) };
+
+	return {
+		maxConcurrent: (merged.maxConcurrent as number) ?? 4,
+		maxTotal: (merged.maxTotal as number) ?? 8,
+		timeoutMs: (merged.timeoutMs as number) ?? 600_000,
+		model: (merged.model as string) ?? null,
+	};
+}

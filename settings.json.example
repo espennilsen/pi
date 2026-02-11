@@ -1,0 +1,71 @@
+{
+  "// Pi agent settings": "Copy to settings.json and customize. Remove comments before use.",
+
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "high",
+
+  "packages": [
+    "npm:@juanibiapina/pi-powerbar"
+  ],
+
+  "// ── pi-telemetry ──────────────────────────────────────": "",
+  "telemetry": {
+    "mode": "on",
+    "level": "INFO"
+  },
+
+  "// ── pi-kysely ─────────────────────────────────────────": "",
+  "kysely": {
+    "databaseName": "default",
+    "driver": "sqlite",
+    "sqlitePath": "db/kysely.db",
+    "autoCreateDefault": true
+  },
+
+  "// ── pi-td-webui ──────────────────────────────────────": "",
+  "tdWebui": {
+    "crossProjectRoot": "~/Dev",
+    "crossProjectDepth": 1
+  },
+
+  "// ── pi-channels ──────────────────────────────────────": "",
+  "pi-channels": {
+    "adapters": {
+      "telegram": {
+        "type": "telegram",
+        "botToken": "env:TELEGRAM_BOT_TOKEN",
+        "polling": false,
+        "parseMode": "Markdown"
+      },
+      "alerts": {
+        "type": "webhook",
+        "method": "POST",
+        "headers": {
+          "Authorization": "env:WEBHOOK_SECRET"
+        }
+      }
+    },
+    "routes": {
+      "ops": { "adapter": "telegram", "recipient": "-100987654321" },
+      "cron": { "adapter": "telegram", "recipient": "123456789" }
+    }
+  },
+
+  "// ── pi-calendar ────────────────────────────────────────": "",
+  "pi-calendar": {
+    "dbPath": "db/calendar.db"
+  },
+
+  "// ── pi-personal-crm ──────────────────────────────────": "",
+  "pi-personal-crm": {
+    "dbPath": "db/crm.db"
+  },
+
+  "// ── pi-vault ─────────────────────────────────────────": "",
+  "pi-vault": {
+    "vaultPath": "~/path/to/obsidian/vault",
+    "vaultName": "my-vault",
+    "apiUrl": "http://127.0.0.1:27123"
+  }
+}

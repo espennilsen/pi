@@ -15,13 +15,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
 
-  /* ── Navbar ─────────────────────────────────────────── */
-  nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 0; position: sticky; top: 0; z-index: 900; }
-  nav .nav-brand { font-size: 16px; font-weight: 700; color: var(--accent); padding: 12px 16px 12px 0; margin-right: 8px; border-right: 1px solid var(--border); }
-  nav a { color: var(--fg2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 12px 16px; transition: all 0.15s; border-bottom: 2px solid transparent; }
-  nav a:hover { color: var(--fg); background: rgba(255,255,255,0.03); }
-  nav a.active { color: var(--accent2); border-bottom-color: var(--accent); }
-  nav .nav-spacer { flex: 1; }
+
 
   /* ── Layout ─────────────────────────────────────────── */
   .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
@@ -186,24 +180,81 @@
   .upcoming-days.soon { background: rgba(251,191,36,0.15); color: var(--yellow); }
   .upcoming-days.today { background: rgba(74,222,128,0.15); color: var(--green); }
   .upcoming-days.later { background: rgba(124,111,240,0.1); color: var(--accent2); }
+
+  /* ── Navigation ─────────────────────────────────────── */
+  .crm-nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 0; position: sticky; top: 0; z-index: 900; }
+  .crm-nav .nav-brand { font-size: 16px; font-weight: 700; color: var(--accent); padding: 12px 16px 12px 0; margin-right: 8px; border-right: 1px solid var(--border); cursor: pointer; }
+  .crm-nav .nav-brand:hover { color: var(--accent2); }
+  .crm-nav a { color: var(--fg2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 12px 14px; transition: all 0.15s; border-bottom: 2px solid transparent; cursor: pointer; user-select: none; }
+  .crm-nav a:hover { color: var(--fg); background: rgba(255,255,255,0.03); }
+  .crm-nav a.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  .crm-nav .nav-spacer { flex: 1; }
+  .crm-nav .nav-back { color: var(--fg3); font-size: 12px; text-decoration: none; padding: 8px 12px; }
+  .crm-nav .nav-back:hover { color: var(--fg2); }
+
+  /* ── Dashboard ──────────────────────────────────────── */
+  .dash-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .stat-card:hover { border-color: var(--accent); background: var(--bg3); }
+  .stat-icon { font-size: 24px; margin-bottom: 8px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--fg); }
+  .stat-label { font-size: 12px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 1024px) { .dash-grid { grid-template-columns: 1fr; } }
+
+  .dash-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .dash-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .dash-panel-header h2 { font-size: 15px; font-weight: 600; }
+
+  .dash-upcoming-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; transition: background 0.15s; }
+  .dash-upcoming-item:hover { background: var(--bg3); }
+  .dash-upcoming-item:last-child { border-bottom: none; }
+  .dash-upcoming-icon { font-size: 20px; flex-shrink: 0; }
+  .dash-upcoming-body { flex: 1; min-width: 0; }
+  .dash-upcoming-name { font-weight: 600; font-size: 13px; }
+  .dash-upcoming-meta { font-size: 11px; color: var(--fg3); }
+
+  .dash-activity-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; transition: background 0.15s; }
+  .dash-activity-item:hover { background: var(--bg3); }
+  .dash-activity-item:last-child { border-bottom: none; }
+  .dash-activity-icon { font-size: 16px; margin-top: 2px; flex-shrink: 0; }
+  .dash-activity-body { flex: 1; min-width: 0; }
+  .dash-activity-header { display: flex; align-items: center; gap: 8px; }
+  .dash-activity-name { font-weight: 600; font-size: 13px; }
+  .dash-activity-time { font-size: 11px; color: var(--fg3); margin-left: auto; white-space: nowrap; }
+  .dash-activity-summary { font-size: 12px; color: var(--fg2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .dash-neglected-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0; }
+  .dash-neglected-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; transition: background 0.15s; }
+  .dash-neglected-item:hover { background: var(--bg3); }
+  .dash-neglected-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--bg3); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+  .dash-neglected-body { flex: 1; min-width: 0; }
+  .dash-neglected-name { font-weight: 600; font-size: 13px; }
+  .dash-neglected-meta { font-size: 11px; color: var(--fg3); }
 </style>
 </head>
 <body>
 
-<nav id="crmNav">
-  <span class="nav-brand">CRM</span>
-  <a href="#" data-page="contacts" class="active" onclick="navigateTo('contacts')">Contacts</a>
-  <a href="#" data-page="companies" onclick="navigateTo('companies')">Companies</a>
-  <a href="#" data-page="groups" onclick="navigateTo('groups')">Groups</a>
-  <a href="#" data-page="interactions" onclick="navigateTo('interactions')">Interactions</a>
-  <a href="#" data-page="reminders" onclick="navigateTo('reminders')">Reminders</a>
-  <a href="#" data-page="upcoming" onclick="navigateTo('upcoming')">Upcoming</a>
-  <div class="nav-spacer"></div>
+
+
+<!-- Navigation -->
+<nav class="crm-nav">
+  <span class="nav-brand" onclick="navigateTo('dashboard')">CRM</span>
+  <a onclick="navigateTo('dashboard')" data-page="dashboard">Dashboard</a>
+  <a onclick="navigateTo('contacts')" data-page="contacts">Contacts</a>
+  <a onclick="navigateTo('companies')" data-page="companies">Companies</a>
+  <a onclick="navigateTo('groups')" data-page="groups">Groups</a>
+  <a onclick="navigateTo('interactions')" data-page="interactions">Interactions</a>
+  <a onclick="navigateTo('reminders')" data-page="reminders">Reminders</a>
+  <a onclick="navigateTo('upcoming')" data-page="upcoming">Upcoming</a>
+  <span class="nav-spacer"></span>
+  <a href="/" class="nav-back">← Back to Dashboard</a>
 </nav>
 
 <!-- Shared globals & utilities — available to all page scripts -->
 <script>
-  let currentPage = 'contacts';
+  let currentPage = 'dashboard';
   let currentContactId = null;
   let allContacts = [];
   let allGroups = [];
@@ -229,9 +280,14 @@
     document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
     const el = document.getElementById('page-' + page);
     if (el) el.style.display = '';
-    document.querySelectorAll('#crmNav a[data-page]').forEach(a => {
+
+    // Update nav active state
+    document.querySelectorAll('.crm-nav a[data-page]').forEach(a => {
       a.classList.toggle('active', a.dataset.page === page);
     });
+
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'contacts') { loadContacts(); loadCompanies(); }
     if (page === 'companies') loadCompaniesPage();
     if (page === 'groups') loadGroupsPage();
     if (page === 'interactions') loadInteractionsPage();
@@ -264,14 +320,14 @@
     });
   });
 
-  // Start on contacts page
-  (async () => {
-    await loadContacts();
-    await loadCompanies();
-    document.getElementById('search').addEventListener('input', (e) => {
-      filterContacts(e.target.value.toLowerCase());
-    });
-  })();
+  // Wire up contacts search
+  const searchEl = document.getElementById('search');
+  if (searchEl) searchEl.addEventListener('input', (e) => {
+    filterContacts(e.target.value.toLowerCase());
+  });
+
+  // Start on dashboard
+  navigateTo('dashboard');
 </script>
 
 </body>

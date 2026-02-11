@@ -2,16 +2,17 @@
  * pi-personal-crm — Personal CRM extension for pi.
  *
  * Registers the CRM tool, /crm-web command, and injects system prompt context.
- * Data is stored in ~/.pi/agent/crm/crm.db.
+ * Data is stored in $PI_AGENT_HOME/db/crm.db (default: ~/.pi/agent/db/crm.db).
  *
  * If the pi-webserver extension is installed, the CRM auto-mounts at /crm
  * on the shared web server. Otherwise, use /crm-web for a standalone server.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import * as path from "node:path";
-import * as fs from "node:fs";
 import * as os from "node:os";
+import * as fs from "node:fs";
 import { initDb, crmApi } from "./db.ts";
 import { registerCrmTool } from "./tool.ts";
 import {
@@ -21,16 +22,37 @@ import {
 	isMountedOnWebServer,
 } from "./web.ts";
 
-function getCrmDbPath(): string {
-	const dir = path.join(os.homedir(), ".pi", "agent", "crm");
-	fs.mkdirSync(dir, { recursive: true });
-	return path.join(dir, "crm.db");
+const DEFAULT_DB_PATH = "db/crm.db";
+
+function expandHome(p: string): string {
+	if (p === "~") return os.homedir();
+	if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+	return p;
+}
+
+function getCrmDbPath(cwd: string): string {
+	const agentDir = getAgentDir();
+	const sm = SettingsManager.create(cwd, agentDir);
+	const global = sm.getGlobalSettings() as Record<string, any>;
+	const project = sm.getProjectSettings() as Record<string, any>;
+	const configured = project?.["pi-personal-crm"]?.dbPath ?? global?.["pi-personal-crm"]?.dbPath;
+
+	let dbPath: string;
+	if (configured) {
+		const expanded = expandHome(String(configured).trim());
+		dbPath = path.isAbsolute(expanded) ? expanded : path.resolve(agentDir, expanded);
+	} else {
+		dbPath = path.join(agentDir, DEFAULT_DB_PATH);
+	}
+
+	fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+	return dbPath;
 }
 
 export default function (pi: ExtensionAPI) {
 	// Initialize DB on session start
-	pi.on("session_start", async (_event, _ctx) => {
-		const dbPath = getCrmDbPath();
+	pi.on("session_start", async (_event, ctx) => {
+		const dbPath = getCrmDbPath(ctx.cwd);
 		initDb(dbPath);
 	});
 

@@ -24,6 +24,7 @@ import { ensureTabFile, loadJobs, getJob, addJob, removeJob, updateJob, type Cro
 import { CronScheduler, validateCron } from "./scheduler.ts";
 import { acquireLock, releaseLock, lockHolder } from "./lock.ts";
 import { registerCronApi, type CronStatus } from "./api.ts";
+import { mountCronRoutes, unmountCronRoutes } from "./web.ts";
 
 interface CronParams {
 	action: "list" | "add" | "update" | "remove" | "enable" | "disable" | "run";
@@ -79,6 +80,17 @@ export default function (pi: ExtensionAPI) {
 		};
 	}
 
+	// ── Web mount helper ─────────────────────────────────────
+
+	function mountWeb(): void {
+		mountCronRoutes(pi.events, {
+			getStatus,
+			getScheduler: () => scheduler,
+			startScheduler,
+			stopScheduler,
+		});
+	}
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -91,9 +103,18 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.setStatus("pi-cron", "⏰ cron active");
 			}
 		}
+
+		// Mount web routes (no-op if pi-webserver isn't loaded yet)
+		mountWeb();
+	});
+
+	// Re-mount when pi-webserver starts after us
+	pi.events.on("web:ready", () => {
+		mountWeb();
 	});
 
 	pi.on("session_shutdown", async () => {
+		unmountCronRoutes(pi.events);
 		if (scheduler) {
 			scheduler.stop();
 			scheduler = null;

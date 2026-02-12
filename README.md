@@ -48,6 +48,10 @@ Each extension lives in `extensions/<name>/` with its own `README.md` and settin
 | `workon` | Switch working context to a project — loads AGENTS.md, git status, and td issues |
 | `sample-skill` | Template skill for creating new skills |
 
+## Disclaimer
+
+These are my personal extensions, catered to my own workflow and needs — they might not suit everyone. Feedback is welcome via [GitHub issues](https://github.com/espennilsen/pi/issues) or reach out to me on [X](https://x.com/espennilsen).
+
 ## License
 
 [MIT](./LICENSE)

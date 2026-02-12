@@ -2,10 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## 2026-02-12
+
+### Added
+
+- Add advanced recurrence system to pi-calendar — daily/weekly/biweekly/monthly/yearly with custom intervals, day-of-week selection, month position patterns (e.g. "2nd Tuesday", "last Friday"), end conditions (never/count/date), exclusion dates, and per-occurrence overrides
+- Add month view to pi-calendar — full month grid with event chips, today highlight, and click-to-create
+- Add year view to pi-calendar — 3×4 mini-calendar grid with multi-color event dots, event count badges, and click-to-drill into month view
+- Add table/agenda view to pi-calendar — grouped by day, only shows days with events, with relative date labels and recurrence badges
+- Add `recurrence.ts` shared expansion engine to pi-calendar — generates concrete occurrence dates from recurrence rules, used by both reminders and tool
+
+## 2025-06-01
 
 ### Added
 

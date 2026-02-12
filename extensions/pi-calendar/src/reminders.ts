@@ -7,13 +7,14 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { CalendarEvent, Recurrence } from "./types.ts";
+import type { CalendarEvent } from "./types.ts";
 import {
 	getEventsWithReminders,
 	isReminderSent,
 	markReminderSent,
 	cleanOldReminders,
 } from "./db.ts";
+import { expandOccurrences } from "./recurrence.ts";
 
 // ── State ───────────────────────────────────────────────────────
 
@@ -46,20 +47,30 @@ async function tick(): Promise<void> {
 		if (allEvents.length === 0) return;
 
 		const now = new Date();
+		const checkEnd = new Date(now.getTime() + 24 * 3_600_000);
 
 		for (const event of allEvents) {
 			const reminderMs = (event.reminder_minutes ?? 0) * 60_000;
 			if (reminderMs <= 0) continue;
 
-			const occurrences = getUpcomingOccurrences(event, now);
+			// Expand occurrences in the next 24h window
+			const occurrences = expandOccurrences(event, now, checkEnd);
 
 			for (const occStart of occurrences) {
-				const triggerTime = new Date(occStart.getTime() - reminderMs);
-				const eventTimeKey = occStart.toISOString();
+				// Apply override time if present
+				const rule = event.recurrence_rule;
+				const dateKey = toDateKey(occStart);
+				const override = rule?.overrides?.[dateKey];
+				const actualStart = override?.start_time
+					? new Date(override.start_time)
+					: occStart;
 
-				if (now >= triggerTime && now < occStart) {
+				const triggerTime = new Date(actualStart.getTime() - reminderMs);
+				const eventTimeKey = actualStart.toISOString();
+
+				if (now >= triggerTime && now < actualStart) {
 					if (!isReminderSent(event.id, eventTimeKey)) {
-						await sendReminder(event, occStart);
+						await sendReminder(event, actualStart, override);
 						markReminderSent(event.id, eventTimeKey);
 					}
 				}
@@ -75,76 +86,30 @@ async function tick(): Promise<void> {
 	} catch {}
 }
 
-// ── Occurrence expansion ────────────────────────────────────────
-
-function getUpcomingOccurrences(event: CalendarEvent, now: Date): Date[] {
-	const eventStart = new Date(event.start_time);
-	const checkEnd = new Date(now.getTime() + 24 * 3_600_000);
-	const results: Date[] = [];
-
-	if (!event.recurrence) {
-		if (eventStart > now) results.push(eventStart);
-		return results;
-	}
-
-	const step = stepDays(event.recurrence);
-	const recEnd = event.recurrence_end ? new Date(event.recurrence_end + "T23:59:59Z") : null;
-	const effectiveEnd = recEnd && recEnd < checkEnd ? recEnd : checkEnd;
-
-	if (event.recurrence === "monthly") {
-		const baseYear = eventStart.getUTCFullYear();
-		const baseMonth = eventStart.getUTCMonth();
-		const nowYear = now.getUTCFullYear();
-		const nowMonth = now.getUTCMonth();
-		const monthsElapsed = (nowYear - baseYear) * 12 + (nowMonth - baseMonth);
-		for (let offset = monthsElapsed - 1; offset <= monthsElapsed + 2; offset++) {
-			if (offset < 0) continue;
-			const candidate = new Date(eventStart);
-			candidate.setMonth(candidate.getMonth() + offset);
-			if (candidate > now && candidate < effectiveEnd) {
-				results.push(candidate);
-			}
-		}
-	} else if (step > 0) {
-		const stepMs = step * 86_400_000;
-		const elapsed = now.getTime() - eventStart.getTime();
-		let cur: Date;
-		if (elapsed <= 0) {
-			cur = new Date(eventStart);
-		} else {
-			const stepsNeeded = Math.ceil(elapsed / stepMs);
-			cur = new Date(eventStart.getTime() + stepsNeeded * stepMs);
-		}
-		let count = 0;
-		while (cur < effectiveEnd && count < 400) {
-			results.push(new Date(cur));
-			cur = new Date(cur.getTime() + stepMs);
-			count++;
-		}
-	}
-
-	return results;
-}
-
-function stepDays(recurrence: Recurrence): number {
-	switch (recurrence) {
-		case "daily": return 1;
-		case "weekly": return 7;
-		case "biweekly": return 14;
-		default: return 0;
-	}
-}
-
 // ── Send ────────────────────────────────────────────────────────
 
-async function sendReminder(event: CalendarEvent, occStart: Date): Promise<void> {
-	const timeStr = occStart.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-	const dateStr = occStart.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+async function sendReminder(
+	event: CalendarEvent,
+	occStart: Date,
+	override?: { title?: string; description?: string },
+): Promise<void> {
+	const timeStr = occStart.toLocaleTimeString("en-GB", {
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	const dateStr = occStart.toLocaleDateString("en-GB", {
+		weekday: "short",
+		day: "numeric",
+		month: "short",
+	});
 	const mins = event.reminder_minutes ?? 15;
+	const title = override?.title ?? event.title;
+	const desc = override?.description ?? event.description;
 
-	let message = `⏰ Reminder: **${event.title}**\n📅 ${dateStr} at ${timeStr}`;
-	if (mins > 0) message += `\n🔔 Starting in ${mins} minute${mins !== 1 ? "s" : ""}`;
-	if (event.description) message += `\n📝 ${event.description}`;
+	let message = `⏰ Reminder: **${title}**\n📅 ${dateStr} at ${timeStr}`;
+	if (mins > 0)
+		message += `\n🔔 Starting in ${mins} minute${mins !== 1 ? "s" : ""}`;
+	if (desc) message += `\n📝 ${desc}`;
 
 	// Send via pi-channels event bus (if available)
 	if (eventBus) {
@@ -154,4 +119,10 @@ async function sendReminder(event: CalendarEvent, occStart: Date): Promise<void>
 			source: "pi-calendar",
 		});
 	}
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+function toDateKey(d: Date): string {
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

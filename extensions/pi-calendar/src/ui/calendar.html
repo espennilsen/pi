@@ -15,15 +15,21 @@
   </div>
 
   <div class="toolbar">
-    <button class="btn" onclick="navWeek(-1)">← Prev</button>
-    <button class="btn" onclick="navWeek(0)">Today</button>
-    <button class="btn" onclick="navWeek(1)">Next →</button>
-    <span class="week-label" id="weekLabel"></span>
+    <div class="view-switcher">
+      <button class="view-btn active" data-view="week" onclick="switchView('week')">Week</button>
+      <button class="view-btn" data-view="month" onclick="switchView('month')">Month</button>
+      <button class="view-btn" data-view="year" onclick="switchView('year')">Year</button>
+      <button class="view-btn" data-view="table" onclick="switchView('table')">Table</button>
+    </div>
+    <button class="btn" onclick="navPrev()">← Prev</button>
+    <button class="btn" onclick="navToday()">Today</button>
+    <button class="btn" onclick="navNext()">Next →</button>
+    <span class="period-label" id="periodLabel"></span>
     <span class="spacer"></span>
     <button class="btn btn-primary" onclick="openCreateModal()">+ Event</button>
   </div>
 
-  <div class="cal-grid" id="calGrid"></div>
+  <div id="calGrid" class="cal-grid"></div>
 </div>
 
 <!-- Create/Edit Modal -->
@@ -53,24 +59,159 @@
       <div><label>End Date</label><input type="date" id="evtEndDate"></div>
     </div>
 
+    <!-- ── Recurrence ───────────────────────────── -->
     <label>Recurrence</label>
-    <select id="evtRecurrence" onchange="toggleRecurrenceEnd()">
+    <select id="evtRecurrence" onchange="onRecurrenceChange()">
       <option value="">None</option>
       <option value="daily">Daily</option>
       <option value="weekly">Weekly</option>
       <option value="biweekly">Every 2 weeks</option>
       <option value="monthly">Monthly</option>
+      <option value="yearly">Yearly</option>
     </select>
 
-    <div id="recurrenceEndGroup" style="display:none">
-      <label>Repeat until</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="evtRecurrenceEndType" onchange="toggleRecurrenceEndDate()">
-          <option value="forever">Forever</option>
-          <option value="date">Until date</option>
-        </select>
-        <input type="date" id="evtRecurrenceEnd" style="display:none">
+    <!-- Interval -->
+    <div id="intervalGroup" class="rec-group" style="display:none">
+      <label>Repeat every</label>
+      <div class="interval-row">
+        <input type="number" id="evtInterval" min="1" value="1" class="interval-input">
+        <span id="intervalUnit">day(s)</span>
       </div>
+    </div>
+
+    <!-- Weekly: day-of-week picker -->
+    <div id="weeklyGroup" class="rec-group" style="display:none">
+      <label>On days</label>
+      <div class="dow-picker" id="dowPicker">
+        <button type="button" class="dow-btn" data-dow="1" onclick="toggleDow(1)">Mon</button>
+        <button type="button" class="dow-btn" data-dow="2" onclick="toggleDow(2)">Tue</button>
+        <button type="button" class="dow-btn" data-dow="3" onclick="toggleDow(3)">Wed</button>
+        <button type="button" class="dow-btn" data-dow="4" onclick="toggleDow(4)">Thu</button>
+        <button type="button" class="dow-btn" data-dow="5" onclick="toggleDow(5)">Fri</button>
+        <button type="button" class="dow-btn" data-dow="6" onclick="toggleDow(6)">Sat</button>
+        <button type="button" class="dow-btn" data-dow="0" onclick="toggleDow(0)">Sun</button>
+      </div>
+    </div>
+
+    <!-- Monthly options -->
+    <div id="monthlyGroup" class="rec-group" style="display:none">
+      <label>Repeat by</label>
+      <div class="radio-row">
+        <label class="radio-label">
+          <input type="radio" name="monthlyType" value="dayOfMonth" checked onchange="onMonthlyTypeChange()">
+          Day of month
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="monthlyType" value="weekPosition" onchange="onMonthlyTypeChange()">
+          Week position
+        </label>
+      </div>
+      <div id="monthlyDayGroup">
+        <label>Day</label>
+        <input type="number" id="evtDayOfMonth" min="1" max="31" class="small-input">
+      </div>
+      <div id="monthlyPositionGroup" style="display:none">
+        <label>Position(s)</label>
+        <div class="weekpos-picker" id="weekPosPicker">
+          <button type="button" class="weekpos-btn" data-pos="1" onclick="toggleWeekPos(1)">1st</button>
+          <button type="button" class="weekpos-btn" data-pos="2" onclick="toggleWeekPos(2)">2nd</button>
+          <button type="button" class="weekpos-btn" data-pos="3" onclick="toggleWeekPos(3)">3rd</button>
+          <button type="button" class="weekpos-btn" data-pos="4" onclick="toggleWeekPos(4)">4th</button>
+          <button type="button" class="weekpos-btn" data-pos="-1" onclick="toggleWeekPos(-1)">Last</button>
+        </div>
+        <label>Weekday</label>
+        <select id="evtWeekday">
+          <option value="0">Sunday</option>
+          <option value="1">Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Yearly options -->
+    <div id="yearlyGroup" class="rec-group" style="display:none">
+      <label>Month</label>
+      <select id="evtYearlyMonth">
+        <option value="1">January</option>
+        <option value="2">February</option>
+        <option value="3">March</option>
+        <option value="4">April</option>
+        <option value="5">May</option>
+        <option value="6">June</option>
+        <option value="7">July</option>
+        <option value="8">August</option>
+        <option value="9">September</option>
+        <option value="10">October</option>
+        <option value="11">November</option>
+        <option value="12">December</option>
+      </select>
+      <label>Repeat by</label>
+      <div class="radio-row">
+        <label class="radio-label">
+          <input type="radio" name="yearlyType" value="dayOfMonth" checked onchange="onYearlyTypeChange()">
+          Day of month
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="yearlyType" value="weekPosition" onchange="onYearlyTypeChange()">
+          Week position
+        </label>
+      </div>
+      <div id="yearlyDayGroup">
+        <label>Day</label>
+        <input type="number" id="evtYearlyDayOfMonth" min="1" max="31" class="small-input">
+      </div>
+      <div id="yearlyPositionGroup" style="display:none">
+        <label>Position(s)</label>
+        <div class="weekpos-picker" id="yearlyWeekPosPicker">
+          <button type="button" class="weekpos-btn" data-pos="1" onclick="toggleYearlyWeekPos(1)">1st</button>
+          <button type="button" class="weekpos-btn" data-pos="2" onclick="toggleYearlyWeekPos(2)">2nd</button>
+          <button type="button" class="weekpos-btn" data-pos="3" onclick="toggleYearlyWeekPos(3)">3rd</button>
+          <button type="button" class="weekpos-btn" data-pos="4" onclick="toggleYearlyWeekPos(4)">4th</button>
+          <button type="button" class="weekpos-btn" data-pos="-1" onclick="toggleYearlyWeekPos(-1)">Last</button>
+        </div>
+        <label>Weekday</label>
+        <select id="evtYearlyWeekday">
+          <option value="0">Sunday</option>
+          <option value="1">Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- End condition -->
+    <div id="endConditionGroup" class="rec-group" style="display:none">
+      <label>Ends</label>
+      <select id="evtEndType" onchange="onEndTypeChange()">
+        <option value="never">Never</option>
+        <option value="count">After N occurrences</option>
+        <option value="date">On date</option>
+      </select>
+      <div id="endCountGroup" style="display:none">
+        <label>Occurrences</label>
+        <input type="number" id="evtEndCount" min="1" value="10" class="small-input">
+      </div>
+      <div id="endDateGroup" style="display:none">
+        <label>Until</label>
+        <input type="date" id="evtEndDate">
+      </div>
+    </div>
+
+    <!-- Exclusions -->
+    <div id="exclusionsGroup" class="rec-group" style="display:none">
+      <label>Excluded dates</label>
+      <div class="exclusion-add">
+        <input type="date" id="exclusionDate">
+        <button type="button" class="btn btn-small" onclick="addExclusion()">Add</button>
+      </div>
+      <div id="exclusionList" class="exclusion-list"></div>
     </div>
 
     <label>Reminder</label>

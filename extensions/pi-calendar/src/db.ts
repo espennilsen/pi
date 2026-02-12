@@ -6,7 +6,12 @@
  */
 
 import Database from "better-sqlite3";
-import type { CalendarEvent, CreateEventInput, UpdateEventInput } from "./types.ts";
+import type {
+	CalendarEvent,
+	CreateEventInput,
+	RecurrenceRule,
+	UpdateEventInput,
+} from "./types.ts";
 
 export type { CalendarEvent } from "./types.ts";
 
@@ -56,6 +61,34 @@ const MIGRATIONS: string[] = [
 		UNIQUE(event_id, event_time)
 	);
 	CREATE INDEX IF NOT EXISTS idx_cal_reminders_event ON calendar_reminders_sent(event_id, event_time);`,
+
+	// 3: Expand recurrence support — add 'yearly', add recurrence_rule JSON column.
+	//    SQLite can't ALTER a CHECK constraint, so we recreate the table.
+	`CREATE TABLE calendar_events_new (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		title           TEXT NOT NULL,
+		description     TEXT,
+		start_time      TEXT NOT NULL,
+		end_time        TEXT NOT NULL,
+		all_day         INTEGER NOT NULL DEFAULT 0,
+		color           TEXT,
+		recurrence      TEXT CHECK(recurrence IN (NULL, 'daily', 'weekly', 'biweekly', 'monthly', 'yearly')),
+		recurrence_rule TEXT,
+		recurrence_end  TEXT,
+		reminder_minutes INTEGER,
+		created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+		updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+	);
+	INSERT INTO calendar_events_new
+		(id, title, description, start_time, end_time, all_day, color,
+		 recurrence, recurrence_end, reminder_minutes, created_at, updated_at)
+		SELECT id, title, description, start_time, end_time, all_day, color,
+		       recurrence, recurrence_end, reminder_minutes, created_at, updated_at
+		FROM calendar_events;
+	DROP TABLE calendar_events;
+	ALTER TABLE calendar_events_new RENAME TO calendar_events;
+	CREATE INDEX IF NOT EXISTS idx_cal_events_start ON calendar_events(start_time);
+	CREATE INDEX IF NOT EXISTS idx_cal_events_end   ON calendar_events(end_time);`,
 ];
 
 // ── Init ────────────────────────────────────────────────────────
@@ -70,12 +103,16 @@ export function initDb(dbPath: string): void {
 		module TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0
 	)`);
 
-	const row = db.prepare("SELECT version FROM calendar_module_versions WHERE module = ?").get("calendar") as { version: number } | undefined;
+	const row = db
+		.prepare("SELECT version FROM calendar_module_versions WHERE module = ?")
+		.get("calendar") as { version: number } | undefined;
 	const current = row?.version ?? 0;
 
 	for (let i = current; i < MIGRATIONS.length; i++) {
 		db.exec(MIGRATIONS[i]);
-		db.prepare("INSERT OR REPLACE INTO calendar_module_versions (module, version) VALUES (?, ?)").run("calendar", i + 1);
+		db.prepare(
+			"INSERT OR REPLACE INTO calendar_module_versions (module, version) VALUES (?, ?)",
+		).run("calendar", i + 1);
 	}
 
 	// Prepared statements
@@ -90,13 +127,15 @@ export function initDb(dbPath: string): void {
 		getEvent: db.prepare("SELECT * FROM calendar_events WHERE id = ?"),
 		insertEvent: db.prepare(`
 			INSERT INTO calendar_events
-				(title, description, start_time, end_time, all_day, color, recurrence, recurrence_end, reminder_minutes)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				(title, description, start_time, end_time, all_day, color,
+				 recurrence, recurrence_rule, recurrence_end, reminder_minutes)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`),
 		updateEvent: db.prepare(`
 			UPDATE calendar_events SET
 				title = ?, description = ?, start_time = ?, end_time = ?,
-				all_day = ?, color = ?, recurrence = ?, recurrence_end = ?, reminder_minutes = ?,
+				all_day = ?, color = ?, recurrence = ?, recurrence_rule = ?,
+				recurrence_end = ?, reminder_minutes = ?,
 				updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 			WHERE id = ?
 		`),
@@ -121,13 +160,43 @@ export function initDb(dbPath: string): void {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function mapRow(r: any): CalendarEvent {
-	return { ...r, all_day: !!r.all_day } as CalendarEvent;
+	return {
+		...r,
+		all_day: !!r.all_day,
+		recurrence_rule: r.recurrence_rule ? parseRule(r.recurrence_rule) : null,
+	} as CalendarEvent;
+}
+
+function parseRule(json: string): RecurrenceRule | null {
+	try {
+		return JSON.parse(json);
+	} catch {
+		return null;
+	}
+}
+
+function serializeRule(rule: RecurrenceRule | null | undefined): string | null {
+	if (!rule) return null;
+	// Strip empty/default fields to keep JSON compact
+	const clean: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(rule)) {
+		if (v == null) continue;
+		if (Array.isArray(v) && v.length === 0) continue;
+		if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
+		clean[k] = v;
+	}
+	return Object.keys(clean).length > 0 ? JSON.stringify(clean) : null;
 }
 
 // ── CRUD ────────────────────────────────────────────────────────
 
-export function getEvents(rangeStart: string, rangeEnd: string): CalendarEvent[] {
-	return (stmts.getEvents.all(rangeEnd, rangeStart, rangeEnd, rangeStart) as any[]).map(mapRow);
+export function getEvents(
+	rangeStart: string,
+	rangeEnd: string,
+): CalendarEvent[] {
+	return (
+		stmts.getEvents.all(rangeEnd, rangeStart, rangeEnd, rangeStart) as any[]
+	).map(mapRow);
 }
 
 export function getEvent(id: number): CalendarEvent | undefined {
@@ -144,25 +213,40 @@ export function createEvent(input: CreateEventInput): CalendarEvent {
 		input.all_day ? 1 : 0,
 		input.color ?? null,
 		input.recurrence ?? null,
+		serializeRule(input.recurrence_rule),
 		input.recurrence_end ?? null,
 		input.reminder_minutes ?? null,
 	);
 	return getEvent(Number(result.lastInsertRowid))!;
 }
 
-export function updateEvent(id: number, updates: UpdateEventInput): CalendarEvent | undefined {
+export function updateEvent(
+	id: number,
+	updates: UpdateEventInput,
+): CalendarEvent | undefined {
 	const existing = getEvent(id);
 	if (!existing) return undefined;
 	stmts.updateEvent.run(
 		updates.title ?? existing.title,
-		updates.description !== undefined ? updates.description : existing.description,
+		updates.description !== undefined
+			? updates.description
+			: existing.description,
 		updates.start_time ?? existing.start_time,
 		updates.end_time ?? existing.end_time,
 		(updates.all_day ?? existing.all_day) ? 1 : 0,
 		updates.color !== undefined ? updates.color : existing.color,
-		updates.recurrence !== undefined ? updates.recurrence : existing.recurrence,
-		updates.recurrence_end !== undefined ? updates.recurrence_end : existing.recurrence_end,
-		updates.reminder_minutes !== undefined ? updates.reminder_minutes : existing.reminder_minutes,
+		updates.recurrence !== undefined
+			? updates.recurrence
+			: existing.recurrence,
+		updates.recurrence_rule !== undefined
+			? serializeRule(updates.recurrence_rule)
+			: serializeRule(existing.recurrence_rule),
+		updates.recurrence_end !== undefined
+			? updates.recurrence_end
+			: existing.recurrence_end,
+		updates.reminder_minutes !== undefined
+			? updates.reminder_minutes
+			: existing.reminder_minutes,
 		id,
 	);
 	return getEvent(id)!;

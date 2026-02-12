@@ -9,6 +9,8 @@ export interface CronSettings {
 	activeHours: { start: string; end: string } | null;
 	route: string;
 	showOk: boolean;
+	/** Extensions to load in cron subprocesses. Empty array = --no-extensions. */
+	extensions: string[];
 }
 
 const DEFAULTS: CronSettings = {
@@ -16,6 +18,7 @@ const DEFAULTS: CronSettings = {
 	activeHours: { start: "08:00", end: "22:00" },
 	route: "cron",
 	showOk: false,
+	extensions: [],
 };
 
 export function resolveSettings(cwd: string): CronSettings {
@@ -31,6 +34,7 @@ export function resolveSettings(cwd: string): CronSettings {
 			activeHours: cfg.activeHours !== undefined ? cfg.activeHours : DEFAULTS.activeHours,
 			route: cfg.route ?? DEFAULTS.route,
 			showOk: cfg.showOk ?? DEFAULTS.showOk,
+			extensions: Array.isArray(cfg.extensions) ? cfg.extensions : DEFAULTS.extensions,
 		};
 	} catch {
 		return { ...DEFAULTS };

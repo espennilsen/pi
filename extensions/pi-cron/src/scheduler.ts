@@ -85,9 +85,15 @@ interface RunResult {
 	exitCode: number;
 }
 
-function runPiSubprocess(prompt: string, cwd: string, timeoutMs = 600_000): Promise<RunResult> {
+function runPiSubprocess(prompt: string, cwd: string, extensions: string[] = [], timeoutMs = 600_000): Promise<RunResult> {
 	return new Promise((resolve) => {
-		const child = spawn("pi", ["-p", "--no-session", prompt], {
+		const args = ["-p", "--no-session", "--no-extensions"];
+		for (const ext of extensions) {
+			args.push("-e", ext);
+		}
+		args.push(prompt);
+
+		const child = spawn("pi", args, {
 			cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 			env: { ...process.env },
@@ -269,7 +275,7 @@ export class CronScheduler {
 		this.handlers.onJobStart?.({ job, startedAt });
 
 		try {
-			const result = await runPiSubprocess(job.prompt, this.cwd);
+			const result = await runPiSubprocess(job.prompt, this.cwd, this.settings.extensions);
 			const durationMs = Date.now() - startedAt.getTime();
 
 			if (result.exitCode !== 0 && !result.stdout) {

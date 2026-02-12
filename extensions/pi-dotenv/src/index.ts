@@ -1,16 +1,19 @@
 /**
- * pi-dotenv — Loads .env files from the pi agent home directory into process.env.
+ * pi-dotenv — Loads .env files into process.env.
  *
- * On session_start, reads .env files from ~/.pi/agent/ (or $PI_CODING_AGENT_DIR)
- * and injects them into process.env so other extensions can use env-based config
+ * On session_start, reads .env files from two locations and injects them
+ * into process.env so other extensions can use env-based config
  * (e.g. pi-channels "env:VAR" syntax, pi-vault OBSIDIAN_API_KEY, pi-webserver
  * API_TOKEN, etc.).
  *
  * Load order (later files override earlier):
- *   1. .env
- *   2. .env.local
+ *   1. ~/.pi/agent/.env
+ *   2. ~/.pi/agent/.env.local
+ *   3. <project>/.pi/.env
+ *   4. <project>/.pi/.env.local
  *
- * Existing process.env values are never overwritten (system env wins).
+ * Project-level files override global ones. Existing process.env values
+ * are never overwritten (system env wins).
  */
 
 import * as path from "node:path";
@@ -21,31 +24,52 @@ import { getAgentDir } from "@mariozechner/pi-coding-agent";
 
 const ENV_FILES = [".env", ".env.local"];
 
-function loadEnv(ui?: { notify(msg: string, level: string): void }): void {
-	const agentDir = getAgentDir();
-	let loaded = 0;
+function parseEnvFromDir(dir: string, ui?: { notify(msg: string, level?: "info" | "warning" | "error"): void }): Record<string, string> {
+	const vars: Record<string, string> = {};
 
 	for (const file of ENV_FILES) {
-		const filePath = path.join(agentDir, file);
+		const filePath = path.join(dir, file);
 		if (!fs.existsSync(filePath)) continue;
 
-		const result = dotenv.config({ path: filePath, override: false });
-		if (result.error) {
-			ui?.notify(`pi-dotenv: failed to parse ${file}: ${result.error.message}`, "warn");
-			continue;
+		try {
+			const content = fs.readFileSync(filePath, "utf-8");
+			const parsed = dotenv.parse(content);
+			// Later files override earlier ones within the same directory
+			Object.assign(vars, parsed);
+		} catch (err: any) {
+			ui?.notify(`pi-dotenv: failed to parse ${filePath}: ${err.message}`, "warning");
 		}
+	}
 
-		const count = result.parsed ? Object.keys(result.parsed).length : 0;
-		loaded += count;
+	return vars;
+}
+
+function loadEnv(cwd: string, ui?: { notify(msg: string, level?: "info" | "warning" | "error"): void }): void {
+	const agentDir = getAgentDir();
+	const projectDir = path.join(cwd, ".pi");
+
+	// Parse global first, then project overrides global
+	const vars = parseEnvFromDir(agentDir, ui);
+	if (projectDir !== agentDir) {
+		Object.assign(vars, parseEnvFromDir(projectDir, ui));
+	}
+
+	// Inject into process.env — system/shell env always wins
+	let loaded = 0;
+	for (const [key, value] of Object.entries(vars)) {
+		if (process.env[key] === undefined) {
+			process.env[key] = value;
+			loaded++;
+		}
 	}
 
 	if (loaded > 0) {
-		ui?.notify(`pi-dotenv: loaded ${loaded} variable${loaded !== 1 ? "s" : ""} from ${agentDir}`, "info");
+		ui?.notify(`pi-dotenv: loaded ${loaded} variable${loaded !== 1 ? "s" : ""}`, "info");
 	}
 }
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
-		loadEnv(ctx.ui);
+		loadEnv(ctx.cwd, ctx.ui);
 	});
 }

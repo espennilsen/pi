@@ -1,6 +1,6 @@
 # pi-dotenv
 
-Loads `.env` files from the pi agent home directory (`~/.pi/agent/`) into `process.env` so other extensions can use environment-based configuration.
+Loads `.env` files into `process.env` so other extensions can use environment-based configuration.
 
 ## Install
 
@@ -10,22 +10,27 @@ pi install /path/to/pi-dotenv
 
 ## How it works
 
-On `session_start`, pi-dotenv reads env files from the agent home directory and injects variables into `process.env`.
+On `session_start`, pi-dotenv reads env files from two locations and injects variables into `process.env`.
 
 **Load order** (later files override earlier):
 
-1. `~/.pi/agent/.env` — shared defaults
-2. `~/.pi/agent/.env.local` — local overrides (gitignore this)
+1. `~/.pi/agent/.env` — global defaults
+2. `~/.pi/agent/.env.local` — global local overrides (gitignore this)
+3. `<project>/.pi/.env` — project-specific defaults
+4. `<project>/.pi/.env.local` — project-specific local overrides
 
-**Existing env vars are never overwritten** — system/shell environment always wins.
+Project-level files take precedence over global ones. **Existing env vars are never overwritten** — system/shell environment always wins.
 
 ## Example
 
 ```bash
-# ~/.pi/agent/.env.local
+# ~/.pi/agent/.env.local (global)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF
 OBSIDIAN_API_KEY=my-secret-key
-API_TOKEN=my-web-api-token
+
+# ~/Dev/my-project/.pi/.env (project-specific)
+API_TOKEN=project-specific-token
+PI_WEB_AUTH=admin:secret
 ```
 
 These become available to:
@@ -36,7 +41,7 @@ These become available to:
 
 ## Configuration
 
-None — just place `.env` or `.env.local` in your agent home directory (`~/.pi/agent/`).
+None — just place `.env` or `.env.local` in `~/.pi/agent/` (global) or `<project>/.pi/` (project-specific).
 
 ## License
 

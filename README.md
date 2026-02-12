@@ -44,9 +44,13 @@ Each extension lives in `extensions/<name>/` with its own `README.md` and settin
 
 | Skill | Description |
 |---|---|
-| `npm` | Manage npm packages — install, publish, version bump, audit, and run scripts |
-| `workon` | Switch working context to a project — loads AGENTS.md, git status, and td issues |
-| `sample-skill` | Template skill for creating new skills |
+| [`changelog-generator`](https://github.com/espennilsen/pi/tree/main/skills/changelog-generator) | Generate and update changelogs from git history |
+| [`git-project-status`](https://github.com/espennilsen/pi/tree/main/skills/git-project-status) | Comprehensive status reports for git repositories |
+| [`handoff`](https://github.com/espennilsen/pi/tree/main/skills/handoff) | Generate continuation prompts for fresh agent sessions |
+| [`npm`](https://github.com/espennilsen/pi/tree/main/skills/npm) | Manage npm packages — install, publish, version bump, audit, and run scripts |
+| [`readme-reviewer`](https://github.com/espennilsen/pi/tree/main/skills/readme-reviewer) | Review and generate README files for any project |
+| [`sample-skill`](https://github.com/espennilsen/pi/tree/main/skills/sample-skill) | Template skill for creating new skills |
+| [`workon`](https://github.com/espennilsen/pi/tree/main/skills/workon) | Switch working context to a project — loads AGENTS.md, git status, and td issues |
 
 ## Disclaimer
 

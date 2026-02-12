@@ -81,12 +81,25 @@ export interface BridgeConfig {
 	/** Enable the chat bridge (default: false). Also enabled via --chat-bridge flag. */
 	enabled?: boolean;
 	/**
-	 * Use persistent RPC sessions (default: true).
-	 * When enabled, each sender gets a long-lived `pi --mode rpc` subprocess
-	 * that maintains conversation context across messages.
-	 * When disabled, each message spawns a stateless subprocess (no memory).
+	 * Default session mode (default: "persistent").
+	 *
+	 * - "persistent" — long-lived `pi --mode rpc` subprocess with conversation memory
+	 * - "stateless"  — isolated `pi -p --no-session` subprocess per message (no memory)
+	 *
+	 * Can be overridden per sender via `sessionRules`.
 	 */
-	persistent?: boolean;
+	sessionMode?: "persistent" | "stateless";
+	/**
+	 * Per-sender session mode overrides.
+	 * Each rule matches sender keys (`adapter:senderId`) against glob patterns.
+	 * First match wins. Unmatched senders use `sessionMode` default.
+	 *
+	 * Examples:
+	 *   - `{ "match": "telegram:-100*", "mode": "stateless" }` — group chats stateless
+	 *   - `{ "match": "webhook:*", "mode": "stateless" }` — all webhooks stateless
+	 *   - `{ "match": "telegram:123456789", "mode": "persistent" }` — specific user persistent
+	 */
+	sessionRules?: Array<{ match: string; mode: "persistent" | "stateless" }>;
 	/**
 	 * Idle timeout in minutes for persistent sessions (default: 30).
 	 * After this period of inactivity, the sender's RPC subprocess is killed.

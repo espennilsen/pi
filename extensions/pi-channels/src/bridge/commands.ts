@@ -19,7 +19,8 @@ export interface CommandContext {
 	abortCurrent: (sender: string) => boolean;
 	clearQueue: (sender: string) => void;
 	resetSession: (sender: string) => void;
-	isPersistent?: boolean;
+	/** Check if a given sender is using persistent (RPC) mode. */
+	isPersistent: (sender: string) => boolean;
 }
 
 const commands = new Map<string, BotCommand>();
@@ -99,12 +100,13 @@ registerCommand({
 	description: "Show session info",
 	handler: (_args, session, ctx) => {
 		if (!session) return "No active session. Send a message to start one.";
+		const persistent = ctx.isPersistent(session.sender);
 		const uptime = Math.floor((Date.now() - session.startedAt) / 1000);
 		const mins = Math.floor(uptime / 60);
 		const secs = uptime % 60;
 		return [
 			`**Session Status**`,
-			`- Mode: ${ctx.isPersistent ? "🔗 Persistent (RPC)" : "⚡ Stateless"}`,
+			`- Mode: ${persistent ? "🔗 Persistent (conversation memory)" : "⚡ Stateless (no memory)"}`,
 			`- State: ${session.processing ? "⏳ Processing..." : "💤 Idle"}`,
 			`- Messages: ${session.messageCount}`,
 			`- Queue: ${session.queue.length} pending`,
@@ -118,10 +120,11 @@ registerCommand({
 	description: "Clear queue and start fresh conversation",
 	handler: (_args, session, ctx) => {
 		if (!session) return "No active session.";
+		const persistent = ctx.isPersistent(session.sender);
 		ctx.abortCurrent(session.sender);
 		ctx.clearQueue(session.sender);
 		ctx.resetSession(session.sender);
-		return ctx.isPersistent
+		return persistent
 			? "🔄 Session reset. Conversation context cleared. Queue cleared."
 			: "🔄 Session reset. Queue cleared.";
 	},

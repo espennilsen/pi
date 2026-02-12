@@ -23,7 +23,8 @@ import { startTyping } from "./typing.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,
-	persistent: true,
+	sessionMode: "persistent",
+	sessionRules: [],
 	idleTimeoutMinutes: 30,
 	maxQueuePerSender: 5,
 	timeoutMs: 300_000,
@@ -72,17 +73,16 @@ export class ChatBridge {
 		if (this.running) return;
 		this.running = true;
 
-		if (this.config.persistent) {
-			this.rpcManager = new RpcSessionManager(
-				{
-					cwd: this.cwd,
-					model: this.config.model,
-					timeoutMs: this.config.timeoutMs,
-					extensions: this.config.extensions,
-				},
-				this.config.idleTimeoutMinutes * 60_000,
-			);
-		}
+		// Always create the RPC manager — it's used on-demand for persistent senders
+		this.rpcManager = new RpcSessionManager(
+			{
+				cwd: this.cwd,
+				model: this.config.model,
+				timeoutMs: this.config.timeoutMs,
+				extensions: this.config.extensions,
+			},
+			this.config.idleTimeoutMinutes * 60_000,
+		);
 	}
 
 	stop(): void {
@@ -190,16 +190,18 @@ export class ChatBridge {
 		const ac = new AbortController();
 		session.abortController = ac;
 
+		const usePersistent = this.shouldUsePersistent(senderKey);
+
 		this.events.emit("bridge:start", {
 			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
 			text: prompt.text.slice(0, 100),
-			persistent: !!this.rpcManager,
+			persistent: usePersistent,
 		});
 
 		try {
 			let result;
 
-			if (this.rpcManager) {
+			if (usePersistent && this.rpcManager) {
 				// Persistent mode: use RPC session
 				result = await this.runWithRpc(senderKey, prompt, ac.signal);
 			} else {
@@ -232,11 +234,11 @@ export class ChatBridge {
 			this.events.emit("bridge:complete", {
 				id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
 				ok: result.ok, durationMs: result.durationMs,
-				persistent: !!this.rpcManager,
+				persistent: usePersistent,
 			});
 			this.log("bridge-complete", {
 				id: prompt.id, adapter: prompt.adapter, ok: result.ok,
-				durationMs: result.durationMs, persistent: !!this.rpcManager,
+				durationMs: result.durationMs, persistent: usePersistent,
 			}, result.ok ? "INFO" : "WARN");
 
 		} catch (err: any) {
@@ -325,11 +327,32 @@ export class ChatBridge {
 		return this.sessions;
 	}
 
+	// ── Session mode resolution ───────────────────────────────
+
+	/**
+	 * Determine if a sender should use persistent (RPC) or stateless mode.
+	 * Checks sessionRules first (first match wins), falls back to sessionMode default.
+	 */
+	private shouldUsePersistent(senderKey: string): boolean {
+		for (const rule of this.config.sessionRules) {
+			if (globMatch(rule.match, senderKey)) {
+				return rule.mode === "persistent";
+			}
+		}
+		return this.config.sessionMode === "persistent";
+	}
+
 	// ── Command context ───────────────────────────────────────
 
 	private commandContext(): CommandContext {
 		return {
-			isPersistent: !!this.rpcManager,
+			isPersistent: (sender: string) => {
+				// Find the sender key to check mode
+				for (const [key, session] of this.sessions) {
+					if (session.sender === sender) return this.shouldUsePersistent(key);
+				}
+				return this.config.sessionMode === "persistent";
+			},
 			abortCurrent: (sender: string): boolean => {
 				for (const session of this.sessions.values()) {
 					if (session.sender === sender && session.abortController) {
@@ -366,6 +389,19 @@ export class ChatBridge {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
+
+/**
+ * Simple glob matcher supporting `*` (any chars) and `?` (single char).
+ * Used for sessionRules pattern matching against "adapter:senderId" keys.
+ */
+function globMatch(pattern: string, text: string): boolean {
+	// Escape regex special chars except * and ?
+	const re = pattern
+		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+		.replace(/\*/g, ".*")
+		.replace(/\?/g, ".");
+	return new RegExp(`^${re}$`).test(text);
+}
 
 const MAX_ERROR_LENGTH = 200;
 

@@ -49,7 +49,11 @@ Add `"pi-channels"` to your pi settings file (`~/.pi/agent/settings.json` or `.p
     },
     "bridge": {
       "enabled": false,
-      "persistent": true,
+      "sessionMode": "persistent",
+      "sessionRules": [
+        { "match": "telegram:-100*", "mode": "stateless" },
+        { "match": "webhook:*", "mode": "stateless" }
+      ],
       "idleTimeoutMinutes": 30,
       "maxQueuePerSender": 5,
       "timeoutMs": 300000,
@@ -76,7 +80,8 @@ Routes map friendly names to adapter + recipient pairs. When pi-cron fires a job
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `false` | Enable on startup. Also via `--chat-bridge` flag or `/chat-bridge on`. |
-| `persistent` | `true` | Use persistent RPC sessions. Each sender gets a long-lived subprocess with conversation memory. Set `false` for stateless mode (each message isolated). |
+| `sessionMode` | `"persistent"` | Default session mode. `"persistent"` = RPC subprocess with conversation memory. `"stateless"` = isolated subprocess per message (no memory). |
+| `sessionRules` | `[]` | Per-sender overrides. Array of `{ match, mode }` rules. Patterns match against `adapter:senderId` keys using glob syntax (`*`, `?`). First match wins; unmatched senders use `sessionMode`. |
 | `idleTimeoutMinutes` | `30` | Idle timeout for persistent sessions. After this period of inactivity, the sender's subprocess is killed. A new one starts on the next message. |
 | `maxQueuePerSender` | `5` | Max pending messages per sender before rejecting new ones. |
 | `timeoutMs` | `300000` | Per-prompt timeout (5 min). |
@@ -113,25 +118,43 @@ pi --chat-bridge
 - If a sender's queue is full, new messages are rejected with a warning
 - Typing indicators refresh every 4 seconds (Telegram typing expires after ~5s)
 
-### Persistent sessions (default)
+### Session modes
 
-With `persistent: true`, each sender gets a long-lived `pi --mode rpc` subprocess:
+The bridge supports two modes, configurable globally via `sessionMode` and per-sender via `sessionRules`:
 
-- **Conversation context carries over** — the agent remembers previous messages
+**Persistent** (`"persistent"`, default) — each sender gets a long-lived `pi --mode rpc` subprocess:
+- Conversation context carries over — the agent remembers previous messages
 - Sessions auto-restart if the subprocess crashes
 - Idle sessions are killed after `idleTimeoutMinutes` (default 30)
 - `/new` command clears conversation context and starts fresh
 - Image attachments are sent as base64 via the RPC protocol
+- Best for: private chats, conversational interactions
 
-This is the recommended mode for chat interfaces where users expect conversational continuity.
-
-### Stateless mode
-
-With `persistent: false`, each message spawns an isolated `pi -p --no-session` subprocess:
-
+**Stateless** (`"stateless"`) — each message spawns an isolated `pi -p --no-session` subprocess:
 - No memory between messages — each prompt is independent
 - Lower resource usage (no long-running processes)
-- Good for one-shot commands or notification-style interactions
+- Best for: group chats, ops channels, webhook triggers, one-shot commands
+
+### Session rules
+
+Use `sessionRules` to control mode per sender. Patterns match against the sender key (`adapter:senderId`), with `*` matching any characters:
+
+```json
+{
+  "bridge": {
+    "sessionMode": "persistent",
+    "sessionRules": [
+      { "match": "telegram:-100*", "mode": "stateless" },
+      { "match": "telegram:123456789", "mode": "persistent" },
+      { "match": "webhook:*", "mode": "stateless" }
+    ]
+  }
+}
+```
+
+Telegram group chat IDs start with `-100`, so `telegram:-100*` matches all groups. Private chats are positive numbers like `telegram:123456789`.
+
+First matching rule wins. Unmatched senders fall back to `sessionMode`.
 
 ### Bot commands
 

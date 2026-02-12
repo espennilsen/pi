@@ -36,26 +36,26 @@ Each extension lives in `extensions/<name>/` with its own `README.md` and settin
 
 | Extension | Description |
 |---|---|
-| **pi-calendar** | Calendar tool, web dashboard, and event reminders |
-| **pi-channels** | Two-way messaging (Telegram, webhooks) with chat bridge |
-| **pi-cron** | Cron scheduler for recurring agent prompts |
-| **pi-dotenv** | Deprecated — kept as no-op for backwards compatibility |
-| **pi-heartbeat** | Periodic health checks with web dashboard and alerts |
-| **pi-jobs** | Agent run telemetry and cost tracking |
-| **pi-kysely** | Shared Kysely database registry with table-level RBAC |
-| **pi-logger** | Centralized structured JSONL logging via event bus |
-| **pi-memory** | Persistent memory — long-term facts, daily logs, search |
-| **pi-npm** | NPM workflow tool (install, publish, version, audit, etc.) |
-| **pi-personal-crm** | Personal CRM with contacts, companies, interactions |
-| **pi-projects** | Project tracking dashboard with git status |
-| **pi-subagent** | Parallel task delegation via isolated subprocesses |
-| **pi-td-webui** | Task dashboard for the `td` CLI |
-| **pi-telemetry** | Local-only privacy-safe event telemetry |
-| **pi-vault** | Obsidian vault tool and health dashboard |
-| **pi-web-dashboard** | Web dashboard landing page |
-| **pi-webnav** | Web navigation and scraping tool |
-| **pi-webserver** | Shared HTTP server with auth for all web extensions |
-| **pi-workon** | Project context switching and scaffolding |
+| [**pi-calendar**](https://github.com/espennilsen/pi/tree/main/extensions/pi-calendar) | Calendar tool, web dashboard, and event reminders |
+| [**pi-channels**](https://github.com/espennilsen/pi/tree/main/extensions/pi-channels) | Two-way messaging (Telegram, webhooks) with chat bridge |
+| [**pi-cron**](https://github.com/espennilsen/pi/tree/main/extensions/pi-cron) | Cron scheduler for recurring agent prompts |
+| [**pi-dotenv**](https://github.com/espennilsen/pi/tree/main/extensions/pi-dotenv) | Deprecated — kept as no-op for backwards compatibility |
+| [**pi-heartbeat**](https://github.com/espennilsen/pi/tree/main/extensions/pi-heartbeat) | Periodic health checks with web dashboard and alerts |
+| [**pi-jobs**](https://github.com/espennilsen/pi/tree/main/extensions/pi-jobs) | Agent run telemetry and cost tracking |
+| [**pi-kysely**](https://github.com/espennilsen/pi/tree/main/extensions/pi-kysely) | Shared Kysely database registry with table-level RBAC |
+| [**pi-logger**](https://github.com/espennilsen/pi/tree/main/extensions/pi-logger) | Centralized structured JSONL logging via event bus |
+| [**pi-memory**](https://github.com/espennilsen/pi/tree/main/extensions/pi-memory) | Persistent memory — long-term facts, daily logs, search |
+| [**pi-npm**](https://github.com/espennilsen/pi/tree/main/extensions/pi-npm) | NPM workflow tool (install, publish, version, audit, etc.) |
+| [**pi-personal-crm**](https://github.com/espennilsen/pi/tree/main/extensions/pi-personal-crm) | Personal CRM with contacts, companies, interactions |
+| [**pi-projects**](https://github.com/espennilsen/pi/tree/main/extensions/pi-projects) | Project tracking dashboard with git status |
+| [**pi-subagent**](https://github.com/espennilsen/pi/tree/main/extensions/pi-subagent) | Parallel task delegation via isolated subprocesses |
+| [**pi-td-webui**](https://github.com/espennilsen/pi/tree/main/extensions/pi-td-webui) | Task dashboard for the `td` CLI |
+| [**pi-telemetry**](https://github.com/espennilsen/pi/tree/main/extensions/pi-telemetry) | Local-only privacy-safe event telemetry |
+| [**pi-vault**](https://github.com/espennilsen/pi/tree/main/extensions/pi-vault) | Obsidian vault tool and health dashboard |
+| [**pi-web-dashboard**](https://github.com/espennilsen/pi/tree/main/extensions/pi-web-dashboard) | Web dashboard landing page |
+| [**pi-webnav**](https://github.com/espennilsen/pi/tree/main/extensions/pi-webnav) | Web navigation and scraping tool |
+| [**pi-webserver**](https://github.com/espennilsen/pi/tree/main/extensions/pi-webserver) | Shared HTTP server with auth for all web extensions |
+| [**pi-workon**](https://github.com/espennilsen/pi/tree/main/extensions/pi-workon) | Project context switching and scaffolding |
 
 ## Skills
 

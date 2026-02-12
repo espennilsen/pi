@@ -58,4 +58,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix cron subprocesses crashing with EADDRINUSE by running with `--no-extensions`; add `extensions` setting to whitelist specific extensions for subprocess runs
 - Fix `.gitignore` patterns to properly exclude runtime databases and lock files

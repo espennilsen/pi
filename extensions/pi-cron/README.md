@@ -61,6 +61,7 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `activeHours` | `{ "start": "08:00", "end": "22:00" }` | Suppress job execution outside this window. Set to `null` for 24/7. |
 | `route` | `"cron"` | pi-channels route for sending job results (failures, or all results if `showOk`). |
 | `showOk` | `false` | Send notifications for successful jobs too (not just failures). |
+| `extensions` | `[]` | Extensions to load in cron subprocesses. Subprocesses run with `--no-extensions` by default to avoid port conflicts. List extension names here to whitelist specific ones via `-e`. |
 
 ## Crontab format
 
@@ -114,7 +115,7 @@ All callbacks are optional. Write results have `{ ok: boolean, message: string }
 2. Scheduler starts only when enabled (`--cron` flag or `/cron on`)
 3. Lock file prevents multiple pi instances from scheduling simultaneously
 4. Scheduler ticks every 30 seconds, matching cron expressions against local time
-5. On match, spawns `pi -p "<prompt>"` as a child process (crash-isolated, fresh context)
+5. On match, spawns `pi -p --no-extensions "<prompt>"` as a child process (crash-isolated, fresh context, no extensions unless whitelisted)
 6. File watcher reloads the job list when the tab file changes
 
 ## Development

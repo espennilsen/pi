@@ -15,20 +15,6 @@ ln -s /path/to/this/repo ~/.pi/agent
 
 Runtime and sensitive files (`auth.json`, `cache/`, `sessions/`, `crm/`, `db/`, `telemetry/`, `*.db`, `*.tab`) are gitignored.
 
-## Settings
-
-Copy `settings.json.example` to `settings.json` and customize. The top-level keys configure Pi itself, while extension-specific blocks are documented below.
-
-```jsonc
-{
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "high",
-  "packages": []
-}
-```
-
-Environment variables can be provided in `.env` / `.env.local` files — see `.env.example` for all supported variables.
 
 ## Extensions
 

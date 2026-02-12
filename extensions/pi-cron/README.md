@@ -34,6 +34,34 @@ Or toggle at runtime:
 /cron                     # Show status
 ```
 
+Or via settings (autostart on every session):
+
+```json
+{ "pi-cron": { "autostart": true } }
+```
+
+## Settings
+
+Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
+
+```json
+{
+  "pi-cron": {
+    "autostart": true,
+    "activeHours": { "start": "08:00", "end": "22:00" },
+    "route": "cron",
+    "showOk": false
+  }
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `autostart` | `false` | Start the scheduler automatically on session start. |
+| `activeHours` | `{ "start": "08:00", "end": "22:00" }` | Suppress job execution outside this window. Set to `null` for 24/7. |
+| `route` | `"cron"` | pi-channels route for sending job results (failures, or all results if `showOk`). |
+| `showOk` | `false` | Send notifications for successful jobs too (not just failures). |
+
 ## Crontab format
 
 `~/.pi/agent/pi-cron.tab` — one job per line:

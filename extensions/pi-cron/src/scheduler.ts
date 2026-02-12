@@ -9,6 +9,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import { loadJobs, getTabPath, type CronJob } from "./crontab.ts";
+import type { CronSettings } from "./settings.ts";
 
 // ── Cron field parser ───────────────────────────────────────────
 
@@ -141,10 +142,16 @@ export class CronScheduler {
 	private running = new Set<string>();
 	private jobs: CronJob[] = [];
 	private handlers: CronEventHandler;
+	private settings: CronSettings;
 
-	constructor(cwd: string, handlers?: CronEventHandler) {
+	constructor(cwd: string, settings: CronSettings, handlers?: CronEventHandler) {
 		this.cwd = cwd;
+		this.settings = settings;
 		this.handlers = handlers ?? {};
+	}
+
+	updateSettings(settings: CronSettings): void {
+		this.settings = settings;
 	}
 
 	// ── Lifecycle ───────────────────────────────────────────
@@ -220,12 +227,25 @@ export class CronScheduler {
 
 	// ── Tick ────────────────────────────────────────────────
 
+	private inActiveHours(): boolean {
+		if (!this.settings.activeHours) return true;
+		const { start, end } = this.settings.activeHours;
+		const now = new Date();
+		const currentMinutes = now.getHours() * 60 + now.getMinutes();
+		const [startH, startM] = start.split(":").map(Number);
+		const [endH, endM] = end.split(":").map(Number);
+		return currentMinutes >= startH * 60 + startM && currentMinutes < endH * 60 + endM;
+	}
+
 	private tick(): void {
 		const now = new Date();
 		const currentMinute = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
 
 		if (currentMinute === this.lastTickMinute) return;
 		this.lastTickMinute = currentMinute;
+
+		// Suppress jobs outside active hours
+		if (!this.inActiveHours()) return;
 
 		for (const job of this.jobs) {
 			if (job.disabled || this.running.has(job.name)) continue;

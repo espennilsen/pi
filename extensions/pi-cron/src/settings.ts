@@ -1,44 +1,36 @@
 /**
- * pi-heartbeat — Settings loader.
+ * pi-cron — Settings loader.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 
-export interface HeartbeatSettings {
+export interface CronSettings {
 	autostart: boolean;
-	intervalMinutes: number;
 	activeHours: { start: string; end: string } | null;
 	route: string;
 	showOk: boolean;
-	prompt: string | null;
 }
 
-const DEFAULTS: HeartbeatSettings = {
+const DEFAULTS: CronSettings = {
 	autostart: false,
-	intervalMinutes: 15,
 	activeHours: { start: "08:00", end: "22:00" },
-	route: "ops",
+	route: "cron",
 	showOk: false,
-	prompt: null,
 };
 
-export function resolveSettings(cwd: string): HeartbeatSettings {
+export function resolveSettings(cwd: string): CronSettings {
 	try {
 		const agentDir = getAgentDir();
 		const sm = SettingsManager.create(cwd, agentDir);
 		const global = sm.getGlobalSettings() as Record<string, any>;
 		const project = sm.getProjectSettings() as Record<string, any>;
-		const cfg = { ...(global?.["pi-heartbeat"] ?? {}), ...(project?.["pi-heartbeat"] ?? {}) };
+		const cfg = { ...(global?.["pi-cron"] ?? {}), ...(project?.["pi-cron"] ?? {}) };
 
 		return {
 			autostart: cfg.autostart ?? DEFAULTS.autostart,
-			intervalMinutes: cfg.intervalMinutes ?? DEFAULTS.intervalMinutes,
 			activeHours: cfg.activeHours !== undefined ? cfg.activeHours : DEFAULTS.activeHours,
 			route: cfg.route ?? DEFAULTS.route,
 			showOk: cfg.showOk ?? DEFAULTS.showOk,
-			prompt: cfg.prompt ?? DEFAULTS.prompt,
 		};
 	} catch {
 		return { ...DEFAULTS };

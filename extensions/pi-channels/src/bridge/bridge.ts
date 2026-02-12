@@ -28,6 +28,7 @@ const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	model: null,
 	typingIndicators: true,
 	commands: true,
+	extensions: [],
 };
 
 let idCounter = 0;
@@ -179,6 +180,7 @@ export class ChatBridge {
 				model: this.config.model,
 				signal: ac.signal,
 				attachments: prompt.attachments,
+				extensions: this.config.extensions,
 			});
 
 			typing.stop();
@@ -188,9 +190,11 @@ export class ChatBridge {
 			} else if (result.error === "Aborted by user") {
 				this.sendReply(prompt.adapter, prompt.sender, "⏹ Aborted.");
 			} else {
+				// Sanitize error: don't forward raw stack traces / extension crash logs
+				const userError = sanitizeError(result.error);
 				this.sendReply(
 					prompt.adapter, prompt.sender,
-					result.response || `❌ Error: ${result.error}`,
+					result.response || `❌ ${userError}`,
 				);
 			}
 
@@ -292,4 +296,35 @@ export class ChatBridge {
 	private sendReply(adapter: string, recipient: string, text: string): void {
 		this.registry.send({ adapter, recipient, text, source: "bridge" });
 	}
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+
+const MAX_ERROR_LENGTH = 200;
+
+/**
+ * Sanitize subprocess error output for end-user display.
+ * Strips stack traces, extension crash logs, and long technical details.
+ */
+function sanitizeError(error: string | undefined): string {
+	if (!error) return "Something went wrong. Please try again.";
+
+	// Extract the most meaningful line — skip "Extension error" noise and stack traces
+	const lines = error.split("\n").filter(l => l.trim());
+
+	// Find the first line that isn't an extension loading error or stack frame
+	const meaningful = lines.find(l =>
+		!l.startsWith("Extension error") &&
+		!l.startsWith("    at ") &&
+		!l.startsWith("node:") &&
+		!l.includes("NODE_MODULE_VERSION") &&
+		!l.includes("compiled against a different") &&
+		!l.includes("Emitted 'error' event")
+	);
+
+	const msg = meaningful?.trim() || "Something went wrong. Please try again.";
+
+	return msg.length > MAX_ERROR_LENGTH
+		? msg.slice(0, MAX_ERROR_LENGTH) + "…"
+		: msg;
 }

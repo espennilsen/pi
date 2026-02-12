@@ -92,6 +92,15 @@ export interface BridgeConfig {
 	typingIndicators?: boolean;
 	/** Handle bot commands like /start, /help, /abort (default: true). */
 	commands?: boolean;
+	/**
+	 * Extension paths to load in bridge subprocesses.
+	 * Subprocess runs with --no-extensions by default (avoids loading
+	 * extensions that crash or conflict, e.g. webserver port collisions).
+	 * List only the extensions the bridge agent actually needs.
+	 *
+	 * Example: ["/Users/you/Dev/pi/extensions/pi-vault/src/index.ts"]
+	 */
+	extensions?: string[];
 }
 
 export interface ChannelConfig {

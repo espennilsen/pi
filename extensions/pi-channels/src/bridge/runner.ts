@@ -17,16 +17,25 @@ export interface RunOptions {
 	signal?: AbortSignal;
 	/** File attachments to include via @file args. */
 	attachments?: IncomingAttachment[];
+	/** Explicit extension paths to load (with --no-extensions + -e for each). */
+	extensions?: string[];
 }
 
 export function runPrompt(options: RunOptions): Promise<RunResult> {
-	const { prompt, cwd, timeoutMs, model, signal, attachments } = options;
+	const { prompt, cwd, timeoutMs, model, signal, attachments, extensions } = options;
 
 	return new Promise((resolve) => {
 		const startTime = Date.now();
 
-		const args = ["-p", "--no-session"];
+		const args = ["-p", "--no-session", "--no-extensions"];
 		if (model) args.push("--model", model);
+
+		// Explicitly load only bridge-safe extensions
+		if (extensions?.length) {
+			for (const ext of extensions) {
+				args.push("-e", ext);
+			}
+		}
 
 		// Add file attachments as @file args before the prompt
 		if (attachments?.length) {

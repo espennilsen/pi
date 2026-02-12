@@ -53,7 +53,8 @@ Add `"pi-channels"` to your pi settings file (`~/.pi/agent/settings.json` or `.p
       "maxConcurrent": 2,
       "typingIndicators": true,
       "commands": true,
-      "model": null
+      "model": null,
+      "extensions": []
     }
   }
 }
@@ -78,6 +79,7 @@ Routes map friendly names to adapter + recipient pairs. When pi-cron fires a job
 | `model` | `null` | Model override for subprocess (null = use default). |
 | `typingIndicators` | `true` | Send typing indicators while processing. |
 | `commands` | `true` | Handle bot commands (/start, /help, /abort, /status, /new). |
+| `extensions` | `[]` | Extension paths to load in bridge subprocesses. Subprocess runs with `--no-extensions` by default to avoid conflicts (port collisions, native module crashes). List only what the bridge agent needs. |
 
 ## Chat bridge
 

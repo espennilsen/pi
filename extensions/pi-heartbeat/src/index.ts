@@ -8,7 +8,7 @@
  * Disabled by default. Enable with:
  *   - --heartbeat flag
  *   - /heartbeat on command
- *   - settings.json: { "pi-heartbeat": { "enabled": true } }
+ *   - settings.json: { "pi-heartbeat": { "autostart": true } }
  *
  * Reads HEARTBEAT.md from cwd as a checklist of things to verify.
  * If HEARTBEAT.md is missing or empty, does a generic check.
@@ -75,7 +75,7 @@ export default function (pi: ExtensionAPI) {
 		cwd = ctx.cwd;
 		const settings = resolveSettings(cwd);
 
-		if (pi.getFlag("--heartbeat") || settings.enabled) {
+		if (pi.getFlag("--heartbeat") || settings.autostart) {
 			runner = createRunner();
 			runner.start();
 			ctx.ui.setStatus("pi-heartbeat", "🫀 heartbeat active");

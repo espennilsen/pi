@@ -11,6 +11,7 @@
  * **Disabled by default.** Enable with:
  *   - `pi --cron` flag
  *   - `/cron on` command
+ *   - settings.json: { "pi-cron": { "autostart": true } }
  *
  * The crontab file (~/.pi/agent/pi-cron.tab) is always readable/writable
  * regardless of scheduler state. The scheduler just controls whether
@@ -25,6 +26,7 @@ import { CronScheduler, validateCron } from "./scheduler.ts";
 import { acquireLock, releaseLock, lockHolder } from "./lock.ts";
 import { registerCronApi, type CronStatus } from "./api.ts";
 import { mountCronRoutes, unmountCronRoutes } from "./web.ts";
+import { resolveSettings } from "./settings.ts";
 
 interface CronParams {
 	action: "list" | "add" | "update" | "remove" | "enable" | "disable" | "run";
@@ -54,9 +56,25 @@ export default function (pi: ExtensionAPI) {
 			const holder = lockHolder();
 			return `Another pi instance (PID ${holder}) is already running the cron scheduler.`;
 		}
-		scheduler = new CronScheduler(cwd, {
+		const settings = resolveSettings(cwd);
+		scheduler = new CronScheduler(cwd, settings, {
 			onJobStart: (event) => pi.events.emit("cron:job_start", event),
-			onJobComplete: (event) => pi.events.emit("cron:job_complete", event),
+			onJobComplete: (event) => {
+				pi.events.emit("cron:job_complete", event);
+
+				// Send results via channel
+				const s = resolveSettings(cwd);
+				if (event.ok && !s.showOk) return;
+				const prefix = event.ok ? "✅" : "❌";
+				const text = event.ok
+					? `${prefix} Cron "${event.job.name}" completed (${(event.durationMs / 1000).toFixed(1)}s)`
+					: `${prefix} Cron "${event.job.name}" failed: ${(event.error ?? "unknown error").slice(0, 500)}`;
+				pi.events.emit("channel:send", {
+					route: s.route,
+					text,
+					source: "pi-cron",
+				});
+			},
 			onReload: (jobs) => pi.events.emit("cron:reload", jobs),
 		});
 		scheduler.start();
@@ -97,7 +115,9 @@ export default function (pi: ExtensionAPI) {
 		cwd = ctx.cwd;
 		ensureTabFile();
 
-		if (pi.getFlag("--cron")) {
+		const settings = resolveSettings(cwd);
+
+		if (pi.getFlag("--cron") || settings.autostart) {
 			const result = startScheduler();
 			if (result.startsWith("✓")) {
 				ctx.ui.setStatus("pi-cron", "⏰ cron active");

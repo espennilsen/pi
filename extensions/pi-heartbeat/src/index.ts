@@ -17,10 +17,14 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSettings } from "./settings.ts";
 import { HeartbeatRunner } from "./heartbeat.ts";
+import { mountHeartbeatRoutes, unmountHeartbeatRoutes } from "./web.ts";
+import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	let runner: HeartbeatRunner | null = null;
 	let cwd = process.cwd();
+	let webMounted = false;
 
 	// ── Flag: --heartbeat ─────────────────────────────────────
 
@@ -53,6 +57,7 @@ export default function (pi: ExtensionAPI) {
 					source: "pi-heartbeat",
 				});
 			},
+			log,
 		});
 	}
 
@@ -60,13 +65,38 @@ export default function (pi: ExtensionAPI) {
 		if (runner?.isActive()) return "Heartbeat is already running.";
 		if (!runner) runner = createRunner();
 		runner.start();
-		return `✓ Heartbeat started (every ${resolveSettings(cwd).intervalMinutes}m)`;
+		const interval = resolveSettings(cwd).intervalMinutes;
+		log("start", { intervalMinutes: interval });
+		return `✓ Heartbeat started (every ${interval}m)`;
 	}
 
 	function stopHeartbeat(): string {
 		if (!runner?.isActive()) return "Heartbeat is not running.";
 		runner.stop();
+		log("stop", {});
 		return "✓ Heartbeat stopped";
+	}
+
+	// ── Web UI mount helper ───────────────────────────────────
+
+	function mountWeb(): void {
+		if (webMounted) return;
+		mountHeartbeatRoutes(pi.events, {
+			getRunner: () => runner,
+			startHeartbeat: () => startHeartbeat(),
+			stopHeartbeat: () => stopHeartbeat(),
+			createRunner: () => {
+				if (!runner) runner = createRunner();
+				return runner;
+			},
+		});
+		webMounted = true;
+	}
+
+	function unmountWeb(): void {
+		if (!webMounted) return;
+		unmountHeartbeatRoutes(pi.events);
+		webMounted = false;
 	}
 
 	// ── Lifecycle ─────────────────────────────────────────────
@@ -80,9 +110,14 @@ export default function (pi: ExtensionAPI) {
 			runner.start();
 			ctx.ui.setStatus("pi-heartbeat", "🫀 heartbeat active");
 		}
+
+		if (settings.webui) {
+			mountWeb();
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
+		unmountWeb();
 		if (runner) {
 			runner.stop();
 			runner = null;

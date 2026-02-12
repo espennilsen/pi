@@ -19,6 +19,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 
 const NAV_HTML = fs.readFileSync(
 	path.resolve(import.meta.dirname, "../nav.html"),
@@ -62,7 +63,8 @@ function mountNav(pi: ExtensionAPI): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	const mount = () => mountNav(pi);
+	const log = createLogger(pi);
+	const mount = () => { mountNav(pi); log("mount", {}); };
 
 	// Mount when pi-webserver signals ready
 	pi.events.on("web:ready", mount);

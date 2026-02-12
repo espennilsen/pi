@@ -27,6 +27,7 @@ import { acquireLock, releaseLock, lockHolder } from "./lock.ts";
 import { registerCronApi, type CronStatus } from "./api.ts";
 import { mountCronRoutes, unmountCronRoutes } from "./web.ts";
 import { resolveSettings } from "./settings.ts";
+import { createLogger } from "./logger.ts";
 
 interface CronParams {
 	action: "list" | "add" | "update" | "remove" | "enable" | "disable" | "run";
@@ -37,6 +38,7 @@ interface CronParams {
 }
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	let scheduler: CronScheduler | null = null;
 	let cwd = process.cwd();
 
@@ -76,8 +78,10 @@ export default function (pi: ExtensionAPI) {
 				});
 			},
 			onReload: (jobs) => pi.events.emit("cron:reload", jobs),
+			log,
 		});
 		scheduler.start();
+		log("start", { pid: process.pid });
 		return `✓ Cron scheduler started (PID ${process.pid})`;
 	}
 
@@ -86,6 +90,7 @@ export default function (pi: ExtensionAPI) {
 		scheduler.stop();
 		scheduler = null;
 		releaseLock();
+		log("stop", {});
 		return "✓ Cron scheduler stopped";
 	}
 

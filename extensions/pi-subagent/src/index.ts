@@ -24,6 +24,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerSubagentTool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";
+import { createLogger } from "./logger.ts";
 
 export { runIsolatedAgent } from "./runner.ts";
 export { discoverAgents } from "./agents.ts";
@@ -39,9 +40,11 @@ export type {
 } from "./types.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = resolveSettings(ctx.cwd);
-		registerSubagentTool(pi, settings);
+		registerSubagentTool(pi, settings, log);
 	});
 
 	pi.on("session_shutdown", async () => {

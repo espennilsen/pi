@@ -8,11 +8,10 @@
  *   "pi-vault": {
  *     "vaultPath": "~/Library/CloudStorage/.../Obsidian/e9n",
  *     "vaultName": "e9n",
- *     "apiUrl": "http://127.0.0.1:27123"
+ *     "apiUrl": "http://127.0.0.1:27123",
+ *     "apiKey": "your-obsidian-api-key"
  *   }
  * }
- *
- * API key from env var: OBSIDIAN_API_KEY
  */
 
 import * as fs from "node:fs";
@@ -44,22 +43,6 @@ export interface ApiResponse {
 
 const SETTINGS_KEY = "pi-vault";
 
-/** Resolve "env:VAR_NAME" strings to environment variable values. */
-function resolveEnvVars(value: unknown): unknown {
-	if (typeof value === "string" && value.startsWith("env:")) {
-		return process.env[value.slice(4)] ?? "";
-	}
-	if (typeof value === "object" && value !== null) {
-		if (Array.isArray(value)) return value.map(resolveEnvVars);
-		const out: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(value)) {
-			out[k] = resolveEnvVars(v);
-		}
-		return out;
-	}
-	return value;
-}
-
 function expandHome(p: string): string {
 	if (p === "~") return os.homedir();
 	if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
@@ -89,10 +72,10 @@ export function resolveConfig(cwd: string): VaultConfig {
 	const projectRaw = readJsonSafe(projectPath)[SETTINGS_KEY] as Record<string, unknown> | undefined;
 
 	// Project overrides global
-	const merged = resolveEnvVars({
+	const merged = {
 		...(globalRaw ?? {}),
 		...(projectRaw ?? {}),
-	}) as Record<string, string>;
+	} as Record<string, string>;
 
 	let vaultPath = merged.vaultPath ?? "";
 	if (vaultPath) vaultPath = expandHome(vaultPath);
@@ -101,7 +84,7 @@ export function resolveConfig(cwd: string): VaultConfig {
 		vaultPath,
 		vaultName: merged.vaultName || (vaultPath ? path.basename(vaultPath) : ""),
 		apiUrl: merged.apiUrl || "http://127.0.0.1:27123",
-		apiKey: process.env.OBSIDIAN_API_KEY || "",
+		apiKey: merged.apiKey || "",
 	};
 }
 
@@ -114,7 +97,7 @@ export async function apiRequest(
 	opts?: { body?: string; contentType?: string; accept?: string; headers?: Record<string, string>; timeoutMs?: number },
 ): Promise<ApiResponse> {
 	if (!config.apiKey) {
-		return { ok: false, status: 0, error: "No API key configured (set OBSIDIAN_API_KEY env var)" };
+		return { ok: false, status: 0, error: "No API key configured (set pi-vault.apiKey in settings.json)" };
 	}
 
 	const url = `${config.apiUrl}${endpoint}`;

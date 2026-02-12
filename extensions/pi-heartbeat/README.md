@@ -56,6 +56,7 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `route` | `"ops"` | pi-channels route for sending alerts. |
 | `showOk` | `false` | Send notifications on `HEARTBEAT_OK` too (not just alerts). |
 | `prompt` | `null` | Custom prompt override (bypasses HEARTBEAT.md). |
+| `webui` | `false` | Mount web dashboard on pi-webserver at `/heartbeat`. |
 
 ## HEARTBEAT.md
 
@@ -80,6 +81,30 @@ If the file exists but is empty (only headers/blank lines), heartbeat checks are
 | `/heartbeat status` | Show run count, OK/alert counts, last run |
 | `/heartbeat run` | Run a check immediately |
 
+## Web UI
+
+Requires `pi-webserver`. Enable in settings:
+
+```json
+{
+  "pi-heartbeat": { "webui": true },
+  "pi-webserver": { "autostart": true }
+}
+```
+
+Then open `http://localhost:4100/heartbeat`. The dashboard shows:
+- Live status (active/inactive/running)
+- Stats: total runs, OK count, alert count, OK rate
+- Last check result with response and duration
+- Expandable history of recent checks (up to 100)
+- Start/stop and run-now controls
+
+API endpoints at `/api/heartbeat`:
+- `GET` — Status and history
+- `POST { action: "start" }` — Start heartbeat
+- `POST { action: "stop" }` — Stop heartbeat
+- `POST { action: "run" }` — Run a check immediately
+
 ## Events
 
 | Event | When | Payload |
@@ -92,10 +117,15 @@ If the file exists but is empty (only headers/blank lines), heartbeat checks are
 
 ```
 src/
-├── index.ts       # Extension entry — flag, command, lifecycle
+├── index.ts       # Extension entry — flag, command, lifecycle, web mount
 ├── settings.ts    # Settings loader (global + project)
 ├── heartbeat.ts   # HeartbeatRunner — interval, subprocess, alert logic
-└── prompt.ts      # Prompt builder — reads HEARTBEAT.md, builds prompt
+├── prompt.ts      # Prompt builder — reads HEARTBEAT.md, builds prompt
+├── web.ts         # Web UI + REST API — mounts on pi-webserver via event bus
+└── ui/
+    ├── heartbeat.html   # Page template
+    ├── heartbeat.css    # Styles
+    └── heartbeat.js     # Client-side logic
 ```
 
 ## License

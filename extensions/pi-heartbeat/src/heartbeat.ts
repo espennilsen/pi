@@ -20,10 +20,13 @@ export interface HeartbeatRunResult {
 	durationMs: number;
 }
 
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
 interface HeartbeatCallbacks {
 	onCheck?: () => void;
 	onResult?: (result: HeartbeatRunResult) => void;
 	onAlert?: (message: string) => void;
+	log?: LogFn;
 }
 
 export class HeartbeatRunner {
@@ -137,6 +140,7 @@ export class HeartbeatRunner {
 			else this.alertCount++;
 
 			this.callbacks.onResult?.(runResult);
+			this.callbacks.log?.("check", { ok: isOk, durationMs }, isOk ? "INFO" : "WARN");
 
 			if (!isOk) {
 				this.callbacks.onAlert?.(`🫀 Heartbeat:\n\n${response}`);
@@ -158,6 +162,7 @@ export class HeartbeatRunner {
 			this.alertCount++;
 
 			this.callbacks.onResult?.(runResult);
+			this.callbacks.log?.("error", { error: err.message, durationMs }, "ERROR");
 			this.callbacks.onAlert?.(`🫀 Heartbeat error: ${err.message}`);
 			return runResult;
 		} finally {

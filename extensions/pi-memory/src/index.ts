@@ -22,8 +22,11 @@ import { setBasePath } from "./files.ts";
 import { registerMemoryTools } from "./tools.ts";
 import { registerMemoryContext } from "./context.ts";
 import { resolveSettings } from "./settings.ts";
+import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	// Register tools and context injection immediately
 	registerMemoryTools(pi);
 	registerMemoryContext(pi);
@@ -31,6 +34,8 @@ export default function (pi: ExtensionAPI) {
 	// Resolve base path from settings on session start
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = resolveSettings(ctx.cwd);
-		setBasePath(settings.path ?? ctx.cwd);
+		const basePath = settings.path ?? ctx.cwd;
+		setBasePath(basePath);
+		log("init", { basePath });
 	});
 }

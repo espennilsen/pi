@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heartbeat</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="/" class="back-link">← Dashboard</a>
+    <h1>🫀 Heartbeat</h1>
+    <span class="spacer"></span>
+    <button class="btn btn-primary" id="runBtn" onclick="runNow()">▶ Run Now</button>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-indicator">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Loading…</span>
+    </div>
+    <div class="status-meta" id="statusMeta"></div>
+    <span class="spacer"></span>
+    <button class="btn btn-sm" id="toggleBtn" onclick="toggleHeartbeat()">—</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value blue" id="statRuns">—</div>
+      <div class="stat-label">Total Runs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value green" id="statOk">—</div>
+      <div class="stat-label">OK</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value red" id="statAlerts">—</div>
+      <div class="stat-label">Alerts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statUptime" style="color: var(--accent);">—</div>
+      <div class="stat-label">OK Rate</div>
+    </div>
+  </div>
+
+  <!-- Last result -->
+  <div class="last-result" id="lastResult">
+    <div class="section-title">Last Check</div>
+    <div class="last-result-content" id="lastResultContent">No checks yet</div>
+  </div>
+
+  <!-- History -->
+  <div class="section-title" style="margin-top: 24px; margin-bottom: 12px;">History</div>
+  <div class="history-list" id="historyList">
+    <div class="empty-state"><p>No history yet</p></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>{{JS}}</script>
+</body>
+</html>

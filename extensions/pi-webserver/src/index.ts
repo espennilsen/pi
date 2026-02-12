@@ -11,12 +11,16 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
-import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus } from "./server.ts";
+import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus, setLogger } from "./server.ts";
+import { createLogger } from "./logger.ts";
 import type { MountConfig } from "./server.ts";
 
 interface WebServerSettings {
 	autostart: boolean;
 	port: number;
+	auth: string | null;
+	apiToken: string | null;
+	apiReadToken: string | null;
 }
 
 function resolveSettings(cwd: string): WebServerSettings {
@@ -32,13 +36,19 @@ function resolveSettings(cwd: string): WebServerSettings {
 		return {
 			autostart: cfg.autostart ?? false,
 			port: cfg.port ?? 4100,
+			auth: cfg.auth ?? null,
+			apiToken: cfg.apiToken ?? null,
+			apiReadToken: cfg.apiReadToken ?? null,
 		};
 	} catch {
-		return { autostart: false, port: 4100 };
+		return { autostart: false, port: 4100, auth: null, apiToken: null, apiReadToken: null };
 	}
 }
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+	setLogger(log);
+
 	// ── Event bus integration ────────────────────────────────────
 	// Other extensions can emit these without importing anything.
 
@@ -231,37 +241,35 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ────────────────────────────────────────────────
 
-	// Pick up auth from env vars and notify other extensions
+	// Pick up auth from settings and notify other extensions
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = resolveSettings(ctx.cwd);
 
-		const envAuth = process.env.PI_WEB_AUTH;
-		if (envAuth) {
-			const colon = envAuth.indexOf(":");
+		if (settings.auth) {
+			const colon = settings.auth.indexOf(":");
 			if (colon !== -1) {
-				setAuth({ username: envAuth.slice(0, colon), password: envAuth.slice(colon + 1) });
+				setAuth({ username: settings.auth.slice(0, colon), password: settings.auth.slice(colon + 1) });
 			} else {
-				setAuth({ password: envAuth });
+				setAuth({ password: settings.auth });
 			}
-			ctx.ui.notify("Web server auth configured from PI_WEB_AUTH", "info");
+			ctx.ui.notify("Web server auth configured from settings", "info");
 		}
 
-		const envApiToken = process.env.API_TOKEN;
-		if (envApiToken) {
-			setApiToken(envApiToken);
-			ctx.ui.notify("API token auth configured from API_TOKEN", "info");
+		if (settings.apiToken) {
+			setApiToken(settings.apiToken);
+			ctx.ui.notify("API token auth configured from settings", "info");
 		}
 
-		const envApiReadToken = process.env.API_READ_TOKEN;
-		if (envApiReadToken) {
-			setApiReadToken(envApiReadToken);
-			ctx.ui.notify("API read token configured from API_READ_TOKEN", "info");
+		if (settings.apiReadToken) {
+			setApiReadToken(settings.apiReadToken);
+			ctx.ui.notify("API read token configured from settings", "info");
 		}
 
 		// Autostart if configured
 		if (settings.autostart && !isRunning()) {
 			const url = start(settings.port);
 			ctx.ui.notify(`Web server auto-started: ${url}`, "info");
+			log("start", { port: settings.port, url });
 		}
 
 		pi.events.emit("web:ready", {});
@@ -269,6 +277,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Clean up on exit
 	pi.on("session_shutdown", async () => {
+		if (isRunning()) log("stop", {});
 		stop();
 	});
 }

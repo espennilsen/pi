@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getJobsApi } from "./db.ts";
+import { getJobsApi, isDbReady } from "./db.ts";
 
 interface TrackerState {
 	currentJobId: string | null;
@@ -40,6 +40,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// ── Turn tracking (one turn = one model call) ───────────
 
 	pi.on("turn_start", async (event) => {
+		if (!isDbReady()) return;
 		const api = getJobsApi();
 
 		// First turn of a new run — create a job
@@ -68,7 +69,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 		// If this is the final turn (no tool calls pending), complete the job
 		const hasToolUse = event.toolResults && event.toolResults.length > 0;
-		if (!hasToolUse && state.currentJobId) {
+		if (!hasToolUse && state.currentJobId && isDbReady()) {
 			const api = getJobsApi();
 			const durationMs = Date.now() - state.startTime;
 
@@ -106,7 +107,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_result", async (event) => {
-		if (!state.currentJobId) return;
+		if (!state.currentJobId || !isDbReady()) return;
 		const api = getJobsApi();
 		const startTs = state.toolStartTimes.get(event.toolCallId) ?? Date.now();
 		state.toolStartTimes.delete(event.toolCallId);
@@ -125,6 +126,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// Track subagent runs
 	pi.events.on("subagent:complete", (data: any) => {
 		try {
+			if (!isDbReady()) return;
 			const api = getJobsApi();
 			const jobId = api.createJob({
 				channel: "subagent",
@@ -152,6 +154,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// Track heartbeat runs
 	pi.events.on("heartbeat:result", (data: any) => {
 		try {
+			if (!isDbReady()) return;
 			const api = getJobsApi();
 			const jobId = api.createJob({
 				channel: "heartbeat",
@@ -169,6 +172,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// Track cron job runs
 	pi.events.on("cron:job_complete", (data: any) => {
 		try {
+			if (!isDbReady()) return;
 			const api = getJobsApi();
 			const jobId = api.createJob({
 				channel: "cron",

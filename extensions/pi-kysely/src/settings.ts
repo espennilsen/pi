@@ -78,14 +78,7 @@ export function loadKyselySettings(cwd: string): KyselyRuntimeSettings {
 
 	const projectDatabaseUrl = projectSettings.databaseUrl ?? projectSettings.defaultDatabaseUrl;
 	const globalDatabaseUrl = globalSettings.databaseUrl ?? globalSettings.defaultDatabaseUrl;
-	const defaultDatabaseUrl =
-		projectDatabaseUrl ??
-		globalDatabaseUrl ??
-		(defaultDriver === "postgres"
-			? process.env.DATABASE_URL ?? process.env.PGDATABASE_URL
-			: defaultDriver === "mysql"
-				? process.env.DATABASE_URL ?? process.env.MYSQL_URL
-				: undefined);
+	const defaultDatabaseUrl = projectDatabaseUrl ?? globalDatabaseUrl;
 
 	const projectSqlitePath = normalizePathSetting(projectSettings.sqlitePath ?? projectSettings.defaultSqlitePath);
 	const globalSqlitePath = normalizePathSetting(globalSettings.sqlitePath ?? globalSettings.defaultSqlitePath);

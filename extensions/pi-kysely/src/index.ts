@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 import { wireKyselyEvents } from "./events.ts";
 import {
 	clearDatabases,
@@ -18,7 +19,8 @@ export * from "./table-api.ts";
 export type { KyselyAck } from "./events.ts";
 
 export default function (pi: ExtensionAPI) {
-	wireKyselyEvents(pi);
+	const log = createLogger(pi);
+	wireKyselyEvents(pi, log);
 
 	pi.registerCommand("kysely", {
 		description: "Manage shared Kysely database registry: /kysely [status|close <name>|close-all]",
@@ -122,8 +124,10 @@ export default function (pi: ExtensionAPI) {
 			}
 		} catch (err: any) {
 			ctx.ui.notify(`kysely default database disabled: ${err.message}`, "warning");
+			log("error", { message: err.message }, "ERROR");
 		}
 
+		log("ready", { defaultDb: settings.defaultDatabaseName, driver: settings.defaultDriver });
 		pi.events.emit("kysely:ready", {});
 	});
 

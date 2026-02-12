@@ -11,11 +11,10 @@
  *   "pi-vault": {
  *     "vaultPath": "~/Library/CloudStorage/.../Obsidian/e9n",
  *     "vaultName": "e9n",
- *     "apiUrl": "http://127.0.0.1:27123"
+ *     "apiUrl": "http://127.0.0.1:27123",
+ *     "apiKey": "your-obsidian-api-key"
  *   }
  * }
- *
- * API key via env var: OBSIDIAN_API_KEY
  *
  * Requires pi-webserver for the web dashboard. Tool works standalone.
  */
@@ -24,12 +23,17 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveConfig } from "./api-client.ts";
 import { registerObsidianTool } from "./tool.ts";
 import { mountVaultRoutes, unmountVaultRoutes } from "./web.ts";
+import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	let mounted = false;
+	let lastCwd = "";
 
 	pi.on("session_start", async (_event, ctx) => {
+		lastCwd = ctx.cwd;
 		const config = resolveConfig(ctx.cwd);
+		log("init", { vaultPath: config.vaultPath, vaultName: config.vaultName });
 
 		// Register the tool (degrades gracefully if vault not found)
 		registerObsidianTool(pi, config);
@@ -43,7 +47,7 @@ export default function (pi: ExtensionAPI) {
 		// Re-mount if web server started after session
 		if (!mounted) return;
 		// Config already loaded at session_start, re-resolve in case cwd changed
-		const config = resolveConfig(process.cwd());
+		const config = resolveConfig(lastCwd || ".");
 		mountVaultRoutes(pi, config);
 	});
 

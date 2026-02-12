@@ -17,13 +17,16 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 import { resolveSettings } from "./settings.ts";
-import { initDb, closeDb, getJobsApi } from "./db.ts";
+import { initDb, closeDb, isDbReady, getJobsApi } from "./db.ts";
 import { registerTracker } from "./tracker.ts";
 import { registerJobsTool } from "./tool.ts";
 import { mountJobsRoutes, unmountJobsRoutes } from "./web.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -34,6 +37,7 @@ export default function (pi: ExtensionAPI) {
 			: path.join(agentDir, settings.dbPath);
 
 		initDb(dbPath);
+		log("init", { dbPath });
 
 		// Mount web routes
 		mountJobsRoutes(pi.events);
@@ -41,6 +45,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Re-mount when pi-webserver starts after us
 	pi.events.on("web:ready", () => {
+		if (!isDbReady()) return;
 		mountJobsRoutes(pi.events);
 	});
 

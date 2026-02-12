@@ -10,6 +10,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -50,10 +51,13 @@ function getCrmDbPath(cwd: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	// Initialize DB on session start
 	pi.on("session_start", async (_event, ctx) => {
 		const dbPath = getCrmDbPath(ctx.cwd);
 		initDb(dbPath);
+		log("init", { dbPath });
 	});
 
 	// Register the CRM tool

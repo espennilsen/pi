@@ -22,7 +22,7 @@
  *   - commands           — List or execute Obsidian commands (API-only)
  *   - document_map       — Get headings/blocks/frontmatter fields for PATCH targeting (API → fs fallback)
  *
- * Config via env vars: OBSIDIAN_VAULT_PATH, OBSIDIAN_API_URL, OBSIDIAN_API_KEY
+ * Config via settings.json under "pi-vault" (vaultPath, apiUrl, apiKey)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -162,7 +162,7 @@ export function registerObsidianTool(pi: ExtensionAPI, config: VaultConfig): voi
 
 		async execute(_toolCallId, params, _signal) {
 			if (!VAULT_ROOT || !fs.existsSync(VAULT_ROOT)) {
-				return text(`Error: Vault not found at ${VAULT_ROOT || "(not configured)"}. Set OBSIDIAN_VAULT_PATH env var.`);
+				return text(`Error: Vault not found at ${VAULT_ROOT || "(not configured)"}. Set pi-vault.vaultPath in settings.json.`);
 			}
 
 			const api = await isApiAvailable(config);

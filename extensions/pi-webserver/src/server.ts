@@ -42,6 +42,15 @@ export interface MountInfo {
 	skipAuth?: boolean;
 }
 
+// ── Logger ──────────────────────────────────────────────────────
+
+type LogFn = (event: string, data: unknown, level?: string) => void;
+let log: LogFn = () => {};
+
+export function setLogger(fn: LogFn): void {
+	log = fn;
+}
+
 // ── State ───────────────────────────────────────────────────────
 
 let server: http.Server | null = null;
@@ -157,8 +166,8 @@ function tokensEqual(a: string | null, b: string | null): boolean {
  * Check Bearer token for /api/* paths. Returns true if OK.
  *
  * - No tokens configured → open (allow all)
- * - API_TOKEN matches → allow all methods
- * - API_READ_TOKEN matches → allow GET/HEAD only
+ * - Full API token matches → allow all methods
+ * - Read-only API token matches → allow GET/HEAD only
  * - Otherwise → 401/403
  */
 function checkApiAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
@@ -320,6 +329,7 @@ export function start(port: number = 4100): string {
 			res.writeHead(404, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Not found" }));
 		} catch (err: any) {
+			log("request-error", { method: req.method, url: req.url, error: err.message }, "ERROR");
 			if (!res.headersSent) {
 				res.writeHead(500, { "Content-Type": "application/json" });
 				res.end(JSON.stringify({ error: err.message }));

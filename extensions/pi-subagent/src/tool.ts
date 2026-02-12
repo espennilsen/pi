@@ -95,6 +95,7 @@ async function runAgent(
 	signal: AbortSignal | undefined,
 	settings: SubagentSettings,
 	eventBus: ExtensionAPI["events"],
+	log: Logger,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
@@ -125,6 +126,7 @@ async function runAgent(
 		task: task.slice(0, 200),
 		trackingId,
 	});
+	log("spawn", { agent: agentName, trackingId });
 
 	const isolated = await runIsolatedAgent({
 		prompt: `Task: ${task}`,
@@ -171,6 +173,8 @@ async function runAgent(
 		cost: isolated.costTotal,
 		durationMs: isolated.durationMs,
 	});
+	log("complete", { agent: agentName, trackingId, status: oneShotStatus, durationMs: isolated.durationMs },
+		oneShotStatus === "completed" ? "INFO" : "ERROR");
 
 	if (isolated.response === "(aborted)") {
 		throw new Error("Subagent was aborted");
@@ -251,9 +255,12 @@ const SubagentParams = Type.Object({
 
 // ── Registration ────────────────────────────────────────────────
 
+export type Logger = (event: string, data: unknown, level?: string) => void;
+
 export function registerSubagentTool(
 	pi: ExtensionAPI,
 	settings: SubagentSettings,
+	log: Logger = () => {},
 ): void {
 	pi.registerTool({
 		name: "subagent",
@@ -350,6 +357,7 @@ export function registerSubagentTool(
 						signal,
 						settings,
 						pi.events,
+						log,
 					);
 					results.push(r);
 
@@ -415,6 +423,7 @@ export function registerSubagentTool(
 							signal,
 							settings,
 							pi.events,
+							log,
 						);
 					},
 				);
@@ -456,6 +465,7 @@ export function registerSubagentTool(
 					signal,
 					settings,
 					pi.events,
+					log,
 				);
 
 				if (r.exitCode !== 0) {

@@ -13,6 +13,7 @@ export interface HeartbeatSettings {
 	route: string;
 	showOk: boolean;
 	prompt: string | null;
+	webui: boolean;
 }
 
 const DEFAULTS: HeartbeatSettings = {
@@ -22,6 +23,7 @@ const DEFAULTS: HeartbeatSettings = {
 	route: "ops",
 	showOk: false,
 	prompt: null,
+	webui: false,
 };
 
 export function resolveSettings(cwd: string): HeartbeatSettings {
@@ -39,6 +41,7 @@ export function resolveSettings(cwd: string): HeartbeatSettings {
 			route: cfg.route ?? DEFAULTS.route,
 			showOk: cfg.showOk ?? DEFAULTS.showOk,
 			prompt: cfg.prompt ?? DEFAULTS.prompt,
+			webui: cfg.webui ?? DEFAULTS.webui,
 		};
 	} catch {
 		return { ...DEFAULTS };

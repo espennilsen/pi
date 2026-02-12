@@ -16,6 +16,7 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 import { resolveSettings } from "./settings.ts";
 import { initProjectsDb, closeProjectsDb } from "./db.ts";
 import { scanProjects } from "./scanner.ts";
@@ -23,6 +24,7 @@ import { registerProjectsTool } from "./tool.ts";
 import { mountProjectsRoutes, unmountProjectsRoutes, setDevDir } from "./web.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	let devDir = "";
 
 	// ── Lifecycle ─────────────────────────────────────────────
@@ -38,6 +40,7 @@ export default function (pi: ExtensionAPI) {
 			: path.join(agentDir, settings.dbPath);
 
 		initProjectsDb(dbPath);
+		log("init", { devDir, dbPath });
 
 		// Mount web routes
 		mountProjectsRoutes(pi.events);

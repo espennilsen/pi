@@ -25,14 +25,19 @@ export interface KyselyAck {
 	error?: string;
 }
 
-function pushAck(pi: ExtensionAPI, ack: KyselyAck, callback?: (ack: KyselyAck) => void): void {
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
+function pushAck(pi: ExtensionAPI, ack: KyselyAck, log: LogFn, callback?: (ack: KyselyAck) => void): void {
 	callback?.(ack);
+	if (!ack.ok) {
+		log("op-error", { operation: ack.operation, table: ack.table, error: ack.error }, "ERROR");
+	}
 	if (ack.requestId) {
 		pi.events.emit("kysely:ack", ack);
 	}
 }
 
-export function wireKyselyEvents(pi: ExtensionAPI): void {
+export function wireKyselyEvents(pi: ExtensionAPI, log: LogFn = () => {}): void {
 	pi.events.on("kysely:grant", (payload: unknown) => {
 		const data = payload as TableGrant & { requestId?: string; ack?: (ack: KyselyAck) => void };
 		try {
@@ -44,7 +49,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				requestId: data.requestId,
 				actor: data.owner,
 				table: data.table,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -54,7 +59,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.owner,
 				table: data.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -70,7 +75,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.owner,
 				table: data.table,
 				result: { removed },
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -80,7 +85,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.owner,
 				table: data.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -100,7 +105,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				timestamp: Date.now(),
 				requestId: data.requestId,
 				result,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -108,7 +113,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				timestamp: Date.now(),
 				requestId: data.requestId,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -131,7 +136,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input.table,
 				result: rows,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -141,7 +146,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input?.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -164,7 +169,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input.table,
 				result,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -174,7 +179,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input?.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -197,7 +202,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input.table,
 				result,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -207,7 +212,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input?.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 
@@ -230,7 +235,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input.table,
 				result,
-			}, data.ack);
+			}, log, data.ack);
 		} catch (err: any) {
 			pushAck(pi, {
 				ok: false,
@@ -240,7 +245,7 @@ export function wireKyselyEvents(pi: ExtensionAPI): void {
 				actor: data.actor,
 				table: data.input?.table,
 				error: err?.message ?? String(err),
-			}, data.ack);
+			}, log, data.ack);
 		}
 	});
 }

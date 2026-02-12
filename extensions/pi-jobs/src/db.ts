@@ -210,6 +210,10 @@ export function closeDb(): void {
 	}
 }
 
+export function isDbReady(): boolean {
+	return api !== null;
+}
+
 export function getJobsApi(): JobsApi {
 	if (!api) throw new Error("pi-jobs: DB not initialized. Call initDb() first.");
 	return api;

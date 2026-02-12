@@ -11,10 +11,10 @@
  *   - File size validation (max 1MB)
  *   - MIME type filtering (text-like files only for documents)
  *
- * Config:
+ * Config (in settings.json under pi-channels.adapters.telegram):
  * {
  *   "type": "telegram",
- *   "botToken": "env:TELEGRAM_BOT_TOKEN",
+ *   "botToken": "your-telegram-bot-token",
  *   "parseMode": "Markdown",
  *   "polling": true,
  *   "pollingTimeout": 30,

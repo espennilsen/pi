@@ -31,6 +31,8 @@ const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	extensions: [],
 };
 
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
 let idCounter = 0;
 function nextId(): string {
 	return `msg-${Date.now()}-${++idCounter}`;
@@ -41,6 +43,7 @@ export class ChatBridge {
 	private cwd: string;
 	private registry: ChannelRegistry;
 	private events: EventBus;
+	private log: LogFn;
 	private sessions = new Map<string, SenderSession>();
 	private activeCount = 0;
 	private running = false;
@@ -50,11 +53,13 @@ export class ChatBridge {
 		cwd: string,
 		registry: ChannelRegistry,
 		events: EventBus,
+		log: LogFn = () => {},
 	) {
 		this.config = { ...BRIDGE_DEFAULTS, ...bridgeConfig };
 		this.cwd = cwd;
 		this.registry = registry;
 		this.events = events;
+		this.log = log;
 	}
 
 	// ── Lifecycle ─────────────────────────────────────────────
@@ -202,9 +207,12 @@ export class ChatBridge {
 				id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
 				ok: result.ok, durationMs: result.durationMs,
 			});
+			this.log("bridge-complete", { id: prompt.id, adapter: prompt.adapter, ok: result.ok, durationMs: result.durationMs },
+				result.ok ? "INFO" : "WARN");
 
 		} catch (err: any) {
 			typing.stop();
+			this.log("bridge-error", { adapter: prompt.adapter, sender: prompt.sender, error: err.message }, "ERROR");
 			this.sendReply(prompt.adapter, prompt.sender, `❌ Unexpected error: ${err.message}`);
 		} finally {
 			session.abortController = null;

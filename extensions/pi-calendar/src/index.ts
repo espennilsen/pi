@@ -13,6 +13,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -49,9 +50,13 @@ function getDbPath(cwd: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	// Initialize DB and register tool on session start
 	pi.on("session_start", async (_event, ctx) => {
-		initDb(getDbPath(ctx.cwd));
+		const dbPath = getDbPath(ctx.cwd);
+		initDb(dbPath);
+		log("init", { dbPath });
 
 		// Mount web routes (no-op if pi-webserver isn't loaded yet)
 		mountCalendarRoutes(pi.events);

@@ -17,7 +17,7 @@
  * {
  *   "pi-channels": {
  *     "adapters": {
- *       "telegram": { "type": "telegram", "botToken": "env:TELEGRAM_BOT_TOKEN", "polling": true }
+ *       "telegram": { "type": "telegram", "botToken": "your-telegram-bot-token", "polling": true }
  *     },
  *     "routes": {
  *       "ops": { "adapter": "telegram", "recipient": "-100987654321" }
@@ -40,8 +40,10 @@ import { ChannelRegistry } from "./registry.ts";
 import { registerChannelEvents, setBridge } from "./events.ts";
 import { registerChannelTool } from "./tool.ts";
 import { ChatBridge } from "./bridge/bridge.ts";
+import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	const registry = new ChannelRegistry();
 	let bridge: ChatBridge | null = null;
 
@@ -66,7 +68,9 @@ export default function (pi: ExtensionAPI) {
 		const errors = registry.getErrors();
 		for (const err of errors) {
 			ctx.ui.notify(`pi-channels: ${err.adapter}: ${err.error}`, "warning");
+			log("adapter-error", { adapter: err.adapter, error: err.error }, "ERROR");
 		}
+		log("init", { adapters: Object.keys(config.adapters ?? {}), routes: Object.keys(config.routes ?? {}) });
 
 		// Start incoming/bidirectional adapters
 		await registry.startListening();
@@ -77,17 +81,19 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Initialize bridge
-		bridge = new ChatBridge(config.bridge, ctx.cwd, registry, pi.events);
+		bridge = new ChatBridge(config.bridge, ctx.cwd, registry, pi.events, log);
 		setBridge(bridge);
 
 		const flagEnabled = pi.getFlag("--chat-bridge");
 		if (flagEnabled || config.bridge?.enabled) {
 			bridge.start();
+			log("bridge-start", {});
 			ctx.ui.notify("pi-channels: Chat bridge started", "info");
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
+		if (bridge?.isActive()) log("bridge-stop", {});
 		bridge?.stop();
 		setBridge(null);
 		await registry.stopAll();

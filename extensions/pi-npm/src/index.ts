@@ -16,6 +16,7 @@ import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { createLogger } from "./logger.ts";
 
 const ACTIONS = [
 	"init",
@@ -75,6 +76,7 @@ function truncate(text: string, max = 8000): string {
 }
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
 	let cwd = process.cwd();
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -126,6 +128,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const { code, stdout, stderr } = await runNpm(cmd, workDir);
+
+			log("run", { action: params.action, args: params.args, cwd: workDir, exitCode: code }, code === 0 ? "INFO" : "ERROR");
 
 			const output = [
 				`\`npm ${cmd}\` in \`${workDir}\``,

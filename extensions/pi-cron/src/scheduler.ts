@@ -124,10 +124,13 @@ export interface CronJobCompleteEvent extends CronJobEvent {
 	error?: string;
 }
 
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
 export type CronEventHandler = {
 	onJobStart?: (event: CronJobEvent) => void;
 	onJobComplete?: (event: CronJobCompleteEvent) => void;
 	onReload?: (jobs: CronJob[]) => void;
+	log?: LogFn;
 };
 
 // ── Scheduler ───────────────────────────────────────────────────
@@ -277,12 +280,14 @@ export class CronScheduler {
 			this.handlers.onJobComplete?.({
 				job, startedAt, durationMs, ok: true, response,
 			});
+			this.handlers.log?.("job-complete", { job: job.name, durationMs });
 		} catch (err: any) {
 			const durationMs = Date.now() - startedAt.getTime();
 			this.handlers.onJobComplete?.({
 				job, startedAt, durationMs, ok: false,
 				error: err.message?.slice(0, 2000) ?? "Unknown error",
 			});
+			this.handlers.log?.("job-error", { job: job.name, durationMs, error: err.message?.slice(0, 500) }, "ERROR");
 		}
 	}
 }

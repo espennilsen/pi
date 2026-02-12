@@ -12,10 +12,13 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { mountDashboard, unmountDashboard, broadcast } from "./web.ts";
+import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
 	// Mount web routes when webserver is ready
-	const mount = () => mountDashboard(pi);
+	const mount = () => { mountDashboard(pi); log("mount", {}); };
 
 	pi.events.on("web:ready", mount);
 	pi.on("session_start", async () => mount());

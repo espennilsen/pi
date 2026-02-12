@@ -1,0 +1,92 @@
+:root {
+  --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+  --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+  --accent: #7c6ff0; --accent2: #9d8cf0;
+  --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+  --border: #2a2a3a; --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+
+/* ── Layout ─────────────────────────────────────────── */
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+/* ── Header ─────────────────────────────────────────── */
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.header h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+.header .back-link { font-size: 13px; color: var(--fg3); text-decoration: none; }
+.header .back-link:hover { color: var(--fg2); }
+.spacer { flex: 1; }
+
+/* ── Buttons ────────────────────────────────────────── */
+.btn { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+.btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover { background: var(--bg3); color: var(--fg); border-color: var(--border); }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-danger { color: var(--red); }
+.btn-danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+.btn-success { color: var(--green); }
+.btn-success:hover { background: var(--green); color: #fff; border-color: var(--green); }
+.btn-warning { color: var(--yellow); }
+.btn-warning:hover { background: var(--yellow); color: #000; border-color: var(--yellow); }
+
+/* ── Status bar ─────────────────────────────────────── */
+.status-bar { display: flex; align-items: center; gap: 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 20px; margin-bottom: 20px; flex-wrap: wrap; }
+.status-indicator { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; }
+.status-dot.active { background: var(--green); box-shadow: 0 0 8px rgba(74,222,128,0.4); }
+.status-dot.inactive { background: var(--fg3); }
+.status-dot.running { background: var(--blue); box-shadow: 0 0 8px rgba(96,165,250,0.4); animation: pulse 1.5s ease infinite; }
+.status-meta { font-size: 12px; color: var(--fg3); }
+.status-meta span { margin-right: 16px; }
+
+/* ── Stats cards ────────────────────────────────────── */
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+.stat-value { font-size: 28px; font-weight: 700; }
+.stat-value.green { color: var(--green); }
+.stat-value.yellow { color: var(--yellow); }
+.stat-value.red { color: var(--red); }
+.stat-value.blue { color: var(--blue); }
+.stat-label { font-size: 12px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+/* ── Section title ──────────────────────────────────── */
+.section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg2); margin-bottom: 8px; }
+
+/* ── Last result ────────────────────────────────────── */
+.last-result { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+.last-result.ok { border-left: 3px solid var(--green); }
+.last-result.alert { border-left: 3px solid var(--red); }
+.last-result-content { font-size: 13px; color: var(--fg2); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+.last-result-meta { font-size: 11px; color: var(--fg3); margin-top: 8px; display: flex; gap: 16px; }
+
+/* ── History ────────────────────────────────────────── */
+.history-list { display: flex; flex-direction: column; gap: 6px; }
+.history-entry { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; align-items: flex-start; gap: 12px; transition: all 0.15s; cursor: pointer; }
+.history-entry:hover { border-color: var(--accent); }
+.history-entry.expanded { }
+.history-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.history-body { flex: 1; min-width: 0; }
+.history-summary { display: flex; align-items: center; gap: 12px; }
+.history-time { font-size: 12px; color: var(--fg3); font-family: "SF Mono", "Fira Code", monospace; }
+.history-duration { font-size: 11px; color: var(--fg3); background: var(--bg3); padding: 2px 8px; border-radius: 10px; }
+.history-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; }
+.history-status.ok { background: rgba(74,222,128,0.15); color: var(--green); }
+.history-status.alert { background: rgba(248,113,113,0.15); color: var(--red); }
+.history-response { font-size: 12px; color: var(--fg2); margin-top: 8px; white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow-y: auto; display: none; }
+.history-entry.expanded .history-response { display: block; }
+
+/* ── Empty state ────────────────────────────────────── */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--fg3); }
+
+/* ── Toast ──────────────────────────────────────────── */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; font-size: 13px; z-index: 2000; opacity: 0; transform: translateY(10px); transition: all 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error { border-color: var(--red); color: var(--red); }
+
+/* ── Animation ──────────────────────────────────────── */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }

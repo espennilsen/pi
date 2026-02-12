@@ -11,9 +11,7 @@ ln -s /path/to/this/repo ~/.pi/agent
 - `agents/` — agent profile prompt overrides (`planner`, `reviewer`, `scout`, `worker`).
 - `extensions/` — local extensions (see below).
 - `skills/` — custom agent skills (`npm`, `workon`, `sample-skill`).
-- `settings.json` — provider/model defaults and extension config.
-
-Runtime and sensitive files (`auth.json`, `cache/`, `sessions/`, `crm/`, `db/`, `telemetry/`, `*.db`, `*.tab`) are gitignored.
+Runtime and sensitive files (`settings.json`, `auth.json`, `cache/`, `sessions/`, `crm/`, `db/`, `telemetry/`, `*.db`, `*.tab`) are gitignored.
 
 
 ## Extensions

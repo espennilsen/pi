@@ -80,6 +80,19 @@ export interface AdapterConfig {
 export interface BridgeConfig {
 	/** Enable the chat bridge (default: false). Also enabled via --chat-bridge flag. */
 	enabled?: boolean;
+	/**
+	 * Use persistent RPC sessions (default: true).
+	 * When enabled, each sender gets a long-lived `pi --mode rpc` subprocess
+	 * that maintains conversation context across messages.
+	 * When disabled, each message spawns a stateless subprocess (no memory).
+	 */
+	persistent?: boolean;
+	/**
+	 * Idle timeout in minutes for persistent sessions (default: 30).
+	 * After this period of inactivity, the sender's RPC subprocess is killed.
+	 * A new one is spawned on the next message.
+	 */
+	idleTimeoutMinutes?: number;
 	/** Max queued messages per sender before rejecting (default: 5). */
 	maxQueuePerSender?: number;
 	/** Subprocess timeout in ms (default: 300000 = 5 min). */

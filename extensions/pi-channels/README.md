@@ -2,7 +2,7 @@
 
 Two-way channel extension for [pi](https://github.com/badlogic/pi-mono). Routes messages between agents and external services like Telegram, webhooks, or custom adapters.
 
-Includes a **chat bridge** that turns any bidirectional adapter into a full agent chat interface — incoming messages are routed to the agent as subprocess prompts, and responses are sent back automatically.
+Includes a **chat bridge** that turns any bidirectional adapter into a full agent chat interface — incoming messages are routed to the agent, and responses are sent back automatically. Supports **persistent sessions** (via RPC mode) for full conversation context across messages, or stateless mode for isolated prompts.
 
 ## Install
 
@@ -20,9 +20,10 @@ pi install /path/to/pi-channels
 When the **chat bridge** is enabled:
 1. Incoming messages (e.g. from Telegram polling) hit `channel:receive`
 2. The bridge serializes per sender (one prompt at a time, FIFO queue)
-3. Each prompt is run as an isolated `pi -p --no-session` subprocess
-4. The agent's response is sent back via the same adapter to the same chat
-5. Typing indicators keep the user informed during processing
+3. **Persistent mode** (default): Each sender gets a long-lived `pi --mode rpc` subprocess that maintains conversation context across messages
+4. **Stateless mode**: Each prompt is run as an isolated `pi -p --no-session` subprocess (no memory between messages)
+5. The agent's response is sent back via the same adapter to the same chat
+6. Typing indicators keep the user informed during processing
 
 ## Config
 
@@ -48,6 +49,8 @@ Add `"pi-channels"` to your pi settings file (`~/.pi/agent/settings.json` or `.p
     },
     "bridge": {
       "enabled": false,
+      "persistent": true,
+      "idleTimeoutMinutes": 30,
       "maxQueuePerSender": 5,
       "timeoutMs": 300000,
       "maxConcurrent": 2,
@@ -73,8 +76,10 @@ Routes map friendly names to adapter + recipient pairs. When pi-cron fires a job
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `false` | Enable on startup. Also via `--chat-bridge` flag or `/chat-bridge on`. |
+| `persistent` | `true` | Use persistent RPC sessions. Each sender gets a long-lived subprocess with conversation memory. Set `false` for stateless mode (each message isolated). |
+| `idleTimeoutMinutes` | `30` | Idle timeout for persistent sessions. After this period of inactivity, the sender's subprocess is killed. A new one starts on the next message. |
 | `maxQueuePerSender` | `5` | Max pending messages per sender before rejecting new ones. |
-| `timeoutMs` | `300000` | Subprocess timeout (5 min). |
+| `timeoutMs` | `300000` | Per-prompt timeout (5 min). |
 | `maxConcurrent` | `2` | Max senders processed in parallel. |
 | `model` | `null` | Model override for subprocess (null = use default). |
 | `typingIndicators` | `true` | Send typing indicators while processing. |
@@ -107,6 +112,26 @@ pi --chat-bridge
 - Multiple senders can run concurrently (up to `maxConcurrent`)
 - If a sender's queue is full, new messages are rejected with a warning
 - Typing indicators refresh every 4 seconds (Telegram typing expires after ~5s)
+
+### Persistent sessions (default)
+
+With `persistent: true`, each sender gets a long-lived `pi --mode rpc` subprocess:
+
+- **Conversation context carries over** — the agent remembers previous messages
+- Sessions auto-restart if the subprocess crashes
+- Idle sessions are killed after `idleTimeoutMinutes` (default 30)
+- `/new` command clears conversation context and starts fresh
+- Image attachments are sent as base64 via the RPC protocol
+
+This is the recommended mode for chat interfaces where users expect conversational continuity.
+
+### Stateless mode
+
+With `persistent: false`, each message spawns an isolated `pi -p --no-session` subprocess:
+
+- No memory between messages — each prompt is independent
+- Lower resource usage (no long-running processes)
+- Good for one-shot commands or notification-style interactions
 
 ### Bot commands
 
@@ -252,6 +277,7 @@ src/
 └── bridge/
     ├── bridge.ts         # Core bridge — per-sender queues, concurrency, lifecycle
     ├── commands.ts       # Bot command registry (/start, /help, /abort, /status, /new)
-    ├── runner.ts         # Subprocess runner (pi -p --no-session)
+    ├── rpc-runner.ts     # Persistent RPC session manager (pi --mode rpc)
+    ├── runner.ts         # Stateless subprocess runner (pi -p --no-session)
     └── typing.ts         # Typing indicator manager
 ```

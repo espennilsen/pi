@@ -144,20 +144,40 @@ function navToday() {
 
 function updatePeriodLabel() {
   const el = document.getElementById('periodLabel');
-  switch (currentView) {
-    case 'week': {
-      const end = addDays(currentWeekStart, 6);
-      el.textContent = `${fmtDate(currentWeekStart)} — ${fmtDate(end)}, ${end.getFullYear()}`;
-      break;
+  const sel = document.getElementById('yearSelect');
+
+  if (currentView === 'year') {
+    el.style.display = 'none';
+    sel.style.display = '';
+    // Populate ±10 years around current
+    const thisYear = new Date().getFullYear();
+    const from = Math.min(currentYear, thisYear) - 5;
+    const to = Math.max(currentYear, thisYear) + 5;
+    sel.innerHTML = '';
+    for (let y = from; y <= to; y++) {
+      sel.innerHTML += `<option value="${y}"${y === currentYear ? ' selected' : ''}>${y}</option>`;
     }
-    case 'month':
-    case 'table':
-      el.textContent = `${MONTH_NAMES[currentMonthDate.getMonth()]} ${currentMonthDate.getFullYear()}`;
-      break;
-    case 'year':
-      el.textContent = `${currentYear}`;
-      break;
+  } else {
+    el.style.display = '';
+    sel.style.display = 'none';
+    switch (currentView) {
+      case 'week': {
+        const end = addDays(currentWeekStart, 6);
+        el.textContent = `${fmtDate(currentWeekStart)} — ${fmtDate(end)}, ${end.getFullYear()}`;
+        break;
+      }
+      case 'month':
+      case 'table':
+        el.textContent = `${MONTH_NAMES[currentMonthDate.getMonth()]} ${currentMonthDate.getFullYear()}`;
+        break;
+    }
   }
+}
+
+function onYearSelectChange() {
+  const sel = document.getElementById('yearSelect');
+  currentYear = parseInt(sel.value);
+  loadAndRender();
 }
 
 // ── Fetch range (view-aware) ───────────────────────────

@@ -17,11 +17,14 @@ import type {
 import type { ChannelRegistry } from "../registry.ts";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import { runPrompt } from "./runner.ts";
+import { RpcSessionManager } from "./rpc-runner.ts";
 import { isCommand, handleCommand, type CommandContext } from "./commands.ts";
 import { startTyping } from "./typing.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,
+	persistent: true,
+	idleTimeoutMinutes: 30,
 	maxQueuePerSender: 5,
 	timeoutMs: 300_000,
 	maxConcurrent: 2,
@@ -47,6 +50,7 @@ export class ChatBridge {
 	private sessions = new Map<string, SenderSession>();
 	private activeCount = 0;
 	private running = false;
+	private rpcManager: RpcSessionManager | null = null;
 
 	constructor(
 		bridgeConfig: BridgeConfig | undefined,
@@ -67,6 +71,18 @@ export class ChatBridge {
 	start(): void {
 		if (this.running) return;
 		this.running = true;
+
+		if (this.config.persistent) {
+			this.rpcManager = new RpcSessionManager(
+				{
+					cwd: this.cwd,
+					model: this.config.model,
+					timeoutMs: this.config.timeoutMs,
+					extensions: this.config.extensions,
+				},
+				this.config.idleTimeoutMinutes * 60_000,
+			);
+		}
 	}
 
 	stop(): void {
@@ -76,6 +92,8 @@ export class ChatBridge {
 		}
 		this.sessions.clear();
 		this.activeCount = 0;
+		this.rpcManager?.killAll();
+		this.rpcManager = null;
 	}
 
 	isActive(): boolean {
@@ -175,18 +193,27 @@ export class ChatBridge {
 		this.events.emit("bridge:start", {
 			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
 			text: prompt.text.slice(0, 100),
+			persistent: !!this.rpcManager,
 		});
 
 		try {
-			const result = await runPrompt({
-				prompt: prompt.text,
-				cwd: this.cwd,
-				timeoutMs: this.config.timeoutMs,
-				model: this.config.model,
-				signal: ac.signal,
-				attachments: prompt.attachments,
-				extensions: this.config.extensions,
-			});
+			let result;
+
+			if (this.rpcManager) {
+				// Persistent mode: use RPC session
+				result = await this.runWithRpc(senderKey, prompt, ac.signal);
+			} else {
+				// Stateless mode: spawn subprocess
+				result = await runPrompt({
+					prompt: prompt.text,
+					cwd: this.cwd,
+					timeoutMs: this.config.timeoutMs,
+					model: this.config.model,
+					signal: ac.signal,
+					attachments: prompt.attachments,
+					extensions: this.config.extensions,
+				});
+			}
 
 			typing.stop();
 
@@ -195,7 +222,6 @@ export class ChatBridge {
 			} else if (result.error === "Aborted by user") {
 				this.sendReply(prompt.adapter, prompt.sender, "⏹ Aborted.");
 			} else {
-				// Sanitize error: don't forward raw stack traces / extension crash logs
 				const userError = sanitizeError(result.error);
 				this.sendReply(
 					prompt.adapter, prompt.sender,
@@ -206,9 +232,12 @@ export class ChatBridge {
 			this.events.emit("bridge:complete", {
 				id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
 				ok: result.ok, durationMs: result.durationMs,
+				persistent: !!this.rpcManager,
 			});
-			this.log("bridge-complete", { id: prompt.id, adapter: prompt.adapter, ok: result.ok, durationMs: result.durationMs },
-				result.ok ? "INFO" : "WARN");
+			this.log("bridge-complete", {
+				id: prompt.id, adapter: prompt.adapter, ok: result.ok,
+				durationMs: result.durationMs, persistent: !!this.rpcManager,
+			}, result.ok ? "INFO" : "WARN");
 
 		} catch (err: any) {
 			typing.stop();
@@ -221,6 +250,29 @@ export class ChatBridge {
 
 			if (session.queue.length > 0) this.processNext(senderKey);
 			this.drainWaiting();
+		}
+	}
+
+	/** Run a prompt via persistent RPC session. */
+	private async runWithRpc(
+		senderKey: string,
+		prompt: QueuedPrompt,
+		signal?: AbortSignal,
+	): Promise<import("../types.ts").RunResult> {
+		try {
+			const rpcSession = await this.rpcManager!.getSession(senderKey);
+			return await rpcSession.runPrompt(prompt.text, {
+				signal,
+				attachments: prompt.attachments,
+			});
+		} catch (err: any) {
+			return {
+				ok: false,
+				response: "",
+				error: err.message,
+				durationMs: 0,
+				exitCode: 1,
+			};
 		}
 	}
 
@@ -277,6 +329,7 @@ export class ChatBridge {
 
 	private commandContext(): CommandContext {
 		return {
+			isPersistent: !!this.rpcManager,
 			abortCurrent: (sender: string): boolean => {
 				for (const session of this.sessions.values()) {
 					if (session.sender === sender && session.abortController) {
@@ -293,7 +346,13 @@ export class ChatBridge {
 			},
 			resetSession: (sender: string): void => {
 				for (const [key, session] of this.sessions) {
-					if (session.sender === sender) this.sessions.delete(key);
+					if (session.sender === sender) {
+						this.sessions.delete(key);
+						// Also reset persistent RPC session
+						if (this.rpcManager) {
+							this.rpcManager.resetSession(key).catch(() => {});
+						}
+					}
 				}
 			},
 		};

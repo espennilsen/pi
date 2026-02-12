@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add persistent RPC sessions to pi-channels chat bridge — each sender gets a long-lived `pi --mode rpc` subprocess with full conversation context across messages, configurable idle timeout, auto-restart on crash, and `/new` command to reset context
 - Add advanced recurrence system to pi-calendar — daily/weekly/biweekly/monthly/yearly with custom intervals, day-of-week selection, month position patterns (e.g. "2nd Tuesday", "last Friday"), end conditions (never/count/date), exclusion dates, and per-occurrence overrides
 - Add month view to pi-calendar — full month grid with event chips, today highlight, and click-to-create
 - Add year view to pi-calendar — 3×4 mini-calendar grid with multi-color event dots, event count badges, and click-to-drill into month view

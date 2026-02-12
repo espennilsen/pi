@@ -2,7 +2,7 @@
   --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
   --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
   --accent: #7c6ff0; --accent2: #9d8cf0;
-  --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+  --green: #4ade80; --red: #ef4444; --yellow: #fbbf24; --blue: #60a5fa;
   --border: #2a2a3a; --radius: 8px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,6 +18,13 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
 /* ── Toolbar ────────────────────────────────────────── */
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .period-label { color: var(--fg2); font-size: 14px; min-width: 180px; text-align: center; }
+.period-select {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--fg);
+  padding: 6px 12px; border-radius: var(--radius); font-size: 14px;
+  font-weight: 600; cursor: pointer; text-align: center;
+  min-width: 100px; appearance: auto;
+}
+.period-select:focus { outline: none; border-color: var(--accent); }
 .spacer { flex: 1; }
 .btn { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: all 0.15s; }
 .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -118,12 +125,12 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
 
 /* Now line */
 .now-line {
-  position: absolute; left: 0; right: 0; height: 2px;
+  position: absolute; left: 0; right: 0; height: 3px;
   background: var(--red); z-index: 30; pointer-events: none;
 }
 .now-line::before {
-  content: ''; position: absolute; left: -4px; top: -3px;
-  width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  content: ''; position: absolute; left: -5px; top: -4px;
+  width: 10px; height: 10px; border-radius: 50%; background: var(--red);
 }
 
 /* Event chips (week view) */
@@ -258,32 +265,25 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
 .mini-header.weekend { color: rgba(136,136,152,0.5); }
 
 .mini-day {
-  font-size: 10px; color: var(--fg2); padding: 0;
+  font-size: 10px; color: var(--fg2); padding: 7px 0 0;
   border-radius: 4px; position: relative;
   aspect-ratio: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
+  align-items: center; justify-content: flex-start;
   transition: background 0.1s;
 }
 .mini-day:hover:not(.outside) { background: rgba(124,111,240,0.08); }
 .mini-day.outside { visibility: hidden; }
 .mini-day.weekend:not(.outside):not(.today) { color: var(--fg3); }
 .mini-day.today {
-  color: var(--accent); font-weight: 700;
+  background: rgba(124,111,240,0.2); font-weight: 700; color: var(--accent);
+  border-radius: 4px;
 }
 
-.mini-day-num { line-height: 1; position: relative; }
-
-.mini-day.today .mini-day-num::after {
-  content: ''; position: absolute;
-  left: -1px; right: -1px; bottom: -2px;
-  height: 2px; border-radius: 1px;
-  background: var(--accent);
-}
+.mini-day-num { line-height: 1; }
 
 .mini-dots {
   display: flex; gap: 2px; justify-content: center;
-  position: absolute; bottom: 1px; left: 50%;
-  transform: translateX(-50%);
+  margin-top: 8px;
   height: 4px;
 }
 .mini-dot {
@@ -305,11 +305,11 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
   display: flex; align-items: baseline; gap: 10px;
   padding: 10px 14px 6px; border-bottom: 1px solid var(--border);
 }
-.table-day-header.today { border-bottom-color: var(--accent); }
+.table-day-header.today { border-bottom-color: var(--red); }
 .table-day-name {
   font-size: 13px; font-weight: 700; color: var(--fg);
 }
-.table-day-header.today .table-day-name { color: var(--accent); }
+.table-day-header.today .table-day-name { color: var(--red); }
 .table-day-date { font-size: 12px; color: var(--fg3); }
 .table-day-relative {
   font-size: 11px; color: var(--fg3); margin-left: auto;

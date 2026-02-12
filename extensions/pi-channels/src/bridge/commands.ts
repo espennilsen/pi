@@ -19,6 +19,7 @@ export interface CommandContext {
 	abortCurrent: (sender: string) => boolean;
 	clearQueue: (sender: string) => void;
 	resetSession: (sender: string) => void;
+	isPersistent?: boolean;
 }
 
 const commands = new Map<string, BotCommand>();
@@ -96,13 +97,14 @@ registerCommand({
 registerCommand({
 	name: "status",
 	description: "Show session info",
-	handler: (_args, session) => {
+	handler: (_args, session, ctx) => {
 		if (!session) return "No active session. Send a message to start one.";
 		const uptime = Math.floor((Date.now() - session.startedAt) / 1000);
 		const mins = Math.floor(uptime / 60);
 		const secs = uptime % 60;
 		return [
 			`**Session Status**`,
+			`- Mode: ${ctx.isPersistent ? "🔗 Persistent (RPC)" : "⚡ Stateless"}`,
 			`- State: ${session.processing ? "⏳ Processing..." : "💤 Idle"}`,
 			`- Messages: ${session.messageCount}`,
 			`- Queue: ${session.queue.length} pending`,
@@ -113,12 +115,14 @@ registerCommand({
 
 registerCommand({
 	name: "new",
-	description: "Clear queue and reset session",
+	description: "Clear queue and start fresh conversation",
 	handler: (_args, session, ctx) => {
 		if (!session) return "No active session.";
 		ctx.abortCurrent(session.sender);
 		ctx.clearQueue(session.sender);
 		ctx.resetSession(session.sender);
-		return "🔄 Session reset. Queue cleared.";
+		return ctx.isPersistent
+			? "🔄 Session reset. Conversation context cleared. Queue cleared."
+			: "🔄 Session reset. Queue cleared.";
 	},
 });

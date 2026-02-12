@@ -16,6 +16,12 @@
   body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
   .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
+  /* ── Header ─────────────────────────────────────────── */
+  .td-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .td-header h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .td-header .back-link { font-size: 13px; color: var(--fg3); text-decoration: none; }
+  .td-header .back-link:hover { color: var(--fg2); }
+
   /* ── Shared badge/status styles ─────────────────────── */
   .td-status { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .td-status.open { background: rgba(96,165,250,0.15); color: var(--blue); }
@@ -322,6 +328,12 @@
 </head>
 <body>
 <div class="container">
+  <!-- Header -->
+  <div class="td-header">
+    <a href="/" class="back-link">← Dashboard</a>
+    <h1>📋 Tasks</h1>
+  </div>
+
   <!-- Toolbar -->
   <div class="td-toolbar">
     <div class="td-view-toggle">

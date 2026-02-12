@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault Health</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+    --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+    --accent: #7c6ff0; --accent2: #9d8cf0;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --purple: #a855f7; --orange: #fb923c;
+    --border: #2a2a3a; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .header .back-link { font-size: 13px; color: var(--fg3); text-decoration: none; }
+  .header .back-link:hover { color: var(--fg2); }
+  .header .spacer { flex: 1; }
+  .header .status { font-size: 11px; color: var(--fg3); }
+
+  /* ── Stats row ──────────────────────────────────────── */
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center;
+  }
+  .stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat-card .stat-label { font-size: 11px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .stat-card.warn .stat-value { color: var(--yellow); }
+  .stat-card.bad .stat-value { color: var(--red); }
+  .stat-card.good .stat-value { color: var(--green); }
+
+  /* ── Section ────────────────────────────────────────── */
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section-title .badge { font-size: 11px; background: var(--bg3); color: var(--fg2); padding: 2px 8px; border-radius: 10px; }
+
+  /* ── Calendar (daily note streak) ───────────────────── */
+  .calendar-grid { display: grid; grid-template-columns: repeat(53, 1fr); gap: 2px; }
+  .cal-day {
+    aspect-ratio: 1; border-radius: 2px; background: var(--bg3);
+    position: relative; cursor: default;
+  }
+  .cal-day.has-note { background: var(--green); opacity: 0.8; cursor: pointer; }
+  a.cal-day { text-decoration: none; display: block; }
+  a.cal-day.has-note:hover { opacity: 1; }
+  .cal-day.today { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .cal-day.future { opacity: 0.2; }
+  .tooltip {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font-size: 11px; white-space: nowrap; pointer-events: none;
+    display: none; z-index: 100;
+  }
+  .cal-day:hover .tooltip { display: block; }
+
+  /* ── Tables ─────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover { background: rgba(255,255,255,0.02); }
+  .tag { display: inline-block; font-size: 10px; background: var(--bg3); color: var(--fg2); padding: 1px 6px; border-radius: 4px; margin: 1px 2px; }
+  .status-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .status-active { background: rgba(74,222,128,0.15); color: var(--green); }
+  .status-stale { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .status-abandoned { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  /* ── Loading ────────────────────────────────────────── */
+  .loading { text-align: center; padding: 40px; color: var(--fg3); }
+  .loading .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg { color: var(--red); background: rgba(248,113,113,0.1); padding: 12px; border-radius: var(--radius); margin: 12px 0; }
+
+  /* ── Vault links ────────────────────────────────────── */
+  .vault-link { color: var(--accent2); text-decoration: none; transition: color 0.15s; }
+  .vault-link:hover { color: var(--accent); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="/" class="back-link">← Dashboard</a>
+    <h1>📚 Vault Health</h1>
+    <span class="spacer"></span>
+    <span class="status" id="lastUpdate"></span>
+  </div>
+
+  <div id="loading" class="loading"><div class="spinner"></div><br>Scanning vault...</div>
+  <div id="content" style="display:none">
+
+    <!-- Stats row -->
+    <div class="stats-row" id="statsRow"></div>
+
+    <!-- Daily note calendar -->
+    <div class="section">
+      <div class="section-title">📅 Daily Note Streak <span class="badge" id="streakBadge"></span></div>
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <div style="width:20px"></div>
+        <div class="calendar-grid" id="calLabels" style="gap:0"></div>
+      </div>
+      <div id="calendarRows"></div>
+    </div>
+
+    <!-- Stale projects -->
+    <div class="section">
+      <div class="section-title">⚠️ Stale Projects <span class="badge" id="staleBadge"></span></div>
+      <div id="staleProjects"></div>
+    </div>
+
+    <!-- Task status breakdown -->
+    <div class="section">
+      <div class="section-title">📋 Task Status Breakdown <span class="badge" id="taskBadge"></span></div>
+      <div id="taskBreakdown"></div>
+    </div>
+
+    <!-- Tag usage -->
+    <div class="section">
+      <div class="section-title">🏷️ Top Tags <span class="badge" id="tagBadge"></span></div>
+      <div id="tagUsage"></div>
+    </div>
+
+    <!-- Recent vault activity -->
+    <div class="section">
+      <div class="section-title">🕐 Recent Activity <span class="badge" id="activityBadge"></span></div>
+      <div id="recentActivity"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API_BASE = '';
+let vaultName = '';
+
+async function fetchJSON(url) {
+  const res = await fetch(API_BASE + url);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function obsidianUrl(filePath) {
+  if (!vaultName || !filePath) return null;
+  const file = filePath.replace(/\.md$/, '');
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(file)}`;
+}
+
+function noteLink(filePath, label) {
+  const url = obsidianUrl(filePath);
+  const displayLabel = label || filePath.replace(/\.md$/, '').split('/').pop();
+  if (url) return `<a href="${url}" class="vault-link" title="Open in Obsidian: ${filePath}">${esc(displayLabel)}</a>`;
+  return `<span>${esc(displayLabel)}</span>`;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function relTime(dateStr) {
+  if (!dateStr) return 'unknown';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const days = Math.floor((now - d) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return days + 'd ago';
+  if (days < 365) return Math.floor(days / 30) + 'mo ago';
+  return Math.floor(days / 365) + 'y ago';
+}
+
+function buildStats(data) {
+  const row = document.getElementById('statsRow');
+  const items = [
+    { label: 'Total Notes', value: data.totalNotes, cls: '' },
+    { label: 'Active Projects', value: data.activeProjects, cls: '' },
+    { label: 'Open Tasks', value: data.openTasks, cls: '' },
+    { label: 'Daily Note Streak', value: data.currentStreak + 'd', cls: data.currentStreak >= 7 ? 'good' : data.currentStreak >= 3 ? '' : 'warn' },
+    { label: 'Stale Projects', value: data.staleProjects.length, cls: data.staleProjects.length > 3 ? 'bad' : data.staleProjects.length > 0 ? 'warn' : 'good' },
+    { label: 'Notes This Week', value: data.notesThisWeek, cls: '' },
+  ];
+  row.innerHTML = items.map(i => `
+    <div class="stat-card ${i.cls}">
+      <div class="stat-value">${i.value}</div>
+      <div class="stat-label">${esc(i.label)}</div>
+    </div>
+  `).join('');
+}
+
+function buildCalendar(data) {
+  const noteSet = new Set(data.dailyNotes || []);
+  const today = new Date();
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  const start = new Date(oneYearAgo);
+  start.setDate(start.getDate() - start.getDay());
+
+  const container = document.getElementById('calendarRows');
+  const dayNames = ['S','M','T','W','T','F','S'];
+
+  let html = '';
+  for (let dow = 0; dow < 7; dow++) {
+    html += `<div style="display:flex;gap:2px;align-items:center">`;
+    html += `<div style="width:20px;font-size:9px;color:var(--fg3);text-align:right;padding-right:4px">${dayNames[dow]}</div>`;
+    html += `<div class="calendar-grid">`;
+
+    const d = new Date(start);
+    d.setDate(d.getDate() + dow);
+    for (let w = 0; w < 53; w++) {
+      const dateStr = d.toISOString().slice(0, 10);
+      const isToday = dateStr === today.toISOString().slice(0, 10);
+      const isFuture = d > today;
+      const hasNote = noteSet.has(dateStr);
+
+      const classes = ['cal-day'];
+      if (hasNote) classes.push('has-note');
+      if (isToday) classes.push('today');
+      if (isFuture) classes.push('future');
+
+      const dailyPath = `Notes/Daily/${dateStr}.md`;
+      const dayUrl = hasNote ? obsidianUrl(dailyPath) : null;
+      const dayTag = dayUrl ? 'a' : 'div';
+      const hrefAttr = dayUrl ? ` href="${dayUrl}"` : '';
+      html += `<${dayTag}${hrefAttr} class="${classes.join(' ')}"><span class="tooltip">${dateStr}${hasNote ? ' ✅' : ''}</span></${dayTag}>`;
+      d.setDate(d.getDate() + 7);
+    }
+    html += `</div></div>`;
+  }
+  container.innerHTML = html;
+
+  document.getElementById('streakBadge').textContent =
+    `${data.dailyNotes?.length || 0} notes in past year · current streak: ${data.currentStreak}d · longest: ${data.longestStreak}d`;
+}
+
+function buildStaleProjects(data) {
+  const projects = data.staleProjects || [];
+  document.getElementById('staleBadge').textContent = projects.length + ' projects';
+  if (projects.length === 0) {
+    document.getElementById('staleProjects').innerHTML = '<div style="color:var(--green);padding:8px">All projects active ✓</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Project</th><th>Status</th><th>Last Modified</th><th>Days Stale</th></tr></thead><tbody>';
+  for (const p of projects) {
+    const cls = p.daysSince > 90 ? 'status-abandoned' : 'status-stale';
+    html += `<tr>
+      <td>${noteLink(p.path, p.name)}</td>
+      <td><span class="status-badge ${cls}">${p.daysSince > 90 ? 'abandoned?' : 'stale'}</span></td>
+      <td>${esc(p.lastModified || 'unknown')}</td>
+      <td>${p.daysSince}d</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('staleProjects').innerHTML = html;
+}
+
+function buildTaskBreakdown(data) {
+  const tasks = data.taskBreakdown || {};
+  const total = Object.values(tasks).reduce((a, b) => a + b, 0);
+  document.getElementById('taskBadge').textContent = total + ' total';
+  if (total === 0) {
+    document.getElementById('taskBreakdown').innerHTML = '<div style="color:var(--fg3);padding:8px">No tasks found</div>';
+    return;
+  }
+
+  const colors = { open: 'var(--blue)', 'in-progress': 'var(--yellow)', blocked: 'var(--red)', done: 'var(--green)', someday: 'var(--fg3)' };
+  let barHtml = '<div style="display:flex;height:24px;border-radius:4px;overflow:hidden;margin-bottom:12px">';
+  for (const [status, count] of Object.entries(tasks)) {
+    const pct = (count / total * 100).toFixed(1);
+    if (count > 0) barHtml += `<div style="width:${pct}%;background:${colors[status] || 'var(--fg3)'}" title="${esc(status)}: ${count} (${pct}%)"></div>`;
+  }
+  barHtml += '</div>';
+
+  let legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap">';
+  for (const [status, count] of Object.entries(tasks)) {
+    legendHtml += `<div style="display:flex;align-items:center;gap:4px;font-size:12px">
+      <div style="width:10px;height:10px;border-radius:2px;background:${colors[status] || 'var(--fg3)'}"></div>
+      ${esc(status)}: ${count}
+    </div>`;
+  }
+  legendHtml += '</div>';
+
+  document.getElementById('taskBreakdown').innerHTML = barHtml + legendHtml;
+}
+
+function buildTagUsage(data) {
+  const tags = data.topTags || [];
+  document.getElementById('tagBadge').textContent = tags.length + ' tags';
+  if (tags.length === 0) {
+    document.getElementById('tagUsage').innerHTML = '<div style="color:var(--fg3);padding:8px">No tags found</div>';
+    return;
+  }
+
+  const maxCount = tags[0]?.count || 1;
+  let html = '<div style="display:flex;flex-direction:column;gap:4px">';
+  for (const t of tags.slice(0, 25)) {
+    const pct = (t.count / maxCount * 100).toFixed(0);
+    html += `<div style="display:flex;align-items:center;gap:8px;font-size:12px">
+      <div style="width:160px;flex-shrink:0;text-align:right;color:var(--fg2)">${vaultName ? `<a href="obsidian://search?vault=${encodeURIComponent(vaultName)}&query=${encodeURIComponent('#' + t.tag)}" class="vault-link">#${esc(t.tag)}</a>` : esc(t.tag)}</div>
+      <div style="flex:1;height:16px;background:var(--bg3);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:2px"></div>
+      </div>
+      <div style="width:40px;flex-shrink:0;color:var(--fg3)">${t.count}</div>
+    </div>`;
+  }
+  html += '</div>';
+  document.getElementById('tagUsage').innerHTML = html;
+}
+
+function buildRecentActivity(data) {
+  const recent = data.recentNotes || [];
+  document.getElementById('activityBadge').textContent = 'last ' + recent.length;
+  if (recent.length === 0) {
+    document.getElementById('recentActivity').innerHTML = '<div style="color:var(--fg3);padding:8px">No recent activity</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Note</th><th>Type</th><th>Modified</th></tr></thead><tbody>';
+  for (const n of recent) {
+    const name = n.path.replace(/\.md$/, '').split('/').pop();
+    const folder = n.path.split('/').slice(0, -1).join('/');
+    html += `<tr>
+      <td>${noteLink(n.path, name)} <span style="color:var(--fg3);font-size:11px">${esc(folder)}</span></td>
+      <td><span class="tag">${esc(n.type || 'note')}</span></td>
+      <td style="color:var(--fg2);white-space:nowrap">${relTime(n.modified)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('recentActivity').innerHTML = html;
+}
+
+async function load() {
+  try {
+    const data = await fetchJSON('/api/vault/health');
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+
+    vaultName = data.vaultName || '';
+    document.title = (vaultName ? vaultName + ' — ' : '') + 'Vault Health';
+    buildStats(data);
+    buildCalendar(data);
+    buildStaleProjects(data);
+    buildTaskBreakdown(data);
+    buildTagUsage(data);
+    buildRecentActivity(data);
+  } catch (e) {
+    document.getElementById('loading').innerHTML = `<div class="error-msg">Failed to load vault health: ${e.message}</div>`;
+  }
+}
+
+load();
+setInterval(load, 300000);
+</script>
+</body>
+</html>

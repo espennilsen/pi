@@ -1,0 +1,299 @@
+<!-- ══════════ DASHBOARD PAGE ══════════ -->
+<div id="page-dashboard" class="page" style="display: none;">
+  <div class="toolbar">
+    <h1>🏠 Dashboard</h1>
+    <div style="flex: 1"></div>
+    <button class="btn btn-primary" onclick="navigateTo('contacts'); setTimeout(showAddContactModal, 100);">+ New Contact</button>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="dash-stats" id="dashStats">
+    <div class="stat-card" onclick="navigateTo('contacts')">
+      <div class="stat-icon">📇</div>
+      <div class="stat-value" id="statContacts">—</div>
+      <div class="stat-label">Contacts</div>
+    </div>
+    <div class="stat-card" onclick="navigateTo('companies')">
+      <div class="stat-icon">🏢</div>
+      <div class="stat-value" id="statCompanies">—</div>
+      <div class="stat-label">Companies</div>
+    </div>
+    <div class="stat-card" onclick="navigateTo('groups')">
+      <div class="stat-icon">📂</div>
+      <div class="stat-value" id="statGroups">—</div>
+      <div class="stat-label">Groups</div>
+    </div>
+    <div class="stat-card" onclick="navigateTo('interactions')">
+      <div class="stat-icon">💬</div>
+      <div class="stat-value" id="statInteractions">—</div>
+      <div class="stat-label">Interactions</div>
+    </div>
+    <div class="stat-card" onclick="navigateTo('reminders')">
+      <div class="stat-icon">🔔</div>
+      <div class="stat-value" id="statReminders">—</div>
+      <div class="stat-label">Reminders</div>
+    </div>
+  </div>
+
+  <!-- Two-column layout: Upcoming + Recent Activity -->
+  <div class="dash-grid">
+    <!-- Upcoming -->
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <h2>📅 Upcoming</h2>
+        <button class="btn btn-sm" onclick="navigateTo('upcoming')">View all →</button>
+      </div>
+      <div id="dashUpcoming">
+        <div class="empty-state" style="padding: 20px"><p>Loading...</p></div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <h2>💬 Recent Activity</h2>
+        <button class="btn btn-sm" onclick="navigateTo('interactions')">View all →</button>
+      </div>
+      <div id="dashActivity">
+        <div class="empty-state" style="padding: 20px"><p>Loading...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contacts needing attention -->
+  <div class="dash-panel" style="margin-top: 20px;">
+    <div class="dash-panel-header">
+      <h2>👋 Needs Attention</h2>
+      <span style="font-size: 12px; color: var(--fg3);">Contacts with no interactions in 30+ days</span>
+    </div>
+    <div id="dashNeglected">
+      <div class="empty-state" style="padding: 20px"><p>Loading...</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function loadDashboard() {
+    await Promise.all([
+      loadDashStats(),
+      loadDashUpcoming(),
+      loadDashActivity(),
+      loadDashNeglected(),
+    ]);
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────
+
+  async function loadDashStats() {
+    try {
+      const [contacts, companies, groups, interactions, reminders] = await Promise.all([
+        fetch('api/crm/contacts?limit=10000').then(r => r.json()),
+        fetch('api/crm/companies').then(r => r.json()),
+        fetch('api/crm/groups').then(r => r.json()),
+        fetch('api/crm/interactions').then(r => r.json()),
+        fetch('api/crm/reminders').then(r => r.json()),
+      ]);
+      // Cache contacts globally for other uses
+      allContacts = contacts;
+      document.getElementById('statContacts').textContent = contacts.length;
+      document.getElementById('statCompanies').textContent = companies.length;
+      document.getElementById('statGroups').textContent = groups.length;
+      document.getElementById('statInteractions').textContent = interactions.length;
+      document.getElementById('statReminders').textContent = reminders.length;
+    } catch (err) {
+      console.error('Failed to load stats:', err);
+    }
+  }
+
+  // ── Upcoming (next 14 days) ───────────────────────────────────
+
+  async function loadDashUpcoming() {
+    const container = document.getElementById('dashUpcoming');
+    try {
+      const [reminders, contacts] = await Promise.all([
+        fetch('api/crm/reminders').then(r => r.json()),
+        allContacts.length ? Promise.resolve(allContacts) : fetch('api/crm/contacts?limit=5000').then(r => r.json()),
+      ]);
+
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const endDate = new Date(today); endDate.setDate(endDate.getDate() + 14);
+      const items = [];
+
+      for (const c of contacts) {
+        if (c.birthday) {
+          const next = dashNextOccurrence(c.birthday, today);
+          if (next && next <= endDate) {
+            items.push({ icon: '🎂', name: `${c.first_name} ${c.last_name || ''}`.trim(), date: next, days: Math.round((next - today) / 86400000), contactId: c.id, type: 'Birthday' });
+          }
+        }
+        if (c.anniversary) {
+          const next = dashNextOccurrence(c.anniversary, today);
+          if (next && next <= endDate) {
+            items.push({ icon: '💍', name: `${c.first_name} ${c.last_name || ''}`.trim(), date: next, days: Math.round((next - today) / 86400000), contactId: c.id, type: 'Anniversary' });
+          }
+        }
+      }
+
+      // Custom reminders (skip dupes)
+      const seen = new Set(items.map(i => `${i.contactId}:${i.type.toLowerCase()}`));
+      for (const r of reminders) {
+        const rDate = new Date(r.reminder_date + 'T00:00:00');
+        if (rDate >= today && rDate <= endDate) {
+          const key = `${r.contact_id}:${r.reminder_type}`;
+          if (seen.has(key)) continue;
+          const days = Math.round((rDate - today) / 86400000);
+          const name = r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : 'Unknown';
+          items.push({ icon: reminderIcons[r.reminder_type] || '📌', name, date: rDate, days, contactId: r.contact_id, type: r.message || r.reminder_type });
+        }
+      }
+
+      items.sort((a, b) => a.days - b.days);
+
+      if (items.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 20px"><p style="color: var(--fg3)">Nothing in the next 2 weeks</p></div>';
+        return;
+      }
+
+      container.innerHTML = items.slice(0, 8).map(i => {
+        const dateStr = i.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        const urgency = i.days === 0 ? 'today' : i.days <= 3 ? 'soon' : 'later';
+        const label = i.days === 0 ? 'Today' : i.days === 1 ? 'Tomorrow' : `${i.days}d`;
+        return `
+          <div class="dash-upcoming-item" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${i.contactId}), 100);">
+            <span class="dash-upcoming-icon">${i.icon}</span>
+            <div class="dash-upcoming-body">
+              <div class="dash-upcoming-name">${esc(i.name)}</div>
+              <div class="dash-upcoming-meta">${esc(i.type)} · ${dateStr}</div>
+            </div>
+            <span class="upcoming-days ${urgency}">${label}</span>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      console.error('Failed to load upcoming:', err);
+      container.innerHTML = '<div class="empty-state" style="padding: 20px"><p>Failed to load</p></div>';
+    }
+  }
+
+  function dashNextOccurrence(dateStr, today) {
+    try {
+      const parts = dateStr.split('-');
+      const month = parseInt(parts[1]) - 1, day = parseInt(parts[2]);
+      let next = new Date(today.getFullYear(), month, day);
+      if (next.getMonth() !== month) next = new Date(today.getFullYear(), month + 1, 0);
+      if (next < today) {
+        next = new Date(today.getFullYear() + 1, month, day);
+        if (next.getMonth() !== month) next = new Date(today.getFullYear() + 1, month + 1, 0);
+      }
+      return next;
+    } catch { return null; }
+  }
+
+  // ── Recent Activity ───────────────────────────────────────────
+
+  async function loadDashActivity() {
+    const container = document.getElementById('dashActivity');
+    try {
+      const interactions = await fetch('api/crm/interactions').then(r => r.json());
+      if (interactions.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 20px"><p style="color: var(--fg3)">No interactions yet</p></div>';
+        return;
+      }
+
+      container.innerHTML = interactions.slice(0, 8).map(i => {
+        const time = relativeTime(new Date(i.happened_at));
+        return `
+          <div class="dash-activity-item" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${i.contact_id}), 100);">
+            <span class="dash-activity-icon">${typeIcons[i.interaction_type] || '💬'}</span>
+            <div class="dash-activity-body">
+              <div class="dash-activity-header">
+                <span class="dash-activity-name">${esc(i.first_name)} ${esc(i.last_name || '')}</span>
+                <span class="dash-activity-time">${time}</span>
+              </div>
+              <div class="dash-activity-summary">${esc(i.summary)}</div>
+            </div>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      console.error('Failed to load activity:', err);
+      container.innerHTML = '<div class="empty-state" style="padding: 20px"><p>Failed to load</p></div>';
+    }
+  }
+
+  function relativeTime(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    if (days < 30) return `${Math.floor(days / 7)}w ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // ── Neglected Contacts ────────────────────────────────────────
+
+  async function loadDashNeglected() {
+    const container = document.getElementById('dashNeglected');
+    try {
+      const [contacts, interactions] = await Promise.all([
+        allContacts.length ? Promise.resolve(allContacts) : fetch('api/crm/contacts?limit=5000').then(r => r.json()),
+        fetch('api/crm/interactions').then(r => r.json()),
+      ]);
+
+      // Build map: contactId → most recent interaction date
+      const lastInteraction = {};
+      for (const i of interactions) {
+        const d = new Date(i.happened_at).getTime();
+        if (!lastInteraction[i.contact_id] || d > lastInteraction[i.contact_id]) {
+          lastInteraction[i.contact_id] = d;
+        }
+      }
+
+      const thirtyDaysAgo = Date.now() - 30 * 86400000;
+      const neglected = contacts
+        .map(c => ({
+          ...c,
+          lastDate: lastInteraction[c.id] || null,
+          daysSince: lastInteraction[c.id] ? Math.floor((Date.now() - lastInteraction[c.id]) / 86400000) : null,
+        }))
+        .filter(c => {
+          if (c.lastDate === null) return true; // Never contacted
+          return c.lastDate < thirtyDaysAgo;
+        })
+        .sort((a, b) => {
+          // Never contacted first, then longest since last contact
+          if (a.lastDate === null && b.lastDate === null) return 0;
+          if (a.lastDate === null) return -1;
+          if (b.lastDate === null) return 1;
+          return a.lastDate - b.lastDate;
+        })
+        .slice(0, 6);
+
+      if (neglected.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 20px"><p style="color: var(--green)">🎉 All contacts are up to date!</p></div>';
+        return;
+      }
+
+      container.innerHTML = `<div class="dash-neglected-grid">${neglected.map(c => {
+        const initials = (c.first_name.charAt(0) + (c.last_name || '').charAt(0)).toUpperCase();
+        const label = c.daysSince === null ? 'Never contacted' : `${c.daysSince} days ago`;
+        const urgency = c.daysSince === null ? 'overdue' : c.daysSince > 60 ? 'overdue' : 'soon';
+        return `
+          <div class="dash-neglected-item" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${c.id}), 100);">
+            <div class="dash-neglected-avatar">${esc(initials)}</div>
+            <div class="dash-neglected-body">
+              <div class="dash-neglected-name">${esc(c.first_name)} ${esc(c.last_name || '')}</div>
+              <div class="dash-neglected-meta">${c.company_name ? esc(c.company_name) + ' · ' : ''}${label}</div>
+            </div>
+            <span class="reminder-badge ${urgency}">${c.daysSince === null ? 'New' : c.daysSince + 'd'}</span>
+          </div>`;
+      }).join('')}</div>`;
+    } catch (err) {
+      console.error('Failed to load neglected:', err);
+      container.innerHTML = '<div class="empty-state" style="padding: 20px"><p>Failed to load</p></div>';
+    }
+  }
+</script>

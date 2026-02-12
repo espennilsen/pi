@@ -2,7 +2,7 @@
 
 Shared Kysely extension for pi with **table-level RBAC** between extensions.
 
-By default, pi-kysely creates a shared SQLite database at `$PI_CODING_AGENT_DIR/db/sqlite.db` (defaults to `~/.pi/agent/db/sqlite.db`, or `<project>/.pi/db/sqlite.db` when configured in project settings) and only exposes table operations (no DB lifecycle API to consumers).
+By default, pi-kysely creates a shared SQLite database at `$PI_CODING_AGENT_DIR/db/kysely.db` (defaults to `~/.pi/agent/db/kysely.db`, or `<project>/.pi/db/kysely.db` when configured in project settings) and only exposes table operations (no DB lifecycle API to consumers).
 
 ## Install
 
@@ -25,7 +25,7 @@ Project: `.pi/settings.json` (overrides global)
   "kysely": {
     "databaseName": "default",
     "driver": "sqlite",
-    "sqlitePath": "db/sqlite.db",
+    "sqlitePath": "db/kysely.db",
     "autoCreateDefault": true
   }
 }

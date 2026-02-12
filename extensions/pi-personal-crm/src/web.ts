@@ -41,7 +41,7 @@ function loadCrmHtml(): string {
 		"utf-8",
 	);
 	const pageDir = path.resolve(import.meta.dirname, "../pages");
-	const pageNames = ["contacts", "companies", "groups", "interactions", "reminders", "upcoming"];
+	const pageNames = ["dashboard", "contacts", "companies", "groups", "interactions", "reminders", "upcoming"];
 	const pagesHtml = pageNames
 		.map((name) =>
 			fs.readFileSync(path.join(pageDir, `${name}.html`), "utf-8"),

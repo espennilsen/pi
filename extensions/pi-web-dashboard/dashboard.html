@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark-dimmed.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+    --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+    --accent: #7c6ff0; --accent2: #9d8cf0;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --border: #2a2a3a; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .dash-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dash-header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+  .dash-header .nav-status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--fg3); display: inline-block;
+  }
+  .status-dot.connected { background: var(--green); animation: pulse 2s infinite; }
+  .status-dot.busy { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.disconnected { background: var(--red); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .uptime { color: var(--fg2); font-size: 12px; }
+
+  /* ── Stats grid ─────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .card .label { color: var(--fg2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .card .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .value.green { color: var(--green); }
+  .card .value.red { color: var(--red); }
+  .card .value.blue { color: var(--blue); }
+  .card .value.yellow { color: var(--yellow); }
+  .card .value.accent { color: var(--accent2); }
+
+  /* ── Section ────────────────────────────────────────── */
+  h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--fg); }
+  .section { margin-bottom: 24px; }
+
+  /* ── Live session ───────────────────────────────────── */
+  .live-session { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; position: relative; }
+  .live-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .live-header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg3); display: inline-block; margin-right: 8px; }
+  .live-header .live-dot.active { background: var(--green); animation: pulse 1.5s infinite; }
+  .live-header .live-label { font-size: 12px; color: var(--fg2); }
+  .live-body { padding: 16px; min-height: 400px; max-height: 400px; overflow-y: auto; font-size: 14px; line-height: 1.6; word-break: break-word; }
+  .live-body:empty::after { content: "Waiting for agent activity…"; color: var(--fg3); display: block; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; }
+  .live-body .tool-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background: var(--yellow); color: #000; margin: 4px 0; }
+  .live-body .tool-badge.error { background: var(--red); }
+  .live-body .tool-line { color: var(--fg3); font-size: 11px; margin: 2px 0; font-family: "SF Mono", "Fira Code", monospace; }
+
+  /* Markdown rendering in live body */
+  .live-md h1, .live-md h2, .live-md h3, .live-md h4, .live-md h5, .live-md h6 { color: var(--accent2); margin: 0.8em 0 0.3em 0; font-weight: 700; }
+  .live-md h1 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+  .live-md h2 { font-size: 1.15em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+  .live-md h3 { font-size: 1.05em; }
+  .live-md h4, .live-md h5, .live-md h6 { font-size: 1em; }
+  .live-md p { margin: 0.4em 0; }
+  .live-md p:first-child { margin-top: 0; }
+  .live-md a { color: var(--blue); text-decoration: underline; }
+  .live-md strong { color: var(--fg); font-weight: 700; }
+  .live-md em { font-style: italic; color: var(--fg2); }
+
+  .live-md code { background: rgba(128,128,128,0.2); color: var(--yellow); padding: 1px 5px; border-radius: 4px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.9em; }
+  .live-md pre { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 0.6em 0; overflow-x: auto; }
+  .live-md pre code { display: block; background: none; color: var(--fg); padding: 0; border-radius: 0; font-size: 13px; line-height: 1.5; }
+
+  .live-md blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: 0.6em 0; color: var(--fg2); font-style: italic; }
+  .live-md ul, .live-md ol { margin: 0.4em 0; padding-left: 1.8em; }
+  .live-md li { margin: 0.15em 0; }
+  .live-md li::marker { color: var(--accent2); }
+  .live-md hr { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
+
+  .live-md table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
+  .live-md th, .live-md td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .live-md th { background: var(--bg3); font-weight: 600; color: var(--accent2); }
+
+  .live-md .hljs { background: transparent; color: var(--fg); }
+
+  .live-cursor { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: text-bottom; animation: blink 1s step-end infinite; margin-left: 1px; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .live-clear { background: none; border: 1px solid var(--border); color: var(--fg2); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .live-clear:hover { border-color: var(--fg2); color: var(--fg); }
+
+  /* ── Prompt bar ─────────────────────────────────────── */
+  .prompt-bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+  .prompt-bar input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--fg); font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s; }
+  .prompt-bar input:focus { border-color: var(--accent); }
+  .prompt-bar input::placeholder { color: var(--fg3); }
+  .prompt-bar input:disabled { opacity: 0.5; }
+  .prompt-bar button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; white-space: nowrap; }
+  .prompt-bar button:hover { opacity: 0.85; }
+  .prompt-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Events ─────────────────────────────────────────── */
+  .events-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .events-filters { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .filter-btn { padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--fg2); transition: all 0.15s; }
+  .filter-btn:hover { border-color: var(--fg2); color: var(--fg); }
+  .filter-btn.active { border-color: transparent; color: #000; }
+  .filter-btn.active[data-filter="all"] { background: var(--fg2); color: #000; }
+  .filter-btn.active[data-filter="done"] { background: var(--green); }
+  .filter-btn.active[data-filter="error"] { background: var(--red); }
+  .filter-btn.active[data-filter="tool"] { background: var(--yellow); }
+  .events { max-height: 200px; overflow-y: auto; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
+  .events:empty::after { content: "Waiting for events…"; color: var(--fg3); padding: 12px; display: block; }
+  .ev { padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+  .ev:last-child { border-bottom: none; }
+  .ev .time { color: var(--fg3); flex-shrink: 0; }
+  .ev .badge { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
+  .badge.start { background: var(--blue); color: #000; }
+  .badge.done { background: var(--green); color: #000; }
+  .badge.error { background: var(--red); color: #000; }
+  .badge.tool { background: var(--yellow); color: #000; }
+  .ev .msg { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Recent jobs table ──────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--fg2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; background: var(--bg2); position: sticky; top: 0; }
+  td { font-size: 13px; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: var(--bg3); }
+  .table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: auto; max-height: 400px; }
+
+  .status { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .status.done { background: rgba(74,222,128,0.15); color: var(--green); }
+  .status.error { background: rgba(248,113,113,0.15); color: var(--red); }
+  .status.running { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .status.pending { background: rgba(136,136,152,0.15); color: var(--fg2); }
+
+  .channel { padding: 2px 8px; border-radius: 4px; font-size: 11px; background: rgba(124,111,240,0.15); color: var(--accent2); }
+  .prompt-preview { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
+  .cost { color: var(--yellow); }
+  .tokens { color: var(--fg2); }
+
+  /* ── Two-column layout ──────────────────────────────── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+  .refresh-note { color: var(--fg3); font-size: 11px; text-align: right; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="dash-header">
+    <h1>⚡ pi dashboard</h1>
+    <div class="nav-status">
+      <span class="status-dot" id="sse-dot"></span>
+      <span class="uptime" id="uptime"></span>
+    </div>
+  </div>
+
+  <!-- Stats grid -->
+  <div class="grid" id="stats"></div>
+
+  <!-- Live session -->
+  <div class="section">
+    <h2>Live Session</h2>
+    <div class="live-session">
+      <div class="live-header">
+        <div><span class="live-dot" id="live-dot"></span><span class="live-label" id="live-label">Idle</span></div>
+        <button class="live-clear" id="live-clear">Clear</button>
+      </div>
+      <div class="live-body" id="live-body"></div>
+      <div class="prompt-bar">
+        <input type="text" id="prompt-input" placeholder="Send a prompt to the agent…" autocomplete="off" />
+        <button id="prompt-send">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events -->
+  <div class="section">
+    <h2>Events</h2>
+    <div class="events-wrap">
+      <div class="events-filters" id="events-filters">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="done">Done</button>
+        <button class="filter-btn" data-filter="error">Failed</button>
+        <button class="filter-btn" data-filter="tool">Tools</button>
+        <button class="live-clear" style="margin-left:auto" id="events-clear">Clear</button>
+      </div>
+      <div class="events" id="events"></div>
+    </div>
+  </div>
+
+  <!-- Recent jobs -->
+  <div class="section">
+    <h2>Recent Jobs</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Status</th><th>Channel</th><th>Prompt</th>
+          <th>Tokens</th><th>Cost</th><th>Tools</th><th>Duration</th><th>Time</th>
+        </tr></thead>
+        <tbody id="jobs"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Model & tool breakdown -->
+  <div class="two-col">
+    <div class="section">
+      <h2>Models (30d)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Model</th><th>Jobs</th><th>Tokens</th><th>Cost</th></tr></thead>
+          <tbody id="models"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="section">
+      <h2>Tools (30d)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Calls</th><th>Errors</th><th>Avg Time</th></tr></thead>
+          <tbody id="tools"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <p class="refresh-note">Auto-refreshes every 30s · SSE for live events</p>
+</div>
+
+<script>
+const $ = s => document.getElementById(s);
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+function fmt(n, d=0) { return n == null ? '—' : Number(n).toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d}); }
+function cost(n) { return n == null ? '—' : '$' + Number(n).toFixed(4); }
+function dur(ms) { return ms == null ? '—' : (ms/1000).toFixed(1) + 's'; }
+function ago(iso) {
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function ts() { return new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+
+// ── Markdown renderer ────────────────────────────────────────────
+
+if (typeof marked !== 'undefined') {
+  marked.use({
+    breaks: true,
+    gfm: true,
+    renderer: {
+      code(token) {
+        const lang = token.lang || '';
+        let highlighted;
+        if (lang && typeof hljs !== 'undefined' && hljs.getLanguage(lang)) {
+          try { highlighted = hljs.highlight(token.text, { language: lang }).value; }
+          catch { highlighted = esc(token.text); }
+        } else if (typeof hljs !== 'undefined') {
+          try { highlighted = hljs.highlightAuto(token.text).value; }
+          catch { highlighted = esc(token.text); }
+        } else {
+          highlighted = esc(token.text);
+        }
+        return '<pre><code class="hljs'+(lang ? ' language-'+esc(lang) : '')+'">'+highlighted+'</code></pre>';
+      },
+      codespan(token) {
+        return '<code>'+esc(token.text)+'</code>';
+      }
+    }
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text || !text.trim()) return '';
+  try { return marked.parse(text); }
+  catch { return '<p>'+esc(text)+'</p>'; }
+}
+
+// ── SSE connection ───────────────────────────────────────────────
+
+const sseDot = $('sse-dot');
+const uptimeEl = $('uptime');
+let evtSource = null;
+let sseConnectedAt = null;
+
+function connectSSE() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  evtSource = new EventSource('/api/dashboard/events');
+
+  evtSource.onopen = () => {
+    sseConnectedAt = Date.now();
+    sseDot.className = 'status-dot connected';
+  };
+
+  evtSource.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type !== 'connected') handleSSE(d);
+    } catch {}
+  };
+
+  evtSource.onerror = () => {
+    sseDot.className = 'status-dot disconnected';
+    sseConnectedAt = null;
+    if (evtSource) { evtSource.close(); evtSource = null; }
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+function updateUptime() {
+  if (!sseConnectedAt) { uptimeEl.textContent = 'disconnected'; return; }
+  const s = Math.floor((Date.now() - sseConnectedAt) / 1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  uptimeEl.textContent = 'connected · ' + (h > 0 ? h+'h ':'') + m + 'm ' + (s%60) + 's';
+}
+
+// ── Live session ─────────────────────────────────────────────────
+
+const liveBody = $('live-body');
+const liveDot = $('live-dot');
+const liveLabel = $('live-label');
+let liveStreaming = false;
+let liveBuffer = '';
+let liveParts = [];
+let renderTimer = null;
+
+function setLiveActive(active) {
+  liveStreaming = active;
+  liveDot.className = 'live-dot' + (active ? ' active' : '');
+  liveLabel.textContent = active ? 'Streaming…' : 'Idle';
+  sseDot.className = active ? 'status-dot busy' : 'status-dot connected';
+}
+
+function scheduleLiveRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => { renderTimer = null; renderLive(); }, 50);
+}
+
+function renderLive() {
+  let html = '';
+  for (const part of liveParts) {
+    if (part.type === 'md') {
+      html += '<div class="live-md">' + renderMarkdown(part.text) + '</div>';
+    } else if (part.type === 'tool') {
+      html += part.html;
+    } else if (part.type === 'divider') {
+      html += part.html;
+    }
+  }
+  if (liveBuffer.trim()) {
+    html += '<div class="live-md">' + renderMarkdown(liveBuffer) + (liveStreaming ? '<span class="live-cursor"></span>' : '') + '</div>';
+  } else if (liveStreaming) {
+    html += '<span class="live-cursor"></span>';
+  }
+  liveBody.innerHTML = html;
+  liveBody.scrollTop = liveBody.scrollHeight;
+}
+
+function flushLiveBuffer() {
+  if (liveBuffer.trim()) {
+    liveParts.push({ type: 'md', text: liveBuffer });
+  }
+  liveBuffer = '';
+}
+
+function appendLiveTool(html) {
+  flushLiveBuffer();
+  liveParts.push({ type: 'tool', html });
+  scheduleLiveRender();
+}
+
+function appendLiveDivider() {
+  flushLiveBuffer();
+  liveParts.push({ type: 'divider', html: '<div style="border-top:1px solid var(--border);margin:12px 0;"></div>' });
+  scheduleLiveRender();
+}
+
+$('live-clear').addEventListener('click', () => {
+  liveBuffer = '';
+  liveParts = [];
+  liveBody.innerHTML = '';
+});
+
+// ── SSE event handler ────────────────────────────────────────────
+
+function handleSSE(d) {
+  switch (d.type) {
+    case 'agent_start':
+      setLiveActive(true);
+      liveBuffer = '';
+      appendLiveDivider();
+      addEvent('start', 'Agent started');
+      break;
+
+    case 'agent_end':
+      flushLiveBuffer();
+      setLiveActive(false);
+      renderLive();
+      addEvent('done', 'Agent finished');
+      // Refresh stats after run
+      setTimeout(refreshAll, 500);
+      break;
+
+    case 'turn_start':
+      break;
+
+    case 'turn_end':
+      if (d.text) {
+        liveBuffer += d.text;
+        scheduleLiveRender();
+      }
+      break;
+
+    case 'tool_start':
+      appendLiveTool(
+        '<div class="tool-line">┌ <span class="tool-badge">' + esc(d.toolName) + '</span></div>'
+      );
+      addEvent('tool', esc(d.toolName));
+      break;
+
+    case 'tool_end':
+      if (d.isError) {
+        appendLiveTool(
+          '<div class="tool-line">└ <span class="tool-badge error">error</span> ' + esc(d.toolName) + '</div>'
+        );
+        addEvent('error', esc(d.toolName) + ' failed');
+      } else {
+        const preview = d.preview ? ' ' + esc(d.preview.slice(0, 80)) : '';
+        appendLiveTool(
+          '<div class="tool-line">└ done' + (preview ? ' <span style="color:var(--fg3)">' + preview + '</span>' : '') + '</div>'
+        );
+      }
+      break;
+  }
+}
+
+// ── Events feed ──────────────────────────────────────────────────
+
+const eventsEl = $('events');
+let activeEventFilter = 'all';
+
+function addEvent(type, msg) {
+  const div = document.createElement('div');
+  div.className = 'ev';
+  div.setAttribute('data-type', type);
+  if (activeEventFilter !== 'all' && activeEventFilter !== type) div.style.display = 'none';
+  div.innerHTML =
+    '<span class="time">' + ts() + '</span> ' +
+    '<span class="badge ' + type + '">' + type + '</span> ' +
+    '<span class="msg">' + msg + '</span>';
+  eventsEl.prepend(div);
+  while (eventsEl.children.length > 100) eventsEl.lastChild.remove();
+}
+
+// Event filters
+$('events-filters').addEventListener('click', (e) => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  activeEventFilter = btn.dataset.filter;
+  for (const b of $('events-filters').querySelectorAll('.filter-btn')) {
+    b.classList.toggle('active', b.dataset.filter === activeEventFilter);
+  }
+  for (const ev of eventsEl.querySelectorAll('.ev')) {
+    ev.style.display = (activeEventFilter === 'all' || ev.getAttribute('data-type') === activeEventFilter) ? '' : 'none';
+  }
+});
+
+$('events-clear').addEventListener('click', () => { eventsEl.innerHTML = ''; });
+
+// ── Prompt ───────────────────────────────────────────────────────
+
+const promptInput = $('prompt-input');
+const promptSend = $('prompt-send');
+let promptBusy = false;
+
+function setPromptBusy(busy) {
+  promptBusy = busy;
+  promptInput.disabled = busy;
+  promptSend.disabled = busy;
+  promptSend.textContent = busy ? 'Sending…' : 'Send';
+}
+
+async function sendPrompt() {
+  const text = promptInput.value.trim();
+  if (!text || promptBusy) return;
+
+  setPromptBusy(true);
+  try {
+    const res = await fetch('/api/dashboard/prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: text }),
+    });
+    if (res.ok) {
+      promptInput.value = '';
+    } else {
+      const err = await res.json().catch(() => ({}));
+      addEvent('error', 'Prompt error: ' + (err.error || res.statusText));
+    }
+  } catch (e) {
+    addEvent('error', 'Failed to send: ' + e.message);
+  }
+  setPromptBusy(false);
+}
+
+promptSend.addEventListener('click', sendPrompt);
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+});
+
+// ── Stats grid (from pi-jobs API) ────────────────────────────────
+
+async function loadStats() {
+  try {
+    const data = await fetch('/api/jobs/stats').then(r => r.json());
+    $('stats').innerHTML = [
+      {l:'Jobs', v:fmt(data.jobs), c:'accent'},
+      {l:'Errors', v:fmt(data.errors), c:data.errors > 0 ? 'red' : 'green'},
+      {l:'Tokens', v:fmt(data.tokens), c:'blue'},
+      {l:'Cost', v:cost(data.cost), c:'yellow'},
+      {l:'Tool Calls', v:fmt(data.toolCalls), c:'accent'},
+      {l:'Avg Duration', v:dur(data.avgDurationMs), c:''},
+    ].map(s =>
+      '<div class="card"><div class="label">'+s.l+'</div><div class="value '+s.c+'">'+s.v+'</div></div>'
+    ).join('');
+  } catch {
+    $('stats').innerHTML =
+      '<div class="card" style="grid-column:1/-1;text-align:center"><div class="label" style="color:var(--fg3)">Stats unavailable — pi-jobs not loaded</div></div>';
+  }
+}
+
+// ── Recent jobs table (from pi-jobs API) ─────────────────────────
+
+async function loadJobs() {
+  try {
+    const jobs = await fetch('/api/jobs/recent?limit=50').then(r => r.json());
+    $('jobs').innerHTML = jobs.map(j =>
+      '<tr>' +
+      '<td><span class="status '+j.status+'">'+j.status+'</span></td>' +
+      '<td><span class="channel">'+esc(j.channel)+'</span></td>' +
+      '<td class="prompt-preview" title="'+esc(j.prompt)+'">'+esc(j.prompt.slice(0,80))+'</td>' +
+      '<td class="tokens">'+fmt(j.total_tokens)+'</td>' +
+      '<td class="cost">'+cost(j.cost_total)+'</td>' +
+      '<td>'+fmt(j.tool_call_count)+'</td>' +
+      '<td>'+dur(j.duration_ms)+'</td>' +
+      '<td>'+ago(j.created_at)+'</td>' +
+      '</tr>'
+    ).join('') || '<tr><td colspan="8" style="color:var(--fg3);text-align:center;padding:24px">No jobs yet</td></tr>';
+  } catch {
+    $('jobs').innerHTML = '<tr><td colspan="8" style="color:var(--fg3);text-align:center;padding:24px">Unavailable — pi-jobs not loaded</td></tr>';
+  }
+}
+
+// ── Models table (from pi-jobs API) ──────────────────────────────
+
+async function loadModels() {
+  try {
+    const models = await fetch('/api/jobs/models?days=30').then(r => r.json());
+    $('models').innerHTML = models.map(m =>
+      '<tr><td>'+esc((m.provider||'')+'/'+m.model)+'</td>' +
+      '<td>'+fmt(m.job_count)+'</td>' +
+      '<td class="tokens">'+fmt(m.total_tokens)+'</td>' +
+      '<td class="cost">'+cost(m.cost_total)+'</td></tr>'
+    ).join('') || '<tr><td colspan="4" style="color:var(--fg3)">—</td></tr>';
+  } catch {
+    $('models').innerHTML = '<tr><td colspan="4" style="color:var(--fg3)">—</td></tr>';
+  }
+}
+
+// ── Tools table (from pi-jobs API) ───────────────────────────────
+
+async function loadTools() {
+  try {
+    const tools = await fetch('/api/jobs/tools?days=30').then(r => r.json());
+    $('tools').innerHTML = tools.map(t =>
+      '<tr><td>'+esc(t.tool_name)+'</td>' +
+      '<td>'+fmt(t.call_count)+'</td>' +
+      '<td>'+(t.error_count>0?'<span style="color:var(--red)">'+t.error_count+'</span>':'0')+'</td>' +
+      '<td>'+dur(t.avg_duration_ms)+'</td></tr>'
+    ).join('') || '<tr><td colspan="4" style="color:var(--fg3)">—</td></tr>';
+  } catch {
+    $('tools').innerHTML = '<tr><td colspan="4" style="color:var(--fg3)">—</td></tr>';
+  }
+}
+
+// ── Refresh cycle ────────────────────────────────────────────────
+
+function refreshAll() { loadStats(); loadJobs(); loadModels(); loadTools(); }
+refreshAll();
+setInterval(refreshAll, 30000);
+setInterval(updateUptime, 1000);
+
+// ── Init SSE ─────────────────────────────────────────────────────
+
+connectSSE();
+window.addEventListener('beforeunload', () => { if (evtSource) { evtSource.close(); evtSource = null; } });
+</script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi — Projects</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+<div class="container">
+	<div class="proj-toolbar">
+		<div class="proj-view-toggle">
+			<button class="active" id="proj-view-cards" onclick="projUI.setView('cards')">Cards</button>
+			<button id="proj-view-table" onclick="projUI.setView('table')">Table</button>
+		</div>
+		<div class="proj-sort">
+			<button class="active" id="proj-sort-name" onclick="projUI.setSort('name')">Name</button>
+			<button id="proj-sort-recent" onclick="projUI.setSort('recent')">Recent</button>
+			<button id="proj-sort-dirty" onclick="projUI.setSort('dirty')">Dirty first</button>
+		</div>
+		<select id="proj-filter-status" onchange="projUI.render()">
+			<option value="">All repos</option>
+			<option value="dirty">Dirty only</option>
+			<option value="clean">Clean only</option>
+			<option value="no-git">No git</option>
+		</select>
+		<input type="text" class="proj-search" id="proj-search" placeholder="Search projects..." oninput="projUI.render()">
+		<span class="proj-stats" id="proj-stats"></span>
+		<button class="btn-manage" onclick="projManage.open()">⚙ Manage</button>
+	</div>
+
+	<div id="proj-loading" class="proj-loading">
+		<div class="spinner"></div>
+		<p>Scanning projects…</p>
+	</div>
+
+	<div class="proj-grid" id="proj-grid" style="display:none;"></div>
+
+	<div class="proj-table-wrap" id="proj-table" style="display:none;">
+		<table>
+			<thead><tr>
+				<th onclick="projUI.setSort('name')">Project</th>
+				<th onclick="projUI.setSort('recent')">Branch</th>
+				<th>Last Commit</th>
+				<th>Message</th>
+				<th onclick="projUI.setSort('dirty')">Status</th>
+				<th>Changes</th>
+				<th></th>
+			</tr></thead>
+			<tbody id="proj-table-body"></tbody>
+		</table>
+	</div>
+
+	<!-- Manage modal -->
+	<div class="proj-manage-overlay" id="proj-manage-overlay">
+		<div class="proj-manage">
+			<h3>Manage Projects</h3>
+			<h4>Scan Directories</h4>
+			<p style="font-size:12px;color:var(--fg3);margin-bottom:8px;">~/Dev is always scanned. Add extra directories below.</p>
+			<div id="proj-sources-list"></div>
+			<div class="proj-add-form">
+				<input type="text" id="proj-add-path" placeholder="/path/to/directory">
+				<button onclick="projManage.addSource()">Add</button>
+			</div>
+			<div class="proj-add-error" id="proj-add-error"></div>
+			<h4>Hidden Projects</h4>
+			<div id="proj-hidden-list"></div>
+			<div class="proj-manage-close">
+				<button onclick="projManage.close()">Done</button>
+			</div>
+		</div>
+	</div>
+</div>
+<script>{{JS}}</script>
+</body>
+</html>

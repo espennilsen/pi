@@ -1,0 +1,25 @@
+{
+  "name": "pi-dotenv",
+  "version": "0.1.0",
+  "description": "Loads .env files from the working directory into process.env for other extensions",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "author": "Espen Nilsen",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

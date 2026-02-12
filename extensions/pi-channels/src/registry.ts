@@ -161,4 +161,9 @@ export class ChannelRegistry {
 	getErrors(): Array<{ adapter: string; error: string }> {
 		return [...this.errors];
 	}
+
+	/** Get an adapter by name (for direct access, e.g. typing indicators). */
+	getAdapter(name: string): ChannelAdapter | undefined {
+		return this.adapters.get(name);
+	}
 }

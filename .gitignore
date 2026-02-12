@@ -5,7 +5,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-crm/
+*.lock
+.pi/
 telemetry/
 db/
 *.db
@@ -14,7 +15,10 @@ db/
 *.tab
 # ignore these in agent dir
 auth.json
+.env
+.env.local
 cache/
 sessions/
 git/
 pi-debug.log
+.todos/

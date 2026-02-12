@@ -1,0 +1,24 @@
+{
+  "name": "pi-memory",
+  "version": "0.1.0",
+  "description": "Persistent memory system for pi — long-term facts, daily logs, and search",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./src/index.ts"],
+    "skills": ["./skills"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

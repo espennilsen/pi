@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cron</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="/" class="back-link">← Dashboard</a>
+    <h1>⏰ Cron Scheduler</h1>
+    <span class="spacer"></span>
+    <button class="btn btn-primary" onclick="showAddModal()">+ New Job</button>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-indicator">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Loading...</span>
+    </div>
+    <div class="status-meta" id="statusMeta"></div>
+    <span class="spacer"></span>
+    <button class="btn btn-sm" id="toggleBtn" onclick="toggleScheduler()">—</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value blue" id="statTotal">—</div>
+      <div class="stat-label">Total Jobs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value green" id="statActive">—</div>
+      <div class="stat-label">Active</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value yellow" id="statDisabled">—</div>
+      <div class="stat-label">Disabled</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statRunning" style="color: var(--blue);">—</div>
+      <div class="stat-label">Running</div>
+    </div>
+  </div>
+
+  <!-- Job list -->
+  <div class="job-list" id="jobList">
+    <div class="empty-state"><p>Loading...</p></div>
+  </div>
+</div>
+
+<!-- Add/Edit Job Modal -->
+<div class="modal" id="jobModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">New Cron Job</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="jobForm" onsubmit="saveJob(event)">
+        <input type="hidden" id="jobFormMode" value="add">
+        <div class="form-group">
+          <label class="form-label">Name *</label>
+          <input type="text" id="jobFormName" class="form-input" required placeholder="daily-standup">
+          <div class="form-hint">Unique identifier, no spaces (use dashes)</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Schedule *</label>
+          <input type="text" id="jobFormSchedule" class="form-input" required placeholder="0 9 * * 1-5" style="font-family: 'SF Mono', 'Fira Code', monospace;">
+          <div class="form-hint">Cron expression: min hour dom month dow — e.g. <code>0 9 * * 1-5</code> = weekdays at 9am</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prompt *</label>
+          <textarea id="jobFormPrompt" class="form-textarea" required placeholder="What should the agent do when this job fires?"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Channel</label>
+          <input type="text" id="jobFormChannel" class="form-input" value="cron" placeholder="cron">
+          <div class="form-hint">Grouping tag (default: cron)</div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="document.getElementById('jobForm').dispatchEvent(new Event('submit'))">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>{{JS}}</script>
+</body>
+</html>

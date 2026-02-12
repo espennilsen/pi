@@ -22,7 +22,7 @@ Personal CRM extension for [pi](https://github.com/badlogic/pi-mono) coding agen
 pi install git@github.com:espennilsen/pi-personal-crm.git
 ```
 
-Data is stored in `~/.pi/agent/crm/crm.db`.
+Data is stored in `~/.pi/agent/db/crm.db`.
 
 ## Usage
 

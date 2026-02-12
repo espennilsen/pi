@@ -1,0 +1,21 @@
+{
+  "name": "pi-web-dashboard",
+  "version": "0.1.0",
+  "description": "Live agent dashboard with SSE streaming and prompt submission for pi",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

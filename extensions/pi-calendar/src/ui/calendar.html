@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <a href="/" class="back-link">← Dashboard</a>
+    <h1>📅 Calendar</h1>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn" onclick="navWeek(-1)">← Prev</button>
+    <button class="btn" onclick="navWeek(0)">Today</button>
+    <button class="btn" onclick="navWeek(1)">Next →</button>
+    <span class="week-label" id="weekLabel"></span>
+    <span class="spacer"></span>
+    <button class="btn btn-primary" onclick="openCreateModal()">+ Event</button>
+  </div>
+
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div class="modal-overlay" id="eventModal">
+  <div class="modal">
+    <h2 id="modalTitle">New Event</h2>
+    <input type="hidden" id="evtId">
+
+    <label>Title</label>
+    <input type="text" id="evtTitle" placeholder="Event title" autofocus>
+
+    <label>Description</label>
+    <textarea id="evtDesc" placeholder="Optional description"></textarea>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="evtAllDay" onchange="toggleAllDay()">
+      <label for="evtAllDay">All day</label>
+    </div>
+
+    <div class="row" id="dateTimeRow">
+      <div><label>Start</label><input type="datetime-local" id="evtStart"></div>
+      <div><label>End</label><input type="datetime-local" id="evtEnd"></div>
+    </div>
+
+    <div class="row" id="dateOnlyRow" style="display:none;">
+      <div><label>Start Date</label><input type="date" id="evtStartDate"></div>
+      <div><label>End Date</label><input type="date" id="evtEndDate"></div>
+    </div>
+
+    <label>Recurrence</label>
+    <select id="evtRecurrence" onchange="toggleRecurrenceEnd()">
+      <option value="">None</option>
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
+      <option value="biweekly">Every 2 weeks</option>
+      <option value="monthly">Monthly</option>
+    </select>
+
+    <div id="recurrenceEndGroup" style="display:none">
+      <label>Repeat until</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="evtRecurrenceEndType" onchange="toggleRecurrenceEndDate()">
+          <option value="forever">Forever</option>
+          <option value="date">Until date</option>
+        </select>
+        <input type="date" id="evtRecurrenceEnd" style="display:none">
+      </div>
+    </div>
+
+    <label>Reminder</label>
+    <select id="evtReminder">
+      <option value="">None</option>
+      <option value="5">5 minutes before</option>
+      <option value="10">10 minutes before</option>
+      <option value="15">15 minutes before</option>
+      <option value="30">30 minutes before</option>
+      <option value="60">1 hour before</option>
+      <option value="120">2 hours before</option>
+      <option value="1440">1 day before</option>
+    </select>
+
+    <label>Color</label>
+    <div class="color-options" id="colorOptions"></div>
+
+    <div class="actions">
+      <button class="btn btn-danger" id="deleteBtn" onclick="deleteEvent()" style="display:none; margin-right:auto;">Delete</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEvent()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>{{JS}}</script>
+</body>
+</html>

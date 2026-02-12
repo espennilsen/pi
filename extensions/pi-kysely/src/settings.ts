@@ -15,7 +15,7 @@ export interface KyselyRuntimeSettings {
 const FALLBACK_SETTINGS: KyselyRuntimeSettings = {
 	defaultDatabaseName: "default",
 	defaultDriver: "sqlite",
-	defaultSqlitePath: "db/sqlite.db",
+	defaultSqlitePath: "db/kysely.db",
 	autoCreateDefault: true,
 };
 

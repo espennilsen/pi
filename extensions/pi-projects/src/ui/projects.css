@@ -111,7 +111,7 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
 .proj-detail { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; width: 900px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0,0,0,0.5); overflow: hidden; }
 
 .proj-detail-header { padding: 20px 24px 12px; border-bottom: 1px solid var(--border); position: relative; }
-.proj-detail-title-row { display: flex; align-items: center; gap: 12px; }
+.proj-detail-title-row { display: flex; align-items: center; gap: 12px; padding-right: 44px; }
 .proj-detail-header h2 { font-size: 20px; font-weight: 700; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-detail-branch-badge { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; padding: 3px 10px; border-radius: 5px; background: rgba(124,111,240,0.12); color: var(--accent2); white-space: nowrap; }
 .proj-detail-meta { font-size: 12px; color: var(--fg3); margin-top: 6px; display: flex; gap: 16px; flex-wrap: wrap; }

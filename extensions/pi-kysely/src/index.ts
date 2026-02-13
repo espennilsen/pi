@@ -16,6 +16,7 @@ import {
 import { loadKyselySettings } from "./settings.ts";
 
 export * from "./table-api.ts";
+export * from "./schema.ts";
 export type { KyselyAck } from "./events.ts";
 
 export default function (pi: ExtensionAPI) {

@@ -34,24 +34,40 @@ The dashboard at `http://localhost:4100/` lists non-API mounts with links.
 
 **Basic auth** protects all non-API endpoints. Browsers prompt natively; API clients send the `Authorization` header. CORS preflight requests pass through without auth.
 
-```bash
-export PI_WEB_AUTH=mypassword        # username defaults to "pi"
-export PI_WEB_AUTH=admin:s3cret      # custom username
-```
-
 **API token auth** protects `/api/*` routes with Bearer tokens, separate from Basic auth:
 
-```bash
-export API_TOKEN=my-secret-token     # full access (all methods)
-export API_READ_TOKEN=my-read-token  # read-only access (GET/HEAD only)
-```
-
-- `API_TOKEN` grants access to all HTTP methods
-- `API_READ_TOKEN` grants access to GET and HEAD only (403 on write attempts)
+- `apiToken` grants access to all HTTP methods
+- `apiReadToken` grants access to GET and HEAD only (403 on write attempts)
 - Neither set → `/api/*` is open
 - A read token on a POST/PUT/DELETE returns `403 Read-only token cannot be used for write requests`
 
 Clients authenticate with `Authorization: Bearer <token>`.
+
+### Configuration via settings.json
+
+All auth and server options are configured under the `"pi-webserver"` key in `settings.json`. Global settings go in `~/.pi/agent/settings.json`, project-level overrides in `<project>/.pi/settings.json`. Project settings are merged on top of global settings.
+
+```jsonc
+// ~/.pi/agent/settings.json
+{
+  "pi-webserver": {
+    "autostart": true,          // start the server automatically on session start
+    "port": 4100,               // server port (default: 4100)
+    "auth": "mypassword",       // Basic auth — username defaults to "pi"
+    // "auth": "admin:s3cret",  // or use "user:pass" for a custom username
+    "apiToken": "my-secret",    // API bearer token (full access, all methods)
+    "apiReadToken": "my-read"   // API read-only token (GET/HEAD only)
+  }
+}
+```
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `autostart` | `boolean` | `false` | Start the server on session start |
+| `port` | `number` | `4100` | HTTP port |
+| `auth` | `string \| null` | `null` | Basic auth — `"password"` or `"user:password"` |
+| `apiToken` | `string \| null` | `null` | Bearer token for full API access |
+| `apiReadToken` | `string \| null` | `null` | Bearer token for read-only API access (GET/HEAD) |
 
 ## Mounting routes
 

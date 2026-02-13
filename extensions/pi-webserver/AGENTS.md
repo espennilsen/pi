@@ -12,9 +12,22 @@ The extension auto-discovers via the `pi` manifest in `package.json`.
 
 **Command:** `/web [port|stop|status|auth]` — Manage the shared HTTP server.
 
-**Auth:** `/web auth <password|user:pass|off>` — Optional Basic auth for all endpoints. Also configurable via `PI_WEB_AUTH` env var.
+**Auth:** `/web auth <password|user:pass|off>` — Optional Basic auth for all endpoints. Also configurable via `settings.json` under `"pi-webserver".auth`.
 
-**API routes:** `/web api <token|read <token>|off|status>` — Token-protected `/api/*` namespace. Env vars: `API_TOKEN` (full access), `API_READ_TOKEN` (GET/HEAD only). When a token is set, `/api/*` requires `Authorization: Bearer <token>`. When not set, `/api/*` is open.
+**API routes:** `/web api <token|read <token>|off|status>` — Token-protected `/api/*` namespace. Configured via `settings.json` under `"pi-webserver".apiToken` (full access) and `"pi-webserver".apiReadToken` (GET/HEAD only). When a token is set, `/api/*` requires `Authorization: Bearer <token>`. When not set, `/api/*` is open.
+
+**Settings (`~/.pi/agent/settings.json` or `<project>/.pi/settings.json`):**
+```jsonc
+{
+  "pi-webserver": {
+    "autostart": false,         // auto-start on session start
+    "port": 4100,               // server port
+    "auth": "password",         // Basic auth ("password" or "user:password")
+    "apiToken": "secret",       // API bearer token (full access)
+    "apiReadToken": "read-only" // API read-only token (GET/HEAD)
+  }
+}
+```
 
 **Events (via `pi.events`):**
 - Listens for `web:mount`, `web:unmount`, `web:mount-api`, `web:unmount-api` from other extensions
@@ -49,7 +62,7 @@ pi.events.on("web:ready", () => {
 
 ## Mounting API routes (token-protected)
 
-API routes live under `/api/*` and use Bearer token auth (when `API_TOKEN` is set).
+API routes live under `/api/*` and use Bearer token auth (when `apiToken` is configured in settings).
 
 ```typescript
 import { mountApi } from "pi-webserver/src/server.ts";
@@ -75,8 +88,8 @@ pi.events.on("web:ready", () => {
 ```
 
 **Auth behavior:**
-- `API_TOKEN` → full access (all methods)
-- `API_READ_TOKEN` → read-only access (GET/HEAD only)
+- `apiToken` configured → full access (all methods)
+- `apiReadToken` configured → read-only access (GET/HEAD only)
 - Neither set → `/api/*` is open
 
 **Custom auth:** Extensions can bypass built-in token auth and handle authentication themselves by setting `skipAuth: true`:

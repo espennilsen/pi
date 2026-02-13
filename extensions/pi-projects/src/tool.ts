@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { scanProjects, type ProjectInfo } from "./scanner.ts";
-import { getProjectsDbApi } from "./db.ts";
+import { getProjectsStore } from "./store.ts";
 
 interface ProjectsToolParams {
 	action: "list" | "scan" | "hide" | "unhide" | "sources";
@@ -68,29 +68,29 @@ export function registerProjectsTool(pi: ExtensionAPI, getDevDir: () => string):
 
 				case "hide": {
 					if (!params.path) { result = "Missing required field: path"; break; }
-					const dbApi = getProjectsDbApi();
-					dbApi.hideProject(params.path);
+					const store = getProjectsStore();
+					await store.hideProject(params.path);
 					result = `✓ Hidden project: ${params.path}`;
 					break;
 				}
 
 				case "unhide": {
 					if (!params.path) { result = "Missing required field: path"; break; }
-					const dbApi = getProjectsDbApi();
-					const ok = dbApi.unhideProject(params.path);
+					const storeU = getProjectsStore();
+					const ok = await storeU.unhideProject(params.path);
 					result = ok ? `✓ Restored project: ${params.path}` : `Project was not hidden: ${params.path}`;
 					break;
 				}
 
 				case "sources": {
-					const dbApi = getProjectsDbApi();
+					const storeS = getProjectsStore();
 					if (params.path) {
 						// Add a new source
-						dbApi.addProjectSource(params.path, params.label);
+						await storeS.addProjectSource(params.path, params.label);
 						result = `✓ Added source directory: ${params.path}`;
 					} else {
 						// List sources
-						const sources = dbApi.getProjectSources();
+						const sources = await storeS.getProjectSources();
 						if (sources.length === 0) {
 							result = `Only scanning default directory: ${getDevDir()}\nUse \`projects sources --path /some/dir\` to add more.`;
 						} else {

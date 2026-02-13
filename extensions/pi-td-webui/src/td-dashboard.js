@@ -73,10 +73,87 @@
     showDetail: async function(id) {
       var detail = await fetchIssueDetail(id);
       if (!detail) return;
+      // If this issue has uncertain handoff items, show the decision form
+      if (detail.handoff && detail.handoff.uncertain && detail.handoff.uncertain.length) {
+        tdUI.showDecisionModal(detail);
+        return;
+      }
       renderDetail(detail);
     },
     closeDetail: function() {
       document.getElementById('td-detail-overlay').classList.remove('open');
+    },
+    showDecisionModal: function(issue) {
+      var existing = document.getElementById('td-decision-modal');
+      if (existing) existing.remove();
+
+      var items = issue.handoff.uncertain || [];
+      var overlay = document.createElement('div');
+      overlay.id = 'td-decision-modal';
+      overlay.className = 'td-modal-overlay';
+
+      var itemsHtml = items.map(function(item, idx) {
+        return '<div class="td-decision-item">' +
+          '<div class="td-decision-question">❓ ' + esc(item) + '</div>' +
+          '<textarea id="td-decision-input-' + idx + '" rows="2" placeholder="Your decision for this item..."></textarea>' +
+        '</div>';
+      }).join('');
+
+      overlay.innerHTML =
+        '<div class="td-modal">' +
+          '<h3>Resolve Uncertain Items</h3>' +
+          '<p class="td-modal-hint">' + esc(issue.id) + ' — ' + esc(issue.title) + '</p>' +
+          '<p class="td-modal-hint">Provide decisions for the open questions below. Leave blank to skip.</p>' +
+          '<div class="td-decision-items">' + itemsHtml + '</div>' +
+          '<div class="td-modal-actions">' +
+            '<button class="td-modal-cancel" onclick="tdUI.closeDecisionModal()">Cancel</button>' +
+            '<button class="td-modal-cancel" onclick="tdUI.viewFullDetail(\'' + esc(issue.id) + '\')">View Full Detail</button>' +
+            '<button class="td-modal-submit" onclick="tdUI.submitDecisions(\'' + esc(issue.id) + '\', ' + items.length + ')">Submit Decisions</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) tdUI.closeDecisionModal();
+      });
+      setTimeout(function() {
+        var first = document.getElementById('td-decision-input-0');
+        if (first) first.focus();
+      }, 50);
+    },
+    closeDecisionModal: function() {
+      var modal = document.getElementById('td-decision-modal');
+      if (modal) modal.remove();
+    },
+    viewFullDetail: async function(id) {
+      tdUI.closeDecisionModal();
+      var detail = await fetchIssueDetail(id);
+      if (!detail) return;
+      renderDetail(detail);
+    },
+    submitDecisions: async function(id, count) {
+      var decisions = [];
+      for (var i = 0; i < count; i++) {
+        var val = document.getElementById('td-decision-input-' + i).value.trim();
+        if (val) decisions.push(val);
+      }
+      if (decisions.length === 0) {
+        alert('Enter at least one decision.');
+        return;
+      }
+      try {
+        var resp = await fetch('/api/td/handoff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, decisions: decisions })
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function() { return { error: 'Handoff failed' }; });
+          alert('Submit decisions failed: ' + (err.error || 'Unknown error'));
+          return;
+        }
+        tdUI.closeDecisionModal();
+        await tdUI.reload();
+      } catch(e) { alert('Submit decisions failed: ' + e.message); }
     },
     updateStatus: async function(id, newStatus) {
       try {
@@ -294,13 +371,22 @@
 
   function getFilteredIssues() {
     var search = (document.getElementById('td-search').value || '').toLowerCase().trim();
-    if (!search) return issues;
-    return issues.filter(function(i) {
-      return i.title.toLowerCase().includes(search) ||
-             i.id.toLowerCase().includes(search) ||
-             (i.description || '').toLowerCase().includes(search) ||
-             (i.labels || []).some(function(l) { return l.toLowerCase().includes(search); });
-    });
+    var uncertainOnly = document.getElementById('td-show-uncertain').checked;
+    var filtered = issues;
+    if (uncertainOnly) {
+      filtered = filtered.filter(function(i) {
+        return i.has_handoff && i.uncertain_items && i.uncertain_items.length > 0;
+      });
+    }
+    if (search) {
+      filtered = filtered.filter(function(i) {
+        return i.title.toLowerCase().includes(search) ||
+               i.id.toLowerCase().includes(search) ||
+               (i.description || '').toLowerCase().includes(search) ||
+               (i.labels || []).some(function(l) { return l.toLowerCase().includes(search); });
+      });
+    }
+    return filtered;
   }
 
   function render() {
@@ -351,7 +437,8 @@
 
     var badges = '';
     if (issue.log_count) badges += '<span class="td-badge td-badge-log" title="' + issue.log_count + ' log entries">📝 ' + issue.log_count + '</span>';
-    if (issue.has_handoff) badges += '<span class="td-badge td-badge-handoff" title="Has handoff">🤝</span>';
+    if (issue.uncertain_items && issue.uncertain_items.length) badges += '<span class="td-badge td-badge-uncertain" title="' + issue.uncertain_items.length + ' uncertain items">❓ ' + issue.uncertain_items.length + '</span>';
+    else if (issue.has_handoff) badges += '<span class="td-badge td-badge-handoff" title="Has handoff">🤝</span>';
 
     var lastLog = '';
     if (issue.last_log) {
@@ -418,7 +505,8 @@
 
       var activity = '';
       if (i.log_count) activity += '<span class="td-badge td-badge-log">📝 ' + i.log_count + '</span>';
-      if (i.has_handoff) activity += '<span class="td-badge td-badge-handoff">🤝</span>';
+      if (i.uncertain_items && i.uncertain_items.length) activity += '<span class="td-badge td-badge-uncertain">❓ ' + i.uncertain_items.length + '</span>';
+      else if (i.has_handoff) activity += '<span class="td-badge td-badge-handoff">🤝</span>';
 
       return '<tr>' +
         '<td><span class="td-id" onclick="tdUI.showDetail(\'' + esc(i.id) + '\')">' + esc(i.id) + '</span></td>' +
@@ -570,7 +658,6 @@
         'Created: ' + ago(issue.created_at) + '<br>' +
         'Updated: ' + ago(issue.updated_at) +
         (issue.parent_id ? '<br>Parent: <span class="td-id" onclick="tdUI.showDetail(\'' + esc(issue.parent_id) + '\')">' + esc(issue.parent_id) + '</span>' : '') +
-        (issue.implementer_session ? '<br>Session: ' + esc(issue.implementer_session) : '') +
       '</p></div>' +
       '<div class="td-detail-section"><h4>Move to</h4><div class="td-detail-actions">' + statusButtons + '</div></div>' +
       '<div class="td-detail-actions">' +
@@ -649,7 +736,9 @@
   // Global Escape handler for td modals
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      if (document.getElementById('td-detail-overlay').classList.contains('open')) tdUI.closeDetail();
+      var decisionModal = document.getElementById('td-decision-modal');
+      if (decisionModal) tdUI.closeDecisionModal();
+      else if (document.getElementById('td-detail-overlay').classList.contains('open')) tdUI.closeDetail();
       else if (document.getElementById('td-modal-overlay').classList.contains('open')) tdModal.close();
     }
   });

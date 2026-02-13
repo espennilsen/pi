@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getJobsApi, isDbReady } from "./db.ts";
+import { getJobsStore, isStoreReady } from "./store.ts";
 
 interface TrackerState {
 	currentJobId: string | null;
@@ -40,20 +40,20 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// ── Turn tracking (one turn = one model call) ───────────
 
 	pi.on("turn_start", async (event) => {
-		if (!isDbReady()) return;
-		const api = getJobsApi();
+		if (!isStoreReady()) return;
+		const store = getJobsStore();
 
 		// First turn of a new run — create a job
 		if (event.turnIndex === 0) {
 			// Extract prompt from the user message
 			const prompt = extractPrompt(event);
-			const jobId = api.createJob({
+			const jobId = await store.createJob({
 				channel: "tui",
 				prompt: prompt.slice(0, 50_000),
 				model: state.currentModel || undefined,
 				provider: state.currentProvider || undefined,
 			});
-			api.markJobRunning(jobId);
+			await store.markJobRunning(jobId);
 			state.currentJobId = jobId;
 			state.turnCount = 0;
 			state.toolCallCount = 0;
@@ -69,14 +69,14 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 		// If this is the final turn (no tool calls pending), complete the job
 		const hasToolUse = event.toolResults && event.toolResults.length > 0;
-		if (!hasToolUse && state.currentJobId && isDbReady()) {
-			const api = getJobsApi();
+		if (!hasToolUse && state.currentJobId && isStoreReady()) {
+			const store = getJobsStore();
 			const durationMs = Date.now() - state.startTime;
 
 			// Extract usage from the event if available
 			const usage = extractUsage(event);
 
-			api.completeJob(state.currentJobId, {
+			await store.completeJob(state.currentJobId, {
 				response: extractResponse(event).slice(0, 50_000),
 				inputTokens: usage.inputTokens,
 				outputTokens: usage.outputTokens,
@@ -107,13 +107,13 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_result", async (event) => {
-		if (!state.currentJobId || !isDbReady()) return;
-		const api = getJobsApi();
+		if (!state.currentJobId || !isStoreReady()) return;
+		const store = getJobsStore();
 		const startTs = state.toolStartTimes.get(event.toolCallId) ?? Date.now();
 		state.toolStartTimes.delete(event.toolCallId);
 		const durationMs = Date.now() - startTs;
 
-		api.recordToolCall({
+		await store.recordToolCall({
 			jobId: state.currentJobId,
 			toolName: event.toolName,
 			isError: !!event.isError,
@@ -124,20 +124,20 @@ export function registerTracker(pi: ExtensionAPI): void {
 	// ── External extension events ───────────────────────────
 
 	// Track subagent runs
-	pi.events.on("subagent:complete", (data: any) => {
+	pi.events.on("subagent:complete", async (data: any) => {
 		try {
-			if (!isDbReady()) return;
-			const api = getJobsApi();
-			const jobId = api.createJob({
+			if (!isStoreReady()) return;
+			const store = getJobsStore();
+			const jobId = await store.createJob({
 				channel: "subagent",
 				prompt: (data.task ?? "subagent run").slice(0, 50_000),
 				model: data.model ?? undefined,
 				provider: data.provider ?? undefined,
 			});
-			api.markJobRunning(jobId);
+			await store.markJobRunning(jobId);
 
 			if (data.status === "done") {
-				api.completeJob(jobId, {
+				await store.completeJob(jobId, {
 					response: (data.response ?? "").slice(0, 50_000),
 					totalTokens: data.tokens ?? 0,
 					costTotal: data.cost ?? 0,
@@ -146,23 +146,23 @@ export function registerTracker(pi: ExtensionAPI): void {
 					turnCount: data.turnCount ?? 0,
 				});
 			} else {
-				api.failJob(jobId, data.error ?? "Unknown error", data.durationMs);
+				await store.failJob(jobId, data.error ?? "Unknown error", data.durationMs);
 			}
 		} catch { /* Telemetry must never break the agent */ }
 	});
 
 	// Track heartbeat runs
-	pi.events.on("heartbeat:result", (data: any) => {
+	pi.events.on("heartbeat:result", async (data: any) => {
 		try {
-			if (!isDbReady()) return;
-			const api = getJobsApi();
-			const jobId = api.createJob({
+			if (!isStoreReady()) return;
+			const store = getJobsStore();
+			const jobId = await store.createJob({
 				channel: "heartbeat",
 				prompt: "(heartbeat check)",
 				model: "subprocess",
 			});
-			api.markJobRunning(jobId);
-			api.completeJob(jobId, {
+			await store.markJobRunning(jobId);
+			await store.completeJob(jobId, {
 				response: (data.response ?? "").slice(0, 50_000),
 				durationMs: data.durationMs ?? 0,
 			});
@@ -170,23 +170,23 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	// Track cron job runs
-	pi.events.on("cron:job_complete", (data: any) => {
+	pi.events.on("cron:job_complete", async (data: any) => {
 		try {
-			if (!isDbReady()) return;
-			const api = getJobsApi();
-			const jobId = api.createJob({
+			if (!isStoreReady()) return;
+			const store = getJobsStore();
+			const jobId = await store.createJob({
 				channel: "cron",
 				prompt: (data.job?.prompt ?? "cron job").slice(0, 50_000),
 			});
-			api.markJobRunning(jobId);
+			await store.markJobRunning(jobId);
 
 			if (data.ok) {
-				api.completeJob(jobId, {
+				await store.completeJob(jobId, {
 					response: (data.response ?? "").slice(0, 50_000),
 					durationMs: data.durationMs ?? 0,
 				});
 			} else {
-				api.failJob(jobId, data.error ?? "Unknown error", data.durationMs);
+				await store.failJob(jobId, data.error ?? "Unknown error", data.durationMs);
 			}
 		} catch { /* Telemetry must never break the agent */ }
 	});

@@ -9,8 +9,19 @@
  *   - Web dashboard at /projects via pi-webserver
  *   - /projects command for quick status in TUI
  *
- * Data is stored in a lightweight SQLite database for scan directories
+ * Data is stored in a lightweight database for scan directories
  * and hidden projects. The actual project data is scanned live from disk.
+ *
+ * Database backend is configurable:
+ *   - Default: local SQLite via better-sqlite3 (db.ts)
+ *   - Optional: shared DB via pi-kysely event bus (db-kysely.ts)
+ *
+ * Settings:
+ *   "pi-projects": {
+ *     "devDir": "~/Dev",              // Root directory to scan for projects
+ *     "dbPath": "projects/projects.db", // SQLite file path (sqlite backend only)
+ *     "useKysely": true               // Use pi-kysely shared DB instead of SQLite
+ *   }
  */
 
 import * as path from "node:path";
@@ -18,7 +29,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { resolveSettings } from "./settings.ts";
-import { initProjectsDb, closeProjectsDb } from "./db.ts";
+import { closeProjectsDb } from "./db.ts";
+import { setProjectsStore, isStoreReady, createSqliteStore, createKyselyStore } from "./store.ts";
 import { scanProjects } from "./scanner.ts";
 import { registerProjectsTool } from "./tool.ts";
 import { mountProjectsRoutes, unmountProjectsRoutes, setDevDir } from "./web.ts";
@@ -34,20 +46,57 @@ export default function (pi: ExtensionAPI) {
 		devDir = settings.devDir;
 		setDevDir(devDir);
 
-		const agentDir = getAgentDir();
-		const dbPath = path.isAbsolute(settings.dbPath)
-			? settings.dbPath
-			: path.join(agentDir, settings.dbPath);
+		if (settings.useKysely) {
+			// ── Kysely backend ──────────────────────────────────
+			// Handle both orderings: kysely may already be ready,
+			// or it may start after us. Probe first, then listen.
 
-		initProjectsDb(dbPath);
-		log("init", { devDir, dbPath });
+			const initKysely = async () => {
+				if (isStoreReady()) return; // already initialized
+				try {
+					const store = await createKyselyStore(pi.events as any);
+					setProjectsStore(store);
+					log("ready", { backend: "kysely" });
+					mountProjectsRoutes(pi.events);
+				} catch (err: any) {
+					log("error", { backend: "kysely", error: err.message }, "ERROR");
+				}
+			};
 
-		// Mount web routes
-		mountProjectsRoutes(pi.events);
+			// Listen for future kysely:ready events
+			pi.events.on("kysely:ready", initKysely);
+
+			// Probe: check if pi-kysely is already available
+			log("init", { backend: "kysely", status: "probing for kysely" });
+			let kyselyAlreadyReady = false;
+			pi.events.emit("kysely:info", {
+				reply: () => { kyselyAlreadyReady = true; },
+			});
+			if (kyselyAlreadyReady) {
+				log("init", { backend: "kysely", status: "kysely already available" });
+				await initKysely();
+			} else {
+				log("init", { backend: "kysely", status: "waiting for kysely:ready" });
+			}
+		} else {
+			// ── SQLite backend (default) ────────────────────────
+			const agentDir = getAgentDir();
+			const dbPath = path.isAbsolute(settings.dbPath)
+				? settings.dbPath
+				: path.join(agentDir, settings.dbPath);
+
+			const store = await createSqliteStore(dbPath);
+			setProjectsStore(store);
+			log("init", { backend: "sqlite", devDir, dbPath });
+
+			// Mount web routes
+			mountProjectsRoutes(pi.events);
+		}
 	});
 
 	// Re-mount when pi-webserver starts after us
 	pi.events.on("web:ready", () => {
+		if (!isStoreReady()) return;
 		mountProjectsRoutes(pi.events);
 	});
 

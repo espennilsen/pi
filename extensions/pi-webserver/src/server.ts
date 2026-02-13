@@ -58,6 +58,9 @@ let serverPort: number | null = null;
 const mounts = new Map<string, MountConfig>();
 let authCredentials: { username: string; password: string } | null = null;
 let apiToken: string | null = null;
+
+// ── Cookie session secret (random per server start) ─────────────
+let sessionSecret = crypto.randomBytes(32).toString("hex");
 let apiReadToken: string | null = null;
 
 // ── Mount Management ────────────────────────────────────────────
@@ -168,6 +171,7 @@ function tokensEqual(a: string | null, b: string | null): boolean {
  * - No tokens configured → open (allow all)
  * - Full API token matches → allow all methods
  * - Read-only API token matches → allow GET/HEAD only
+ * - Valid session cookie → access per cookie level (full or read)
  * - Otherwise → 401/403
  */
 function checkApiAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
@@ -186,6 +190,16 @@ function checkApiAuth(req: http.IncomingMessage, res: http.ServerResponse): bool
 
 		res.writeHead(403, { "Content-Type": "application/json" });
 		res.end(JSON.stringify({ error: "Read-only token cannot be used for write requests" }));
+		return false;
+	}
+
+	// Session cookie — check access level
+	const session = checkSessionCookie(req);
+	if (session === "full") return true;
+	if (session === "read") {
+		if (isRead) return true;
+		res.writeHead(403, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ error: "Read-only session cannot be used for write requests" }));
 		return false;
 	}
 
@@ -219,6 +233,115 @@ function checkAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean
 	return false;
 }
 
+// ── Cookie Session Auth ─────────────────────────────────────────
+
+/** Sign a value with HMAC-SHA256 using the session secret. */
+function signCookie(value: string): string {
+	const sig = crypto.createHmac("sha256", sessionSecret).update(value).digest("base64url");
+	return value + "." + sig;
+}
+
+/** Verify and extract the value from a signed cookie. Returns null if invalid. */
+function verifyCookie(signed: string): string | null {
+	const dot = signed.lastIndexOf(".");
+	if (dot === -1) return null;
+	const value = signed.slice(0, dot);
+	if (signCookie(value) === signed) return value;
+	return null;
+}
+
+/** Parse cookies from request header. */
+function parseCookies(req: http.IncomingMessage): Record<string, string> {
+	const header = req.headers.cookie ?? "";
+	const cookies: Record<string, string> = {};
+	for (const pair of header.split(";")) {
+		const eq = pair.indexOf("=");
+		if (eq === -1) continue;
+		cookies[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+	}
+	return cookies;
+}
+
+/** Check if request has a valid session cookie. Returns access level or null. */
+function checkSessionCookie(req: http.IncomingMessage): "full" | "read" | null {
+	const cookies = parseCookies(req);
+	const token = cookies["pi-session"];
+	if (!token) return null;
+	const value = verifyCookie(token);
+	if (!value) return null;
+	if (value === "full") return "full";
+	if (value === "read") return "read";
+	return null;
+}
+
+/** Returns true if any auth is configured (Basic auth, API token, or read token). */
+function isAnyAuthConfigured(): boolean {
+	return !!(authCredentials || apiToken || apiReadToken);
+}
+
+const LOGIN_PAGE = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi — Login</title>
+<style>
+  :root { --bg:#0a0a0f; --bg2:#12121a; --fg:#e0e0e8; --fg2:#888898; --fg3:#555568; --accent:#7c6ff0; --border:#2a2a3a; --red:#f87171; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .login{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:360px;max-width:90vw}
+  .login h1{font-size:20px;font-weight:700;color:var(--accent);margin-bottom:4px}
+  .login p{font-size:13px;color:var(--fg2);margin-bottom:20px}
+  .login input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:14px;font-family:inherit;box-sizing:border-box}
+  .login input:focus{outline:none;border-color:var(--accent)}
+  .login button{width:100%;padding:10px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
+  .login button:hover{opacity:0.9}
+  .login .error{color:var(--red);font-size:12px;margin-top:8px;display:none}
+</style>
+</head><body>
+<form class="login" method="POST" action="/_auth/login">
+  <h1>pi</h1>
+  <p>Enter your API token to continue.</p>
+  <input type="password" name="token" placeholder="API token" autofocus required>
+  <input type="hidden" name="redirect" value="/">
+  <button type="submit">Sign in</button>
+  <div class="error" id="err"></div>
+</form>
+<script>
+  var u=new URLSearchParams(location.search);
+  if(u.get('error')){var e=document.getElementById('err');e.textContent='Invalid token';e.style.display='block'}
+  var r=u.get('redirect');
+  if(r)document.querySelector('input[name=redirect]').value=r;
+</script>
+</body></html>`;
+
+/** Handle login form POST. Validates token, sets cookie, redirects. */
+function handleLoginPost(req: http.IncomingMessage, res: http.ServerResponse): void {
+	let body = "";
+	req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+	req.on("end", () => {
+		const params = new URLSearchParams(body);
+		const token = params.get("token") ?? "";
+		const redirect = params.get("redirect") ?? "/";
+
+		let access: "full" | "read" | null = null;
+		if (tokensEqual(token, apiToken)) access = "full";
+		else if (tokensEqual(token, apiReadToken)) access = "read";
+
+		if (!access) {
+			const redir = encodeURIComponent(redirect);
+			res.writeHead(302, { Location: `/_auth/login?error=1&redirect=${redir}` });
+			res.end();
+			return;
+		}
+
+		const cookie = signCookie(access);
+		res.writeHead(302, {
+			Location: redirect,
+			"Set-Cookie": `pi-session=${cookie}; Path=/; HttpOnly; SameSite=Lax`,
+		});
+		res.end();
+	});
+}
+
 // ── Server Lifecycle ────────────────────────────────────────────
 
 export function isRunning(): boolean {
@@ -239,6 +362,7 @@ export function getPort(): number | null {
  */
 export function start(port: number = 4100): string {
 	if (server) stop();
+	sessionSecret = crypto.randomBytes(32).toString("hex");
 
 	const dashboardHtml = fs.readFileSync(
 		path.resolve(import.meta.dirname, "../dashboard.html"),
@@ -264,8 +388,47 @@ export function start(port: number = 4100): string {
 		// /api/* auth is deferred to after mount matching (supports skipAuth)
 		// Everything else uses Basic auth upfront
 		const isApiPath = pathname === "/api" || pathname.startsWith("/api/");
+		const isAuthPath = pathname.startsWith("/_auth/");
+
+		// ── Login endpoints ──────────────────────────────────
+		if (isAuthPath) {
+			if (pathname === "/_auth/login" && req.method === "POST") {
+				handleLoginPost(req, res);
+				return;
+			}
+			if (pathname === "/_auth/login") {
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end(LOGIN_PAGE);
+				return;
+			}
+			if (pathname === "/_auth/logout") {
+				res.writeHead(302, {
+					Location: "/",
+					"Set-Cookie": "pi-session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+				});
+				res.end();
+				return;
+			}
+			res.writeHead(404, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ error: "Not found" }));
+			return;
+		}
+
 		if (!isApiPath) {
-			if (!checkAuth(req, res)) return;
+			if (authCredentials) {
+				// Basic auth configured — use it
+				if (!checkAuth(req, res)) return;
+			} else if (apiToken || apiReadToken) {
+				// No Basic auth but API token configured — require session cookie
+				const session = checkSessionCookie(req);
+				if (!session) {
+					const redirect = encodeURIComponent(pathname + url.search);
+					res.writeHead(302, { Location: `/_auth/login?redirect=${redirect}` });
+					res.end();
+					return;
+				}
+			}
+			// No auth configured at all → open
 		}
 
 		try {

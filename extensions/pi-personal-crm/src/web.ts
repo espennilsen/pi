@@ -8,7 +8,7 @@
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { crmApi } from "./db.ts";
+import { getCrmStore, isStoreReady } from "./store.ts";
 import { VALID_EXTENSION_FIELD_TYPES } from "./types.ts";
 
 // ── Validation ──────────────────────────────────────────────────
@@ -54,10 +54,7 @@ function loadCrmHtml(): string {
 
 /**
  * Serves the CRM HTML page. Mounted at /crm via web:mount.
- *
- * Also forwards /api/crm/* subpaths to the API handler — this handles
- * relative fetch URLs from the HTML page (e.g. `fetch("api/crm/contacts")`)
- * which resolve to /crm/api/crm/... when the page is at /crm/.
+ * API calls use absolute URLs (/api/crm/*) and go through the API mount.
  */
 export async function handleCrmPage(
 	req: http.IncomingMessage,
@@ -65,13 +62,6 @@ export async function handleCrmPage(
 	urlPath: string,
 ): Promise<void> {
 	const method = req.method ?? "GET";
-
-	// Forward API subpaths (from relative URLs in the HTML page)
-	const apiPrefix = "/api/crm";
-	if (urlPath.startsWith(apiPrefix + "/") || urlPath === apiPrefix) {
-		const subPath = urlPath.slice(apiPrefix.length) || "/";
-		return handleCrmApi(req, res, subPath);
-	}
 
 	try {
 		// Trailing-slash redirect (needed when mounted at a prefix)
@@ -119,21 +109,27 @@ export async function handleCrmApi(
 	const method = req.method ?? "GET";
 
 	try {
+		if (!isStoreReady()) {
+			json(res, 503, { error: "CRM is starting up — please wait a moment and refresh" });
+			return;
+		}
+		const store = getCrmStore();
+
 		// ── Contacts ────────────────────────────────────────
 		if (method === "GET" && urlPath === "/contacts") {
 			const companyId = url.searchParams.get("company_id");
 			if (companyId) {
-				json(res, 200, crmApi.getContactsByCompany(parseInt(companyId)));
+				json(res, 200, await store.getContactsByCompany(parseInt(companyId)));
 				return;
 			}
 			const search = url.searchParams.get("q") ?? undefined;
 			const limit = parseInt(url.searchParams.get("limit") ?? "1000");
-			json(res, 200, crmApi.getContacts(search, limit));
+			json(res, 200, await store.getContacts(search, limit));
 			return;
 		}
 
 		if (method === "GET" && urlPath === "/contacts/export.csv") {
-			const csv = crmApi.exportContactsCsv();
+			const csv = await store.exportContactsCsv();
 			res.writeHead(200, {
 				"Content-Type": "text/csv; charset=utf-8",
 				"Content-Disposition": 'attachment; filename="crm-contacts.csv"',
@@ -145,14 +141,14 @@ export async function handleCrmApi(
 		if (method === "POST" && urlPath === "/contacts/import") {
 			const csv = await readBody(req);
 			if (!csv.trim()) { json(res, 400, { error: "Empty CSV body" }); return; }
-			json(res, 200, crmApi.importContactsCsv(csv));
+			json(res, 200, await store.importContactsCsv(csv));
 			return;
 		}
 
 		if (method === "POST" && urlPath === "/contacts/check-duplicates") {
 			const body = JSON.parse(await readBody(req));
 			if (!body.first_name) { json(res, 400, { error: "first_name is required" }); return; }
-			json(res, 200, { duplicates: crmApi.findDuplicates(body) });
+			json(res, 200, { duplicates: await store.findDuplicates(body) });
 			return;
 		}
 
@@ -161,15 +157,15 @@ export async function handleCrmApi(
 			const id = parseInt(contactMatch[1]);
 
 			if (method === "GET") {
-				const contact = crmApi.getContact(id);
+				const contact = await store.getContact(id);
 				if (!contact) { json(res, 404, { error: "Not found" }); return; }
 				json(res, 200, {
 					contact,
-					interactions: crmApi.getInteractions(id),
-					reminders: crmApi.getReminders(id),
-					relationships: crmApi.getRelationships(id),
-					groups: crmApi.getContactGroups(id),
-					extensionFields: crmApi.getExtensionFields(id),
+					interactions: await store.getInteractions(id),
+					reminders: await store.getReminders(id),
+					relationships: await store.getRelationships(id),
+					groups: await store.getContactGroups(id),
+					extensionFields: await store.getExtensionFields(id),
 				});
 				return;
 			}
@@ -178,18 +174,18 @@ export async function handleCrmApi(
 				const body = JSON.parse(await readBody(req));
 				let company_id = body.company_id;
 				if (body.company_name && company_id === undefined) {
-					const companies = crmApi.getCompanies(body.company_name);
+					const companies = await store.getCompanies(body.company_name);
 					if (companies.length > 0) { company_id = companies[0].id; }
-					else if (body.company_name) { company_id = crmApi.createCompany({ name: body.company_name }).id; }
+					else if (body.company_name) { company_id = (await store.createCompany({ name: body.company_name })).id; }
 				}
-				const contact = crmApi.updateContact(id, { ...body, company_id });
+				const contact = await store.updateContact(id, { ...body, company_id });
 				if (!contact) { json(res, 404, { error: "Not found" }); return; }
 				json(res, 200, contact);
 				return;
 			}
 
 			if (method === "DELETE") {
-				json(res, 200, { ok: crmApi.deleteContact(id) });
+				json(res, 200, { ok: await store.deleteContact(id) });
 				return;
 			}
 		}
@@ -199,18 +195,18 @@ export async function handleCrmApi(
 			if (!body.first_name) { json(res, 400, { error: "first_name is required" }); return; }
 			let company_id = body.company_id;
 			if (body.company_name && !company_id) {
-				const companies = crmApi.getCompanies(body.company_name);
+				const companies = await store.getCompanies(body.company_name);
 				if (companies.length > 0) { company_id = companies[0].id; }
-				else { company_id = crmApi.createCompany({ name: body.company_name }).id; }
+				else { company_id = (await store.createCompany({ name: body.company_name })).id; }
 			}
-			json(res, 201, crmApi.createContact({ ...body, company_id }));
+			json(res, 201, await store.createContact({ ...body, company_id }));
 			return;
 		}
 
 		// ── Companies ───────────────────────────────────────
 		if (method === "GET" && urlPath === "/companies") {
 			const search = url.searchParams.get("q") ?? undefined;
-			json(res, 200, crmApi.getCompanies(search));
+			json(res, 200, await store.getCompanies(search));
 			return;
 		}
 
@@ -223,12 +219,12 @@ export async function handleCrmApi(
 					try { body.website = sanitizeUrl(body.website); }
 					catch (e: any) { json(res, 400, { error: e.message }); return; }
 				}
-				const co = crmApi.updateCompany(id, body);
+				const co = await store.updateCompany(id, body);
 				if (!co) { json(res, 404, { error: "Not found" }); return; }
 				json(res, 200, co);
 				return;
 			}
-			if (method === "DELETE") { json(res, 200, { ok: crmApi.deleteCompany(id) }); return; }
+			if (method === "DELETE") { json(res, 200, { ok: await store.deleteCompany(id) }); return; }
 		}
 
 		if (method === "POST" && urlPath === "/companies") {
@@ -236,7 +232,7 @@ export async function handleCrmApi(
 			if (!body.name) { json(res, 400, { error: "name is required" }); return; }
 			try { body.website = sanitizeUrl(body.website); }
 			catch (e: any) { json(res, 400, { error: e.message }); return; }
-			json(res, 201, crmApi.createCompany(body));
+			json(res, 201, await store.createCompany(body));
 			return;
 		}
 
@@ -244,9 +240,9 @@ export async function handleCrmApi(
 		if (method === "GET" && urlPath === "/interactions") {
 			const contactId = url.searchParams.get("contact_id");
 			if (contactId) {
-				json(res, 200, crmApi.getInteractions(parseInt(contactId)));
+				json(res, 200, await store.getInteractions(parseInt(contactId)));
 			} else {
-				json(res, 200, crmApi.getAllInteractions());
+				json(res, 200, await store.getAllInteractions());
 			}
 			return;
 		}
@@ -256,26 +252,26 @@ export async function handleCrmApi(
 			if (!body.contact_id || !body.interaction_type || !body.summary) {
 				json(res, 400, { error: "contact_id, interaction_type, and summary are required" }); return;
 			}
-			json(res, 201, crmApi.createInteraction(body));
+			json(res, 201, await store.createInteraction(body));
 			return;
 		}
 
 		const interactionMatch = urlPath.match(/^\/interactions\/(\d+)$/);
 		if (interactionMatch && method === "DELETE") {
-			json(res, 200, { ok: crmApi.deleteInteraction(parseInt(interactionMatch[1])) });
+			json(res, 200, { ok: await store.deleteInteraction(parseInt(interactionMatch[1])) });
 			return;
 		}
 
 		// ── Reminders ───────────────────────────────────────
 		if (method === "GET" && urlPath === "/reminders/upcoming") {
 			const days = parseInt(url.searchParams.get("days") ?? "30");
-			json(res, 200, crmApi.getUpcomingReminders(days));
+			json(res, 200, await store.getUpcomingReminders(days));
 			return;
 		}
 
 		if (method === "GET" && urlPath === "/reminders") {
 			const contactId = url.searchParams.get("contact_id");
-			json(res, 200, contactId ? crmApi.getReminders(parseInt(contactId)) : crmApi.getAllReminders());
+			json(res, 200, contactId ? await store.getReminders(parseInt(contactId)) : await store.getAllReminders());
 			return;
 		}
 
@@ -284,13 +280,13 @@ export async function handleCrmApi(
 			if (!body.contact_id || !body.reminder_type || !body.reminder_date) {
 				json(res, 400, { error: "contact_id, reminder_type, and reminder_date are required" }); return;
 			}
-			json(res, 201, crmApi.createReminder(body));
+			json(res, 201, await store.createReminder(body));
 			return;
 		}
 
 		const reminderMatch = urlPath.match(/^\/reminders\/(\d+)$/);
 		if (reminderMatch && method === "DELETE") {
-			json(res, 200, { ok: crmApi.deleteReminder(parseInt(reminderMatch[1])) });
+			json(res, 200, { ok: await store.deleteReminder(parseInt(reminderMatch[1])) });
 			return;
 		}
 
@@ -298,7 +294,7 @@ export async function handleCrmApi(
 		if (method === "GET" && urlPath === "/relationships") {
 			const contactId = url.searchParams.get("contact_id");
 			if (!contactId) { json(res, 400, { error: "contact_id is required" }); return; }
-			json(res, 200, crmApi.getRelationships(parseInt(contactId)));
+			json(res, 200, await store.getRelationships(parseInt(contactId)));
 			return;
 		}
 
@@ -307,37 +303,37 @@ export async function handleCrmApi(
 			if (!body.contact_id || !body.related_contact_id || !body.relationship_type) {
 				json(res, 400, { error: "contact_id, related_contact_id, and relationship_type are required" }); return;
 			}
-			json(res, 201, crmApi.createRelationship(body));
+			json(res, 201, await store.createRelationship(body));
 			return;
 		}
 
 		const relMatch = urlPath.match(/^\/relationships\/(\d+)$/);
 		if (relMatch && method === "DELETE") {
-			json(res, 200, { ok: crmApi.deleteRelationship(parseInt(relMatch[1])) });
+			json(res, 200, { ok: await store.deleteRelationship(parseInt(relMatch[1])) });
 			return;
 		}
 
 		// ── Groups ──────────────────────────────────────────
 		if (method === "GET" && urlPath === "/groups") {
-			json(res, 200, crmApi.getGroups());
+			json(res, 200, await store.getGroups());
 			return;
 		}
 
 		if (method === "POST" && urlPath === "/groups") {
 			const body = JSON.parse(await readBody(req));
 			if (!body.name) { json(res, 400, { error: "name is required" }); return; }
-			json(res, 201, crmApi.createGroup(body));
+			json(res, 201, await store.createGroup(body));
 			return;
 		}
 
 		const groupMembersMatch = urlPath.match(/^\/groups\/(\d+)\/members$/);
 		if (groupMembersMatch) {
 			const groupId = parseInt(groupMembersMatch[1]);
-			if (method === "GET") { json(res, 200, crmApi.getGroupMembers(groupId)); return; }
+			if (method === "GET") { json(res, 200, await store.getGroupMembers(groupId)); return; }
 			if (method === "POST") {
 				const body = JSON.parse(await readBody(req));
 				if (!body.contact_id) { json(res, 400, { error: "contact_id is required" }); return; }
-				const ok = crmApi.addGroupMember(groupId, body.contact_id);
+				const ok = await store.addGroupMember(groupId, body.contact_id);
 				json(res, ok ? 201 : 200, { ok });
 				return;
 			}
@@ -345,13 +341,13 @@ export async function handleCrmApi(
 
 		const groupMemberMatch = urlPath.match(/^\/groups\/(\d+)\/members\/(\d+)$/);
 		if (groupMemberMatch && method === "DELETE") {
-			json(res, 200, { ok: crmApi.removeGroupMember(parseInt(groupMemberMatch[1]), parseInt(groupMemberMatch[2])) });
+			json(res, 200, { ok: await store.removeGroupMember(parseInt(groupMemberMatch[1]), parseInt(groupMemberMatch[2])) });
 			return;
 		}
 
 		const groupMatch = urlPath.match(/^\/groups\/(\d+)$/);
 		if (groupMatch && method === "DELETE") {
-			json(res, 200, { ok: crmApi.deleteGroup(parseInt(groupMatch[1])) });
+			json(res, 200, { ok: await store.deleteGroup(parseInt(groupMatch[1])) });
 			return;
 		}
 
@@ -362,8 +358,8 @@ export async function handleCrmApi(
 			const contactId = parseInt(extFieldsMatch[1]);
 			const source = url.searchParams.get("source");
 			json(res, 200, source
-				? crmApi.getExtensionFieldsBySource(contactId, source)
-				: crmApi.getExtensionFields(contactId));
+				? await store.getExtensionFieldsBySource(contactId, source)
+				: await store.getExtensionFields(contactId));
 			return;
 		}
 
@@ -377,7 +373,7 @@ export async function handleCrmApi(
 			if (body.field_type && !VALID_EXTENSION_FIELD_TYPES.includes(body.field_type)) {
 				json(res, 400, { error: `Invalid field_type — must be one of: ${VALID_EXTENSION_FIELD_TYPES.join(", ")}` }); return;
 			}
-			json(res, 200, crmApi.setExtensionField({ ...body, contact_id: contactId }));
+			json(res, 200, await store.setExtensionField({ ...body, contact_id: contactId }));
 			return;
 		}
 
@@ -386,7 +382,7 @@ export async function handleCrmApi(
 			const contactId = parseInt(extFieldsMatch[1]);
 			const source = url.searchParams.get("source");
 			if (!source) { json(res, 400, { error: "source query param is required" }); return; }
-			json(res, 200, { deleted: crmApi.deleteExtensionFields(contactId, source) });
+			json(res, 200, { deleted: await store.deleteExtensionFields(contactId, source) });
 			return;
 		}
 
@@ -397,8 +393,8 @@ export async function handleCrmApi(
 			const companyId = parseInt(coExtFieldsMatch[1]);
 			const source = url.searchParams.get("source");
 			json(res, 200, source
-				? crmApi.getCompanyExtensionFieldsBySource(companyId, source)
-				: crmApi.getCompanyExtensionFields(companyId));
+				? await store.getCompanyExtensionFieldsBySource(companyId, source)
+				: await store.getCompanyExtensionFields(companyId));
 			return;
 		}
 
@@ -412,7 +408,7 @@ export async function handleCrmApi(
 			if (body.field_type && !VALID_EXTENSION_FIELD_TYPES.includes(body.field_type)) {
 				json(res, 400, { error: `Invalid field_type — must be one of: ${VALID_EXTENSION_FIELD_TYPES.join(", ")}` }); return;
 			}
-			json(res, 200, crmApi.setCompanyExtensionField({ ...body, company_id: companyId }));
+			json(res, 200, await store.setCompanyExtensionField({ ...body, company_id: companyId }));
 			return;
 		}
 
@@ -421,7 +417,7 @@ export async function handleCrmApi(
 			const companyId = parseInt(coExtFieldsMatch[1]);
 			const source = url.searchParams.get("source");
 			if (!source) { json(res, 400, { error: "source query param is required" }); return; }
-			json(res, 200, { deleted: crmApi.deleteCompanyExtensionFields(companyId, source) });
+			json(res, 200, { deleted: await store.deleteCompanyExtensionFields(companyId, source) });
 			return;
 		}
 

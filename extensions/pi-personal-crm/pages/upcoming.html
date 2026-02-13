@@ -20,12 +20,10 @@
     const content = document.getElementById('upcomingContent');
 
     try {
-      const [remindersRes, contactsRes] = await Promise.all([
-        fetch('api/crm/reminders'),
-        fetch('api/crm/contacts?limit=5000')
+      const [reminders, contacts] = await Promise.all([
+        safeFetchArray('/api/crm/reminders'),
+        safeFetchArray('/api/crm/contacts?limit=5000'),
       ]);
-      const reminders = await remindersRes.json();
-      const contacts = await contactsRes.json();
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);

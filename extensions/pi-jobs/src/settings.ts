@@ -6,6 +6,7 @@ import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 export interface JobsSettings {
 	dbPath: string;
+	useKysely: boolean;
 }
 
 const DEFAULT_DB_PATH = "jobs/jobs.db";
@@ -20,8 +21,9 @@ export function resolveSettings(cwd: string): JobsSettings {
 
 		return {
 			dbPath: cfg.dbPath ?? DEFAULT_DB_PATH,
+			useKysely: !!cfg.useKysely,
 		};
 	} catch {
-		return { dbPath: DEFAULT_DB_PATH };
+		return { dbPath: DEFAULT_DB_PATH, useKysely: false };
 	}
 }

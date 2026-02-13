@@ -22,6 +22,7 @@ export interface CrossProjectIssue {
 	type: string;
 	priority: string;
 	labels: string[];
+	implementer_session: string;
 	parent_id: string;
 	created_at: string;
 	updated_at: string;
@@ -89,7 +90,7 @@ function readProjectIssues(
 
 		let query = `
 			SELECT id, title, description, status, type, priority, labels,
-				parent_id, created_at, updated_at, closed_at
+				implementer_session, parent_id, created_at, updated_at, closed_at
 			FROM issues
 			WHERE deleted_at IS NULL
 		`;
@@ -184,6 +185,7 @@ export interface TreeNode {
 	type: string;
 	priority: string;
 	labels: string[];
+	implementer_session: string;
 	parent_id: string;
 }
 
@@ -207,7 +209,7 @@ export function getProjectTree(projectPath: string): TreeData {
 
 		const nodes = db
 			.prepare(
-				`SELECT id, title, status, type, priority, labels, parent_id
+				`SELECT id, title, status, type, priority, labels, implementer_session, parent_id
 			 FROM issues WHERE deleted_at IS NULL`,
 			)
 			.all() as any[];

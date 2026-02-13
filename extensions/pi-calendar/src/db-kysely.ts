@@ -4,21 +4,26 @@
  * Drop-in replacement for db.ts. No direct imports from pi-kysely,
  * no better-sqlite3 dependency. All DB access via events:
  *
+ *   - kysely:info   — detect SQL dialect (sqlite/postgres/mysql)
  *   - kysely:schema:register — table creation (portable DDL)
- *   - kysely:query — raw SQL for reads/writes (simple, expressive)
+ *   - kysely:query  — raw SQL for reads/writes (simple, expressive)
  *
- * To switch: replace `import { ... } from "./db.ts"` with
- * `import { ... } from "./db-kysely.ts"` in tool.ts, reminders.ts, web.ts.
+ * Dialect-aware: queries `kysely:info` on init to detect the active
+ * driver and adapts dialect-specific SQL (e.g. upsert syntax).
  *
  * Requires pi-kysely extension to be loaded.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import type { CalendarEvent, CreateEventInput, RecurrenceRule, UpdateEventInput } from "./types.ts";
 
 const ACTOR = "pi-calendar";
 
+type Driver = "sqlite" | "postgres" | "mysql";
+
 let events: EventBus;
+let driver: Driver = "sqlite";
 
 // ── Schema (portable DDL via Kysely schema builder) ─────────────
 
@@ -61,19 +66,70 @@ const SCHEMA = {
 	},
 };
 
+// ── Migrations ──────────────────────────────────────────────────
+
+const migrationDir = new URL("../migrations", import.meta.url).pathname;
+
+function loadMigrations(): Array<{ name: string; sql: string }> {
+	try {
+		return readdirSync(migrationDir)
+			.filter((f) => f.endsWith(".sql"))
+			.sort()
+			.map((f) => ({
+				name: f.replace(/\.sql$/, ""),
+				sql: readFileSync(`${migrationDir}/${f}`, "utf-8"),
+			}));
+	} catch {
+		return [];
+	}
+}
+
 // ── Init ────────────────────────────────────────────────────────
 
-export function initDb(eventBus: EventBus): Promise<void> {
+export async function initDb(eventBus: EventBus): Promise<void> {
 	events = eventBus;
-	return new Promise((resolve, reject) => {
+
+	// Detect SQL dialect from pi-kysely (falls back to sqlite)
+	events.emit("kysely:info", {
+		reply: (info: { defaultDriver?: string }) => {
+			if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
+				driver = info.defaultDriver;
+			}
+		},
+	});
+
+	// Apply tracked migrations (skips already-applied ones)
+	const migrations = loadMigrations();
+	if (migrations.length > 0) {
+		await new Promise<void>((resolve, reject) => {
+			events.emit("kysely:migration:apply", {
+				actor: ACTOR,
+				migrations,
+				reply: (result: { ok: boolean; applied: string[]; skipped: string[]; errors: string[] }) => {
+					if (result.ok) resolve();
+					else reject(new Error(`Migration failed: ${result.errors.join("; ")}`));
+				},
+			});
+		});
+	}
+
+	// Schema:register as safety net — catches any column/index drift
+	// that might exist between migration files and the SCHEMA constant.
+	// Additive-only, idempotent, portable across dialects.
+	await new Promise<void>((resolve, reject) => {
 		events.emit("kysely:schema:register", {
 			...SCHEMA,
 			reply: (result: { ok: boolean; errors: string[] }) => {
 				if (result.ok) resolve();
-				else reject(new Error(`Schema failed: ${result.errors.join("; ")}`));
+				else reject(new Error(`Schema register failed: ${result.errors.join("; ")}`));
 			},
 		});
 	});
+}
+
+/** Returns the detected SQL dialect. */
+export function getDriver(): Driver {
+	return driver;
 }
 
 // ── Query helper ────────────────────────────────────────────────
@@ -229,10 +285,14 @@ export async function isReminderSent(eventId: number, eventTime: string): Promis
 }
 
 export async function markReminderSent(eventId: number, eventTime: string): Promise<void> {
-	await query(
-		"INSERT OR IGNORE INTO calendar_reminders_sent (event_id, event_time, sent_at) VALUES (?, ?, ?)",
-		[eventId, eventTime, now()],
-	).catch(() => {}); // ignore duplicate
+	const insertSql =
+		driver === "postgres"
+			? "INSERT INTO calendar_reminders_sent (event_id, event_time, sent_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING"
+			: driver === "mysql"
+				? "INSERT IGNORE INTO calendar_reminders_sent (event_id, event_time, sent_at) VALUES (?, ?, ?)"
+				: "INSERT OR IGNORE INTO calendar_reminders_sent (event_id, event_time, sent_at) VALUES (?, ?, ?)";
+
+	await query(insertSql, [eventId, eventTime, now()]).catch(() => {}); // ignore duplicate
 }
 
 export async function cleanOldReminders(before: string): Promise<void> {

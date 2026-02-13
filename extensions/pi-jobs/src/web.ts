@@ -9,7 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { getJobsApi } from "./db.ts";
+import { getJobsStore } from "./store.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ interface EventBus {
 
 // ── Page handler ────────────────────────────────────────────────
 
-function handleJobsPage(req: IncomingMessage, res: ServerResponse, subPath: string): void {
+async function handleJobsPage(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
 	if (req.method !== "GET") { json(res, 405, { error: "Method not allowed" }); return; }
 	const p = subPath.replace(/\/+$/, "") || "/";
 
@@ -56,18 +56,18 @@ function handleJobsPage(req: IncomingMessage, res: ServerResponse, subPath: stri
 
 // ── API handler ─────────────────────────────────────────────────
 
-function handleJobsApi(req: IncomingMessage, res: ServerResponse, subPath: string): void {
+async function handleJobsApi(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
 	const url = new URL(req.url ?? "/", "http://localhost");
 	const method = req.method ?? "GET";
 	const p = subPath.replace(/\/+$/, "") || "/";
 
 	try {
-		const api = getJobsApi();
+		const store = getJobsStore();
 
 		// GET /api/jobs/stats
 		if (method === "GET" && p === "/stats") {
 			const channel = url.searchParams.get("channel") || undefined;
-			json(res, 200, api.getTotals(channel));
+			json(res, 200, await store.getTotals(channel));
 			return;
 		}
 
@@ -75,7 +75,7 @@ function handleJobsApi(req: IncomingMessage, res: ServerResponse, subPath: strin
 		if (method === "GET" && p === "/recent") {
 			const limit = parseInt(url.searchParams.get("limit") ?? "50");
 			const channel = url.searchParams.get("channel") || undefined;
-			json(res, 200, api.getRecentJobs(limit, channel));
+			json(res, 200, await store.getRecentJobs(limit, channel));
 			return;
 		}
 
@@ -83,30 +83,30 @@ function handleJobsApi(req: IncomingMessage, res: ServerResponse, subPath: strin
 		if (method === "GET" && p === "/daily") {
 			const days = parseInt(url.searchParams.get("days") ?? "30");
 			const channel = url.searchParams.get("channel") || undefined;
-			json(res, 200, api.getDailyStats(days, channel));
+			json(res, 200, await store.getDailyStats(days, channel));
 			return;
 		}
 
 		// GET /api/jobs/models
 		if (method === "GET" && p === "/models") {
 			const days = parseInt(url.searchParams.get("days") ?? "30");
-			json(res, 200, api.getModelBreakdown(days));
+			json(res, 200, await store.getModelBreakdown(days));
 			return;
 		}
 
 		// GET /api/jobs/tools
 		if (method === "GET" && p === "/tools") {
 			const days = parseInt(url.searchParams.get("days") ?? "30");
-			json(res, 200, api.getToolBreakdown(days));
+			json(res, 200, await store.getToolBreakdown(days));
 			return;
 		}
 
 		// GET /api/jobs/:id
 		const jobMatch = p.match(/^\/([0-9a-f-]+)$/);
 		if (method === "GET" && jobMatch) {
-			const job = api.getJob(jobMatch[1]);
+			const job = await store.getJob(jobMatch[1]);
 			if (!job) { json(res, 404, { error: "Not found" }); return; }
-			const toolCalls = api.getJobToolCalls(jobMatch[1]);
+			const toolCalls = await store.getJobToolCalls(jobMatch[1]);
 			json(res, 200, { job, toolCalls });
 			return;
 		}

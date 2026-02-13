@@ -43,6 +43,12 @@ The dashboard at `http://localhost:4100/` lists non-API mounts with links.
 
 Clients authenticate with `Authorization: Bearer <token>`.
 
+**Cookie session auth** bridges the gap when only API tokens are configured (no Basic auth). When a browser visits any non-API page, the server redirects to a login page (`/_auth/login`) that prompts for the API token. On success, a signed `pi-session` cookie is set that authenticates both page requests and `/api/*` fetch calls from the browser. This means extensions' frontend code can use plain `fetch('/api/...')` without injecting Bearer headers.
+
+- `/_auth/login` — Login page (GET) and token validation (POST)
+- `/_auth/logout` — Clears the session cookie
+- Session cookies are signed with a random secret regenerated on each server start
+
 ### Configuration via settings.json
 
 All auth and server options are configured under the `"pi-webserver"` key in `settings.json`. Global settings go in `~/.pi/agent/settings.json`, project-level overrides in `<project>/.pi/settings.json`. Project settings are merged on top of global settings.

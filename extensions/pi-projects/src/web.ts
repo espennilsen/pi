@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { scanProjects } from "./scanner.ts";
-import { getProjectsDbApi } from "./db.ts";
+import { getProjectsStore } from "./store.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 	const p = subPath.replace(/\/+$/, "") || "/";
 
 	try {
-		const dbApi = getProjectsDbApi();
+		const store = getProjectsStore();
 
 		// GET /api/projects — list all projects with git status
 		if (method === "GET" && p === "/") {
@@ -90,7 +90,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 
 		// GET /api/projects/sources — list scan directories
 		if (method === "GET" && p === "/sources") {
-			json(res, 200, dbApi.getProjectSources());
+			json(res, 200, await store.getProjectSources());
 			return;
 		}
 
@@ -102,7 +102,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 			if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
 				json(res, 400, { error: "Path does not exist or is not a directory" }); return;
 			}
-			const record = dbApi.addProjectSource(resolved, body.label);
+			const record = await store.addProjectSource(resolved, body.label);
 			json(res, 200, record);
 			return;
 		}
@@ -111,13 +111,13 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 		if (method === "DELETE" && p === "/sources") {
 			const body = JSON.parse(await readBody(req));
 			if (!body.id) { json(res, 400, { error: "id is required" }); return; }
-			json(res, 200, { ok: dbApi.removeProjectSource(body.id) });
+			json(res, 200, { ok: await store.removeProjectSource(body.id) });
 			return;
 		}
 
 		// GET /api/projects/hidden — list hidden projects
 		if (method === "GET" && p === "/hidden") {
-			json(res, 200, dbApi.getHiddenProjects());
+			json(res, 200, await store.getHiddenProjects());
 			return;
 		}
 
@@ -125,7 +125,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 		if (method === "POST" && p === "/hide") {
 			const body = JSON.parse(await readBody(req));
 			if (!body.path) { json(res, 400, { error: "path is required" }); return; }
-			json(res, 200, dbApi.hideProject(body.path));
+			json(res, 200, await store.hideProject(body.path));
 			return;
 		}
 
@@ -133,7 +133,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 		if (method === "POST" && p === "/unhide") {
 			const body = JSON.parse(await readBody(req));
 			if (!body.path) { json(res, 400, { error: "path is required" }); return; }
-			json(res, 200, { ok: dbApi.unhideProject(body.path) });
+			json(res, 200, { ok: await store.unhideProject(body.path) });
 			return;
 		}
 

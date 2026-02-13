@@ -4,9 +4,9 @@
  * Conversational CRM operations accessible from Pi agent prompts.
  */
 
-import type { CrmApi } from "./types.ts";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
+import { getCrmStore } from "./store.ts";
 
 /** Sanitize a URL: only allow http(s). Returns cleaned URL or undefined. */
 function sanitizeUrl(value: unknown): string | undefined {
@@ -28,9 +28,8 @@ interface ExtensionAPI {
 /**
  * Register the CRM tool with Pi.
  * @param pi ExtensionAPI from Pi coding agent
- * @param getCrm Function that returns the CrmApi instance
  */
-export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): void {
+export function registerCrmTool(pi: ExtensionAPI): void {
 	// ── System prompt injection ───────────────────────────────
 
 	pi.on("before_agent_start", async (event: any) => {
@@ -94,8 +93,16 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 			// Add/update contact
 			first_name: Type.Optional(Type.String({ description: "First name (required for add_contact)" })),
 			last_name: Type.Optional(Type.String({ description: "Last name" })),
-			email: Type.Optional(Type.String({ description: "Email address" })),
-			phone: Type.Optional(Type.String({ description: "Phone number" })),
+			email: Type.Optional(Type.String({ description: "Primary email address" })),
+			phone: Type.Optional(Type.String({ description: "Primary phone number" })),
+			emails: Type.Optional(Type.Array(Type.Object({
+				value: Type.String({ description: "Email address" }),
+				label: Type.Optional(Type.String({ description: "Label, e.g. 'Work', 'Personal'" })),
+			}), { description: "Multiple emails with optional labels" })),
+			phones: Type.Optional(Type.Array(Type.Object({
+				value: Type.String({ description: "Phone number" }),
+				label: Type.Optional(Type.String({ description: "Label, e.g. 'Mobile', 'Work', 'Home'" })),
+			}), { description: "Multiple phones with optional labels" })),
 			company_id: Type.Optional(Type.Number({ description: "Company ID" })),
 			company_name: Type.Optional(Type.String({ description: "Company name (will create if doesn't exist)" })),
 			birthday: Type.Optional(Type.String({ description: "Birthday in YYYY-MM-DD format" })),
@@ -143,8 +150,10 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 		}),
 
 		async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, _ctx: any) {
-			const crm = getCrm();
-			if (!crm) {
+			let crm: ReturnType<typeof getCrmStore>;
+			try {
+				crm = getCrmStore();
+			} catch {
 				return text("❌ CRM not available (extension not loaded)");
 			}
 
@@ -156,8 +165,8 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ query is required for search");
 					}
 
-					const contacts = crm.searchContacts(params.query, 20);
-					const companies = crm.searchCompanies(params.query, 10);
+					const contacts = await crm.searchContacts(params.query, 20);
+					const companies = await crm.searchCompanies(params.query, 10);
 
 					if (contacts.length === 0 && companies.length === 0) {
 						return text(`🔍 No results found for "${params.query}"`);
@@ -191,10 +200,10 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					let contact = null;
 
 					if (params.contact_id) {
-						contact = crm.getContact(params.contact_id);
+						contact = await crm.getContact(params.contact_id);
 					} else if (params.name) {
 						// Search by name
-						const results = crm.searchContacts(params.name, 5);
+						const results = await crm.searchContacts(params.name, 5);
 						if (results.length === 0) {
 							return text(`❌ No contact found matching "${params.name}"`);
 						}
@@ -218,8 +227,20 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					// Build contact card
 					let card = `👤 **${contact.first_name} ${contact.last_name || ""}**\n\n`;
 
-					if (contact.email) card += `📧 ${contact.email}\n`;
-					if (contact.phone) card += `📞 ${contact.phone}\n`;
+					if (contact.emails && contact.emails.length > 0) {
+						for (const e of contact.emails) {
+							card += `📧 ${e.value}${e.label ? ` (${e.label})` : ""}\n`;
+						}
+					} else if (contact.email) {
+						card += `📧 ${contact.email}\n`;
+					}
+					if (contact.phones && contact.phones.length > 0) {
+						for (const p of contact.phones) {
+							card += `📞 ${p.value}${p.label ? ` (${p.label})` : ""}\n`;
+						}
+					} else if (contact.phone) {
+						card += `📞 ${contact.phone}\n`;
+					}
 					if (contact.company_name) card += `🏢 ${contact.company_name}\n`;
 					if (contact.birthday) card += `🎂 Birthday: ${contact.birthday}\n`;
 					if (contact.anniversary) card += `💍 Anniversary: ${contact.anniversary}\n`;
@@ -227,7 +248,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					if (contact.notes) card += `\n📝 **Notes:**\n${contact.notes}\n`;
 
 					// Recent interactions
-					const interactions = crm.getInteractions(contact.id);
+					const interactions = await crm.getInteractions(contact.id);
 					if (interactions.length > 0) {
 						card += `\n**Recent Interactions (${interactions.length}):**\n`;
 						const recent = interactions.slice(0, 5);
@@ -239,7 +260,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					}
 
 					// Relationships
-					const relationships = crm.getRelationships(contact.id);
+					const relationships = await crm.getRelationships(contact.id);
 					if (relationships.length > 0) {
 						card += `\n**Relationships:**\n`;
 						for (const r of relationships) {
@@ -248,7 +269,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					}
 
 					// Reminders
-					const reminders = crm.getReminders(contact.id);
+					const reminders = await crm.getReminders(contact.id);
 					if (reminders.length > 0) {
 						card += `\n**Reminders:**\n`;
 						for (const r of reminders) {
@@ -259,7 +280,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					}
 
 					// Groups
-					const groups = crm.getContactGroups(contact.id);
+					const groups = await crm.getContactGroups(contact.id);
 					if (groups.length > 0) {
 						card += `\n**Groups:**\n`;
 						for (const g of groups) {
@@ -282,7 +303,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					}
 
 					// Check for duplicates
-					const dupes = crm.findDuplicates({
+					const dupes = await crm.findDuplicates({
 						email: params.email,
 						first_name: params.first_name,
 						last_name: params.last_name,
@@ -300,21 +321,23 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					// Handle company by name
 					let company_id = params.company_id;
 					if (params.company_name && !company_id) {
-						const companies = crm.searchCompanies(params.company_name, 1);
+						const companies = await crm.searchCompanies(params.company_name, 1);
 						if (companies.length > 0) {
 							company_id = companies[0].id;
 						} else {
 							// Create company
-							const newCompany = crm.createCompany({ name: params.company_name });
+							const newCompany = await crm.createCompany({ name: params.company_name });
 							company_id = newCompany.id;
 						}
 					}
 
-					const contact = crm.createContact({
+					const contact = await crm.createContact({
 						first_name: params.first_name,
 						last_name: params.last_name,
 						email: params.email,
 						phone: params.phone,
+						emails: params.emails,
+						phones: params.phones,
 						company_id,
 						birthday: params.birthday,
 						anniversary: params.anniversary,
@@ -334,11 +357,13 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ contact_id is required");
 					}
 
-					const updated = crm.updateContact(params.contact_id, {
+					const updated = await crm.updateContact(params.contact_id, {
 						first_name: params.first_name,
 						last_name: params.last_name,
 						email: params.email,
 						phone: params.phone,
+						emails: params.emails,
+						phones: params.phones,
 						company_id: params.company_id,
 						birthday: params.birthday,
 						anniversary: params.anniversary,
@@ -366,7 +391,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ interaction_type is required (call, meeting, email, note, gift, message)");
 					}
 
-					const interaction = crm.createInteraction({
+					const interaction = await crm.createInteraction({
 						contact_id: params.contact_id,
 						interaction_type: params.interaction_type,
 						summary: params.summary,
@@ -374,7 +399,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						happened_at: params.happened_at,
 					});
 
-					const contact = crm.getContact(params.contact_id);
+					const contact = await crm.getContact(params.contact_id);
 					const contactName = contact ? `${contact.first_name} ${contact.last_name || ""}` : `ID ${params.contact_id}`;
 
 					return text(
@@ -395,14 +420,14 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ reminder_date is required (YYYY-MM-DD)");
 					}
 
-					const reminder = crm.createReminder({
+					const reminder = await crm.createReminder({
 						contact_id: params.contact_id,
 						reminder_type: params.reminder_type,
 						reminder_date: params.reminder_date,
 						message: params.reminder_message,
 					});
 
-					const contact = crm.getContact(params.contact_id);
+					const contact = await crm.getContact(params.contact_id);
 					const contactName = contact ? `${contact.first_name} ${contact.last_name || ""}` : `ID ${params.contact_id}`;
 
 					return text(
@@ -414,7 +439,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 
 				if (params.action === "upcoming") {
 					const days = params.days ?? 7;
-					const reminders = crm.getUpcomingReminders(days);
+					const reminders = await crm.getUpcomingReminders(days);
 
 					if (reminders.length === 0) {
 						return text(`📅 No upcoming reminders in the next ${days} days`);
@@ -434,7 +459,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 				// ── list_companies ──────────────────────────────────
 
 				if (params.action === "list_companies") {
-					const companies = crm.getCompanies();
+					const companies = await crm.getCompanies();
 
 					if (companies.length === 0) {
 						return text("🏢 No companies in CRM");
@@ -461,7 +486,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 					try { website = sanitizeUrl(params.website); }
 					catch (e: any) { return text(`❌ ${e.message}`); }
 
-					const company = crm.createCompany({
+					const company = await crm.createCompany({
 						name: params.company_name,
 						website,
 						industry: params.industry,
@@ -478,13 +503,13 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ contact_id is required");
 					}
 
-					const contact = crm.getContact(params.contact_id);
+					const contact = await crm.getContact(params.contact_id);
 					if (!contact) {
 						return text(`❌ Contact ${params.contact_id} not found`);
 					}
 
 					const name = `${contact.first_name} ${contact.last_name || ""}`.trim();
-					crm.deleteContact(params.contact_id);
+					await crm.deleteContact(params.contact_id);
 					return text(`✅ Deleted contact: ${name} (ID: ${params.contact_id})`);
 				}
 
@@ -501,15 +526,15 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ relationship_type is required (e.g. spouse, colleague, friend, parent, child)");
 					}
 
-					const relationship = crm.createRelationship({
+					const relationship = await crm.createRelationship({
 						contact_id: params.contact_id,
 						related_contact_id: params.related_contact_id,
 						relationship_type: params.relationship_type,
 						notes: params.notes,
 					});
 
-					const c1 = crm.getContact(params.contact_id);
-					const c2 = crm.getContact(params.related_contact_id);
+					const c1 = await crm.getContact(params.contact_id);
+					const c2 = await crm.getContact(params.related_contact_id);
 					const name1 = c1 ? `${c1.first_name} ${c1.last_name || ""}`.trim() : `ID ${params.contact_id}`;
 					const name2 = c2 ? `${c2.first_name} ${c2.last_name || ""}`.trim() : `ID ${params.related_contact_id}`;
 
@@ -519,7 +544,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 				// ── list_groups ─────────────────────────────────────
 
 				if (params.action === "list_groups") {
-					const groups = crm.getGroups();
+					const groups = await crm.getGroups();
 
 					if (groups.length === 0) {
 						return text("📂 No groups in CRM");
@@ -527,7 +552,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 
 					let result = `📂 Groups (${groups.length}):\n\n`;
 					for (const g of groups) {
-						const members = crm.getGroupMembers(g.id);
+						const members = await crm.getGroupMembers(g.id);
 						const desc = g.description ? ` — ${g.description}` : "";
 						result += `- ${g.name}${desc} (${members.length} members, ID: ${g.id})\n`;
 					}
@@ -546,12 +571,12 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 
 					// Resolve group by name, create if needed
 					if (!groupId && params.group_name) {
-						const groups = crm.getGroups();
+						const groups = await crm.getGroups();
 						const existing = groups.find(g => g.name.toLowerCase() === params.group_name.toLowerCase());
 						if (existing) {
 							groupId = existing.id;
 						} else {
-							const newGroup = crm.createGroup({
+							const newGroup = await crm.createGroup({
 								name: params.group_name,
 								description: params.group_description,
 							});
@@ -563,11 +588,11 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ group_id or group_name is required");
 					}
 
-					crm.addGroupMember(groupId, params.contact_id);
+					await crm.addGroupMember(groupId, params.contact_id);
 
-					const contact = crm.getContact(params.contact_id);
+					const contact = await crm.getContact(params.contact_id);
 					const contactName = contact ? `${contact.first_name} ${contact.last_name || ""}`.trim() : `ID ${params.contact_id}`;
-					const groups = crm.getGroups();
+					const groups = await crm.getGroups();
 					const group = groups.find(g => g.id === groupId);
 					const groupName = group ? group.name : `ID ${groupId}`;
 
@@ -585,7 +610,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 
 					// Resolve group by name
 					if (!groupId && params.group_name) {
-						const groups = crm.getGroups();
+						const groups = await crm.getGroups();
 						const existing = groups.find(g => g.name.toLowerCase() === params.group_name.toLowerCase());
 						if (existing) {
 							groupId = existing.id;
@@ -596,15 +621,15 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ group_id or group_name is required");
 					}
 
-					const ok = crm.removeGroupMember(groupId, params.contact_id);
+					const ok = await crm.removeGroupMember(groupId, params.contact_id);
 
 					if (!ok) {
 						return text("❌ Contact is not in that group");
 					}
 
-					const contact = crm.getContact(params.contact_id);
+					const contact = await crm.getContact(params.contact_id);
 					const contactName = contact ? `${contact.first_name} ${contact.last_name || ""}`.trim() : `ID ${params.contact_id}`;
-					const groups = crm.getGroups();
+					const groups = await crm.getGroups();
 					const group = groups.find(g => g.id === groupId);
 					const groupName = group ? group.name : `ID ${groupId}`;
 
@@ -614,7 +639,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 				// ── export_csv ──────────────────────────────────────
 
 				if (params.action === "export_csv") {
-					const csv = crm.exportContactsCsv();
+					const csv = await crm.exportContactsCsv();
 					const lines = csv.split("\n");
 					return text(
 						`📊 Exported ${lines.length - 1} contact(s) as CSV:\n\n\`\`\`csv\n${csv}\n\`\`\``,
@@ -628,7 +653,7 @@ export function registerCrmTool(pi: ExtensionAPI, getCrm: () => CrmApi | null): 
 						return text("❌ csv_data is required (CSV text with header row)");
 					}
 
-					const result = crm.importContactsCsv(params.csv_data);
+					const result = await crm.importContactsCsv(params.csv_data);
 
 					let msg = `📊 Import complete:\n✅ Created: ${result.created}\n⏭ Skipped: ${result.skipped}`;
 

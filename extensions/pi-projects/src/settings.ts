@@ -10,12 +10,14 @@ export interface ProjectsSettings {
 	devDir: string;
 	autoScan: boolean;
 	dbPath: string;
+	useKysely: boolean;
 }
 
 const DEFAULTS: ProjectsSettings = {
 	devDir: path.join(os.homedir(), "Dev"),
 	autoScan: true,
 	dbPath: "projects/projects.db",
+	useKysely: false,
 };
 
 function expandHome(p: string): string {
@@ -36,6 +38,7 @@ export function resolveSettings(cwd: string): ProjectsSettings {
 			devDir: cfg.devDir ? expandHome(cfg.devDir) : DEFAULTS.devDir,
 			autoScan: cfg.autoScan ?? DEFAULTS.autoScan,
 			dbPath: cfg.dbPath ?? DEFAULTS.dbPath,
+			useKysely: !!cfg.useKysely,
 		};
 	} catch {
 		return { ...DEFAULTS };

@@ -7,20 +7,27 @@
  *   - /api/calendar — JSON CRUD endpoints
  *   - Reminders via pi-channels event bus
  *
- * Data stored in $PI_AGENT_HOME/db/calendar.db (default: ~/.pi/agent/db/calendar.db).
- * Integrates with pi-webserver (web UI) and pi-channels (reminders).
+ * Database backend is configurable:
+ *   - Default: local SQLite via better-sqlite3 (db.ts)
+ *   - Optional: shared DB via pi-kysely event bus (db-kysely.ts)
+ *
+ * Settings:
+ *   "pi-calendar": {
+ *     "dbPath": "db/calendar.db",   // SQLite file path (sqlite backend only)
+ *     "useKysely": true              // Use pi-kysely shared DB instead of SQLite
+ *   }
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
-import * as path from "node:path";
-import * as os from "node:os";
-import * as fs from "node:fs";
-import { initDb } from "./db.ts";
+import { setStore, isStoreReady, createSqliteStore, createKyselyStore } from "./store.ts";
 import { registerCalendarTool } from "./tool.ts";
 import { mountCalendarRoutes, unmountCalendarRoutes } from "./web.ts";
 import { startReminders, stopReminders } from "./reminders.ts";
+import * as path from "node:path";
+import * as os from "node:os";
+import * as fs from "node:fs";
 
 const DEFAULT_DB_PATH = "db/calendar.db";
 
@@ -30,12 +37,25 @@ function expandHome(p: string): string {
 	return p;
 }
 
-function getDbPath(cwd: string): string {
+interface CalendarSettings {
+	dbPath?: string;
+	useKysely?: boolean;
+}
+
+function getSettings(cwd: string): CalendarSettings {
 	const agentDir = getAgentDir();
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, any>;
 	const project = sm.getProjectSettings() as Record<string, any>;
-	const configured = project?.["pi-calendar"]?.dbPath ?? global?.["pi-calendar"]?.dbPath;
+	return {
+		...global?.["pi-calendar"],
+		...project?.["pi-calendar"],
+	};
+}
+
+function getDbPath(cwd: string, settings: CalendarSettings): string {
+	const agentDir = getAgentDir();
+	const configured = settings.dbPath;
 
 	let dbPath: string;
 	if (configured) {
@@ -52,25 +72,62 @@ function getDbPath(cwd: string): string {
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
-	// Initialize DB and register tool on session start
 	pi.on("session_start", async (_event, ctx) => {
-		const dbPath = getDbPath(ctx.cwd);
-		initDb(dbPath);
-		log("init", { dbPath });
+		const settings = getSettings(ctx.cwd);
 
-		// Mount web routes (no-op if pi-webserver isn't loaded yet)
-		mountCalendarRoutes(pi.events);
+		if (settings.useKysely) {
+			// ── Kysely backend ──────────────────────────────────
+			// Handle both orderings: kysely may already be ready,
+			// or it may start after us. Probe first, then listen.
 
-		// Start reminder checker
-		startReminders(pi);
+			const initKysely = async () => {
+				if (isStoreReady()) return; // already initialized
+				try {
+					const store = await createKyselyStore(pi.events as any);
+					setStore(store);
+					log("ready", { backend: "kysely" });
+					mountCalendarRoutes(pi.events);
+					startReminders(pi);
+				} catch (err: any) {
+					log("error", { backend: "kysely", error: err.message }, "ERROR");
+				}
+			};
+
+			// Listen for future kysely:ready events
+			pi.events.on("kysely:ready", initKysely);
+
+			// Probe: check if pi-kysely is already available
+			log("init", { backend: "kysely", status: "probing for kysely" });
+			let kyselyAlreadyReady = false;
+			pi.events.emit("kysely:info", {
+				reply: () => { kyselyAlreadyReady = true; },
+			});
+			if (kyselyAlreadyReady) {
+				log("init", { backend: "kysely", status: "kysely already available" });
+				await initKysely();
+			} else {
+				log("init", { backend: "kysely", status: "waiting for kysely:ready" });
+			}
+		} else {
+			// ── SQLite backend (default) ────────────────────────
+			const dbPath = getDbPath(ctx.cwd, settings);
+			log("init", { backend: "sqlite", dbPath });
+			const store = await createSqliteStore(dbPath);
+			setStore(store);
+			log("ready", { backend: "sqlite", dbPath });
+			mountCalendarRoutes(pi.events);
+			startReminders(pi);
+		}
 	});
 
 	// Register the tool (available immediately)
 	registerCalendarTool(pi);
 
-	// Re-mount when pi-webserver starts after us
+	// Re-mount when pi-webserver starts after us (only if store is ready)
 	pi.events.on("web:ready", () => {
-		mountCalendarRoutes(pi.events);
+		if (isStoreReady()) {
+			mountCalendarRoutes(pi.events);
+		}
 	});
 
 	pi.on("session_shutdown", async () => {

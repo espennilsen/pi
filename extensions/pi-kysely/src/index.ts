@@ -7,22 +7,50 @@ import {
 	createMySqlDatabase,
 	createPostgresDatabase,
 	createSqliteDatabase,
+	type DatabaseDriver,
 	getDatabase,
 	getDefaultDatabaseName,
 	getDefaultSqlitePath,
 	listDatabases,
+	requireDatabase,
 	unregisterDatabase,
 } from "./registry.ts";
 import { loadKyselySettings } from "./settings.ts";
+import { getMigrationStatus } from "./migrations.ts";
 
 export * from "./table-api.ts";
 export * from "./schema.ts";
+export * from "./migrations.ts";
 export type { KyselyAck } from "./events.ts";
 export type { QueryInput, QueryResult } from "./table-api.ts";
+
+/** Payload emitted with kysely:ready and returned by kysely:info */
+export interface KyselyReadyPayload {
+	databases: Array<{ name: string; driver: DatabaseDriver }>;
+	defaultDatabase: string;
+	defaultDriver: string;
+}
+
+let activeDefaultDriver: string = "sqlite";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	wireKyselyEvents(pi, log);
+
+	// ── kysely:info — on-demand database info query ───────────
+	pi.events.on("kysely:info", (payload: unknown) => {
+		const data = payload as {
+			reply?: (info: KyselyReadyPayload) => void;
+		};
+		data.reply?.({
+			databases: listDatabases().map((d) => ({
+				name: d.name,
+				driver: d.driver,
+			})),
+			defaultDatabase: getDefaultDatabaseName(),
+			defaultDriver: activeDefaultDriver,
+		});
+	});
 
 	pi.registerCommand("kysely", {
 		description: "Manage shared Kysely database registry: /kysely [status|close <name>|close-all]",
@@ -31,6 +59,7 @@ export default function (pi: ExtensionAPI) {
 				{ value: "status", label: "status — List registered databases" },
 				{ value: "close", label: "close <name> — Unregister and destroy a database" },
 				{ value: "close-all", label: "close-all — Unregister and destroy all databases" },
+				{ value: "migrations", label: "migrations [actor] — List applied migrations" },
 			];
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -56,8 +85,28 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (cmd === "migrations") {
+				try {
+					const actor = rest.join(" ").trim() || undefined;
+					const db = requireDatabase();
+					const records = await getMigrationStatus(db, actor);
+					if (records.length === 0) {
+						ctx.ui.notify(actor ? `No migrations for ${actor}` : "No migrations applied", "info");
+						return;
+					}
+					let msg = `Applied migrations (${records.length}):`;
+					for (const r of records) {
+						msg += `\n  ${r.actor} / ${r.name}  (${r.applied_at})  [${r.checksum}]`;
+					}
+					ctx.ui.notify(msg, "info");
+				} catch (err: any) {
+					ctx.ui.notify(`Error: ${err.message}`, "warning");
+				}
+				return;
+			}
+
 			if (cmd !== "status") {
-				ctx.ui.notify("Usage: /kysely [status|close <name>|close-all]", "warning");
+				ctx.ui.notify("Usage: /kysely [status|close <name>|close-all|migrations [actor]]", "warning");
 				return;
 			}
 
@@ -79,20 +128,33 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = loadKyselySettings(ctx.cwd);
+		activeDefaultDriver = settings.defaultDriver;
 		configureDefaults({
 			databaseName: settings.defaultDatabaseName,
 			sqlitePath: settings.defaultSqlitePath,
 		});
 
+		/** Build the info payload for kysely:ready and kysely:info */
+		function buildReadyPayload(): KyselyReadyPayload {
+			return {
+				databases: listDatabases().map((d) => ({
+					name: d.name,
+					driver: d.driver,
+				})),
+				defaultDatabase: getDefaultDatabaseName(),
+				defaultDriver: settings.defaultDriver,
+			};
+		}
+
 		try {
 			if (!settings.autoCreateDefault) {
 				ctx.ui.notify("kysely auto-create default is disabled by settings", "info");
-				pi.events.emit("kysely:ready", {});
+				pi.events.emit("kysely:ready", buildReadyPayload());
 				return;
 			}
 
 			if (getDatabase(settings.defaultDatabaseName)) {
-				pi.events.emit("kysely:ready", {});
+				pi.events.emit("kysely:ready", buildReadyPayload());
 				return;
 			}
 
@@ -130,7 +192,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		log("ready", { defaultDb: settings.defaultDatabaseName, driver: settings.defaultDriver });
-		pi.events.emit("kysely:ready", {});
+		pi.events.emit("kysely:ready", buildReadyPayload());
 	});
 
 	pi.on("session_shutdown", async () => {

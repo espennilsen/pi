@@ -86,9 +86,101 @@ const rows = await db.select({ table: notesTable });
 db.grant("search", notesTable, ["select"]);
 ```
 
+## Migrations
+
+pi-kysely provides a migration system so extensions can distribute portable schema changes. Two flows:
+
+### Development: Generate a migration
+
+The extension declares its desired schema. pi-kysely diffs against the live DB, applies changes, and returns the migration SQL. The extension stores it in its repo.
+
+```ts
+pi.events.emit("kysely:migration:generate", {
+  actor: "pi-calendar",
+  tables: {
+    calendar_events: {
+      columns: {
+        id:         { type: "integer", primaryKey: true, autoIncrement: true },
+        title:      { type: "text", notNull: true },
+        start_time: { type: "text", notNull: true },
+        end_time:   { type: "text", notNull: true },
+      },
+      indexes: [
+        { columns: ["start_time"], name: "idx_cal_events_start" },
+      ],
+    },
+  },
+  migrationName: "initial",
+  reply: (result) => {
+    if (result.statements.length === 0) return; // no changes
+    // result.name  = "0001_initial"
+    // result.sql   = "create table ... ;\ncreate index ...;"
+    // Write result.sql to your migrations/ directory
+    fs.writeFileSync(`migrations/${result.name}.sql`, result.sql);
+  },
+});
+```
+
+Supports `dropTables` and `dropColumns` for destructive changes:
+
+```ts
+pi.events.emit("kysely:migration:generate", {
+  actor: "pi-calendar",
+  tables: { /* current desired schema */ },
+  dropTables: ["old_unused_table"],
+  dropColumns: { calendar_events: ["legacy_field"] },
+  migrationName: "drop_legacy",
+  reply: (result) => { /* save to file */ },
+});
+```
+
+### Runtime: Apply stored migrations
+
+On startup, the extension reads its migration files and sends them to pi-kysely. Already-applied migrations are skipped (tracked by name + checksum in `_kysely_migrations` table).
+
+```ts
+import { readdirSync, readFileSync } from "node:fs";
+
+const migrationDir = new URL("../migrations", import.meta.url).pathname;
+const files = readdirSync(migrationDir).filter(f => f.endsWith(".sql")).sort();
+
+const migrations = files.map(f => ({
+  name: f.replace(/\.sql$/, ""),
+  sql: readFileSync(`${migrationDir}/${f}`, "utf-8"),
+}));
+
+pi.events.emit("kysely:migration:apply", {
+  actor: "pi-calendar",
+  migrations,
+  reply: (result) => {
+    if (!result.ok) throw new Error(result.errors.join("; "));
+    // result.applied  = ["0001_initial", "0002_add_color"]
+    // result.skipped  = [] (already applied)
+  },
+});
+```
+
+### Check migration status
+
+```ts
+pi.events.emit("kysely:migration:status", {
+  actor: "pi-calendar", // optional — omit for all actors
+  reply: (records) => {
+    // [{ id, actor, name, checksum, applied_at }]
+  },
+});
+```
+
+### Migration integrity
+
+Each migration is checksummed (SHA-256, first 16 hex chars). If a migration file is modified after being applied, `apply` reports a checksum mismatch error. Migrations are applied in sorted name order and stop on first error to prevent out-of-order execution.
+
 ## Event bus API
 
 - `kysely:ready` (emitted on session start)
+- `kysely:migration:generate`
+- `kysely:migration:apply`
+- `kysely:migration:status`
 - `kysely:grant`
 - `kysely:revoke`
 - `kysely:grants`
@@ -134,6 +226,7 @@ pi.events.on("kysely:ack", (ack) => {
 - `/kysely` or `/kysely status`: list registered DB connections
 - `/kysely close <name>`: close one DB connection
 - `/kysely close-all`: close all DB connections
+- `/kysely migrations [actor]`: list applied migrations (optionally filtered by actor)
 
 ## Security note
 

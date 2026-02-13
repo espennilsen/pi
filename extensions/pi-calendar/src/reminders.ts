@@ -8,12 +8,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { CalendarEvent } from "./types.ts";
-import {
-	getEventsWithReminders,
-	isReminderSent,
-	markReminderSent,
-	cleanOldReminders,
-} from "./db.ts";
+import { getStore } from "./store.ts";
 import { expandOccurrences } from "./recurrence.ts";
 
 // ── State ───────────────────────────────────────────────────────
@@ -43,7 +38,8 @@ export function stopReminders(): void {
 
 async function tick(): Promise<void> {
 	try {
-		const allEvents = getEventsWithReminders();
+		const store = getStore();
+		const allEvents = await store.getEventsWithReminders();
 		if (allEvents.length === 0) return;
 
 		const now = new Date();
@@ -69,9 +65,9 @@ async function tick(): Promise<void> {
 				const eventTimeKey = actualStart.toISOString();
 
 				if (now >= triggerTime && now < actualStart) {
-					if (!isReminderSent(event.id, eventTimeKey)) {
+					if (!(await store.isReminderSent(event.id, eventTimeKey))) {
 						await sendReminder(event, actualStart, override);
-						markReminderSent(event.id, eventTimeKey);
+						await store.markReminderSent(event.id, eventTimeKey);
 					}
 				}
 			}
@@ -80,7 +76,7 @@ async function tick(): Promise<void> {
 		// Clean old reminders once per hour
 		if (Date.now() - lastCleanup > 3_600_000) {
 			const cutoff = new Date(Date.now() - 7 * 86_400_000).toISOString();
-			cleanOldReminders(cutoff);
+			await store.cleanOldReminders(cutoff);
 			lastCleanup = Date.now();
 		}
 	} catch {}

@@ -74,7 +74,7 @@
 
   async function loadGroupsPage() {
     try {
-      pageGroups = await (await fetch('api/crm/groups')).json();
+      pageGroups = await safeFetchArray('/api/crm/groups');
       renderGroupsPageList(pageGroups);
       if (pageGroups.length > 0 && !currentGroupId) {
         selectGroup(pageGroups[0].id);
@@ -110,7 +110,7 @@
 
   async function loadGroupDetail(id) {
     try {
-      const members = await (await fetch(`api/crm/groups/${id}/members`)).json();
+      const members = await safeFetchArray(`/api/crm/groups/${id}/members`);
       const group = pageGroups.find(g => g.id === id);
       if (!group) return;
       renderGroupDetail(group, members);
@@ -167,7 +167,7 @@
       description: document.getElementById('createGroupDesc').value || null,
     };
     try {
-      const group = await (await fetch('api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
+      const group = await (await fetch('/api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
       closeModal('createGroupModal');
       currentGroupId = group.id;
       await loadGroupsPage();
@@ -180,7 +180,7 @@
   async function deleteGroupPage(id) {
     if (!confirm('Delete this group? Members will not be deleted.')) return;
     try {
-      await fetch(`api/crm/groups/${id}`, { method: 'DELETE' });
+      await fetch(`/api/crm/groups/${id}`, { method: 'DELETE' });
       currentGroupId = null;
       document.getElementById('groupDetailPanel').innerHTML = '<div class="empty-state"><p>Group deleted</p></div>';
       await loadGroupsPage();
@@ -193,12 +193,11 @@
 
   async function showAddMemberModal() {
     if (!currentGroupId) return;
-    const [membersRes, contactsRes] = await Promise.all([
-      fetch(`api/crm/groups/${currentGroupId}/members`),
-      fetch('api/crm/contacts?limit=1000')
+    const [members, contactsData] = await Promise.all([
+      safeFetchArray(`/api/crm/groups/${currentGroupId}/members`),
+      safeFetchArray('/api/crm/contacts?limit=1000'),
     ]);
-    const members = await membersRes.json();
-    allContacts = await contactsRes.json();
+    allContacts = contactsData;
     const memberIds = new Set(members.map(m => m.id));
     const available = allContacts.filter(c => !memberIds.has(c.id));
 
@@ -213,7 +212,7 @@
     const contactId = parseInt(document.getElementById('addMemberContact').value);
     if (!contactId || !currentGroupId) return;
     try {
-      await fetch(`api/crm/groups/${currentGroupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: contactId }) });
+      await fetch(`/api/crm/groups/${currentGroupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: contactId }) });
       closeModal('addMemberModal');
       await loadGroupDetail(currentGroupId);
     } catch (err) {
@@ -224,7 +223,7 @@
   async function removeMemberFromGroup(groupId, contactId) {
     if (!confirm('Remove this contact from the group?')) return;
     try {
-      await fetch(`api/crm/groups/${groupId}/members/${contactId}`, { method: 'DELETE' });
+      await fetch(`/api/crm/groups/${groupId}/members/${contactId}`, { method: 'DELETE' });
       await loadGroupDetail(groupId);
     } catch (err) {
       console.error('Failed to remove member:', err);

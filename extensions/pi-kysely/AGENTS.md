@@ -9,9 +9,13 @@ pi install git@github.com:espennilsen/pi-kysely.git
 ## What this package exposes to other extensions
 
 - Table-level API with RBAC
-- No DB lifecycle helpers are exported
+- Migration system: `kysely:migration:generate` / `kysely:migration:apply` / `kysely:migration:status`
 - Write operations support ack callbacks / `kysely:ack` events
 - Default DB is auto-created from `kysely` settings (sqlite by default)
+
+## Migrations
+
+Extensions generate migration SQL via `kysely:migration:generate` (diffs desired schema vs live DB), store the resulting `.sql` files in their own repo, then apply them on startup via `kysely:migration:apply`. Applied migrations are tracked in `_kysely_migrations` table with checksums. See README.md for full examples.
 
 ## Ownership + RBAC
 

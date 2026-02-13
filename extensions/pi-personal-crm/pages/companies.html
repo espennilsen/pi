@@ -117,8 +117,7 @@
   async function loadCompaniesPage(search) {
     try {
       const q = search ? `?q=${encodeURIComponent(search)}` : '';
-      const res = await fetch(`api/crm/companies${q}`);
-      allCompaniesPage = await res.json();
+      allCompaniesPage = await safeFetchArray(`/api/crm/companies${q}`);
       renderCompanyList(allCompaniesPage);
       if (allCompaniesPage.length > 0 && !currentCompanyId) {
         selectCompany(allCompaniesPage[0].id);
@@ -159,12 +158,10 @@
       const company = allCompaniesPage.find(c => c.id === id);
       if (!company) return;
 
-      const [membersRes, extFieldsRes] = await Promise.all([
-        fetch(`api/crm/contacts?company_id=${id}`),
-        fetch(`api/crm/companies/${id}/extension-fields`),
+      const [members, extensionFields] = await Promise.all([
+        safeFetchArray(`/api/crm/contacts?company_id=${id}`),
+        safeFetchArray(`/api/crm/companies/${id}/extension-fields`),
       ]);
-      const members = await membersRes.json();
-      const extensionFields = await extFieldsRes.json();
 
       const panel = document.getElementById('companyDetailPanel');
       panel.innerHTML = `
@@ -250,9 +247,9 @@
 
     try {
       if (id) {
-        await fetch(`api/crm/companies/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        await fetch(`/api/crm/companies/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       } else {
-        const res = await fetch('api/crm/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const res = await fetch('/api/crm/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         const newCo = await res.json();
         currentCompanyId = newCo.id;
       }
@@ -269,7 +266,7 @@
   async function deleteCompanyAction(id) {
     if (!confirm('Delete this company? Contacts will not be deleted.')) return;
     try {
-      await fetch(`api/crm/companies/${id}`, { method: 'DELETE' });
+      await fetch(`/api/crm/companies/${id}`, { method: 'DELETE' });
       currentCompanyId = null;
       await loadCompaniesPage();
       await loadCompanies();

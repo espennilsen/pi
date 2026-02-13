@@ -7,7 +7,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
-import * as db from "./db.ts";
+import { getStore } from "./store.ts";
 import type { CalendarEvent, RecurrenceRule } from "./types.ts";
 import { expandOccurrences } from "./recurrence.ts";
 
@@ -112,6 +112,8 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 		}),
 
 		async execute(_toolCallId, params, _signal) {
+			const store = getStore();
+
 			switch (params.action) {
 				case "list": {
 					const rangeStart =
@@ -119,7 +121,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 					const rangeEnd =
 						params.range_end ??
 						new Date(Date.now() + 7 * 86_400_000).toISOString();
-					const events = db.getEvents(rangeStart, rangeEnd);
+					const events = await store.getEvents(rangeStart, rangeEnd);
 					const expanded = expandEventsForRange(
 						events,
 						rangeStart,
@@ -145,7 +147,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 						now.getMonth(),
 						now.getDate() + 1,
 					).toISOString();
-					const events = db.getEvents(start, end);
+					const events = await store.getEvents(start, end);
 					const expanded = expandEventsForRange(events, start, end);
 					if (expanded.length === 0)
 						return text("No events today.");
@@ -161,7 +163,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 					const end = new Date(
 						Date.now() + days * 86_400_000,
 					).toISOString();
-					const events = db.getEvents(start, end);
+					const events = await store.getEvents(start, end);
 					const expanded = expandEventsForRange(events, start, end);
 					if (expanded.length === 0)
 						return text(
@@ -183,7 +185,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 
 					const rule = parseRuleParam(params.recurrence_rule);
 
-					const event = db.createEvent({
+					const event = await store.createEvent({
 						title: params.title,
 						description: params.description ?? null,
 						start_time: params.start_time,
@@ -207,7 +209,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 							? parseRuleParam(params.recurrence_rule)
 							: undefined;
 
-					const event = db.updateEvent(params.id, {
+					const event = await store.updateEvent(params.id, {
 						title: params.title,
 						description: params.description,
 						start_time: params.start_time,
@@ -227,7 +229,7 @@ export function registerCalendarTool(pi: ExtensionAPI): void {
 				case "delete": {
 					if (!params.id)
 						return text("Missing required field: id");
-					const ok = db.deleteEvent(params.id);
+					const ok = await store.deleteEvent(params.id);
 					return text(
 						ok
 							? `✓ Deleted event ${params.id}`

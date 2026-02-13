@@ -2,7 +2,7 @@
  * pi-jobs — Agent run telemetry and cost tracking extension for pi.
  *
  * Tracks every agent invocation with token usage, cost, duration, and tool call stats.
- * Stores data in a self-contained SQLite database.
+ * Stores data in a configurable database backend.
  *
  * Provides:
  *   - Auto-tracking of all agent runs via lifecycle events
@@ -12,6 +12,16 @@
  *
  * Listens for events from pi-cron, pi-heartbeat, and pi-subagent to
  * track subprocess runs as well.
+ *
+ * Database backend is configurable:
+ *   - Default: local SQLite via better-sqlite3 (db.ts)
+ *   - Optional: shared DB via pi-kysely event bus (db-kysely.ts)
+ *
+ * Settings:
+ *   "pi-jobs": {
+ *     "dbPath": "jobs/jobs.db",   // SQLite file path (sqlite backend only)
+ *     "useKysely": true           // Use pi-kysely shared DB instead of SQLite
+ *   }
  */
 
 import * as path from "node:path";
@@ -19,7 +29,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { resolveSettings } from "./settings.ts";
-import { initDb, closeDb, isDbReady, getJobsApi } from "./db.ts";
+import { closeDb } from "./db.ts";
+import { setJobsStore, isStoreReady, createSqliteStore, createKyselyStore } from "./store.ts";
 import { registerTracker } from "./tracker.ts";
 import { registerJobsTool } from "./tool.ts";
 import { mountJobsRoutes, unmountJobsRoutes } from "./web.ts";
@@ -31,21 +42,58 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = resolveSettings(ctx.cwd);
-		const agentDir = getAgentDir();
-		const dbPath = path.isAbsolute(settings.dbPath)
-			? settings.dbPath
-			: path.join(agentDir, settings.dbPath);
 
-		initDb(dbPath);
-		log("init", { dbPath });
+		if (settings.useKysely) {
+			// ── Kysely backend ──────────────────────────────────
+			// Handle both orderings: kysely may already be ready,
+			// or it may start after us. Probe first, then listen.
 
-		// Mount web routes
-		mountJobsRoutes(pi.events);
+			const initKysely = async () => {
+				if (isStoreReady()) return; // already initialized
+				try {
+					const store = await createKyselyStore(pi.events as any);
+					setJobsStore(store);
+					log("ready", { backend: "kysely" });
+					mountJobsRoutes(pi.events);
+				} catch (err: any) {
+					log("error", { backend: "kysely", error: err.message }, "ERROR");
+				}
+			};
+
+			// Listen for future kysely:ready events
+			pi.events.on("kysely:ready", initKysely);
+
+			// Probe: check if pi-kysely is already available
+			log("init", { backend: "kysely", status: "probing for kysely" });
+			let kyselyAlreadyReady = false;
+			pi.events.emit("kysely:info", {
+				reply: () => { kyselyAlreadyReady = true; },
+			});
+			if (kyselyAlreadyReady) {
+				log("init", { backend: "kysely", status: "kysely already available" });
+				await initKysely();
+			} else {
+				log("init", { backend: "kysely", status: "waiting for kysely:ready" });
+			}
+		} else {
+			// ── SQLite backend (default) ────────────────────────
+			const agentDir = getAgentDir();
+			const dbPath = path.isAbsolute(settings.dbPath)
+				? settings.dbPath
+				: path.join(agentDir, settings.dbPath);
+
+			const store = await createSqliteStore(dbPath);
+			setJobsStore(store);
+			log("init", { backend: "sqlite", dbPath });
+
+			// Mount web routes
+			mountJobsRoutes(pi.events);
+		}
 	});
 
 	// Re-mount when pi-webserver starts after us
 	pi.events.on("web:ready", () => {
-		if (!isDbReady()) return;
+		if (!isStoreReady()) return;
 		mountJobsRoutes(pi.events);
 	});
 
@@ -75,9 +123,10 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			try {
-				const api = getJobsApi();
+				const { getJobsStore } = await import("./store.ts");
+				const store = getJobsStore();
 				const channel = args?.trim() || undefined;
-				const totals = api.getTotals(channel);
+				const totals = await store.getTotals(channel);
 				const label = channel ? ` (${channel})` : "";
 				const lines = [
 					`Jobs${label}: ${totals.jobs} runs · ${totals.errors} errors`,

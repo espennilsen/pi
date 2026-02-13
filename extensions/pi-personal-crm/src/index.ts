@@ -2,10 +2,20 @@
  * pi-personal-crm — Personal CRM extension for pi.
  *
  * Registers the CRM tool, /crm-web command, and injects system prompt context.
- * Data is stored in $PI_AGENT_HOME/db/crm.db (default: ~/.pi/agent/db/crm.db).
+ * Data is stored in a configurable database backend.
  *
  * If the pi-webserver extension is installed, the CRM auto-mounts at /crm
  * on the shared web server. Otherwise, use /crm-web for a standalone server.
+ *
+ * Database backend is configurable:
+ *   - Default: local SQLite via better-sqlite3 (db.ts)
+ *   - Optional: shared DB via pi-kysely event bus (db-kysely.ts)
+ *
+ * Settings:
+ *   "pi-personal-crm": {
+ *     "dbPath": "db/crm.db",   // SQLite file path (sqlite backend only)
+ *     "useKysely": true         // Use pi-kysely shared DB instead of SQLite
+ *   }
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -14,7 +24,7 @@ import { createLogger } from "./logger.ts";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
-import { initDb, crmApi } from "./db.ts";
+import { setCrmStore, createSqliteStore, createKyselyStore, isStoreReady } from "./store.ts";
 import { registerCrmTool } from "./tool.ts";
 import {
 	startStandaloneServer,
@@ -31,12 +41,25 @@ function expandHome(p: string): string {
 	return p;
 }
 
-function getCrmDbPath(cwd: string): string {
+interface CrmSettings {
+	dbPath?: string;
+	useKysely?: boolean;
+}
+
+function getSettings(cwd: string): CrmSettings {
 	const agentDir = getAgentDir();
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, any>;
 	const project = sm.getProjectSettings() as Record<string, any>;
-	const configured = project?.["pi-personal-crm"]?.dbPath ?? global?.["pi-personal-crm"]?.dbPath;
+	return {
+		...global?.["pi-personal-crm"],
+		...project?.["pi-personal-crm"],
+	};
+}
+
+function getCrmDbPath(cwd: string, settings: CrmSettings): string {
+	const agentDir = getAgentDir();
+	const configured = settings.dbPath;
 
 	let dbPath: string;
 	if (configured) {
@@ -55,20 +78,60 @@ export default function (pi: ExtensionAPI) {
 
 	// Initialize DB on session start
 	pi.on("session_start", async (_event, ctx) => {
-		const dbPath = getCrmDbPath(ctx.cwd);
-		initDb(dbPath);
-		log("init", { dbPath });
+		const settings = getSettings(ctx.cwd);
+
+		if (settings.useKysely) {
+			// ── Kysely backend ──────────────────────────────────
+			// Handle both orderings: kysely may already be ready,
+			// or it may start after us. Probe first, then listen.
+
+			const initKysely = async () => {
+				if (isStoreReady()) return; // already initialized
+				try {
+					const store = await createKyselyStore(pi.events as any);
+					setCrmStore(store);
+					log("ready", { backend: "kysely" });
+					mountOnWebServer(pi.events);
+				} catch (err: any) {
+					log("error", { backend: "kysely", error: err.message }, "ERROR");
+				}
+			};
+
+			// Listen for future kysely:ready events
+			pi.events.on("kysely:ready", initKysely);
+
+			// Probe: check if pi-kysely is already available
+			log("init", { backend: "kysely", status: "probing for kysely" });
+			let kyselyAlreadyReady = false;
+			pi.events.emit("kysely:info", {
+				reply: () => { kyselyAlreadyReady = true; },
+			});
+			if (kyselyAlreadyReady) {
+				log("init", { backend: "kysely", status: "kysely already available" });
+				await initKysely();
+			} else {
+				log("init", { backend: "kysely", status: "waiting for kysely:ready" });
+			}
+		} else {
+			// ── SQLite backend (default) ────────────────────────
+			const dbPath = getCrmDbPath(ctx.cwd, settings);
+			const store = await createSqliteStore(dbPath);
+			setCrmStore(store);
+			log("init", { backend: "sqlite", dbPath });
+			mountOnWebServer(pi.events);
+		}
 	});
 
 	// Register the CRM tool
-	registerCrmTool(pi, () => crmApi);
+	registerCrmTool(pi);
 
 	// ── pi-webserver integration ────────────────────────────────
-	// Auto-mount on the shared web server if pi-webserver is installed.
-	// Uses the event bus so there's no hard dependency on pi-webserver.
+	// Re-mount when pi-webserver starts after us (only if store is ready).
 
 	pi.events.on("web:ready", () => {
-		mountOnWebServer(pi.events);
+		if (isStoreReady()) {
+			mountOnWebServer(pi.events);
+		}
 	});
 
 	// ── /crm-web command — standalone server ────────────────────
@@ -131,7 +194,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("crm-export", {
 		description: "Export CRM contacts as CSV to stdout",
 		handler: async (_args, ctx) => {
-			const csv = crmApi.exportContactsCsv();
+			const { getCrmStore } = await import("./store.ts");
+			const csv = await getCrmStore().exportContactsCsv();
 			const lines = csv.split("\n");
 			ctx.ui.notify(`Exported ${lines.length - 1} contacts`, "info");
 
@@ -158,8 +222,9 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			const { getCrmStore } = await import("./store.ts");
 			const csv = fs.readFileSync(filePath, "utf-8");
-			const result = crmApi.importContactsCsv(csv);
+			const result = await getCrmStore().importContactsCsv(csv);
 
 			let msg = `Created: ${result.created}, Skipped: ${result.skipped}`;
 			if (result.duplicates.length > 0) {

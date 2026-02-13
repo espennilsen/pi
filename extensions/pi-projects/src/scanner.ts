@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { getProjectsDbApi } from "./db.ts";
+import { getProjectsStore } from "./store.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,16 +32,16 @@ export interface ProjectInfo {
 }
 
 export async function scanProjects(devDir: string): Promise<ProjectInfo[]> {
-	const dbApi = getProjectsDbApi();
+	const store = getProjectsStore();
 
 	// Collect all scan directories
 	const sources: string[] = [devDir];
-	for (const src of dbApi.getProjectSources()) {
+	for (const src of await store.getProjectSources()) {
 		if (!sources.includes(src.path)) sources.push(src.path);
 	}
 
 	// Collect hidden paths
-	const hiddenSet = new Set(dbApi.getHiddenProjects().map(h => h.project_path));
+	const hiddenSet = new Set((await store.getHiddenProjects()).map(h => h.project_path));
 
 	// Scan all source dirs, dedup by resolved path
 	const seen = new Set<string>();

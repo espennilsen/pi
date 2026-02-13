@@ -28,7 +28,14 @@ import type {
 	SetCompanyExtensionFieldData,
 	ImportResult,
 } from "./types.ts";
-import { VALID_EXTENSION_FIELD_TYPES } from "./types.ts";
+import {
+	VALID_EXTENSION_FIELD_TYPES,
+	hydrateContact,
+	prepareContactFields,
+	parseLabeledValues,
+	serializeLabeledValues,
+	type LabeledValue,
+} from "./types.ts";
 import { crmRegistry } from "./registry.ts";
 
 // ── Prepared Statements (initialized in init()) ────────────────
@@ -733,26 +740,28 @@ export const crmApi: CrmApi = {
 
 	getContacts(search?: string, limit: number = 100): Contact[] {
 		if (search) {
-			return searchContactsSmart(search, limit);
+			return searchContactsSmart(search, limit).map(hydrateContact);
 		}
-		return stmts.getContacts.all(limit);
+		return (stmts.getContacts.all(limit) as Contact[]).map(hydrateContact);
 	},
 
 	getContact(id: number): Contact | null {
-		return stmts.getContactById.get(id) ?? null;
+		const row = stmts.getContactById.get(id) as Contact | undefined;
+		return row ? hydrateContact(row) : null;
 	},
 
 	getContactsByCompany(companyId: number): Contact[] {
-		return stmts.getContactsByCompany.all(companyId);
+		return (stmts.getContactsByCompany.all(companyId) as Contact[]).map(hydrateContact);
 	},
 
 	createContact(data: CreateContactData): Contact {
+		const prepared = prepareContactFields(data);
 		const result = stmts.insertContact.run(
 			data.first_name,
 			data.last_name ?? null,
 			data.nickname ?? null,
-			data.email ?? null,
-			data.phone ?? null,
+			prepared.email ?? data.email ?? null,
+			prepared.phone ?? data.phone ?? null,
 			data.company_id ?? null,
 			data.birthday ?? null,
 			data.anniversary ?? null,
@@ -776,12 +785,18 @@ export const crmApi: CrmApi = {
 		const existing = this.getContact(id);
 		if (!existing) return null;
 
+		const prepared = prepareContactFields(data);
+		// For the raw DB column, use the existing raw value (not the hydrated primary)
+		const existingRaw = stmts.getContactById.get(id) as Record<string, unknown> | undefined;
+		const existingEmailRaw = (existingRaw?.email as string) ?? null;
+		const existingPhoneRaw = (existingRaw?.phone as string) ?? null;
+
 		stmts.updateContact.run(
 			data.first_name ?? existing.first_name,
 			data.last_name ?? existing.last_name,
 			data.nickname ?? existing.nickname,
-			data.email ?? existing.email,
-			data.phone ?? existing.phone,
+			prepared.email ?? (data.email !== undefined ? data.email : existingEmailRaw),
+			prepared.phone ?? (data.phone !== undefined ? data.phone : existingPhoneRaw),
 			data.company_id !== undefined ? data.company_id : existing.company_id,
 			data.birthday !== undefined ? data.birthday : existing.birthday,
 			data.anniversary !== undefined ? data.anniversary : existing.anniversary,
@@ -976,7 +991,7 @@ export const crmApi: CrmApi = {
 	// ── Group Membership ────────────────────────────────────────
 
 	getGroupMembers(groupId: number): Contact[] {
-		return stmts.getGroupMembers.all(groupId);
+		return (stmts.getGroupMembers.all(groupId) as Contact[]).map(hydrateContact);
 	},
 
 	getContactGroups(contactId: number): Group[] {
@@ -1073,10 +1088,20 @@ export const crmApi: CrmApi = {
 	findDuplicates(data: { email?: string; first_name: string; last_name?: string }): Contact[] {
 		const found = new Map<number, Contact>();
 
-		// Check by email (strongest signal)
+		// Check by email (strongest signal) — search within JSON arrays too
 		if (data.email) {
 			const byEmail: Contact[] = stmts.findDuplicatesByEmail.all(data.email);
-			for (const c of byEmail) found.set(c.id, c);
+			for (const c of byEmail) found.set(c.id, hydrateContact(c));
+			// Also LIKE search for email inside JSON arrays
+			if (found.size === 0) {
+				const byEmailLike = db.prepare(`
+					SELECT c.*, co.name as company_name
+					FROM crm_contacts c
+					LEFT JOIN crm_companies co ON c.company_id = co.id
+					WHERE c.email LIKE ?
+				`).all(`%${data.email}%`) as Contact[];
+				for (const c of byEmailLike) found.set(c.id, hydrateContact(c));
+			}
 		}
 
 		// Check by name
@@ -1084,7 +1109,7 @@ export const crmApi: CrmApi = {
 			data.first_name,
 			data.last_name ?? "",
 		);
-		for (const c of byName) found.set(c.id, c);
+		for (const c of byName) found.set(c.id, hydrateContact(c));
 
 		return [...found.values()];
 	},
@@ -1095,6 +1120,7 @@ export const crmApi: CrmApi = {
 		const contacts = this.getContacts(undefined, 100_000);
 		const headers = [
 			"first_name", "last_name", "email", "phone",
+			"emails", "phones",
 			"company_name", "birthday", "anniversary", "tags", "notes",
 		];
 
@@ -1107,6 +1133,13 @@ export const crmApi: CrmApi = {
 			return s;
 		};
 
+		const formatLabeled = (items?: LabeledValue[]): string => {
+			if (!items || items.length === 0) return "";
+			return items
+				.map((v) => (v.label ? `${v.label}: ${v.value}` : v.value))
+				.join("; ");
+		};
+
 		const rows = [headers.join(",")];
 		for (const c of contacts) {
 			rows.push([
@@ -1114,6 +1147,8 @@ export const crmApi: CrmApi = {
 				escCsv(c.last_name),
 				escCsv(c.email),
 				escCsv(c.phone),
+				escCsv(formatLabeled(c.emails)),
+				escCsv(formatLabeled(c.phones)),
 				escCsv(c.company_name),
 				escCsv(c.birthday),
 				escCsv(c.anniversary),
@@ -1137,24 +1172,57 @@ export const crmApi: CrmApi = {
 		}
 
 		const headers = lines[0].map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+
+		// Standard field mapping (excludes email/phone — handled separately with labels)
 		const fieldMap: Record<string, string> = {
+			// Name
 			"first_name": "first_name", "firstname": "first_name", "first": "first_name",
 			"last_name": "last_name", "lastname": "last_name", "last": "last_name", "surname": "last_name",
-			"email": "email", "email_address": "email", "e-mail": "email",
-			"phone": "phone", "phone_number": "phone", "telephone": "phone", "mobile": "phone",
-			"company": "company_name", "company_name": "company_name", "organization": "company_name", "org": "company_name",
+			"nickname": "nickname", "nick": "nickname",
+
+			// Company (incl. Outlook "Company")
+			"company": "company_name", "company_name": "company_name",
+			"organization": "company_name", "org": "company_name",
+
+			// Dates
 			"birthday": "birthday", "date_of_birth": "birthday", "dob": "birthday", "birth_date": "birthday",
 			"anniversary": "anniversary",
+
+			// Tags / Notes
 			"tags": "tags", "labels": "tags", "categories": "tags",
 			"notes": "notes", "note": "notes", "description": "notes",
-			"nickname": "nickname", "nick": "nickname",
+		};
+
+		// Email columns → labeled values
+		const emailColMap: Record<string, string | undefined> = {
+			"email": undefined, "email_address": undefined, "e-mail": undefined,
+			"e-mail_address": undefined,
+			"e-mail_2_address": "Email 2", "e-mail_3_address": "Email 3",
+		};
+
+		// Phone columns → labeled values
+		const phoneColMap: Record<string, string | undefined> = {
+			"phone": undefined, "phone_number": undefined, "telephone": undefined,
+			"mobile": "Mobile", "mobile_phone": "Mobile",
+			"home_phone": "Home", "home_phone_2": "Home 2",
+			"business_phone": "Work", "business_phone_2": "Work 2",
+			"primary_phone": undefined, "car_phone": "Car", "other_phone": "Other",
 		};
 
 		// Map header indices to contact fields
 		const colMap: { index: number; field: string }[] = [];
+		const emailCols: { index: number; label?: string }[] = [];
+		const phoneCols: { index: number; label?: string }[] = [];
 		for (let i = 0; i < headers.length; i++) {
-			const mapped = fieldMap[headers[i]];
-			if (mapped) colMap.push({ index: i, field: mapped });
+			const h = headers[i];
+			const mapped = fieldMap[h];
+			if (mapped) {
+				colMap.push({ index: i, field: mapped });
+			} else if (h in emailColMap) {
+				emailCols.push({ index: i, label: emailColMap[h] });
+			} else if (h in phoneColMap) {
+				phoneCols.push({ index: i, label: phoneColMap[h] });
+			}
 		}
 
 		if (!colMap.find(c => c.field === "first_name")) {
@@ -1169,7 +1237,25 @@ export const crmApi: CrmApi = {
 			const row: Record<string, string> = {};
 			for (const { index, field } of colMap) {
 				if (index < cols.length && cols[index].trim()) {
-					row[field] = cols[index].trim();
+					if (!row[field]) {
+						row[field] = cols[index].trim();
+					}
+				}
+			}
+
+			// Collect labeled emails
+			const emails: LabeledValue[] = [];
+			for (const { index, label } of emailCols) {
+				if (index < cols.length && cols[index].trim()) {
+					emails.push({ value: cols[index].trim(), ...(label ? { label } : {}) });
+				}
+			}
+
+			// Collect labeled phones
+			const phones: LabeledValue[] = [];
+			for (const { index, label } of phoneCols) {
+				if (index < cols.length && cols[index].trim()) {
+					phones.push({ value: cols[index].trim(), ...(label ? { label } : {}) });
 				}
 			}
 
@@ -1179,9 +1265,10 @@ export const crmApi: CrmApi = {
 				continue;
 			}
 
-			// Duplicate check
+			// Duplicate check (uses primary email)
+			const primaryEmail = emails.length > 0 ? emails[0].value : undefined;
 			const dupes = this.findDuplicates({
-				email: row.email,
+				email: primaryEmail,
 				first_name: row.first_name,
 				last_name: row.last_name,
 			});
@@ -1211,8 +1298,10 @@ export const crmApi: CrmApi = {
 					first_name: row.first_name,
 					last_name: row.last_name,
 					nickname: row.nickname,
-					email: row.email,
-					phone: row.phone,
+					emails: emails.length > 0 ? emails : undefined,
+					email: emails.length === 0 ? row.email : undefined,
+					phones: phones.length > 0 ? phones : undefined,
+					phone: phones.length === 0 ? row.phone : undefined,
 					company_id,
 					birthday: row.birthday,
 					anniversary: row.anniversary,

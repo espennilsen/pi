@@ -43,6 +43,7 @@
   .td-type.epic { background: rgba(168,85,247,0.1); color: #a855f7; }
 
   .td-label { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(136,136,152,0.15); color: var(--fg2); margin-right: 3px; }
+  .td-implementer { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(124,111,240,0.12); color: var(--accent2); font-family: "SF Mono", "Fira Code", monospace; white-space: nowrap; }
 
   /* ── Toolbar ────────────────────────────────────────── */
   .td-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
@@ -357,6 +358,9 @@
       <option value="P3">P3 — Low</option>
       <option value="P4">P4 — Minimal</option>
     </select>
+    <select id="td-filter-implementer" onchange="tdUI.reload()">
+      <option value="">All implementers</option>
+    </select>
     <label style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
       <input type="checkbox" id="td-show-closed" onchange="tdUI.reload()"> Closed
     </label>
@@ -384,6 +388,7 @@
         <th class="td-sortable" onclick="tdUI.sortBy('title')">Title <span class="td-sort-icon" data-col="title"></span></th>
         <th class="td-sortable" onclick="tdUI.sortBy('status')">Status <span class="td-sort-icon" data-col="status"></span></th>
         <th>Labels</th>
+        <th class="td-sortable" onclick="tdUI.sortBy('implementer_session')">Implementer <span class="td-sort-icon" data-col="implementer_session"></span></th>
         <th>Activity</th>
         <th class="td-sortable" onclick="tdUI.sortBy('updated_at')">Updated <span class="td-sort-icon" data-col="updated_at"></span></th>
       </tr></thead>
@@ -549,15 +554,32 @@ async function fetchConfig() {
     select.innerHTML = opts;
   }
 
+  function updateImplementerFilter() {
+    var select = document.getElementById('td-filter-implementer');
+    var current = select.value;
+    var implementers = {};
+    issues.forEach(function(i) {
+      if (i.implementer_session) implementers[i.implementer_session] = true;
+    });
+    var sorted = Object.keys(implementers).sort();
+    var opts = '<option value="">All implementers</option>';
+    sorted.forEach(function(s) {
+      opts += '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(s) + '</option>';
+    });
+    select.innerHTML = opts;
+  }
+
   async function fetchIssues() {
     globalMode = crossProjectEnabled && document.getElementById('td-global-toggle').checked;
     var params = new URLSearchParams();
     var type = document.getElementById('td-filter-type').value;
     var priority = document.getElementById('td-filter-priority').value;
     var showClosed = document.getElementById('td-show-closed').checked;
+    var implementer = document.getElementById('td-filter-implementer').value;
     if (type) params.set('type', type);
     if (priority) params.set('priority', priority);
     if (showClosed) params.set('all', '1');
+    if (implementer) params.set('implementer', implementer);
 
     if (globalMode) {
       var project = document.getElementById('td-filter-project').value;
@@ -590,6 +612,8 @@ async function fetchConfig() {
       } catch(e) { issues = []; }
       globalProjects = [];
     }
+
+    updateImplementerFilter();
 
     // Show/hide project filter and project column
     document.getElementById('td-filter-project').style.display = globalMode ? '' : 'none';
@@ -768,6 +792,7 @@ async function fetchConfig() {
              i.id.toLowerCase().includes(search) ||
              (i.description || '').toLowerCase().includes(search) ||
              (i.project || '').toLowerCase().includes(search) ||
+             (i.implementer_session || '').toLowerCase().includes(search) ||
              (i.labels || []).some(function(l) { return l.toLowerCase().includes(search); });
     });
   }
@@ -911,6 +936,7 @@ async function fetchConfig() {
       html += edgeBadge;
       html += '<span class="td-tree-item-title">' + esc(node.title) + '</span>';
       html += labels;
+      if (node.implementer_session) html += '<span class="td-implementer">👤 ' + esc(node.implementer_session) + '</span>';
       html += '</div>';
 
       if (hasChildren && !collapsed) {
@@ -1019,6 +1045,7 @@ async function fetchConfig() {
     }).join('');
 
     var badges = '';
+    if (issue.implementer_session) badges += '<span class="td-implementer" title="Implementer: ' + esc(issue.implementer_session) + '">👤 ' + esc(issue.implementer_session) + '</span>';
     if (globalMode && issue.project) badges += '<span class="td-badge td-badge-project" title="Project: ' + esc(issue.project) + '">📂 ' + esc(issue.project) + '</span>';
     if (issue.log_count) badges += '<span class="td-badge td-badge-log" title="' + issue.log_count + ' log entries">📝 ' + issue.log_count + '</span>';
     if (issue.has_handoff) badges += '<span class="td-badge td-badge-handoff" title="Has handoff">🤝</span>';
@@ -1051,7 +1078,7 @@ async function fetchConfig() {
     var totalItems = items.length;
 
     if (totalItems === 0) {
-      el.innerHTML = '<tr><td colspan="' + (globalMode ? 9 : 8) + '" style="color:var(--fg3);text-align:center;padding:24px">No issues found</td></tr>';
+      el.innerHTML = '<tr><td colspan="' + (globalMode ? 10 : 9) + '" style="color:var(--fg3);text-align:center;padding:24px">No issues found</td></tr>';
       renderPagination(0);
       return;
     }
@@ -1075,6 +1102,10 @@ async function fetchConfig() {
         ? 'tdUI.showDetail(\'' + esc(i.id) + '\',\'' + esc(i.project) + '\')'
         : 'tdUI.showDetail(\'' + esc(i.id) + '\')';
 
+      var implementerCell = i.implementer_session
+        ? '<span class="td-implementer">' + esc(i.implementer_session) + '</span>'
+        : '<span style="color:var(--fg3)">—</span>';
+
       return '<tr>' +
         projectCol +
         '<td><span class="td-id" onclick="' + onclick + '">' + esc(i.id) + '</span></td>' +
@@ -1083,6 +1114,7 @@ async function fetchConfig() {
         '<td><span class="td-title">' + esc(i.title) + '</span></td>' +
         '<td><span class="td-status ' + esc(i.status) + '">' + esc(COLUMN_LABELS[i.status] || i.status) + '</span></td>' +
         '<td>' + labels + '</td>' +
+        '<td>' + implementerCell + '</td>' +
         '<td>' + (activity || '<span style="color:var(--fg3)">—</span>') + '</td>' +
         '<td>' + ago(i.updated_at) + '</td>' +
         '</tr>';
@@ -1313,6 +1345,7 @@ async function fetchConfig() {
         '<span class="td-status ' + esc(issue.status) + '">' + esc(COLUMN_LABELS[issue.status] || issue.status) + '</span>' +
         '<span class="td-priority ' + esc(issue.priority) + '">' + esc(issue.priority) + '</span>' +
         '<span class="td-type ' + esc(issue.type) + '">' + esc(issue.type) + '</span>' +
+        (issue.implementer_session ? '<span class="td-implementer" title="Implementer">👤 ' + esc(issue.implementer_session) + '</span>' : '') +
         (issue.points ? '<span style="color:var(--fg3);font-size:11px">' + issue.points + ' pts</span>' : '') +
       '</div>' +
       (issue.description ? '<div class="td-detail-section"><h4>Description</h4><div class="td-desc">' + formatDesc(issue.description) + '</div></div>' : '') +

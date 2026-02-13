@@ -61,8 +61,8 @@
   async function loadRemindersPage() {
     try {
       const filter = document.getElementById('remindersFilter').value;
-      const url = filter === 'upcoming' ? 'api/crm/reminders/upcoming?days=30' : 'api/crm/reminders';
-      allPageReminders = await (await fetch(url)).json();
+      const url = filter === 'upcoming' ? '/api/crm/reminders/upcoming?days=30' : '/api/crm/reminders';
+      allPageReminders = await safeFetchArray(url);
       renderRemindersPage(allPageReminders);
     } catch (err) {
       console.error('Failed to load reminders:', err);
@@ -121,7 +121,7 @@
       message: document.getElementById('reminderPageMessage').value || null,
     };
     try {
-      await fetch('api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      await fetch('/api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       closeModal('reminderPageModal');
       await loadRemindersPage();
     } catch (err) {
@@ -133,7 +133,7 @@
   async function deleteReminderPage(id) {
     if (!confirm('Delete this reminder?')) return;
     try {
-      await fetch(`api/crm/reminders/${id}`, { method: 'DELETE' });
+      await fetch(`/api/crm/reminders/${id}`, { method: 'DELETE' });
       await loadRemindersPage();
     } catch (err) {
       console.error('Failed to delete reminder:', err);

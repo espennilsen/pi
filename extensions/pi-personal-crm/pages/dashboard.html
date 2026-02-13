@@ -64,7 +64,7 @@
   <div class="dash-panel" style="margin-top: 20px;">
     <div class="dash-panel-header">
       <h2>👋 Needs Attention</h2>
-      <span style="font-size: 12px; color: var(--fg3);">Contacts with no interactions in 30+ days</span>
+      <span style="font-size: 12px; color: var(--fg3);">Active contacts with no interactions in 30–365 days</span>
     </div>
     <div id="dashNeglected">
       <div class="empty-state" style="padding: 20px"><p>Loading...</p></div>
@@ -87,14 +87,14 @@
   async function loadDashStats() {
     try {
       const [contacts, companies, groups, interactions, reminders] = await Promise.all([
-        fetch('api/crm/contacts?limit=10000').then(r => r.json()),
-        fetch('api/crm/companies').then(r => r.json()),
-        fetch('api/crm/groups').then(r => r.json()),
-        fetch('api/crm/interactions').then(r => r.json()),
-        fetch('api/crm/reminders').then(r => r.json()),
+        safeFetchArray('/api/crm/contacts?limit=10000'),
+        safeFetchArray('/api/crm/companies'),
+        safeFetchArray('/api/crm/groups'),
+        safeFetchArray('/api/crm/interactions'),
+        safeFetchArray('/api/crm/reminders'),
       ]);
       // Cache contacts globally for other uses
-      allContacts = contacts;
+      if (contacts.length > 0) allContacts = contacts;
       document.getElementById('statContacts').textContent = contacts.length;
       document.getElementById('statCompanies').textContent = companies.length;
       document.getElementById('statGroups').textContent = groups.length;
@@ -111,8 +111,8 @@
     const container = document.getElementById('dashUpcoming');
     try {
       const [reminders, contacts] = await Promise.all([
-        fetch('api/crm/reminders').then(r => r.json()),
-        allContacts.length ? Promise.resolve(allContacts) : fetch('api/crm/contacts?limit=5000').then(r => r.json()),
+        safeFetchArray('/api/crm/reminders'),
+        allContacts.length ? Promise.resolve(allContacts) : safeFetchArray('/api/crm/contacts?limit=5000'),
       ]);
 
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -193,7 +193,7 @@
   async function loadDashActivity() {
     const container = document.getElementById('dashActivity');
     try {
-      const interactions = await fetch('api/crm/interactions').then(r => r.json());
+      const interactions = await safeFetchArray('/api/crm/interactions');
       if (interactions.length === 0) {
         container.innerHTML = '<div class="empty-state" style="padding: 20px"><p style="color: var(--fg3)">No interactions yet</p></div>';
         return;
@@ -239,8 +239,8 @@
     const container = document.getElementById('dashNeglected');
     try {
       const [contacts, interactions] = await Promise.all([
-        allContacts.length ? Promise.resolve(allContacts) : fetch('api/crm/contacts?limit=5000').then(r => r.json()),
-        fetch('api/crm/interactions').then(r => r.json()),
+        allContacts.length ? Promise.resolve(allContacts) : safeFetchArray('/api/crm/contacts?limit=5000'),
+        safeFetchArray('/api/crm/interactions'),
       ]);
 
       // Build map: contactId → most recent interaction date
@@ -253,6 +253,7 @@
       }
 
       const thirtyDaysAgo = Date.now() - 30 * 86400000;
+      const oneYearAgo = Date.now() - 365 * 86400000;
       const neglected = contacts
         .map(c => ({
           ...c,
@@ -260,16 +261,11 @@
           daysSince: lastInteraction[c.id] ? Math.floor((Date.now() - lastInteraction[c.id]) / 86400000) : null,
         }))
         .filter(c => {
-          if (c.lastDate === null) return true; // Never contacted
-          return c.lastDate < thirtyDaysAgo;
+          if (c.lastDate === null) return false; // Skip never-contacted
+          if (c.lastDate < oneYearAgo) return false; // Skip stale (>365 days)
+          return c.lastDate < thirtyDaysAgo; // Overdue: 30–365 days
         })
-        .sort((a, b) => {
-          // Never contacted first, then longest since last contact
-          if (a.lastDate === null && b.lastDate === null) return 0;
-          if (a.lastDate === null) return -1;
-          if (b.lastDate === null) return 1;
-          return a.lastDate - b.lastDate;
-        })
+        .sort((a, b) => a.lastDate - b.lastDate)
         .slice(0, 6);
 
       if (neglected.length === 0) {
@@ -279,8 +275,8 @@
 
       container.innerHTML = `<div class="dash-neglected-grid">${neglected.map(c => {
         const initials = (c.first_name.charAt(0) + (c.last_name || '').charAt(0)).toUpperCase();
-        const label = c.daysSince === null ? 'Never contacted' : `${c.daysSince} days ago`;
-        const urgency = c.daysSince === null ? 'overdue' : c.daysSince > 60 ? 'overdue' : 'soon';
+        const label = `${c.daysSince} days ago`;
+        const urgency = c.daysSince > 60 ? 'overdue' : 'soon';
         return `
           <div class="dash-neglected-item" onclick="navigateTo('contacts'); setTimeout(() => selectContact(${c.id}), 100);">
             <div class="dash-neglected-avatar">${esc(initials)}</div>
@@ -288,7 +284,7 @@
               <div class="dash-neglected-name">${esc(c.first_name)} ${esc(c.last_name || '')}</div>
               <div class="dash-neglected-meta">${c.company_name ? esc(c.company_name) + ' · ' : ''}${label}</div>
             </div>
-            <span class="reminder-badge ${urgency}">${c.daysSince === null ? 'New' : c.daysSince + 'd'}</span>
+            <span class="reminder-badge ${urgency}">${c.daysSince + 'd'}</span>
           </div>`;
       }).join('')}</div>`;
     } catch (err) {

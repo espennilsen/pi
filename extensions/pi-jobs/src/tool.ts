@@ -5,7 +5,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
-import { getJobsApi } from "./db.ts";
+import { getJobsStore } from "./store.ts";
 
 interface JobsToolParams {
 	action: "stats" | "recent" | "cost_report" | "models" | "tools";
@@ -39,14 +39,14 @@ export function registerJobsTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, _params) {
 			const params = _params as JobsToolParams;
-			const api = getJobsApi();
+			const store = getJobsStore();
 			let result: string;
 
 			const days = periodToDays(params.period ?? "month");
 
 			switch (params.action) {
 				case "stats": {
-					const totals = api.getTotals(params.channel);
+					const totals = await store.getTotals(params.channel);
 					result = [
 						`**Job Statistics${params.channel ? ` (${params.channel})` : ""}:**`,
 						`- Total runs: ${totals.jobs}`,
@@ -60,7 +60,7 @@ export function registerJobsTool(pi: ExtensionAPI): void {
 				}
 
 				case "recent": {
-					const jobs = api.getRecentJobs(params.limit ?? 20, params.channel);
+					const jobs = await store.getRecentJobs(params.limit ?? 20, params.channel);
 					if (jobs.length === 0) {
 						result = "No jobs recorded yet.";
 					} else {
@@ -77,7 +77,7 @@ export function registerJobsTool(pi: ExtensionAPI): void {
 				}
 
 				case "cost_report": {
-					const daily = api.getDailyStats(days, params.channel);
+					const daily = await store.getDailyStats(days, params.channel);
 					if (daily.length === 0) {
 						result = "No daily stats available.";
 					} else {
@@ -101,7 +101,7 @@ export function registerJobsTool(pi: ExtensionAPI): void {
 				}
 
 				case "models": {
-					const models = api.getModelBreakdown(days);
+					const models = await store.getModelBreakdown(days);
 					if (models.length === 0) {
 						result = "No model usage data.";
 					} else {
@@ -114,7 +114,7 @@ export function registerJobsTool(pi: ExtensionAPI): void {
 				}
 
 				case "tools": {
-					const tools = api.getToolBreakdown(days);
+					const tools = await store.getToolBreakdown(days);
 					if (tools.length === 0) {
 						result = "No tool call data.";
 					} else {

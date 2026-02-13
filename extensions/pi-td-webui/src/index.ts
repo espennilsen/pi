@@ -119,6 +119,7 @@ async function handleList(pi: ExtensionAPI, req: IncomingMessage, res: ServerRes
 						parsed.handoff.uncertain?.length
 					)
 				);
+				issue.uncertain_items = parsed.handoff?.uncertain ?? [];
 				issue.last_log = parsed.logs?.length ? parsed.logs[parsed.logs.length - 1] : null;
 			}
 		} catch {

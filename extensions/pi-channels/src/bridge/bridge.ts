@@ -384,7 +384,7 @@ export class ChatBridge {
 	// ── Reply ─────────────────────────────────────────────────
 
 	private sendReply(adapter: string, recipient: string, text: string): void {
-		this.registry.send({ adapter, recipient, text, source: "bridge" });
+		this.registry.send({ adapter, recipient, text });
 	}
 }
 

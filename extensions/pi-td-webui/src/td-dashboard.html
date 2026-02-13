@@ -23,6 +23,9 @@
   <label style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
     <input type="checkbox" id="td-show-closed" onchange="tdUI.reload()"> Closed
   </label>
+  <label style="font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:4px;">
+    <input type="checkbox" id="td-show-uncertain" onchange="tdUI.filterLocal()"> Uncertain
+  </label>
   <input type="text" class="td-search" id="td-search" placeholder="Search..." oninput="tdUI.filterLocal()">
   <button class="btn-create-td" onclick="tdModal.open()">+ New Issue</button>
 </div>

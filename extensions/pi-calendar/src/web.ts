@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import * as db from "./db.ts";
+import { getStore } from "./store.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -83,13 +83,14 @@ export function mountCalendarRoutes(bus: EventBus): void {
 		handler: async (req, res, subPath) => {
 			const method = req.method ?? "GET";
 			const p = subPath.replace(/\/+$/, "") || "/";
+			const store = getStore();
 
 			try {
 				if (method === "GET" && p === "/") {
 					const url = new URL(req.url ?? "/", "http://localhost");
 					const rangeStart = url.searchParams.get("start") ?? new Date().toISOString();
 					const rangeEnd = url.searchParams.get("end") ?? new Date(Date.now() + 7 * 86_400_000).toISOString();
-					json(res, 200, db.getEvents(rangeStart, rangeEnd));
+					json(res, 200, await store.getEvents(rangeStart, rangeEnd));
 					return;
 				}
 
@@ -99,14 +100,14 @@ export function mountCalendarRoutes(bus: EventBus): void {
 						json(res, 400, { error: "title, start_time, and end_time are required" });
 						return;
 					}
-					json(res, 201, db.createEvent(data));
+					json(res, 201, await store.createEvent(data));
 					return;
 				}
 
 				if (method === "PATCH" && p === "/") {
 					const { id, ...updates } = JSON.parse(await readBody(req));
 					if (!id) { json(res, 400, { error: "id is required" }); return; }
-					const event = db.updateEvent(id, updates);
+					const event = await store.updateEvent(id, updates);
 					if (!event) { json(res, 404, { error: "Event not found" }); return; }
 					json(res, 200, event);
 					return;
@@ -115,7 +116,7 @@ export function mountCalendarRoutes(bus: EventBus): void {
 				if (method === "DELETE" && p === "/") {
 					const { id } = JSON.parse(await readBody(req));
 					if (!id) { json(res, 400, { error: "id is required" }); return; }
-					json(res, 200, { ok: db.deleteEvent(id) });
+					json(res, 200, { ok: await store.deleteEvent(id) });
 					return;
 				}
 

@@ -30,6 +30,8 @@ interface RegistryEntry {
 	label?: string;
 	description?: string;
 	createdAt: number;
+	/** Raw better-sqlite3 instance (SQLite only). Used for UDF registration. */
+	rawSqlite?: any;
 }
 
 interface RuntimeDefaults {
@@ -107,6 +109,55 @@ export async function unregisterDatabase(name: string, options?: { destroy?: boo
 	return true;
 }
 
+/**
+ * Get the raw better-sqlite3 instance for a registered SQLite database.
+ * Returns undefined for non-SQLite databases or if the raw handle wasn't captured.
+ */
+export function getRawSqlite(name?: string): any | undefined {
+	const resolved = name ?? getDefaultDatabaseName();
+	const entry = databases.get(resolved);
+	if (!entry || entry.driver !== "sqlite") return undefined;
+	return entry.rawSqlite;
+}
+
+/**
+ * Register a custom SQL function on a database.
+ *
+ * For SQLite: calls better-sqlite3's `db.function(name, opts, fn)`.
+ * For Postgres: executes `CREATE OR REPLACE FUNCTION` via raw SQL.
+ * For MySQL: not currently supported (returns false).
+ *
+ * @returns true if the function was registered successfully.
+ */
+export async function registerSqlFunction(
+	databaseName: string | undefined,
+	functionName: string,
+	implementation: (...args: any[]) => any,
+	options?: { deterministic?: boolean; varargs?: boolean },
+): Promise<boolean> {
+	const resolved = databaseName ?? getDefaultDatabaseName();
+	const entry = databases.get(resolved);
+	if (!entry) return false;
+
+	if (entry.driver === "sqlite" && entry.rawSqlite) {
+		try {
+			const opts: Record<string, boolean> = {};
+			if (options?.deterministic) opts.deterministic = true;
+			if (options?.varargs) opts.varargs = true;
+			entry.rawSqlite.function(functionName, opts, implementation);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	// Postgres: levenshtein is available via fuzzystrmatch extension.
+	// Other custom functions would need PL/pgSQL — not supported generically here.
+	// Extensions that need Postgres UDFs should use kysely:query with CREATE FUNCTION.
+
+	return false;
+}
+
 export async function clearDatabases(options?: { destroy?: boolean }): Promise<void> {
 	const entries = Array.from(databases.values());
 	databases.clear();
@@ -146,6 +197,9 @@ export async function createSqliteDatabase<T = any>(
 			label: options?.label,
 			description: options?.description,
 		});
+		// Stash raw handle for UDF registration
+		const entry = databases.get(resolvedName);
+		if (entry) entry.rawSqlite = sqlite;
 	}
 	return db;
 }

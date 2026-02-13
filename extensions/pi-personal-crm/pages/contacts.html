@@ -232,7 +232,8 @@
 
   async function loadContacts() {
     try {
-      allContacts = await (await fetch('api/crm/contacts?limit=1000')).json();
+      const data = await safeFetchArray('/api/crm/contacts?limit=1000');
+      allContacts = data;
       renderContacts(allContacts);
       if (allContacts.length > 0 && !currentContactId) {
         selectContact(allContacts[0].id);
@@ -244,13 +245,17 @@
 
   function filterContacts(query) {
     if (!query) { renderContacts(allContacts); return; }
-    const filtered = allContacts.filter(c =>
-      c.first_name.toLowerCase().includes(query) ||
-      (c.last_name && c.last_name.toLowerCase().includes(query)) ||
-      (c.email && c.email.toLowerCase().includes(query)) ||
-      (c.company_name && c.company_name.toLowerCase().includes(query)) ||
-      (c.tags && c.tags.toLowerCase().includes(query))
-    );
+    const filtered = allContacts.filter(c => {
+      if (c.first_name.toLowerCase().includes(query)) return true;
+      if (c.last_name && c.last_name.toLowerCase().includes(query)) return true;
+      if (c.email && c.email.toLowerCase().includes(query)) return true;
+      if (c.company_name && c.company_name.toLowerCase().includes(query)) return true;
+      if (c.tags && c.tags.toLowerCase().includes(query)) return true;
+      // Search across all emails/phones
+      if (c.emails && c.emails.some(e => e.value.toLowerCase().includes(query))) return true;
+      if (c.phones && c.phones.some(p => p.value.toLowerCase().includes(query))) return true;
+      return false;
+    });
     renderContacts(filtered);
   }
 
@@ -260,16 +265,18 @@
       list.innerHTML = '<div class="empty-state"><p>No contacts found</p></div>';
       return;
     }
-    list.innerHTML = contacts.map(c => `
+    list.innerHTML = contacts.map(c => {
+      const primaryEmail = c.email || (c.emails && c.emails.length > 0 ? c.emails[0].value : '');
+      return `
       <div class="contact-item ${c.id === currentContactId ? 'active' : ''}" onclick="selectContact(${c.id})">
         <div class="contact-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
         <div class="contact-meta">
-          ${c.email ? `<span>📧 ${esc(c.email)}</span>` : ''}
+          ${primaryEmail ? `<span>📧 ${esc(primaryEmail)}</span>` : ''}
           ${c.company_name ? `<span class="contact-company">@ ${esc(c.company_name)}</span>` : ''}
         </div>
         ${c.tags ? `<div class="contact-tags">${c.tags.split(',').map(t => `<span class="tag">${esc(t.trim())}</span>`).join('')}</div>` : ''}
       </div>
-    `).join('');
+    `}).join('');
   }
 
   async function selectContact(id) {
@@ -282,7 +289,16 @@
 
   async function loadContactDetail(id) {
     try {
-      const data = await (await fetch(`api/crm/contacts/${id}`)).json();
+      const res = await fetch(`/api/crm/contacts/${id}`);
+      if (!res.ok) {
+        document.getElementById('detailPanel').innerHTML = '<div class="empty-state"><p>Failed to load contact</p></div>';
+        return;
+      }
+      const data = await res.json();
+      if (data.error) {
+        document.getElementById('detailPanel').innerHTML = `<div class="empty-state"><p>${esc(data.error)}</p></div>`;
+        return;
+      }
       renderContactDetail(data);
     } catch (err) {
       console.error('Failed to load contact detail:', err);
@@ -312,10 +328,14 @@
         </div>
       </div>
 
-      ${contact.email || contact.phone || contact.birthday || contact.anniversary ? `
+      ${(contact.emails && contact.emails.length > 0) || (contact.phones && contact.phones.length > 0) || contact.email || contact.phone || contact.birthday || contact.anniversary ? `
       <div class="section">
-        ${contact.email ? `<div class="detail-field"><span class="detail-field-icon">📧</span> ${esc(contact.email)}</div>` : ''}
-        ${contact.phone ? `<div class="detail-field"><span class="detail-field-icon">📞</span> ${esc(contact.phone)}</div>` : ''}
+        ${(contact.emails && contact.emails.length > 0) ? contact.emails.map(e =>
+          `<div class="detail-field"><span class="detail-field-icon">📧</span> ${esc(e.value)}${e.label ? ` <span style="color: var(--fg3); font-size: 11px;">(${esc(e.label)})</span>` : ''}</div>`
+        ).join('') : (contact.email ? `<div class="detail-field"><span class="detail-field-icon">📧</span> ${esc(contact.email)}</div>` : '')}
+        ${(contact.phones && contact.phones.length > 0) ? contact.phones.map(p =>
+          `<div class="detail-field"><span class="detail-field-icon">📞</span> ${esc(p.value)}${p.label ? ` <span style="color: var(--fg3); font-size: 11px;">(${esc(p.label)})</span>` : ''}</div>`
+        ).join('') : (contact.phone ? `<div class="detail-field"><span class="detail-field-icon">📞</span> ${esc(contact.phone)}</div>` : '')}
         ${contact.birthday ? `<div class="detail-field"><span class="detail-field-icon">🎂</span> Birthday: ${esc(contact.birthday)}</div>` : ''}
         ${contact.anniversary ? `<div class="detail-field"><span class="detail-field-icon">💍</span> Anniversary: ${esc(contact.anniversary)}</div>` : ''}
       </div>
@@ -444,7 +464,7 @@
 
   async function loadCompanies() {
     try {
-      const companies = await (await fetch('api/crm/companies')).json();
+      const companies = await safeFetchArray('/api/crm/companies');
       document.getElementById('companies').innerHTML = companies.map(c => `<option value="${esc(c.name)}">`).join('');
     } catch (err) {
       console.error('Failed to load companies:', err);
@@ -494,17 +514,17 @@
 
     try {
       if (id) {
-        await fetch(`api/crm/contacts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        await fetch(`/api/crm/contacts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       } else {
         if (!force) {
-          const dupeRes = await fetch('api/crm/contacts/check-duplicates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name: data.first_name, last_name: data.last_name, email: data.email }) });
+          const dupeRes = await fetch('/api/crm/contacts/check-duplicates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name: data.first_name, last_name: data.last_name, email: data.email }) });
           const { duplicates } = await dupeRes.json();
           if (duplicates && duplicates.length > 0) {
             const names = duplicates.map(d => `${d.first_name} ${d.last_name || ''} (${d.email || 'no email'}, ID: ${d.id})`).join('\n  ');
             if (!confirm(`⚠️ Possible duplicate(s) found:\n  ${names}\n\nCreate anyway?`)) return;
           }
         }
-        const res = await fetch('api/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const res = await fetch('/api/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         const newContact = await res.json();
         currentContactId = newContact.id;
       }
@@ -520,7 +540,7 @@
   async function deleteContact(id) {
     if (!confirm('Delete this contact? This cannot be undone.')) return;
     try {
-      await fetch(`api/crm/contacts/${id}`, { method: 'DELETE' });
+      await fetch(`/api/crm/contacts/${id}`, { method: 'DELETE' });
       currentContactId = null;
       await loadContacts();
       document.getElementById('detailPanel').innerHTML = '<div class="empty-state"><p>Contact deleted</p></div>';
@@ -549,7 +569,7 @@
       happened_at: document.getElementById('happenedAt').value ? new Date(document.getElementById('happenedAt').value).toISOString() : null,
     };
     try {
-      await fetch('api/crm/interactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      await fetch('/api/crm/interactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       closeModal('interactionModal');
       await loadContactDetail(currentContactId);
     } catch (err) {
@@ -575,7 +595,7 @@
       message: document.getElementById('reminderMessage').value || null,
     };
     try {
-      await fetch('api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      await fetch('/api/crm/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       closeModal('reminderModal');
       await loadContactDetail(currentContactId);
     } catch (err) {
@@ -609,7 +629,7 @@
       notes: document.getElementById('relationshipNotes').value || null,
     };
     try {
-      await fetch('api/crm/relationships', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      await fetch('/api/crm/relationships', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       closeModal('relationshipModal');
       await loadContactDetail(currentContactId);
     } catch (err) {
@@ -622,7 +642,7 @@
 
   async function showGroupModal() {
     if (!currentContactId) return;
-    const [groupsRes, contactRes] = await Promise.all([fetch('api/crm/groups'), fetch(`api/crm/contacts/${currentContactId}`)]);
+    const [groupsRes, contactRes] = await Promise.all([fetch('/api/crm/groups'), fetch(`/api/crm/contacts/${currentContactId}`)]);
     allGroups = await groupsRes.json();
     const detail = await contactRes.json();
     const contactGroupIds = new Set((detail.groups || []).map(g => g.id));
@@ -655,9 +675,9 @@
   async function toggleGroup(groupId, add) {
     try {
       if (add) {
-        await fetch(`api/crm/groups/${groupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
+        await fetch(`/api/crm/groups/${groupId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
       } else {
-        await fetch(`api/crm/groups/${groupId}/members/${currentContactId}`, { method: 'DELETE' });
+        await fetch(`/api/crm/groups/${groupId}/members/${currentContactId}`, { method: 'DELETE' });
       }
       await showGroupModal();
       await loadContactDetail(currentContactId);
@@ -671,8 +691,8 @@
     const name = nameInput.value.trim();
     if (!name) return;
     try {
-      const group = await (await fetch('api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).json();
-      await fetch(`api/crm/groups/${group.id}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
+      const group = await (await fetch('/api/crm/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })).json();
+      await fetch(`/api/crm/groups/${group.id}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: currentContactId }) });
       nameInput.value = '';
       await showGroupModal();
       await loadContactDetail(currentContactId);
@@ -684,47 +704,108 @@
 
   // ── Import/Export ────────────────────────────────────────────
 
-  function exportCsv() { window.location.href = 'api/crm/contacts/export.csv'; }
+  function exportCsv() { window.location.href = '/api/crm/contacts/export.csv'; }
 
   async function importCsv(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const text = await file.text();
+    const csvText = await file.text();
     e.target.value = '';
     try {
-      const result = await (await fetch('api/crm/contacts/import', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: text })).json();
-      let msg = `Import complete:\n✅ Created: ${result.created}\n⏭ Skipped: ${result.skipped}`;
-      if (result.duplicates && result.duplicates.length > 0) {
-        msg += `\n\n⚠️ Duplicates found (skipped):`;
-        for (const d of result.duplicates) msg += `\n  Row ${d.row}: "${d.incoming}" matches "${d.existing.first_name} ${d.existing.last_name || ''}" (ID: ${d.existing.id})`;
+      const res = await fetch('/api/crm/contacts/import', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csvText });
+      const result = await res.json();
+
+      if (!res.ok || result.error) {
+        showImportResult({ created: 0, skipped: 0, duplicates: [], errors: [result.error || 'Import failed'] });
+        return;
       }
-      if (result.errors && result.errors.length > 0) msg += `\n\n❌ Errors:\n  ${result.errors.join('\n  ')}`;
-      alert(msg);
+
+      showImportResult(result);
       await loadContacts();
       await loadCompanies();
     } catch (err) {
       console.error('Failed to import CSV:', err);
-      alert('Failed to import CSV');
+      showImportResult({ created: 0, skipped: 0, duplicates: [], errors: [err.message || 'Failed to import CSV'] });
     }
+  }
+
+  function showImportResult(result) {
+    const created = result.created ?? 0;
+    const skipped = result.skipped ?? 0;
+    const duplicates = result.duplicates ?? [];
+    const errors = result.errors ?? [];
+
+    let html = `
+      <div class="import-summary">
+        <div class="import-stat">
+          <div class="import-stat-value created">${created}</div>
+          <div class="import-stat-label">Created</div>
+        </div>
+        <div class="import-stat">
+          <div class="import-stat-value skipped">${skipped}</div>
+          <div class="import-stat-label">Skipped</div>
+        </div>
+      </div>
+    `;
+
+    if (duplicates.length > 0) {
+      html += `
+        <div class="import-section">
+          <div class="import-section-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+            <span>⚠️ Duplicates (skipped)</span>
+            <span class="badge" style="background: rgba(251,191,36,0.15); color: var(--yellow);">${duplicates.length}</span>
+          </div>
+          <div class="import-section-body collapsed">
+            ${duplicates.map(d => `
+              <div class="import-row">
+                <div>Row ${d.row}: <strong>${esc(d.incoming)}</strong></div>
+                <div class="match">Matches: ${esc(d.existing?.first_name || '')} ${esc(d.existing?.last_name || '')}${d.existing?.email ? ' (' + esc(d.existing.email) + ')' : ''} — ID ${d.existing?.id || '?'}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (errors.length > 0) {
+      html += `
+        <div class="import-section">
+          <div class="import-section-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+            <span>❌ Errors</span>
+            <span class="badge" style="background: rgba(248,113,113,0.15); color: var(--red);">${errors.length}</span>
+          </div>
+          <div class="import-section-body collapsed">
+            ${errors.map(e => `<div class="import-row">${esc(e)}</div>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (created === 0 && skipped === 0 && errors.length === 0 && duplicates.length === 0) {
+      html += '<div style="text-align: center; color: var(--fg3); padding: 12px;">No contacts were processed. Check your CSV format.</div>';
+    }
+
+    document.getElementById('importResultBody').innerHTML = html;
+    showModal('importResultModal');
   }
 
   // ── Delete helpers (contact detail) ──────────────────────────
 
   async function deleteInteraction(id) {
     if (!confirm('Delete this interaction?')) return;
-    try { await fetch(`api/crm/interactions/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    try { await fetch(`/api/crm/interactions/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
     catch (err) { console.error('Failed to delete interaction:', err); }
   }
 
   async function deleteReminder(id) {
     if (!confirm('Delete this reminder?')) return;
-    try { await fetch(`api/crm/reminders/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    try { await fetch(`/api/crm/reminders/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
     catch (err) { console.error('Failed to delete reminder:', err); }
   }
 
   async function deleteRelationship(id) {
     if (!confirm('Delete this relationship?')) return;
-    try { await fetch(`api/crm/relationships/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
+    try { await fetch(`/api/crm/relationships/${id}`, { method: 'DELETE' }); await loadContactDetail(currentContactId); }
     catch (err) { console.error('Failed to delete relationship:', err); }
   }
 </script>

@@ -1,9 +1,12 @@
 /**
  * pi-kysely — Event bus wiring.
  *
- * Two core events:
- *   kysely:schema:register — DDL via Kysely schema builder (portable)
- *   kysely:query           — Raw SQL + params (simple, expressive)
+ * Core events:
+ *   kysely:schema:register    — DDL via Kysely schema builder (portable)
+ *   kysely:query              — Raw SQL + params (simple, expressive)
+ *   kysely:migration:generate — Diff schema vs DB, produce SQL, return to caller
+ *   kysely:migration:apply    — Apply stored migration files from extensions
+ *   kysely:migration:status   — Query applied migrations
  *
  * Plus RBAC grant/revoke events.
  */
@@ -24,7 +27,15 @@ import {
 	type SchemaRegistration,
 	type SchemaRegistrationResult,
 } from "./schema.ts";
-import { getDatabase, requireDatabase } from "./registry.ts";
+import {
+	generateMigration,
+	applyMigrations,
+	getMigrationStatus,
+	type MigrationGeneratePayload,
+	type MigrationApplyPayload,
+	type MigrationStatusPayload,
+} from "./migrations.ts";
+import { getDatabase, registerSqlFunction, requireDatabase } from "./registry.ts";
 
 export interface KyselyAck {
 	ok: boolean;
@@ -195,6 +206,187 @@ export function wireKyselyEvents(pi: ExtensionAPI, log: LogFn = () => {}): void 
 			pushAck(pi, {
 				ok: false, operation: "grants", timestamp: Date.now(),
 				requestId: data.requestId, error: err?.message ?? String(err),
+			}, log, data.ack);
+		}
+	});
+
+	// ── Migrations ────────────────────────────────────────────
+
+	pi.events.on("kysely:migration:generate", async (payload: unknown) => {
+		const data = payload as MigrationGeneratePayload;
+
+		try {
+			const dbName = data.database;
+			const db = dbName ? getDatabase(dbName) : requireDatabase();
+			if (!db) throw new Error(`Database "${dbName}" is not registered`);
+
+			const result = await generateMigration(db, data.actor, data.tables, {
+				dropTables: data.dropTables,
+				dropColumns: data.dropColumns,
+				migrationName: data.migrationName,
+			});
+
+			data.reply?.(result);
+
+			if (result.statements.length) {
+				log("migration-generated", {
+					actor: data.actor,
+					name: result.name,
+					statements: result.statements.length,
+				});
+			}
+
+			pushAck(pi, {
+				ok: true,
+				operation: "migration:generate",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				result,
+			}, log, data.ack);
+		} catch (err: any) {
+			data.reply?.({
+				name: "", actor: data.actor, sql: "", statements: [],
+				timestamp: Date.now(), checksum: "",
+			});
+			pushAck(pi, {
+				ok: false,
+				operation: "migration:generate",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				error: err?.message ?? String(err),
+			}, log, data.ack);
+		}
+	});
+
+	pi.events.on("kysely:migration:apply", async (payload: unknown) => {
+		const data = payload as MigrationApplyPayload;
+
+		try {
+			const dbName = data.database;
+			const db = dbName ? getDatabase(dbName) : requireDatabase();
+			if (!db) throw new Error(`Database "${dbName}" is not registered`);
+
+			const result = await applyMigrations(db, data.actor, data.migrations);
+			data.reply?.(result);
+
+			if (result.applied.length) {
+				log("migrations-applied", {
+					actor: data.actor,
+					applied: result.applied,
+				});
+			}
+
+			pushAck(pi, {
+				ok: result.ok,
+				operation: "migration:apply",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				result,
+				error: result.errors.length ? result.errors.join("; ") : undefined,
+			}, log, data.ack);
+		} catch (err: any) {
+			data.reply?.({ ok: false, applied: [], skipped: [], errors: [err.message] });
+			pushAck(pi, {
+				ok: false,
+				operation: "migration:apply",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				error: err?.message ?? String(err),
+			}, log, data.ack);
+		}
+	});
+
+	pi.events.on("kysely:migration:status", async (payload: unknown) => {
+		const data = payload as MigrationStatusPayload;
+
+		try {
+			const dbName = data.database;
+			const db = dbName ? getDatabase(dbName) : requireDatabase();
+			if (!db) throw new Error(`Database "${dbName}" is not registered`);
+
+			const records = await getMigrationStatus(db, data.actor);
+			data.reply?.(records);
+
+			pushAck(pi, {
+				ok: true,
+				operation: "migration:status",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				result: records,
+			}, log, data.ack);
+		} catch (err: any) {
+			data.reply?.([]);
+			pushAck(pi, {
+				ok: false,
+				operation: "migration:status",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				error: err?.message ?? String(err),
+			}, log, data.ack);
+		}
+	});
+
+	// ── Custom SQL functions (UDFs) ───────────────────────────
+
+	pi.events.on("kysely:function:register", async (payload: unknown) => {
+		const data = payload as {
+			actor: string;
+			database?: string;
+			functions: Array<{
+				name: string;
+				implementation: (...args: any[]) => any;
+				deterministic?: boolean;
+				varargs?: boolean;
+			}>;
+			reply?: (result: { ok: boolean; registered: string[]; errors: string[] }) => void;
+			requestId?: string;
+			ack?: (ack: KyselyAck) => void;
+		};
+
+		const result = { ok: true, registered: [] as string[], errors: [] as string[] };
+
+		try {
+			for (const fn of data.functions) {
+				const ok = await registerSqlFunction(data.database, fn.name, fn.implementation, {
+					deterministic: fn.deterministic,
+					varargs: fn.varargs,
+				});
+				if (ok) {
+					result.registered.push(fn.name);
+				} else {
+					result.errors.push(`${fn.name}: not supported on this driver or database not found`);
+				}
+			}
+
+			if (result.errors.length > 0) result.ok = false;
+			data.reply?.(result);
+
+			if (result.registered.length) {
+				log("functions-registered", { actor: data.actor, functions: result.registered });
+			}
+
+			pushAck(pi, {
+				ok: result.ok,
+				operation: "function:register",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				result,
+				error: result.errors.length ? result.errors.join("; ") : undefined,
+			}, log, data.ack);
+		} catch (err: any) {
+			data.reply?.({ ok: false, registered: [], errors: [err.message] });
+			pushAck(pi, {
+				ok: false,
+				operation: "function:register",
+				timestamp: Date.now(),
+				requestId: data.requestId,
+				actor: data.actor,
+				error: err?.message ?? String(err),
 			}, log, data.ack);
 		}
 	});

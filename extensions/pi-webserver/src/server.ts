@@ -163,39 +163,18 @@ function tokensEqual(a: string | null, b: string | null): boolean {
 }
 
 /**
- * Extract bearer token from request — checks Authorization header
- * and ?token= query parameter (for browser access).
- */
-function extractToken(req: http.IncomingMessage): string | null {
-	const header = req.headers.authorization;
-	if (header?.startsWith("Bearer ")) return header.slice(7);
-
-	// Also accept ?token= query param (for browser-facing routes)
-	try {
-		const url = new URL(req.url ?? "/", "http://localhost");
-		const qToken = url.searchParams.get("token");
-		if (qToken) return qToken;
-	} catch {}
-
-	return null;
-}
-
-/**
- * Check API token auth. Returns true if OK.
+ * Check Bearer token for /api/* paths. Returns true if OK.
  *
  * - No tokens configured → open (allow all)
  * - Full API token matches → allow all methods
  * - Read-only API token matches → allow GET/HEAD only
  * - Otherwise → 401/403
- *
- * Accepts token via:
- *   - Authorization: Bearer <token>
- *   - ?token=<token> query parameter
  */
 function checkApiAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
 	if (!apiToken && !apiReadToken) return true;
 
-	const bearer = extractToken(req);
+	const header = req.headers.authorization;
+	const bearer = header?.startsWith("Bearer ") ? header.slice(7) : null;
 	const isRead = req.method === "GET" || req.method === "HEAD";
 
 	// Full token grants everything
@@ -282,30 +261,11 @@ export function start(port: number = 4100): string {
 		}
 
 		// Auth gate (after CORS preflight so OPTIONS still works)
+		// /api/* auth is deferred to after mount matching (supports skipAuth)
+		// Everything else uses Basic auth upfront
 		const isApiPath = pathname === "/api" || pathname.startsWith("/api/");
-
-		// When apiToken is set, it protects ALL routes (not just /api/*).
-		// For /api/* paths, auth is deferred to after mount matching (supports skipAuth).
-		// For other paths, check token upfront — then fall through to Basic auth.
 		if (!isApiPath) {
-			if (apiToken || apiReadToken) {
-				// Token configured: accept Bearer header or ?token= param
-				const token = extractToken(req);
-				if (token) {
-					// Token provided — validate it
-					if (!checkApiAuth(req, res)) return;
-					// Token valid — skip Basic auth
-				} else if (authCredentials) {
-					// No token provided but Basic auth configured — try that
-					if (!checkAuth(req, res)) return;
-				} else {
-					// No token provided, no Basic auth — require token
-					if (!checkApiAuth(req, res)) return;
-				}
-			} else {
-				// No token configured — fall back to Basic auth only
-				if (!checkAuth(req, res)) return;
-			}
+			if (!checkAuth(req, res)) return;
 		}
 
 		try {

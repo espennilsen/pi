@@ -64,11 +64,12 @@ interface EventBus {
 
 async function handleProjectsPage(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
 	if (req.method !== "GET") { json(res, 405, { error: "Method not allowed" }); return; }
-	const p = subPath.replace(/\/+$/, "") || "/";
+	const qIdx = subPath.indexOf("?");
+	const p = (qIdx >= 0 ? subPath.slice(0, qIdx) : subPath).replace(/\/+$/, "") || "/";
 
-	// Forward API subpaths
+	// Forward API subpaths (preserve full subPath including query string)
 	if (p.startsWith("/api/projects")) {
-		const apiPath = p.slice("/api/projects".length) || "/";
+		const apiPath = subPath.slice("/api/projects".length) || "/";
 		return handleProjectsApi(req, res, apiPath);
 	}
 
@@ -80,7 +81,10 @@ async function handleProjectsPage(req: IncomingMessage, res: ServerResponse, sub
 
 async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
 	const method = req.method ?? "GET";
-	const p = subPath.replace(/\/+$/, "") || "/";
+	// Strip query string from subPath for route matching, parse query from req.url
+	const qIdx = subPath.indexOf("?");
+	const p = (qIdx >= 0 ? subPath.slice(0, qIdx) : subPath).replace(/\/+$/, "") || "/";
+	const reqUrl = new URL(req.url ?? "/", "http://localhost");
 
 	try {
 		const store = getProjectsStore();
@@ -94,8 +98,7 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 
 		// GET /api/projects/detail?path=... — project detail (README, td tasks, package.json info)
 		if (method === "GET" && p === "/detail") {
-			const url = new URL(req.url ?? "/", "http://localhost");
-			const projectPath = url.searchParams.get("path");
+			const projectPath = reqUrl.searchParams.get("path");
 			if (!projectPath) { json(res, 400, { error: "path query param required" }); return; }
 			if (!fs.existsSync(projectPath)) { json(res, 404, { error: "Project path not found" }); return; }
 
@@ -153,10 +156,10 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 				const isGit = fs.existsSync(path.join(projectPath, ".git"));
 				if (isGit) {
 					const logResult = await execFileAsync("git", [
-						"log", "--oneline", "--format=%h|%s|%aI|%an", "-10"
+						"log", "--format=%h%x00%s%x00%aI%x00%an", "-10"
 					], { cwd: projectPath, timeout: 5000 });
 					detail.recentCommits = logResult.stdout.trim().split("\n").filter(Boolean).map(line => {
-						const [hash, msg, date, author] = line.split("|");
+						const [hash, msg, date, author] = line.split("\0");
 						return { hash, msg, date, author };
 					});
 				}

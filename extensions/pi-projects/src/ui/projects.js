@@ -17,14 +17,16 @@ function ago(iso) {
 }
 
 // ── Projects UI ──────────────────────────────────────────────────
+// Shared project list accessible to other modules
+window._projectsList = [];
 (function () {
 	let projects = [];
 	let currentView = "cards";
 	let currentSort = "name";
 
 	async function fetchProjects() {
-		try { projects = await fetch(API).then((r) => r.json()); }
-		catch (e) { projects = []; }
+		try { projects = await fetch(API).then((r) => r.json()); window._projectsList = projects; }
+		catch (e) { projects = []; window._projectsList = []; }
 	}
 
 	function getFiltered() {
@@ -356,12 +358,6 @@ function renderMarkdown(src) {
 (function () {
 	let detail = null;
 	let currentTab = "readme";
-	let currentProject = null; // ProjectInfo from the main list
-
-	function findProject(projectPath) {
-		// Access the projects array from the main IIFE via DOM re-fetch
-		return null; // We'll pass project info through the cards data
-	}
 
 	window.projDetail = {
 		async open(projectPath) {
@@ -369,14 +365,25 @@ function renderMarkdown(src) {
 			currentTab = "readme";
 
 			// Find project in the main list to populate header immediately
+			const proj = window._projectsList.find(function (p) { return p.path === projectPath; });
+
 			const overlay = $("proj-detail-overlay");
 			overlay.classList.add("open");
 
-			// Set initial header from the path name
-			const name = projectPath.split("/").pop() || projectPath;
+			// Set initial header from the project data
+			const name = (proj && proj.name) || projectPath.split("/").pop() || projectPath;
 			$("proj-detail-name").textContent = name;
-			$("proj-detail-branch").textContent = "";
-			$("proj-detail-meta").innerHTML = '<span style="font-family:monospace;font-size:11px;">' + esc(projectPath) + "</span>";
+			$("proj-detail-branch").textContent = (proj && proj.branch) || "";
+			$("proj-detail-branch").style.display = (proj && proj.branch) ? "inline-block" : "none";
+
+			let metaHtml = '<span style="font-family:monospace;font-size:11px;">' + esc(projectPath) + "</span>";
+			if (proj && proj.is_git) {
+				if (proj.dirty_count > 0) metaHtml += '<span style="color:var(--yellow);">⚠ ' + proj.dirty_count + " uncommitted</span>";
+				else metaHtml += '<span style="color:var(--green);">✅ clean</span>';
+				if (proj.ahead > 0) metaHtml += '<span style="color:var(--blue);">↑' + proj.ahead + " ahead</span>";
+				if (proj.behind > 0) metaHtml += '<span style="color:var(--orange);">↓' + proj.behind + " behind</span>";
+			}
+			$("proj-detail-meta").innerHTML = metaHtml;
 			$("proj-detail-body").innerHTML = '<div class="proj-detail-loading"><div class="spinner"></div><p>Loading…</p></div>';
 
 			// Reset tabs
@@ -518,8 +525,9 @@ function renderMarkdown(src) {
 	$("proj-detail-overlay").addEventListener("click", function (e) { if (e.target === this) projDetail.close(); });
 	document.addEventListener("keydown", function (e) {
 		if (e.key === "Escape" && $("proj-detail-overlay").classList.contains("open")) {
-			e.stopPropagation();
+			e.preventDefault();
+			e.stopImmediatePropagation();
 			projDetail.close();
 		}
-	});
+	}, true); // capture phase so it fires before manage overlay handler
 })();

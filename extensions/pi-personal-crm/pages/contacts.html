@@ -12,6 +12,7 @@
 
   <div class="split-view">
     <div>
+      <div class="letter-bar" id="letterBar"></div>
       <div class="contact-list" id="contactList">
         <div class="empty-state">
           <p>No contacts yet</p>
@@ -259,24 +260,73 @@
     renderContacts(filtered);
   }
 
+  function sortContactsByLastName(contacts) {
+    return [...contacts].sort((a, b) => {
+      const aLast = (a.last_name || '').toLowerCase();
+      const bLast = (b.last_name || '').toLowerCase();
+      const aFirst = (a.first_name || '').toLowerCase();
+      const bFirst = (b.first_name || '').toLowerCase();
+      // Contacts without last name sort to the end
+      if (!a.last_name && b.last_name) return 1;
+      if (a.last_name && !b.last_name) return -1;
+      if (aLast !== bLast) return aLast.localeCompare(bLast);
+      return aFirst.localeCompare(bFirst);
+    });
+  }
+
+  function contactDisplayName(c) {
+    if (c.last_name) return `${c.last_name}, ${c.first_name}`;
+    return c.first_name;
+  }
+
+  function renderLetterBar(contacts) {
+    const bar = document.getElementById('letterBar');
+    if (!bar) return;
+    const letters = new Set();
+    for (const c of contacts) {
+      const ch = (c.last_name || c.first_name || '?')[0].toUpperCase();
+      letters.add(ch);
+    }
+    const sorted = [...letters].sort();
+    bar.innerHTML = sorted.map(l =>
+      `<span class="letter-jump" onclick="jumpToLetter('${l}')">${l}</span>`
+    ).join('');
+  }
+
+  function jumpToLetter(letter) {
+    const el = document.querySelector(`.letter-heading[data-letter="${letter}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function renderContacts(contacts) {
     const list = document.getElementById('contactList');
     if (contacts.length === 0) {
       list.innerHTML = '<div class="empty-state"><p>No contacts found</p></div>';
+      renderLetterBar([]);
       return;
     }
-    list.innerHTML = contacts.map(c => {
+    const sorted = sortContactsByLastName(contacts);
+    renderLetterBar(sorted);
+    let currentLetter = '';
+    let html = '';
+    for (const c of sorted) {
+      const ch = (c.last_name || c.first_name || '?')[0].toUpperCase();
+      if (ch !== currentLetter) {
+        currentLetter = ch;
+        html += `<div class="letter-heading" data-letter="${ch}">${ch}</div>`;
+      }
       const primaryEmail = c.email || (c.emails && c.emails.length > 0 ? c.emails[0].value : '');
-      return `
+      html += `
       <div class="contact-item ${c.id === currentContactId ? 'active' : ''}" onclick="selectContact(${c.id})">
-        <div class="contact-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
+        <div class="contact-name">${esc(contactDisplayName(c))}</div>
         <div class="contact-meta">
           ${primaryEmail ? `<span>📧 ${esc(primaryEmail)}</span>` : ''}
           ${c.company_name ? `<span class="contact-company">@ ${esc(c.company_name)}</span>` : ''}
         </div>
         ${c.tags ? `<div class="contact-tags">${c.tags.split(',').map(t => `<span class="tag">${esc(t.trim())}</span>`).join('')}</div>` : ''}
-      </div>
-    `}).join('');
+      </div>`;
+    }
+    list.innerHTML = html;
   }
 
   async function selectContact(id) {
@@ -612,7 +662,7 @@
     const select = document.getElementById('relatedContactId');
     select.innerHTML = allContacts
       .filter(c => c.id !== currentContactId)
-      .map(c => `<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)}</option>`)
+      .map(c => `<option value="${c.id}">${esc(contactDisplayName(c))}</option>`)
       .join('');
     if (select.options.length === 0) select.innerHTML = '<option value="" disabled>No other contacts available</option>';
     showModal('relationshipModal');

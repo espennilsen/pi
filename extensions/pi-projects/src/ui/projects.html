@@ -51,6 +51,28 @@
 		</table>
 	</div>
 
+	<!-- Detail modal -->
+	<div class="proj-detail-overlay" id="proj-detail-overlay">
+		<div class="proj-detail">
+			<div class="proj-detail-header">
+				<div class="proj-detail-title-row">
+					<h2 id="proj-detail-name"></h2>
+					<span class="proj-detail-branch-badge" id="proj-detail-branch"></span>
+				</div>
+				<div class="proj-detail-meta" id="proj-detail-meta"></div>
+				<button class="proj-detail-close" onclick="projDetail.close()">&times;</button>
+			</div>
+			<div class="proj-detail-tabs">
+				<button class="active" id="proj-tab-readme" onclick="projDetail.setTab('readme')">README</button>
+				<button id="proj-tab-tasks" onclick="projDetail.setTab('tasks')">Tasks</button>
+				<button id="proj-tab-commits" onclick="projDetail.setTab('commits')">Commits</button>
+			</div>
+			<div class="proj-detail-body" id="proj-detail-body">
+				<div class="proj-detail-loading"><div class="spinner"></div><p>Loading…</p></div>
+			</div>
+		</div>
+	</div>
+
 	<!-- Manage modal -->
 	<div class="proj-manage-overlay" id="proj-manage-overlay">
 		<div class="proj-manage">

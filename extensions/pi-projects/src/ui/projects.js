@@ -119,8 +119,9 @@ function ago(iso) {
 		if (p.ahead > 0) badges += '<span class="proj-badge ahead">↑' + p.ahead + " ahead</span>";
 		if (p.behind > 0) badges += '<span class="proj-badge behind">↓' + p.behind + " behind</span>";
 
-		return '<div class="proj-card ' + cls + '">' +
-			'<div class="proj-card-actions"><button onclick="event.stopPropagation();projManage.hide(\'' + esc(p.path).replace(/'/g, "\\'") + "'\">Hide</button></div>" +
+		const escapedPath = esc(p.path).replace(/'/g, "\\'");
+		return '<div class="proj-card ' + cls + '" onclick="projDetail.open(\'' + escapedPath + '\')" style="cursor:pointer;">' +
+			'<div class="proj-card-actions"><button onclick="event.stopPropagation();projManage.hide(\'' + escapedPath + "'\">Hide</button></div>" +
 			'<div class="proj-card-header">' +
 				'<span class="proj-card-name">' + esc(p.name) + "</span>" +
 				'<span class="proj-card-branch">' + esc(p.branch) + "</span>" +
@@ -137,8 +138,9 @@ function ago(iso) {
 	}
 
 	function renderNoGitCard(p) {
-		return '<div class="proj-card no-git">' +
-			'<div class="proj-card-actions"><button onclick="event.stopPropagation();projManage.hide(\'' + esc(p.path).replace(/'/g, "\\'") + "'\">Hide</button></div>" +
+		const escapedPath = esc(p.path).replace(/'/g, "\\'");
+		return '<div class="proj-card no-git" onclick="projDetail.open(\'' + escapedPath + '\')" style="cursor:pointer;">' +
+			'<div class="proj-card-actions"><button onclick="event.stopPropagation();projManage.hide(\'' + escapedPath + "'\">Hide</button></div>" +
 			'<div class="proj-card-header"><span class="proj-card-name">' + esc(p.name) + "</span></div>" +
 			'<div style="font-size:12px;color:var(--fg3);">No git repository</div></div>';
 	}
@@ -147,8 +149,9 @@ function ago(iso) {
 		const el = $("proj-table-body");
 		if (items.length === 0) { el.innerHTML = '<tr><td colspan="7" style="color:var(--fg3);text-align:center;padding:24px">No projects found</td></tr>'; return; }
 		el.innerHTML = items.map((p) => {
+			const escapedPath = esc(p.path).replace(/'/g, "\\'");
 			if (!p.is_git) {
-				return '<tr style="opacity:0.5"><td><span class="proj-table-name">' + esc(p.name) + '</span></td><td colspan="5" style="color:var(--fg3);font-size:12px;">No git repository</td><td></td></tr>';
+				return '<tr style="opacity:0.5;cursor:pointer;" onclick="projDetail.open(\'' + escapedPath + '\')"><td><span class="proj-table-name">' + esc(p.name) + '</span></td><td colspan="5" style="color:var(--fg3);font-size:12px;">No git repository</td><td></td></tr>';
 			}
 			const statusBadge = p.dirty_count > 0
 				? '<span class="proj-badge dirty">' + p.dirty_count + " changes</span>"
@@ -161,7 +164,7 @@ function ago(iso) {
 			if (p.ahead > 0) changes.push('<span style="color:var(--blue)">↑' + p.ahead + "</span>");
 			if (p.behind > 0) changes.push('<span style="color:var(--orange)">↓' + p.behind + "</span>");
 
-			return "<tr>" +
+			return '<tr style="cursor:pointer;" onclick="projDetail.open(\'' + escapedPath + '\')">' +
 				'<td><span class="proj-table-name">' + esc(p.name) + "</span></td>" +
 				'<td><span class="proj-card-branch">' + esc(p.branch) + "</span></td>" +
 				'<td><span class="proj-table-hash">' + esc(p.last_commit_hash) + '</span> <span style="color:var(--fg3);font-size:11px;">' + ago(p.last_commit_date) + "</span></td>" +
@@ -244,4 +247,279 @@ function ago(iso) {
 
 	$("proj-manage-overlay").addEventListener("click", function (e) { if (e.target === this) projManage.close(); });
 	document.addEventListener("keydown", function (e) { if (e.key === "Escape" && $("proj-manage-overlay").classList.contains("open")) projManage.close(); });
+})();
+
+// ── Markdown renderer (lightweight) ──────────────────────────────
+function renderMarkdown(src) {
+	if (!src) return '<div class="no-readme"><p>No README.md found</p></div>';
+
+	// Normalize line endings
+	let md = src.replace(/\r\n/g, "\n");
+
+	// Escape HTML first
+	md = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+	// Code blocks (``` ... ```)
+	md = md.replace(/```(\w*)\n([\s\S]*?)```/g, function (_, lang, code) {
+		return '<pre><code class="lang-' + lang + '">' + code.replace(/\n$/, "") + "</code></pre>";
+	});
+
+	// Inline code
+	md = md.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+
+	// Images
+	md = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">');
+
+	// Links
+	md = md.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+	// Headings
+	md = md.replace(/^#### (.+)$/gm, "<h4>$1</h4>");
+	md = md.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+	md = md.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+	md = md.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+
+	// Horizontal rule
+	md = md.replace(/^---+$/gm, "<hr>");
+
+	// Bold / italic
+	md = md.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+	md = md.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+	md = md.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+	md = md.replace(/_([^_]+)_/g, "<em>$1</em>");
+	md = md.replace(/~~([^~]+)~~/g, "<s>$1</s>");
+
+	// Blockquotes
+	md = md.replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>");
+	// Merge adjacent blockquotes
+	md = md.replace(/<\/blockquote>\n<blockquote>/g, "\n");
+
+	// Tables
+	md = md.replace(/^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm, function (_, headerRow, _sep, bodyRows) {
+		const headers = headerRow.split("|").filter(c => c.trim()).map(c => "<th>" + c.trim() + "</th>");
+		const rows = bodyRows.trim().split("\n").map(function (row) {
+			const cells = row.split("|").filter(c => c.trim()).map(c => "<td>" + c.trim() + "</td>");
+			return "<tr>" + cells.join("") + "</tr>";
+		});
+		return "<table><thead><tr>" + headers.join("") + "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
+	});
+
+	// Unordered lists
+	md = md.replace(/^([ \t]*)[*-] (.+)$/gm, function (_, indent, content) {
+		return '<li class="ul">' + content + "</li>";
+	});
+	// Ordered lists
+	md = md.replace(/^([ \t]*)\d+\. (.+)$/gm, function (_, indent, content) {
+		return '<li class="ol">' + content + "</li>";
+	});
+	// Wrap consecutive li.ul in <ul> and li.ol in <ol>
+	md = md.replace(/((?:<li class="ul">.*<\/li>\n?)+)/g, function (block) {
+		return "<ul>" + block.replace(/ class="ul"/g, "") + "</ul>";
+	});
+	md = md.replace(/((?:<li class="ol">.*<\/li>\n?)+)/g, function (block) {
+		return "<ol>" + block.replace(/ class="ol"/g, "") + "</ol>";
+	});
+
+	// Paragraphs: wrap remaining standalone text lines
+	const lines = md.split("\n");
+	const result = [];
+	let inParagraph = false;
+	const blockTags = /^<(h[1-6]|p|ul|ol|li|pre|blockquote|table|thead|tbody|tr|th|td|hr|div|img)/;
+	const closeTags = /^<\/(ul|ol|table|thead|tbody|pre|blockquote)/;
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		const trimmed = line.trim();
+
+		if (trimmed === "") {
+			if (inParagraph) { result.push("</p>"); inParagraph = false; }
+			continue;
+		}
+		if (blockTags.test(trimmed) || closeTags.test(trimmed)) {
+			if (inParagraph) { result.push("</p>"); inParagraph = false; }
+			result.push(line);
+			continue;
+		}
+		if (!inParagraph) {
+			result.push("<p>" + line);
+			inParagraph = true;
+		} else {
+			result.push(line);
+		}
+	}
+	if (inParagraph) result.push("</p>");
+
+	return result.join("\n");
+}
+
+// ── Detail modal ─────────────────────────────────────────────────
+(function () {
+	let detail = null;
+	let currentTab = "readme";
+	let currentProject = null; // ProjectInfo from the main list
+
+	function findProject(projectPath) {
+		// Access the projects array from the main IIFE via DOM re-fetch
+		return null; // We'll pass project info through the cards data
+	}
+
+	window.projDetail = {
+		async open(projectPath) {
+			detail = null;
+			currentTab = "readme";
+
+			// Find project in the main list to populate header immediately
+			const overlay = $("proj-detail-overlay");
+			overlay.classList.add("open");
+
+			// Set initial header from the path name
+			const name = projectPath.split("/").pop() || projectPath;
+			$("proj-detail-name").textContent = name;
+			$("proj-detail-branch").textContent = "";
+			$("proj-detail-meta").innerHTML = '<span style="font-family:monospace;font-size:11px;">' + esc(projectPath) + "</span>";
+			$("proj-detail-body").innerHTML = '<div class="proj-detail-loading"><div class="spinner"></div><p>Loading…</p></div>';
+
+			// Reset tabs
+			$("proj-tab-readme").classList.add("active");
+			$("proj-tab-tasks").classList.remove("active");
+			$("proj-tab-commits").classList.remove("active");
+
+			// Fetch detail
+			try {
+				const resp = await fetch(API + "/detail?path=" + encodeURIComponent(projectPath));
+				detail = await resp.json();
+			} catch (e) {
+				$("proj-detail-body").innerHTML = '<div class="no-readme"><p>Failed to load project details</p></div>';
+				return;
+			}
+
+			// Update header with richer info
+			if (detail.packageJson) {
+				const pkg = detail.packageJson;
+				let meta = '<span style="font-family:monospace;font-size:11px;">' + esc(projectPath) + "</span>";
+				if (pkg.version) meta += "<span>v" + esc(pkg.version) + "</span>";
+				if (pkg.license) meta += "<span>📄 " + esc(pkg.license) + "</span>";
+				if (pkg.dependencies > 0) meta += "<span>📦 " + pkg.dependencies + " deps</span>";
+				if (pkg.scripts && pkg.scripts.length > 0) meta += "<span>⚡ " + pkg.scripts.length + " scripts</span>";
+				$("proj-detail-meta").innerHTML = meta;
+			}
+
+			// Update task count badge on tab
+			if (detail.tasks && detail.tasks.length > 0) {
+				const openCount = detail.tasks.filter(t => t.status !== "closed").length;
+				$("proj-tab-tasks").textContent = "Tasks (" + openCount + ")";
+			} else if (detail.tasks === null) {
+				$("proj-tab-tasks").textContent = "Tasks";
+			} else {
+				$("proj-tab-tasks").textContent = "Tasks (0)";
+			}
+
+			this.renderTab();
+		},
+		close() {
+			$("proj-detail-overlay").classList.remove("open");
+			detail = null;
+		},
+		setTab(tab) {
+			currentTab = tab;
+			$("proj-tab-readme").classList.toggle("active", tab === "readme");
+			$("proj-tab-tasks").classList.toggle("active", tab === "tasks");
+			$("proj-tab-commits").classList.toggle("active", tab === "commits");
+			this.renderTab();
+		},
+		renderTab() {
+			if (!detail) return;
+			const body = $("proj-detail-body");
+
+			if (currentTab === "readme") {
+				body.innerHTML = '<div class="proj-readme">' + renderMarkdown(detail.readme) + "</div>";
+			} else if (currentTab === "tasks") {
+				body.innerHTML = renderTasks(detail.tasks);
+			} else if (currentTab === "commits") {
+				body.innerHTML = renderCommits(detail.recentCommits);
+			}
+		},
+	};
+
+	function renderTasks(tasks) {
+		if (tasks === null) {
+			return '<div class="proj-no-tasks"><p>📋 No <code>.todos</code> folder found</p><p style="margin-top:8px;font-size:12px;">Run <code>td init</code> in this project to enable task tracking.</p></div>';
+		}
+		if (tasks.length === 0) {
+			return '<div class="proj-no-tasks"><p>✅ No open tasks</p></div>';
+		}
+
+		// Summary stats
+		const open = tasks.filter(t => t.status === "open").length;
+		const inProgress = tasks.filter(t => t.status === "in_progress").length;
+		const inReview = tasks.filter(t => t.status === "in_review").length;
+		const blocked = tasks.filter(t => t.status === "blocked").length;
+		const closed = tasks.filter(t => t.status === "closed").length;
+
+		let html = '<div class="proj-tasks-summary">';
+		if (open > 0) html += '<div class="proj-tasks-stat open"><span class="num">' + open + '</span> open</div>';
+		if (inProgress > 0) html += '<div class="proj-tasks-stat progress"><span class="num">' + inProgress + '</span> in progress</div>';
+		if (inReview > 0) html += '<div class="proj-tasks-stat review"><span class="num">' + inReview + '</span> in review</div>';
+		if (blocked > 0) html += '<div class="proj-tasks-stat" style="color:var(--red)"><span class="num">' + blocked + '</span> blocked</div>';
+		if (closed > 0) html += '<div class="proj-tasks-stat closed"><span class="num">' + closed + '</span> closed</div>';
+		html += "</div>";
+
+		// Group: epics first, then by status
+		const statusOrder = ["in_progress", "blocked", "in_review", "open", "closed"];
+		const sorted = tasks.slice().sort(function (a, b) {
+			// Epics first
+			if (a.type === "epic" && b.type !== "epic") return -1;
+			if (a.type !== "epic" && b.type === "epic") return 1;
+			const ai = statusOrder.indexOf(a.status);
+			const bi = statusOrder.indexOf(b.status);
+			return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+		});
+
+		html += '<div class="proj-task-list">';
+		for (const task of sorted) {
+			const statusCls = task.status.replace(/\s+/g, "_");
+			const statusLabel = task.status.replace(/_/g, " ");
+			html += '<div class="proj-task-item">';
+			html += '<span class="proj-task-status ' + statusCls + '">' + esc(statusLabel) + "</span>";
+			html += '<div class="proj-task-info">';
+			html += '<div class="proj-task-title">' + esc(task.title) + "</div>";
+			html += '<div class="proj-task-meta">';
+			html += '<span class="proj-task-type">' + esc(task.type || "task") + "</span>";
+			if (task.priority) html += '<span class="proj-task-priority ' + esc(task.priority) + '">' + esc(task.priority) + "</span>";
+			if (task.labels && task.labels.length > 0) {
+				for (const label of task.labels) {
+					html += '<span class="proj-task-label">' + esc(label) + "</span>";
+				}
+			}
+			html += '<span style="color:var(--fg3)">' + esc(task.id) + "</span>";
+			html += "</div></div></div>";
+		}
+		html += "</div>";
+		return html;
+	}
+
+	function renderCommits(commits) {
+		if (!commits || commits.length === 0) {
+			return '<div class="proj-no-tasks"><p>No commit history available</p></div>';
+		}
+		let html = '<div class="proj-commit-list">';
+		for (const c of commits) {
+			html += '<div class="proj-commit-item">';
+			html += '<span class="proj-commit-hash">' + esc(c.hash) + "</span>";
+			html += '<span class="proj-commit-msg">' + esc(c.msg) + "</span>";
+			html += '<span class="proj-commit-author">' + esc(c.author) + "</span>";
+			html += '<span class="proj-commit-date">' + ago(c.date) + "</span>";
+			html += "</div>";
+		}
+		html += "</div>";
+		return html;
+	}
+
+	$("proj-detail-overlay").addEventListener("click", function (e) { if (e.target === this) projDetail.close(); });
+	document.addEventListener("keydown", function (e) {
+		if (e.key === "Escape" && $("proj-detail-overlay").classList.contains("open")) {
+			e.stopPropagation();
+			projDetail.close();
+		}
+	});
 })();

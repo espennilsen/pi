@@ -104,3 +104,86 @@ body { background: var(--bg); color: var(--fg); font-family: -apple-system, Blin
 .proj-loading .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-bottom: 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .proj-empty { text-align: center; padding: 40px 20px; color: var(--fg3); }
+
+/* ── Detail modal ───────────────────────────────────────────── */
+.proj-detail-overlay { display: none; position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.65); backdrop-filter: blur(6px); justify-content: center; align-items: center; }
+.proj-detail-overlay.open { display: flex; }
+.proj-detail { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; width: 900px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0,0,0,0.5); overflow: hidden; }
+
+.proj-detail-header { padding: 20px 24px 12px; border-bottom: 1px solid var(--border); position: relative; }
+.proj-detail-title-row { display: flex; align-items: center; gap: 12px; }
+.proj-detail-header h2 { font-size: 20px; font-weight: 700; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-detail-branch-badge { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; padding: 3px 10px; border-radius: 5px; background: rgba(124,111,240,0.12); color: var(--accent2); white-space: nowrap; }
+.proj-detail-meta { font-size: 12px; color: var(--fg3); margin-top: 6px; display: flex; gap: 16px; flex-wrap: wrap; }
+.proj-detail-meta span { display: flex; align-items: center; gap: 4px; }
+.proj-detail-close { position: absolute; top: 16px; right: 16px; background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--fg3); font-size: 18px; width: 32px; height: 32px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.proj-detail-close:hover { color: var(--fg); border-color: var(--fg3); }
+
+.proj-detail-tabs { display: flex; gap: 2px; padding: 0 24px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+.proj-detail-tabs button { padding: 10px 16px; border: none; background: transparent; color: var(--fg3); font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; font-family: inherit; }
+.proj-detail-tabs button:hover { color: var(--fg2); }
+.proj-detail-tabs button.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+.proj-detail-body { flex: 1; overflow-y: auto; padding: 20px 24px; min-height: 300px; }
+.proj-detail-loading { text-align: center; padding: 60px 20px; color: var(--fg3); }
+
+/* Readme rendering */
+.proj-readme { line-height: 1.7; color: var(--fg); }
+.proj-readme h1 { font-size: 22px; font-weight: 700; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.proj-readme h2 { font-size: 18px; font-weight: 600; margin: 24px 0 8px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(42,42,58,0.5); }
+.proj-readme h3 { font-size: 15px; font-weight: 600; margin: 20px 0 6px 0; }
+.proj-readme h4 { font-size: 14px; font-weight: 600; margin: 16px 0 4px 0; color: var(--fg2); }
+.proj-readme p { margin: 8px 0; }
+.proj-readme ul, .proj-readme ol { margin: 8px 0; padding-left: 24px; }
+.proj-readme li { margin: 3px 0; }
+.proj-readme code { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; background: var(--bg3); padding: 2px 6px; border-radius: 4px; color: var(--accent2); }
+.proj-readme pre { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0; }
+.proj-readme pre code { background: none; padding: 0; color: var(--fg2); font-size: 12px; }
+.proj-readme blockquote { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 12px 0; color: var(--fg2); background: rgba(124,111,240,0.05); border-radius: 0 6px 6px 0; }
+.proj-readme a { color: var(--accent2); text-decoration: none; }
+.proj-readme a:hover { text-decoration: underline; }
+.proj-readme table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+.proj-readme th, .proj-readme td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; font-size: 13px; }
+.proj-readme th { background: var(--bg2); font-weight: 600; }
+.proj-readme hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.proj-readme img { max-width: 100%; border-radius: 6px; }
+.proj-readme .no-readme { text-align: center; padding: 40px 20px; color: var(--fg3); }
+
+/* Tasks tab */
+.proj-tasks-summary { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.proj-tasks-stat { font-size: 13px; padding: 6px 12px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); }
+.proj-tasks-stat .num { font-weight: 700; margin-right: 4px; }
+.proj-tasks-stat.open .num { color: var(--blue); }
+.proj-tasks-stat.progress .num { color: var(--yellow); }
+.proj-tasks-stat.review .num { color: var(--purple); }
+.proj-tasks-stat.closed .num { color: var(--green); }
+
+.proj-task-list { display: flex; flex-direction: column; gap: 6px; }
+.proj-task-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; transition: border-color 0.15s; }
+.proj-task-item:hover { border-color: rgba(124,111,240,0.3); }
+.proj-task-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; white-space: nowrap; margin-top: 1px; }
+.proj-task-status.open { background: rgba(96,165,250,0.12); color: var(--blue); }
+.proj-task-status.in_progress { background: rgba(251,191,36,0.12); color: var(--yellow); }
+.proj-task-status.in_review { background: rgba(168,85,247,0.12); color: var(--purple); }
+.proj-task-status.closed { background: rgba(74,222,128,0.12); color: var(--green); }
+.proj-task-status.blocked { background: rgba(248,113,113,0.12); color: var(--red); }
+.proj-task-info { flex: 1; min-width: 0; }
+.proj-task-title { font-size: 13px; font-weight: 500; }
+.proj-task-meta { font-size: 11px; color: var(--fg3); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
+.proj-task-type { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--bg3); color: var(--fg2); }
+.proj-task-priority { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.proj-task-priority.P0 { background: rgba(248,113,113,0.2); color: var(--red); }
+.proj-task-priority.P1 { background: rgba(251,146,60,0.15); color: var(--orange); }
+.proj-task-priority.P2 { background: rgba(251,191,36,0.12); color: var(--yellow); }
+.proj-task-priority.P3 { background: rgba(136,136,152,0.12); color: var(--fg3); }
+.proj-task-label { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(124,111,240,0.1); color: var(--accent2); }
+.proj-no-tasks { text-align: center; padding: 40px 20px; color: var(--fg3); font-size: 13px; }
+
+/* Commits tab */
+.proj-commit-list { display: flex; flex-direction: column; gap: 0; }
+.proj-commit-item { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(136,136,152,0.08); }
+.proj-commit-item:last-child { border-bottom: none; }
+.proj-commit-hash { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; color: var(--accent); min-width: 60px; }
+.proj-commit-msg { font-size: 13px; color: var(--fg); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-commit-author { font-size: 11px; color: var(--fg3); white-space: nowrap; }
+.proj-commit-date { font-size: 11px; color: var(--fg3); white-space: nowrap; min-width: 60px; text-align: right; }

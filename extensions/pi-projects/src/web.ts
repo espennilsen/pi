@@ -8,9 +8,13 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { scanProjects } from "./scanner.ts";
 import { getProjectsStore } from "./store.ts";
+
+const execFileAsync = promisify(execFile);
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -85,6 +89,80 @@ async function handleProjectsApi(req: IncomingMessage, res: ServerResponse, subP
 		if (method === "GET" && p === "/") {
 			const projects = await scanProjects(devDir);
 			json(res, 200, projects);
+			return;
+		}
+
+		// GET /api/projects/detail?path=... — project detail (README, td tasks, package.json info)
+		if (method === "GET" && p === "/detail") {
+			const url = new URL(req.url ?? "/", "http://localhost");
+			const projectPath = url.searchParams.get("path");
+			if (!projectPath) { json(res, 400, { error: "path query param required" }); return; }
+			if (!fs.existsSync(projectPath)) { json(res, 404, { error: "Project path not found" }); return; }
+
+			const detail: Record<string, any> = { path: projectPath };
+
+			// Read README.md (case-insensitive search)
+			try {
+				const entries = fs.readdirSync(projectPath);
+				const readmeFile = entries.find(e => /^readme\.md$/i.test(e));
+				if (readmeFile) {
+					const readmePath = path.join(projectPath, readmeFile);
+					const content = fs.readFileSync(readmePath, "utf-8");
+					// Truncate very large readmes for the UI
+					detail.readme = content.length > 50000 ? content.slice(0, 50000) + "\n\n...(truncated)" : content;
+				} else {
+					detail.readme = null;
+				}
+			} catch { detail.readme = null; }
+
+			// Read package.json for description, scripts, dependencies
+			try {
+				const pkgPath = path.join(projectPath, "package.json");
+				if (fs.existsSync(pkgPath)) {
+					const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+					detail.packageJson = {
+						name: pkg.name,
+						version: pkg.version,
+						description: pkg.description,
+						license: pkg.license,
+						scripts: pkg.scripts ? Object.keys(pkg.scripts) : [],
+						dependencies: pkg.dependencies ? Object.keys(pkg.dependencies).length : 0,
+						devDependencies: pkg.devDependencies ? Object.keys(pkg.devDependencies).length : 0,
+					};
+				}
+			} catch { /* ignore */ }
+
+			// Get td tasks if .todos folder exists
+			try {
+				const todosDir = path.join(projectPath, ".todos");
+				if (fs.existsSync(todosDir) && fs.statSync(todosDir).isDirectory()) {
+					const result = await execFileAsync("td", ["list", "--json", "--limit", "50"], {
+						cwd: projectPath,
+						timeout: 10000,
+					});
+					detail.tasks = JSON.parse(result.stdout);
+				} else {
+					detail.tasks = null;
+				}
+			} catch {
+				detail.tasks = null;
+			}
+
+			// Get recent git log (last 10 commits)
+			try {
+				const isGit = fs.existsSync(path.join(projectPath, ".git"));
+				if (isGit) {
+					const logResult = await execFileAsync("git", [
+						"log", "--oneline", "--format=%h|%s|%aI|%an", "-10"
+					], { cwd: projectPath, timeout: 5000 });
+					detail.recentCommits = logResult.stdout.trim().split("\n").filter(Boolean).map(line => {
+						const [hash, msg, date, author] = line.split("|");
+						return { hash, msg, date, author };
+					});
+				}
+			} catch { /* ignore */ }
+
+			json(res, 200, detail);
 			return;
 		}
 

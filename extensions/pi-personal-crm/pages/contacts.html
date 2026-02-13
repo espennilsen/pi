@@ -282,14 +282,14 @@
   function renderLetterBar(contacts) {
     const bar = document.getElementById('letterBar');
     if (!bar) return;
-    const letters = new Set();
+    const active = new Set();
     for (const c of contacts) {
       const ch = (c.last_name || c.first_name || '?')[0].toUpperCase();
-      letters.add(ch);
+      if (/[A-Z]/.test(ch)) active.add(ch);
     }
-    const sorted = [...letters].sort();
-    bar.innerHTML = sorted.map(l =>
-      `<span class="letter-jump" onclick="jumpToLetter('${l}')">${l}</span>`
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    bar.innerHTML = [...alphabet].map(l =>
+      `<span class="letter-jump${active.has(l) ? '' : ' disabled'}" ${active.has(l) ? `onclick="jumpToLetter('${l}')"` : ''}>${l}</span>`
     ).join('');
   }
 

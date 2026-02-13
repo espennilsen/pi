@@ -38,7 +38,8 @@
   /* ── Contact List ───────────────────────────────────── */
   .letter-bar { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 8px 6px; background: var(--bg2); border: 1px solid var(--border); border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; }
   .letter-jump { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; font-size: 11px; font-weight: 700; color: var(--fg3); cursor: pointer; border-radius: 4px; transition: all 0.15s; }
-  .letter-jump:hover { background: var(--accent); color: #fff; }
+  .letter-jump:hover:not(.disabled) { background: var(--accent); color: #fff; }
+  .letter-jump.disabled { opacity: 0.25; cursor: default; }
   .letter-heading { position: sticky; top: 0; padding: 6px 16px; font-size: 12px; font-weight: 700; color: var(--accent); background: var(--bg1); border-bottom: 1px solid var(--border); letter-spacing: 0.5px; z-index: 1; }
   .contact-list { background: var(--bg2); border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; max-height: calc(100vh - 220px); overflow-y: auto; }
   .contact-item { padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }

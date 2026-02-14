@@ -10,6 +10,7 @@
  *   - /gh-pr-review    — Show PR review feedback
  *   - /gh-pr-fix       — Fix PR review feedback (fetches threads, sends to agent)
  *   - /gh-pr-resolve   — Resolve threads on GitHub after fixing
+ *   - /gh-pr-merge     — Merge PR, delete remote/local branch, pull base
  *   - /gh-actions      — List recent workflow runs
  *
  * All commands also available as /github-* variants.
@@ -19,6 +20,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerCommands, setSessionCwd } from "./commands.ts";
 import { registerPrFixCommand, resetPendingThreads } from "./pr-fix.ts";
+import { registerPrMergeCommand } from "./pr-merge.ts";
 import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -29,6 +31,7 @@ export default function (pi: ExtensionAPI) {
 
 	registerCommands(pi, log);
 	registerPrFixCommand(pi, log, () => cwd);
+	registerPrMergeCommand(pi, log, () => cwd);
 
 	// ── Lifecycle ─────────────────────────────────────────────
 

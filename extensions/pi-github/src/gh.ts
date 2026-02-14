@@ -68,6 +68,19 @@ export async function getRepoSlug(cwd?: string): Promise<string | null> {
 	return result.ok ? result.stdout : null;
 }
 
+/** Run a git command and return { ok, stdout, stderr }. */
+export function gitExec(args: string[], cwd: string, timeoutMs = 15_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+	return new Promise((resolve) => {
+		execFile("git", args, { cwd, timeout: timeoutMs }, (err, stdout, stderr) => {
+			resolve({
+				ok: !err,
+				stdout: stdout?.trim() ?? "",
+				stderr: stderr?.trim() ?? "",
+			});
+		});
+	});
+}
+
 /** Get the current git branch name. */
 export async function getCurrentBranch(cwd?: string): Promise<string | null> {
 	return new Promise((resolve) => {

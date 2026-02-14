@@ -19,6 +19,14 @@ export interface RunnerOpts {
 	model?: string;
 	provider?: string;
 	tools?: string;
+	/** Disable all built-in tools (--no-tools) */
+	noTools?: boolean;
+	/** Skill files/dirs to load via --skill */
+	skills?: string[];
+	/** Disable skill discovery (--no-skills / -ns) */
+	noSkills?: boolean;
+	/** Thinking level: off, minimal, low, medium, high, xhigh */
+	thinking?: string;
 	systemPrompt?: string;
 	signal?: AbortSignal;
 	timeoutMs?: number;
@@ -26,9 +34,8 @@ export interface RunnerOpts {
 	onMessage?: (msg: any) => void;
 	/**
 	 * Extension paths to load via -e flags.
-	 * When provided (even if empty), --no-extensions (-ne) is always added
-	 * to prevent subagents from loading all extensions (including pi-subagent).
-	 * Default: undefined (adds -ne with no -e flags — tools-only subagent).
+	 * Always runs with --no-extensions (-ne) to prevent subagents
+	 * from loading all extensions (including pi-subagent).
 	 */
 	extensions?: string[];
 }
@@ -63,7 +70,15 @@ export async function runIsolatedAgent(
 
 	if (opts.model) args.push("--model", opts.model);
 	if (opts.provider) args.push("--provider", opts.provider);
-	if (opts.tools) args.push("--tools", opts.tools);
+	if (opts.noTools) args.push("--no-tools");
+	else if (opts.tools) args.push("--tools", opts.tools);
+	if (opts.noSkills) args.push("-ns");
+	if (opts.skills?.length) {
+		for (const skill of opts.skills) {
+			args.push("--skill", skill);
+		}
+	}
+	if (opts.thinking) args.push("--thinking", opts.thinking);
 
 	let tmpDir: string | null = null;
 	let tmpPath: string | null = null;

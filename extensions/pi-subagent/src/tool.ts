@@ -158,6 +158,16 @@ function isBlocked(ext: string, blocklist: Set<string>): boolean {
 	return ALWAYS_BLOCKED.has(name) || blocklist.has(name);
 }
 
+/** Overrides from the tool call params */
+interface CallSiteOpts {
+	extensions?: string[];
+	skills?: string[];
+	thinking?: string;
+	model?: string;
+	noTools?: boolean;
+	noSkills?: boolean;
+}
+
 async function runAgent(
 	defaultCwd: string,
 	agents: AgentConfig[],
@@ -173,8 +183,7 @@ async function runAgent(
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 	allResults?: SingleResult[],
 	resultIndex?: number,
-	/** Extensions requested at the call site (from tool params) */
-	callSiteExtensions?: string[],
+	callSite?: CallSiteOpts,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
@@ -226,15 +235,22 @@ async function runAgent(
 	const mergedExtensions = [...new Set([
 		...settings.extensions,
 		...(agent.extensions ?? []),
-		...(callSiteExtensions ?? []),
+		...(callSite?.extensions ?? []),
 	])].filter(ext => !isBlocked(ext, blocklist));
+
+	// Model priority: call-site > agent config > global settings
+	const model = callSite?.model ?? agent.model ?? settings.model ?? undefined;
 
 	const isolated = await runIsolatedAgent({
 		prompt: `Task: ${task}`,
 		cwd: cwd ?? defaultCwd,
-		model: agent.model ?? settings.model ?? undefined,
-		tools: agent.tools?.length ? agent.tools.join(",") : undefined,
+		model,
+		tools: callSite?.noTools ? undefined : (agent.tools?.length ? agent.tools.join(",") : undefined),
+		noTools: callSite?.noTools,
 		extensions: mergedExtensions,
+		skills: callSite?.skills,
+		noSkills: callSite?.noSkills,
+		thinking: callSite?.thinking,
 		systemPrompt: agent.systemPrompt.trim() || undefined,
 		signal,
 		timeoutMs: settings.timeoutMs,
@@ -324,7 +340,20 @@ async function runAgent(
 // ── Tool Parameters ─────────────────────────────────────────────
 
 const ExtensionsSchema = Type.Optional(Type.Array(Type.String(), {
-	description: "Extension paths to load in the subagent (e.g. ['extensions/pi-brave-search']). Subagents run with -ne by default — only listed extensions are loaded. Merged with per-agent and global extensions.",
+	description: "Extension paths to load in the subagent (e.g. ['extensions/pi-brave-search']). Subagents run with -ne by default — only listed extensions are loaded.",
+}));
+
+const SkillsSchema = Type.Optional(Type.Array(Type.String(), {
+	description: "Skill files or directories to load via --skill.",
+}));
+
+const ThinkingSchema = Type.Optional(StringEnum(
+	["off", "minimal", "low", "medium", "high", "xhigh"] as const,
+	{ description: "Thinking level for the subagent." },
+));
+
+const ModelSchema = Type.Optional(Type.String({
+	description: "Model override for this specific task (e.g. 'claude-haiku-4-5', 'openai/gpt-4o'). Overrides agent and global defaults.",
 }));
 
 const TaskItem = Type.Object({
@@ -332,6 +361,11 @@ const TaskItem = Type.Object({
 	task: Type.String({ description: "Task description" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override" })),
 	extensions: ExtensionsSchema,
+	skills: SkillsSchema,
+	thinking: ThinkingSchema,
+	model: ModelSchema,
+	noTools: Type.Optional(Type.Boolean({ description: "Disable all built-in tools (--no-tools)" })),
+	noSkills: Type.Optional(Type.Boolean({ description: "Disable skill discovery (-ns)" })),
 });
 
 const ChainItem = Type.Object({
@@ -339,6 +373,11 @@ const ChainItem = Type.Object({
 	task: Type.String({ description: "Task description. Use {previous} to inject output from the prior step." }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override" })),
 	extensions: ExtensionsSchema,
+	skills: SkillsSchema,
+	thinking: ThinkingSchema,
+	model: ModelSchema,
+	noTools: Type.Optional(Type.Boolean({ description: "Disable all built-in tools (--no-tools)" })),
+	noSkills: Type.Optional(Type.Boolean({ description: "Disable skill discovery (-ns)" })),
 });
 
 const SubagentParams = Type.Object({
@@ -351,6 +390,11 @@ const SubagentParams = Type.Object({
 		default: "user",
 	})),
 	extensions: ExtensionsSchema,
+	skills: SkillsSchema,
+	thinking: ThinkingSchema,
+	model: ModelSchema,
+	noTools: Type.Optional(Type.Boolean({ description: "Disable all built-in tools (--no-tools)" })),
+	noSkills: Type.Optional(Type.Boolean({ description: "Disable skill discovery (-ns)" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory (single mode)" })),
 });
 
@@ -447,7 +491,14 @@ export function registerSubagentTool(
 						signal, settings, pi.events, log,
 						chainUpdate, makeDetails("chain"),
 						undefined, undefined,
-						[...(params.extensions ?? []), ...(step.extensions ?? [])],
+						{
+							extensions: [...(params.extensions ?? []), ...(step.extensions ?? [])],
+							skills: [...(params.skills ?? []), ...(step.skills ?? [])],
+							thinking: step.thinking ?? params.thinking,
+							model: step.model ?? params.model,
+							noTools: step.noTools ?? params.noTools,
+							noSkills: step.noSkills ?? params.noSkills,
+						},
 					);
 					results.push(r);
 
@@ -517,7 +568,14 @@ export function registerSubagentTool(
 							makeDetails("parallel"),
 							allResults,
 							index,
-							[...(params.extensions ?? []), ...(t.extensions ?? [])],
+							{
+								extensions: [...(params.extensions ?? []), ...(t.extensions ?? [])],
+								skills: [...(params.skills ?? []), ...(t.skills ?? [])],
+								thinking: t.thinking ?? params.thinking,
+								model: t.model ?? params.model,
+								noTools: t.noTools ?? params.noTools,
+								noSkills: t.noSkills ?? params.noSkills,
+							},
 						);
 						allResults[index] = result;
 						emitParallelUpdate();
@@ -545,7 +603,14 @@ export function registerSubagentTool(
 					signal, settings, pi.events, log,
 					onUpdate, makeDetails("single"),
 					undefined, undefined,
-					params.extensions,
+					{
+						extensions: params.extensions,
+						skills: params.skills,
+						thinking: params.thinking,
+						model: params.model,
+						noTools: params.noTools,
+						noSkills: params.noSkills,
+					},
 				);
 
 				const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";

@@ -1,16 +1,19 @@
 /**
  * pi-heartbeat — Core heartbeat runner.
  *
- * Periodically runs a health-check prompt as an isolated subprocess.
+ * Periodically runs a health-check prompt as an isolated RPC subprocess.
  * If the agent responds with HEARTBEAT_OK, the result is suppressed.
  * Otherwise, the alert is delivered via pi-channels event bus.
  *
- * Spawns `pi -p --no-session` subprocesses (same pattern as pi-cron/pi-subagent).
+ * Spawns `pi --mode rpc` subprocesses — sends a prompt command via stdin,
+ * collects the response from streamed events, then exits gracefully.
  */
 
 import { spawn } from "node:child_process";
+import * as readline from "node:readline";
 import type { HeartbeatSettings } from "./settings.ts";
 import { buildPrompt, readHeartbeatMd, isEffectivelyEmpty } from "./prompt.ts";
+import { isStoreReady, getStore } from "./store.ts";
 
 const HEARTBEAT_OK = "HEARTBEAT_OK";
 
@@ -139,8 +142,15 @@ export class HeartbeatRunner {
 			if (isOk) this.okCount++;
 			else this.alertCount++;
 
+			// Persist to store
+			if (isStoreReady()) {
+				try {
+					await getStore().insertRun(isOk, response, durationMs);
+				} catch { /* ignore store errors */ }
+			}
+
 			this.callbacks.onResult?.(runResult);
-			this.callbacks.log?.("check", { ok: isOk, durationMs }, isOk ? "INFO" : "WARN");
+			this.callbacks.log?.("check", { ok: isOk, durationMs, ...(isOk ? {} : { alert: response }) }, isOk ? "INFO" : "WARN");
 
 			if (!isOk) {
 				this.callbacks.onAlert?.(`🫀 Heartbeat:\n\n${response}`);
@@ -161,8 +171,15 @@ export class HeartbeatRunner {
 			this.runCount++;
 			this.alertCount++;
 
+			// Persist to store
+			if (isStoreReady()) {
+				try {
+					await getStore().insertRun(false, runResult.response, durationMs);
+				} catch { /* ignore store errors */ }
+			}
+
 			this.callbacks.onResult?.(runResult);
-			this.callbacks.log?.("error", { error: err.message, durationMs }, "ERROR");
+			this.callbacks.log?.("error", { alert: err.message, durationMs }, "ERROR");
 			this.callbacks.onAlert?.(`🫀 Heartbeat error: ${err.message}`);
 			return runResult;
 		} finally {
@@ -170,27 +187,86 @@ export class HeartbeatRunner {
 		}
 	}
 
+	private buildArgs(): string[] {
+		const args = ["--mode", "rpc"];
+
+		// Extension loading: -ne disables discovery, then -e for each explicit extension
+		const exts = this.settings.extensions;
+		args.push("-ne");
+		if (exts && exts.length > 0) {
+			for (const ext of exts) {
+				args.push("-e", ext);
+			}
+		}
+
+		return args;
+	}
+
 	private runSubprocess(prompt: string, timeoutMs = 300_000): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 		return new Promise((resolve) => {
-			const child = spawn("pi", ["-p", "--no-session", prompt], {
+			const args = this.buildArgs();
+			const child = spawn("pi", args, {
 				cwd: this.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
+				stdio: ["pipe", "pipe", "pipe"],
 				env: { ...process.env },
-				timeout: timeoutMs,
 			});
 
-			let stdout = "";
+			let responseText = "";
 			let stderr = "";
+			let settled = false;
 
-			child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+			const timeout = setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					child.kill("SIGTERM");
+					resolve({ stdout: responseText, stderr: stderr + "\nHeartbeat timed out", exitCode: 1 });
+				}
+			}, timeoutMs);
+
 			child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
+			// Parse JSON-line events from RPC stdout
+			const rl = readline.createInterface({ input: child.stdout });
+			rl.on("line", (line) => {
+				try {
+					const event = JSON.parse(line);
+
+					// Collect text deltas from assistant message streaming
+					if (event.type === "message_update") {
+						const delta = event.assistantMessageEvent;
+						if (delta?.type === "text_delta" && delta.delta) {
+							responseText += delta.delta;
+						}
+					}
+
+					// Agent finished — kill the subprocess
+					if (event.type === "agent_end") {
+						child.stdin.end();
+						child.kill("SIGTERM");
+					}
+				} catch {
+					// Ignore non-JSON lines
+				}
+			});
+
+			// Send the prompt command once the process is ready
+			const promptCmd = JSON.stringify({ type: "prompt", message: prompt }) + "\n";
+			child.stdin.write(promptCmd);
+
 			child.on("close", (code) => {
-				resolve({ stdout, stderr, exitCode: code ?? 1 });
+				if (!settled) {
+					settled = true;
+					clearTimeout(timeout);
+					resolve({ stdout: responseText, stderr, exitCode: code ?? 0 });
+				}
 			});
 
 			child.on("error", (err) => {
-				resolve({ stdout, stderr: stderr + "\n" + err.message, exitCode: 1 });
+				if (!settled) {
+					settled = true;
+					clearTimeout(timeout);
+					resolve({ stdout: responseText, stderr: stderr + "\n" + err.message, exitCode: 1 });
+				}
 			});
 		});
 	}

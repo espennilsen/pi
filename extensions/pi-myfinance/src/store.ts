@@ -187,7 +187,7 @@ function createRawStore() {
 				data.name ?? existing.name,
 				data.account_type ?? existing.account_type,
 				data.currency ?? existing.currency,
-				data.balance ?? existing.balance,
+				data.balance !== undefined ? data.balance : existing.balance,
 				data.notes !== undefined ? data.notes : existing.notes,
 				ts,
 				id,
@@ -303,7 +303,11 @@ function createRawStore() {
 					case "regex":
 						try {
 							const flags = kw.case_sensitive ? "" : "i";
-							matched = new RegExp(kw.keyword, flags).test(description);
+							const re = new RegExp(kw.keyword, flags);
+							// Guard against ReDoS: enforce a timeout via limiting input length
+							if (description.length <= 10_000) {
+								matched = re.test(description);
+							}
 						} catch { /* invalid regex, skip */ }
 						break;
 				}
@@ -394,36 +398,42 @@ function createRawStore() {
 		createTransaction(data: CreateTransactionData): Transaction {
 			const db = getDb();
 			const ts = now();
-			const result = db
-				.prepare(
-					`INSERT INTO finance_transactions
-					 (account_id, category_id, vendor_id, amount, transaction_type, description, date, tags, notes, recurring_id, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				)
-				.run(
+			let insertedId: number;
+
+			const run = db.transaction(() => {
+				const result = db
+					.prepare(
+						`INSERT INTO finance_transactions
+						 (account_id, category_id, vendor_id, amount, transaction_type, description, date, tags, notes, recurring_id, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					)
+					.run(
+						data.account_id,
+						data.category_id ?? null,
+						data.vendor_id ?? null,
+						data.amount,
+						data.transaction_type,
+						data.description,
+						data.date ?? today(),
+						data.tags ? JSON.stringify(data.tags) : null,
+						data.notes ?? null,
+						data.recurring_id ?? null,
+						ts,
+						ts,
+					);
+				insertedId = Number(result.lastInsertRowid);
+
+				// Update account balance
+				const sign = data.transaction_type === "in" ? 1 : -1;
+				db.prepare("UPDATE finance_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?").run(
+					sign * data.amount,
+					ts,
 					data.account_id,
-					data.category_id ?? null,
-					data.vendor_id ?? null,
-					data.amount,
-					data.transaction_type,
-					data.description,
-					data.date ?? today(),
-					data.tags ? JSON.stringify(data.tags) : null,
-					data.notes ?? null,
-					data.recurring_id ?? null,
-					ts,
-					ts,
 				);
+			});
+			run();
 
-			// Update account balance
-			const sign = data.transaction_type === "in" ? 1 : -1;
-			db.prepare("UPDATE finance_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?").run(
-				sign * data.amount,
-				ts,
-				data.account_id,
-			);
-
-			return this.getTransaction(Number(result.lastInsertRowid))!;
+			return this.getTransaction(insertedId!)!;
 		},
 
 		updateTransaction(id: number, data: UpdateTransactionData): Transaction | null {
@@ -432,44 +442,47 @@ function createRawStore() {
 			const db = getDb();
 			const ts = now();
 
-			// Reverse old balance effect
-			const oldSign = existing.transaction_type === "in" ? 1 : -1;
-			db.prepare("UPDATE finance_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?").run(
-				oldSign * existing.amount,
-				ts,
-				existing.account_id,
-			);
-
 			const newType = data.transaction_type ?? existing.transaction_type;
 			const newAmount = data.amount ?? existing.amount;
 			const newAccountId = data.account_id ?? existing.account_id;
 
-			db.prepare(
-				`UPDATE finance_transactions
-				 SET account_id = ?, category_id = ?, vendor_id = ?, amount = ?, transaction_type = ?,
-				     description = ?, date = ?, tags = ?, notes = ?, updated_at = ?
-				 WHERE id = ?`,
-			).run(
-				newAccountId,
-				data.category_id !== undefined ? data.category_id : existing.category_id,
-				data.vendor_id !== undefined ? data.vendor_id : existing.vendor_id,
-				newAmount,
-				newType,
-				data.description ?? existing.description,
-				data.date ?? existing.date,
-				data.tags ? JSON.stringify(data.tags) : existing.tags,
-				data.notes !== undefined ? data.notes : existing.notes,
-				ts,
-				id,
-			);
+			const run = db.transaction(() => {
+				// Reverse old balance effect on the original account
+				const oldSign = existing.transaction_type === "in" ? 1 : -1;
+				db.prepare("UPDATE finance_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?").run(
+					oldSign * existing.amount,
+					ts,
+					existing.account_id,
+				);
 
-			// Apply new balance effect
-			const newSign = newType === "in" ? 1 : -1;
-			db.prepare("UPDATE finance_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?").run(
-				newSign * newAmount,
-				ts,
-				newAccountId,
-			);
+				db.prepare(
+					`UPDATE finance_transactions
+					 SET account_id = ?, category_id = ?, vendor_id = ?, amount = ?, transaction_type = ?,
+					     description = ?, date = ?, tags = ?, notes = ?, updated_at = ?
+					 WHERE id = ?`,
+				).run(
+					newAccountId,
+					data.category_id !== undefined ? data.category_id : existing.category_id,
+					data.vendor_id !== undefined ? data.vendor_id : existing.vendor_id,
+					newAmount,
+					newType,
+					data.description ?? existing.description,
+					data.date ?? existing.date,
+					data.tags ? JSON.stringify(data.tags) : existing.tags,
+					data.notes !== undefined ? data.notes : existing.notes,
+					ts,
+					id,
+				);
+
+				// Apply new balance effect on the (possibly different) account
+				const newSign = newType === "in" ? 1 : -1;
+				db.prepare("UPDATE finance_accounts SET balance = balance + ?, updated_at = ? WHERE id = ?").run(
+					newSign * newAmount,
+					ts,
+					newAccountId,
+				);
+			});
+			run();
 
 			return this.getTransaction(id);
 		},
@@ -479,17 +492,23 @@ function createRawStore() {
 			if (!existing) return false;
 			const db = getDb();
 			const ts = now();
+			let deleted = false;
 
-			// Reverse balance effect
-			const sign = existing.transaction_type === "in" ? 1 : -1;
-			db.prepare("UPDATE finance_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?").run(
-				sign * existing.amount,
-				ts,
-				existing.account_id,
-			);
+			const run = db.transaction(() => {
+				// Reverse balance effect
+				const sign = existing.transaction_type === "in" ? 1 : -1;
+				db.prepare("UPDATE finance_accounts SET balance = balance - ?, updated_at = ? WHERE id = ?").run(
+					sign * existing.amount,
+					ts,
+					existing.account_id,
+				);
 
-			const result = db.prepare("DELETE FROM finance_transactions WHERE id = ?").run(id);
-			return result.changes > 0;
+				const result = db.prepare("DELETE FROM finance_transactions WHERE id = ?").run(id);
+				deleted = result.changes > 0;
+			});
+			run();
+
+			return deleted;
 		},
 
 		searchTransactions(query: string, limit: number = 50): Transaction[] {
@@ -1221,13 +1240,10 @@ function normalizeDate(input: string): string | null {
 	const dotMatch = input.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
 	if (dotMatch) return `${dotMatch[3]}-${dotMatch[2].padStart(2, "0")}-${dotMatch[1].padStart(2, "0")}`;
 
-	// Try DD/MM/YYYY
+	// Try DD/MM/YYYY — assume day-first for slash-separated dates
+	// (Norwegian/European convention; US MM/DD/YYYY is ambiguous with the same regex)
 	const slashMatch = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 	if (slashMatch) return `${slashMatch[3]}-${slashMatch[2].padStart(2, "0")}-${slashMatch[1].padStart(2, "0")}`;
-
-	// Try MM/DD/YYYY (US)
-	const usMatch = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-	if (usMatch) return `${usMatch[3]}-${usMatch[1].padStart(2, "0")}-${usMatch[2].padStart(2, "0")}`;
 
 	return null;
 }

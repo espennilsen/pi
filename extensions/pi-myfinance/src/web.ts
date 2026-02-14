@@ -588,10 +588,21 @@ export function stopStandaloneServer(): boolean {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+
+function readBody(req: http.IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = [];
-		req.on("data", (chunk) => chunks.push(chunk));
+		let size = 0;
+		req.on("data", (chunk: Buffer) => {
+			size += chunk.length;
+			if (size > maxSize) {
+				req.destroy();
+				reject(new Error(`Request body exceeds maximum size of ${maxSize} bytes`));
+				return;
+			}
+			chunks.push(chunk);
+		});
 		req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
 		req.on("error", reject);
 	});

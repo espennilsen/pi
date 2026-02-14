@@ -9,6 +9,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { FinanceStore, CreateTransactionData } from "./types.ts";
 import { suggestCategory } from "./insights.ts";
@@ -230,7 +231,7 @@ export async function importBankFileFromBuffer(
 		return { account_name: "Unknown", imported: 0, skipped: 0, errors: ["Account not found"], categorized: 0, linked: 0 };
 	}
 
-	const tmpDir = fs.mkdtempSync(path.join(require("os").tmpdir(), "pi-fin-"));
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-fin-"));
 	const tmpFile = path.join(tmpDir, fileName);
 	try {
 		fs.writeFileSync(tmpFile, buffer);

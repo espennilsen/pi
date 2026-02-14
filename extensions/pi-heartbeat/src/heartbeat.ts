@@ -223,15 +223,15 @@ export class HeartbeatRunner {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timeout);
-				if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 				rl.close();
 				resolve(result);
 			}
 
 			const timeout = setTimeout(() => {
 				child.kill("SIGTERM");
-				// Force kill if SIGTERM is ignored
+				// Force kill if SIGTERM is ignored — unref so it doesn't block exit
 				killTimer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
+				killTimer.unref();
 				settle({ stdout: responseText, stderr: stderr + "\nHeartbeat timed out", exitCode: 1 });
 			}, timeoutMs);
 
@@ -264,10 +264,12 @@ export class HeartbeatRunner {
 			child.stdin.write(promptCmd);
 
 			child.on("close", (code) => {
+				if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 				settle({ stdout: responseText, stderr, exitCode: code ?? 0 });
 			});
 
 			child.on("error", (err) => {
+				if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 				settle({ stdout: responseText, stderr: stderr + "\n" + err.message, exitCode: 1 });
 			});
 		});

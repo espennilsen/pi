@@ -36,7 +36,7 @@ export interface HeartbeatStore {
 
 let activeStore: HeartbeatStore | null = null;
 
-export function setStore(store: HeartbeatStore): void {
+export function setStore(store: HeartbeatStore | null): void {
 	activeStore = store;
 }
 

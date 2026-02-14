@@ -259,9 +259,11 @@ export class HeartbeatRunner {
 				}
 			});
 
-			// Send the prompt command once the process is ready
+			// Send the prompt once the child process has spawned
 			const promptCmd = JSON.stringify({ type: "prompt", message: prompt }) + "\n";
-			child.stdin.write(promptCmd);
+			child.once("spawn", () => {
+				child.stdin.write(promptCmd);
+			});
 
 			child.on("close", (code) => {
 				if (killTimer) { clearTimeout(killTimer); killTimer = null; }

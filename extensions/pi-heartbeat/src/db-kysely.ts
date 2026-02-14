@@ -16,7 +16,7 @@ import type { EventBus } from "@mariozechner/pi-coding-agent";
 const ACTOR = "pi-heartbeat";
 const EVENT_TIMEOUT_MS = 15_000;
 
-let events: EventBus;
+let events: EventBus | null = null;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
@@ -53,11 +53,12 @@ const SCHEMA = {
 
 export async function initDb(eventBus: EventBus): Promise<void> {
 	events = eventBus;
+	const bus = events;
 
 	// Register schema (additive, idempotent)
 	await withTimeout(
 		new Promise<void>((resolve, reject) => {
-			events.emit("kysely:schema:register", {
+			bus.emit("kysely:schema:register", {
 				...SCHEMA,
 				reply: (result: { ok: boolean; errors: string[] }) => {
 					if (result.ok) resolve();
@@ -79,14 +80,19 @@ interface QueryResult {
 }
 
 function query(sql: string, params: unknown[] = []): Promise<QueryResult> {
+	if (!events) throw new Error("Heartbeat DB not initialized — call initDb() first");
+	const bus = events;
 	return withTimeout(
 		new Promise((resolve, reject) => {
-			events.emit("kysely:query", {
+			let settled = false;
+			bus.emit("kysely:query", {
 				actor: ACTOR,
 				input: { sql, params },
-				reply: (result: QueryResult) => resolve(result),
+				reply: (result: QueryResult) => {
+					if (!settled) { settled = true; resolve(result); }
+				},
 				ack: (ack: { ok: boolean; error?: string }) => {
-					if (!ack.ok) reject(new Error(ack.error));
+					if (!ack.ok && !settled) { settled = true; reject(new Error(ack.error)); }
 				},
 			});
 		}),
@@ -175,10 +181,7 @@ export async function getStats(): Promise<{
 	};
 }
 
-export async function cleanOldRuns(beforeDate: string): Promise<number> {
-	const { numAffectedRows } = await query(
-		"DELETE FROM heartbeat_runs WHERE created_at < ?",
-		[beforeDate],
-	);
-	return numAffectedRows ?? 0;
+/** Reset module state (call on session shutdown). */
+export function resetDb(): void {
+	events = null;
 }

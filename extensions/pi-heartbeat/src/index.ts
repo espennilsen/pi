@@ -162,6 +162,8 @@ export default function (pi: ExtensionAPI) {
 			runner.stop();
 			runner = null;
 		}
+		// Reset store to avoid stale state across sessions
+		setStore(null);
 	});
 
 	// ── Command: /heartbeat ───────────────────────────────────

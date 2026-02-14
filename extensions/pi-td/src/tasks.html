@@ -541,6 +541,7 @@ async function fetchConfig() {
   var issues = [];
   var globalMode = false;
   var globalProjects = [];
+  var currentDetailProject = null; // projectPath of the currently displayed cross-project issue
   var sortColumn = 'updated_at';
   var sortDirection = 'desc';
   var currentPage = 1;
@@ -687,11 +688,31 @@ async function fetchConfig() {
         try { var resp = await fetch('/api/td/tree'); treeData = await resp.json(); } catch(e) { treeData = { nodes: [], edges: [] }; }
       }
       if (globalMode && project) {
-        // In global mode, show read-only detail from cross-project data
-        var issue = issues.find(function(i) { return i.id === id && i.project === project; });
-        if (issue) renderDetail(issue, true);
+        // In global mode, fetch full detail from the target project's td
+        var crossIssue = issues.find(function(i) { return i.id === id && i.project === project; });
+        var projectPath = crossIssue ? crossIssue.projectPath : '';
+        if (!projectPath) {
+          if (crossIssue) renderDetail(crossIssue, true);
+          return;
+        }
+        currentDetailProject = projectPath;
+        try {
+          var resp = await fetch('/api/td/global/detail?id=' + encodeURIComponent(id) + '&projectPath=' + encodeURIComponent(projectPath));
+          if (resp.ok) {
+            var detail = await resp.json();
+            detail.project = crossIssue.project;
+            detail.projectPath = projectPath;
+            renderDetail(detail, false);
+          } else {
+            // Fallback to cross-project data (read-only)
+            renderDetail(crossIssue, true);
+          }
+        } catch(e) {
+          renderDetail(crossIssue, true);
+        }
         return;
       }
+      currentDetailProject = null;
       var detail = await fetchIssueDetail(id);
       if (!detail) return;
       renderDetail(detail, false);
@@ -701,10 +722,14 @@ async function fetchConfig() {
     },
     updateStatus: async function(id, newStatus) {
       try {
-        await fetch('/api/td', {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global' : '/api/td';
+        var payload = { id: id, status: newStatus };
+        if (isGlobal) payload.projectPath = currentDetailProject;
+        await fetch(endpoint, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id, status: newStatus })
+          body: JSON.stringify(payload)
         });
         tdUI.closeDetail();
         await tdUI.reload();
@@ -712,9 +737,12 @@ async function fetchConfig() {
     },
     reviewIssue: async function(id, message) {
       try {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global/review' : '/api/td/review';
         var body = { id: id };
         if (message) body.message = message;
-        await fetch('/api/td/review', {
+        if (isGlobal) body.projectPath = currentDetailProject;
+        await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
@@ -730,10 +758,14 @@ async function fetchConfig() {
     },
     approveIssue: async function(id) {
       try {
-        await fetch('/api/td/approve', {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global/approve' : '/api/td/approve';
+        var payload = { id: id };
+        if (isGlobal) payload.projectPath = currentDetailProject;
+        await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id })
+          body: JSON.stringify(payload)
         });
         tdUI.closeDetail();
         await tdUI.reload();
@@ -743,10 +775,14 @@ async function fetchConfig() {
       if (!reason) reason = prompt('Rejection reason:');
       if (!reason) return;
       try {
-        await fetch('/api/td/reject', {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global/reject' : '/api/td/reject';
+        var payload = { id: id, reason: reason };
+        if (isGlobal) payload.projectPath = currentDetailProject;
+        await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id, reason: reason })
+          body: JSON.stringify(payload)
         });
         tdUI.closeDetail();
         await tdUI.reload();
@@ -758,10 +794,14 @@ async function fetchConfig() {
     },
     confirmDelete: async function(id) {
       try {
-        await fetch('/api/td', {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global' : '/api/td';
+        var payload = { id: id };
+        if (isGlobal) payload.projectPath = currentDetailProject;
+        await fetch(endpoint, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id })
+          body: JSON.stringify(payload)
         });
         tdUI.closeDetail();
         await tdUI.reload();
@@ -784,15 +824,27 @@ async function fetchConfig() {
       var message = msgEl ? msgEl.value.trim() : '';
       if (!message) return;
       try {
-        var resp = await fetch('/api/td/log', {
+        var isGlobal = !!currentDetailProject;
+        var endpoint = isGlobal ? '/api/td/global/log' : '/api/td/log';
+        var payload = { id: id, message: message, type: typeEl ? typeEl.value : 'progress' };
+        if (isGlobal) payload.projectPath = currentDetailProject;
+        var resp = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id, message: message, type: typeEl ? typeEl.value : 'progress' })
+          body: JSON.stringify(payload)
         });
         if (resp.ok) {
           // Re-fetch and re-render detail
-          var detail = await fetchIssueDetail(id);
-          if (detail) renderDetail(detail, false);
+          if (isGlobal) {
+            var resp2 = await fetch('/api/td/global/detail?id=' + encodeURIComponent(id) + '&projectPath=' + encodeURIComponent(currentDetailProject));
+            if (resp2.ok) {
+              var detail = await resp2.json();
+              renderDetail(detail, false);
+            }
+          } else {
+            var detail = await fetchIssueDetail(id);
+            if (detail) renderDetail(detail, false);
+          }
         }
       } catch(e) {}
     }

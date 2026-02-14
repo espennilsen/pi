@@ -49,10 +49,12 @@ interface TdErrorResult {
 
 type TdResult = TdOkResult | TdErrorResult;
 
-async function runTd(pi: ExtensionAPI, args: string[]): Promise<TdResult> {
+async function runTd(pi: ExtensionAPI, args: string[], cwd?: string): Promise<TdResult> {
 	const cmd = `td ${args.join(" ")}`;
 	try {
-		const result = await pi.exec("td", args, { timeout: 30_000 });
+		const opts: { timeout: number; cwd?: string } = { timeout: 30_000 };
+		if (cwd) opts.cwd = cwd;
+		const result = await pi.exec("td", args, opts);
 		const stdout = result.stdout?.trim() ?? "";
 		const stderr = result.stderr?.trim() || "";
 		if (result.code !== 0) {
@@ -65,6 +67,26 @@ async function runTd(pi: ExtensionAPI, args: string[]): Promise<TdResult> {
 	} catch (err: any) {
 		return { ok: false, error: err.message ?? "Unknown error executing td", cmd };
 	}
+}
+
+/** Validate that projectPath is within the cross-project root (prevents path traversal). */
+function validateProjectPath(projectPath: string, res: ServerResponse): string | null {
+	const config = getCrossProjectConfig(sessionCwd);
+	if (!config) {
+		badRequest(res, "Cross-project not configured");
+		return null;
+	}
+	if (!projectPath || typeof projectPath !== "string") {
+		badRequest(res, "projectPath is required");
+		return null;
+	}
+	const resolved = path.resolve(projectPath);
+	const root = path.resolve(config.rootDir);
+	if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+		badRequest(res, "projectPath is outside the cross-project root");
+		return null;
+	}
+	return resolved;
 }
 
 function normalizePath(subPath: string): string {
@@ -409,6 +431,140 @@ async function handleApi(pi: ExtensionAPI, req: IncomingMessage, res: ServerResp
 		} catch (err: any) {
 			serverError(res, err?.message ?? "Failed to read global issues");
 		}
+		return;
+	}
+	// ── Global detail (read from project's td) ─────────────
+	if (method === "GET" && pathKey === "/global/detail") {
+		const url = new URL(req.url ?? "/", "http://localhost");
+		const id = url.searchParams.get("id");
+		const projectPath = url.searchParams.get("projectPath");
+		if (!id) { badRequest(res, "Missing id parameter"); return; }
+		const resolved = validateProjectPath(projectPath ?? "", res);
+		if (!resolved) return;
+		const result = await runTd(pi, ["show", id, "--json"], resolved);
+		if (!result.ok) { json(res, 404, { error: result.error }); return; }
+		try { json(res, 200, JSON.parse(result.data)); }
+		catch (err: any) { serverError(res, err?.message ?? "Invalid td JSON output"); }
+		return;
+	}
+
+	// ── Global write endpoints ──────────────────────────────
+	if (method === "PATCH" && pathKey === "/global") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id, status, title, priority, description, labels } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		const args = ["update", id];
+		if (status) args.push("--status", status);
+		if (title) args.push("--title", title);
+		if (priority) args.push("--priority", priority);
+		if (description) args.push("--description", description);
+		if (labels) args.push("--labels", labels);
+		if (args.length === 2) { badRequest(res, "Nothing to update"); return; }
+		const result = await runTd(pi, args, resolved);
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
+		return;
+	}
+	if (method === "POST" && pathKey === "/global") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { title, description, type, priority, labels, parent } = body;
+		if (!title) { badRequest(res, "title is required"); return; }
+		const args = ["create", title];
+		if (type) args.push("--type", type);
+		if (priority) args.push("--priority", priority);
+		if (description) args.push("--description", description);
+		if (labels) args.push("--labels", labels);
+		if (parent) args.push("--parent", parent);
+		const result = await runTd(pi, args, resolved);
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 201, { message: result.data });
+		return;
+	}
+	if (method === "DELETE" && pathKey === "/global") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		const result = await runTd(pi, ["delete", id, "--force"], resolved);
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
+		return;
+	}
+	if (method === "POST" && pathKey === "/global/review") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id, message } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		const args = ["review", id];
+		if (message) args.push("--note", message);
+		const result = await runTd(pi, args, resolved);
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
+		return;
+	}
+	if (method === "POST" && pathKey === "/global/approve") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id, reason } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		const args = ["approve", id];
+		if (reason) args.push("--reason", reason);
+		let result = await runTd(pi, args, resolved);
+		if (!result.ok && result.error.includes("cannot approve")) {
+			const newSession = await runTd(pi, ["session", "--new"], resolved);
+			if (!newSession.ok) { badRequest(res, `Failed to create review session: ${newSession.error}`); return; }
+			result = await runTd(pi, args, resolved);
+		}
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
+		return;
+	}
+	if (method === "POST" && pathKey === "/global/reject") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id, reason } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		const args = ["reject", id];
+		if (reason) args.push("--reason", reason);
+		let result = await runTd(pi, args, resolved);
+		if (!result.ok && result.error.includes("cannot reject")) {
+			const newSession = await runTd(pi, ["session", "--new"], resolved);
+			if (!newSession.ok) { badRequest(res, `Failed to create review session: ${newSession.error}`); return; }
+			result = await runTd(pi, args, resolved);
+		}
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
+		return;
+	}
+	if (method === "POST" && pathKey === "/global/log") {
+		const body = await readJson(req, res);
+		if (!body) return;
+		const resolved = validateProjectPath(body.projectPath, res);
+		if (!resolved) return;
+		const { id, message, type } = body;
+		if (!id) { badRequest(res, "id is required"); return; }
+		if (!message) { badRequest(res, "message is required"); return; }
+		const args = ["log", "--issue", id];
+		const validTypes = ["progress", "blocker", "decision", "hypothesis", "tried", "result"];
+		if (type && validTypes.includes(type)) args.push("--type", type);
+		args.push(message);
+		const result = await runTd(pi, args, resolved);
+		if (!result.ok) { badRequest(res, result.error); return; }
+		json(res, 200, { message: result.data });
 		return;
 	}
 	if (method === "GET" && pathKey === "/global/stats") {

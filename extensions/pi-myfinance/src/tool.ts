@@ -143,8 +143,9 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			next_date: Type.Optional(Type.String({ description: "Next date for recurring (YYYY-MM-DD)" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether recurring is active" })),
 
-			// Vendor filters
-			include_ignored: Type.Optional(Type.Boolean({ description: "Include ignored/inactive vendors in list_vendors (default: false)" })),
+			// Vendor fields
+			ignore: Type.Optional(Type.Boolean({ description: "Mark vendor as ignored (hidden from default lists)" })),
+			include_ignored: Type.Optional(Type.Boolean({ description: "Include ignored vendors in list_vendors (default: false)" })),
 
 			// Filters
 			date_from: Type.Optional(Type.String({ description: "Filter: start date (YYYY-MM-DD)" })),
@@ -518,7 +519,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 							name: params.name,
 							country: params.country ?? undefined,
 							category_id: params.category_id ?? undefined,
-							ignore: false,
+							ignore: params.ignore ?? false,
 							notes: params.notes ?? undefined,
 						});
 						return text(`✅ Vendor created: **${vendor.name}** (ID ${vendor.id})`);
@@ -530,7 +531,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 							name: params.name ?? undefined,
 							country: params.country ?? undefined,
 							category_id: params.category_id ?? undefined,
-							ignore: params.active !== undefined ? !params.active : undefined,
+							ignore: params.ignore,
 							notes: params.notes ?? undefined,
 						});
 						if (!updated) return text(`❌ Vendor #${params.id} not found.`);

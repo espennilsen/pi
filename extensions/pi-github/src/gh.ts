@@ -1,0 +1,78 @@
+/**
+ * pi-github — gh CLI wrapper.
+ *
+ * Executes gh commands and returns parsed results.
+ * All GitHub interactions go through the gh CLI for auth.
+ */
+
+import { execFile } from "node:child_process";
+
+export interface GhResult {
+	ok: boolean;
+	stdout: string;
+	stderr: string;
+	code: number;
+}
+
+const GH_TIMEOUT = 30_000;
+
+export function gh(args: string[], cwd?: string): Promise<GhResult> {
+	return new Promise((resolve) => {
+		execFile("gh", args, { cwd, timeout: GH_TIMEOUT, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
+			const code = err && "code" in err ? (err as any).code ?? 1 : err ? 1 : 0;
+			resolve({
+				ok: code === 0,
+				stdout: stdout?.trim() ?? "",
+				stderr: stderr?.trim() ?? "",
+				code,
+			});
+		});
+	});
+}
+
+/** Run a gh command and parse JSON output. Returns null on failure. */
+export async function ghJson<T = any>(args: string[], cwd?: string): Promise<T | null> {
+	const result = await gh(args, cwd);
+	if (!result.ok) return null;
+	try {
+		return JSON.parse(result.stdout);
+	} catch {
+		return null;
+	}
+}
+
+/** Run a GraphQL query via gh api graphql. */
+export async function ghGraphql<T = any>(query: string, variables?: Record<string, any>, cwd?: string): Promise<T | null> {
+	const args = ["api", "graphql", "-f", `query=${query}`];
+	if (variables) {
+		for (const [key, value] of Object.entries(variables)) {
+			if (typeof value === "number" || typeof value === "boolean") {
+				args.push("-F", `${key}=${value}`);
+			} else {
+				args.push("-f", `${key}=${value}`);
+			}
+		}
+	}
+	const result = await gh(args, cwd);
+	if (!result.ok) return null;
+	try {
+		return JSON.parse(result.stdout);
+	} catch {
+		return null;
+	}
+}
+
+/** Get the current repo's owner/name. */
+export async function getRepoSlug(cwd?: string): Promise<string | null> {
+	const result = await gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], cwd);
+	return result.ok ? result.stdout : null;
+}
+
+/** Get the current git branch name. */
+export async function getCurrentBranch(cwd?: string): Promise<string | null> {
+	return new Promise((resolve) => {
+		execFile("git", ["branch", "--show-current"], { cwd, timeout: 5_000 }, (err, stdout) => {
+			resolve(err ? null : stdout?.trim() || null);
+		});
+	});
+}

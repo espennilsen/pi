@@ -23,6 +23,7 @@ Each extension lives in `extensions/<name>/` with its own `README.md` and settin
 | [**pi-channels**](https://github.com/espennilsen/pi/tree/main/extensions/pi-channels) | Two-way messaging (Telegram, webhooks) with chat bridge |
 | [**pi-cron**](https://github.com/espennilsen/pi/tree/main/extensions/pi-cron) | Cron scheduler for recurring agent prompts |
 | [**pi-dotenv**](https://github.com/espennilsen/pi/tree/main/extensions/pi-dotenv) | Deprecated — kept as no-op for backwards compatibility |
+| [**pi-github**](https://github.com/espennilsen/pi/tree/main/extensions/pi-github) | GitHub PR management, issues, CI, and review feedback commands |
 | [**pi-heartbeat**](https://github.com/espennilsen/pi/tree/main/extensions/pi-heartbeat) | Periodic health checks with web dashboard and alerts |
 | [**pi-jobs**](https://github.com/espennilsen/pi/tree/main/extensions/pi-jobs) | Agent run telemetry and cost tracking |
 | [**pi-kysely**](https://github.com/espennilsen/pi/tree/main/extensions/pi-kysely) | Shared Kysely database registry with table-level RBAC |

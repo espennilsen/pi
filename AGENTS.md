@@ -67,11 +67,13 @@ Key extensions:
 - Validate with `npm run typecheck` (tsc --noEmit), test with `npm test`
 - Keep web UIs as single HTML files (vanilla JS + inline CSS), served from extension root
 
-## Task Management (MANDATORY)
+## ⚠️ Task Management & Branching (MANDATORY — NO EXCEPTIONS)
 
-**Every piece of work MUST be tracked with `td`.** No exceptions — no matter how small the change.
+**STOP. Read this before writing any code.**
 
-Before starting any work:
+**Every single change MUST have a `td` task AND its own feature branch.** This is non-negotiable. No commits to `main`. No skipping tasks "because it's small". No bundling unrelated work. One task = one branch = one piece of work.
+
+### Required workflow — follow every time:
 1. **Check for existing task:** `td status` or `td ready`
 2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore`
 3. **Start the task:** `td start <id>`
@@ -80,9 +82,12 @@ Before starting any work:
 6. **Commit to the feature branch**, then handoff: `td handoff <id> --done "..."`
 7. **Submit for review:** `td review <id>`
 
-Every task gets its own feature branch. Never commit directly to `main`. Branch names always start with the task ID followed by `/`.
-
-This applies to bug fixes, features, refactors, doc updates, config changes — everything. If you're changing code, there must be a `td` task and a feature branch for it.
+### Rules:
+- **Never commit to `main`** — always use a feature branch
+- **Branch names start with task ID:** `<task-id>/<short-description>`
+- **Every change needs a task** — bug fixes, features, refactors, doc updates, config changes, typo fixes — everything
+- **One task per branch** — don't mix unrelated work
+- **No exceptions** — if you forgot to create a task, stop and create one now before continuing
 
 ## Other Conventions
 

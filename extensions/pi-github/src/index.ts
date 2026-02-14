@@ -40,11 +40,13 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_switch", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
+		resetPendingThreads();
 	});
 
 	pi.on("session_fork", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
+		resetPendingThreads();
 	});
 
 	pi.on("session_shutdown", async () => {

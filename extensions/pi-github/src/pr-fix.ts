@@ -189,7 +189,7 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo): string 
 
 // ── Build summary comment for GitHub ────────────────────────────
 
-function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolvedCount: number): string {
+function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolvedCount: number, resolvedIds: Set<string>): string {
 	const lines: string[] = [];
 
 	lines.push(`### 🔧 Review feedback addressed in ${commitSha.slice(0, 7)}`);
@@ -199,7 +199,8 @@ function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolve
 
 	for (const t of threads) {
 		const location = t.path ? `\`${t.path}\`${t.line ? `:${t.line}` : ""}` : "General";
-		lines.push(`- ✅ ${location} — ${t.body.split("\n")[0].slice(0, 120)}`);
+		const icon = resolvedIds.has(t.id) ? "✅" : "❌";
+		lines.push(`- ${icon} ${location} — ${t.body.split("\n")[0].slice(0, 120)}`);
 	}
 
 	lines.push("");
@@ -353,15 +354,29 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				ctx.ui.notify("⚠️ Could not get latest commit SHA.", "warning");
 			}
 
+			const errors: string[] = [];
+
+			// Push the branch FIRST — abort if it fails so we don't
+			// resolve threads / post comments referencing a non-existent remote commit
+			const pushResult = await gitExec(["push"], cwd);
+			if (!pushResult.ok) {
+				errors.push(`git push failed: ${pushResult.stderr}`);
+				ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");
+				// Don't clear pendingThreads so the user can retry
+				log("pr-fix-resolve", { prNumber: prInfo.number, resolved: 0, total: threads.length, errors: 1, pushFailed: true });
+				return;
+			}
+
 			// Resolve each thread
 			let resolved = 0;
-			const errors: string[] = [];
+			const resolvedIds = new Set<string>();
 
 			for (const thread of threads) {
 				try {
 					const ok = await resolveThread(thread.id, cwd);
 					if (ok) {
 						resolved++;
+						resolvedIds.add(thread.id);
 					} else {
 						errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to resolve`);
 					}
@@ -372,15 +387,12 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			// Post summary comment
 			if (commitSha) {
-				const comment = buildSummaryComment(threads, commitSha, resolved);
+				const comment = buildSummaryComment(threads, commitSha, resolved, resolvedIds);
 				const posted = await postPrComment(prInfo.number, comment, cwd);
 				if (!posted) {
 					errors.push("Failed to post summary comment");
 				}
 			}
-
-			// Push the branch
-			await gitExec(["push"], cwd);
 
 			pendingThreads = null;
 

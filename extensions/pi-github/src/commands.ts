@@ -229,9 +229,15 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			}
 
 			// Push the branch first
-			await new Promise<void>((resolve) => {
-				execFile("git", ["push", "-u", "origin", branch], { cwd: sessionCwd, timeout: 30_000 }, () => resolve());
+			const pushResult = await new Promise<{ ok: boolean; stderr: string }>((resolve) => {
+				execFile("git", ["push", "-u", "origin", branch], { cwd: sessionCwd, timeout: 30_000 }, (err, _stdout, stderr) => {
+					resolve({ ok: !err, stderr: stderr?.trim() ?? "" });
+				});
 			});
+			if (!pushResult.ok) {
+				ctx.ui.notify(`❌ Failed to push branch \`${branch}\`: ${pushResult.stderr}`, "error");
+				return;
+			}
 
 			const ghArgs = ["pr", "create", "--fill"];
 			if (args) {

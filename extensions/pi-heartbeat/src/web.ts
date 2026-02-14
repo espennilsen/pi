@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { HeartbeatRunner, HeartbeatRunResult } from "./heartbeat.ts";
+import { isStoreReady, getStore } from "./store.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ export function mountHeartbeatRoutes(bus: EventBus, options: HeartbeatWebOptions
 				// GET /api/heartbeat — status + history
 				if (method === "GET" && p === "/") {
 					const runner = opts.getRunner();
-					const status = runner?.getStatus() ?? {
+					const runnerStatus = runner?.getStatus() ?? {
 						active: false,
 						running: false,
 						lastRun: null,
@@ -145,12 +146,38 @@ export function mountHeartbeatRoutes(bus: EventBus, options: HeartbeatWebOptions
 						intervalMinutes: 15,
 					};
 
+					// Read history + stats from store if available, else in-memory
+					let historyData: HistoryEntry[];
+					let statsOverride: { runCount: number; okCount: number; alertCount: number; lastRun: string | null; lastOk: boolean | null } | null = null;
+					if (isStoreReady()) {
+						try {
+							const [storeHistory, storeStats] = await Promise.all([
+								getStore().getHistory(100),
+								getStore().getStats(),
+							]);
+							historyData = storeHistory.map((e) => ({
+								ok: e.ok,
+								response: e.response,
+								durationMs: e.durationMs,
+								time: e.time,
+							}));
+							statsOverride = storeStats;
+						} catch {
+							historyData = getHistory();
+						}
+					} else {
+						historyData = getHistory();
+					}
+
 					json(res, 200, {
 						status: {
-							...status,
-							lastRun: status.lastRun?.toISOString() ?? null,
+							...runnerStatus,
+							lastRun: statsOverride?.lastRun ?? runnerStatus.lastRun?.toISOString() ?? null,
+							runCount: statsOverride?.runCount ?? runnerStatus.runCount,
+							okCount: statsOverride?.okCount ?? runnerStatus.okCount,
+							alertCount: statsOverride?.alertCount ?? runnerStatus.alertCount,
 						},
-						history: getHistory(),
+						history: historyData,
 					});
 					return;
 				}

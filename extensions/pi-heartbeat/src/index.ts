@@ -19,6 +19,7 @@ import { resolveSettings } from "./settings.ts";
 import { HeartbeatRunner } from "./heartbeat.ts";
 import { mountHeartbeatRoutes, unmountHeartbeatRoutes } from "./web.ts";
 import { createLogger } from "./logger.ts";
+import { setStore, isStoreReady, getStore, createMemoryStore, createKyselyStore } from "./store.ts";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -105,6 +106,40 @@ export default function (pi: ExtensionAPI) {
 		cwd = ctx.cwd;
 		const settings = resolveSettings(cwd);
 
+		// ── Initialize store ────────────────────────────────────
+		if (settings.useKysely) {
+			const initKysely = async () => {
+				if (isStoreReady()) return;
+				try {
+					const store = await createKyselyStore(pi.events as any);
+					setStore(store);
+					log("ready", { backend: "kysely" });
+				} catch (err: any) {
+					log("error", { backend: "kysely", error: err.message }, "ERROR");
+					// Fall back to memory store
+					setStore(createMemoryStore());
+					log("fallback", { backend: "memory", reason: err.message }, "WARN");
+				}
+			};
+
+			pi.events.on("kysely:ready", initKysely);
+
+			log("init", { backend: "kysely", status: "probing for kysely" });
+			let kyselyAlreadyReady = false;
+			pi.events.emit("kysely:info", {
+				reply: () => { kyselyAlreadyReady = true; },
+			});
+			if (kyselyAlreadyReady) {
+				log("init", { backend: "kysely", status: "kysely already available" });
+				await initKysely();
+			} else {
+				log("init", { backend: "kysely", status: "waiting for kysely:ready" });
+			}
+		} else {
+			setStore(createMemoryStore());
+			log("ready", { backend: "memory" });
+		}
+
 		if (pi.getFlag("--heartbeat") || settings.autostart) {
 			runner = createRunner();
 			runner.start();
@@ -164,10 +199,30 @@ export default function (pi: ExtensionAPI) {
 				if (!s || !s.active) {
 					ctx.ui.notify("Heartbeat: inactive. Use /heartbeat on to start.", "info");
 				} else {
+					// Prefer DB stats over in-memory counters
+					let runCount = s.runCount;
+					let okCount = s.okCount;
+					let alertCount = s.alertCount;
+					let lastRunStr = s.lastRun ? s.lastRun.toLocaleTimeString() : null;
+					let lastOkLabel = s.lastResult?.ok ? "OK" : "alert";
+
+					if (isStoreReady()) {
+						try {
+							const dbStats = await getStore().getStats();
+							runCount = dbStats.runCount;
+							okCount = dbStats.okCount;
+							alertCount = dbStats.alertCount;
+							if (dbStats.lastRun) {
+								lastRunStr = new Date(dbStats.lastRun).toLocaleTimeString();
+								lastOkLabel = dbStats.lastOk ? "OK" : "alert";
+							}
+						} catch { /* fall back to in-memory */ }
+					}
+
 					const lines = [
 						`Heartbeat: ✅ active (every ${s.intervalMinutes}m)`,
-						`Runs: ${s.runCount} · OK: ${s.okCount} · Alerts: ${s.alertCount}`,
-						s.lastRun ? `Last: ${s.lastRun.toLocaleTimeString()} (${s.lastResult?.ok ? "OK" : "alert"})` : "No runs yet",
+						`Runs: ${runCount} · OK: ${okCount} · Alerts: ${alertCount}`,
+						lastRunStr ? `Last: ${lastRunStr} (${lastOkLabel})` : "No runs yet",
 					];
 					ctx.ui.notify(lines.join("\n"), "info");
 				}

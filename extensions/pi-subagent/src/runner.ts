@@ -195,16 +195,10 @@ export async function runIsolatedAgent(
 				stderr += data.toString();
 			});
 
-			proc.on("close", (code) => {
-				if (timeoutHandle) clearTimeout(timeoutHandle);
-				if (buf.trim()) processLine(buf);
-				resolve(code ?? 0);
-			});
-
-			proc.on("error", () => resolve(1));
-
+			// Abort signal handling — clean up listener on process close
+			let abortHandler: (() => void) | null = null;
 			if (opts.signal) {
-				const kill = () => {
+				abortHandler = () => {
 					aborted = true;
 					proc.kill("SIGTERM");
 					const killTimer = setTimeout(() => {
@@ -212,9 +206,21 @@ export async function runIsolatedAgent(
 					}, 5000);
 					killTimer.unref();
 				};
-				if (opts.signal.aborted) kill();
-				else opts.signal.addEventListener("abort", kill, { once: true });
+				if (opts.signal.aborted) abortHandler();
+				else opts.signal.addEventListener("abort", abortHandler, { once: true });
 			}
+
+			proc.on("close", (code) => {
+				if (timeoutHandle) clearTimeout(timeoutHandle);
+				if (abortHandler && opts.signal) opts.signal.removeEventListener("abort", abortHandler);
+				if (buf.trim()) processLine(buf);
+				resolve(code ?? 0);
+			});
+
+			proc.on("error", () => {
+				if (abortHandler && opts.signal) opts.signal.removeEventListener("abort", abortHandler);
+				resolve(1);
+			});
 		});
 
 		const durationMs = Date.now() - startTime;

@@ -154,7 +154,7 @@ type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 const ALWAYS_BLOCKED = new Set(["pi-subagent"]);
 
 function isBlocked(ext: string, blocklist: Set<string>): boolean {
-	const name = ext.split("/").pop()?.replace(/\/$/, "") ?? ext;
+	const name = (ext.replace(/\/+$/, "").split("/").pop() ?? ext).toLowerCase();
 	return ALWAYS_BLOCKED.has(name) || blocklist.has(name);
 }
 
@@ -231,7 +231,7 @@ async function runAgent(
 	};
 
 	// Merge global + per-agent + call-site extension whitelists, filter blocked
-	const blocklist = new Set(settings.blockedExtensions);
+	const blocklist = new Set(settings.blockedExtensions.map(e => e.toLowerCase()));
 	const mergedExtensions = [...new Set([
 		...settings.extensions,
 		...(agent.extensions ?? []),
@@ -264,7 +264,7 @@ async function runAgent(
 					currentResult.usage.output += u.output || 0;
 					currentResult.usage.cacheRead += u.cacheRead || 0;
 					currentResult.usage.cacheWrite += u.cacheWrite || 0;
-					currentResult.usage.cost += u.cost?.total || 0;
+					currentResult.usage.cost += (u.cost?.input || 0) + (u.cost?.output || 0) + (u.cost?.cacheRead || 0) + (u.cost?.cacheWrite || 0);
 					currentResult.usage.contextTokens = u.totalTokens || 0;
 				}
 				if (!currentResult.model && msg.model) currentResult.model = msg.model;
@@ -575,8 +575,8 @@ export function registerSubagentTool(
 							signal, settings, pi.events, log,
 							// Per-task streaming update
 							(partial) => {
-								if (partial.details?.results?.[0]) {
-									allResults[index] = partial.details.results[0];
+								if (partial.details?.results?.[index]) {
+									allResults[index] = partial.details.results[index];
 								}
 								emitParallelUpdate();
 							},

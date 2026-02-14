@@ -48,9 +48,9 @@ export default function (pi: ExtensionAPI) {
 		registerSubagentTool(pi, settings, log);
 	});
 
-	// Inject available agents into system prompt
+	// Inject available agents into system prompt (user-scope only to prevent prompt injection from untrusted repos)
 	pi.on("before_agent_start", async (event: any, ctx: any) => {
-		const discovery = discoverAgents(ctx.cwd, "both");
+		const discovery = discoverAgents(ctx.cwd, "user");
 		if (discovery.agents.length === 0) return;
 
 		const agentList = discovery.agents.map(a => {
@@ -98,7 +98,7 @@ export default function (pi: ExtensionAPI) {
 			'  ] }',
 			'```',
 			"",
-			"**Per-task overrides:** model, thinking (off/low/medium/high/xhigh), extensions, skills, noTools, noSkills",
+			"**Per-task overrides:** model, thinking (off/minimal/low/medium/high/xhigh), extensions, skills, noTools, noSkills",
 			"",
 			"**Tips:**",
 			"- Use scout (haiku) for fast recon, planner/reviewer (sonnet) for analysis, worker for implementation",

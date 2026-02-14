@@ -322,11 +322,19 @@ export default function (pi: ExtensionAPI) {
 			const accounts = await getFinanceStore().getAccounts();
 			if (accounts.length === 0) { ctx.ui.notify("No accounts.", "info"); return; }
 
-			const total = accounts.reduce((s, a) => s + Number(a.balance), 0);
+			// Group totals by currency
+			const byCurrency = new Map<string, number>();
+			for (const a of accounts) {
+				const cur = a.currency || "NOK";
+				byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + Number(a.balance));
+			}
+			const totalStr = [...byCurrency.entries()]
+				.map(([cur, sum]) => `${sum.toLocaleString("nb-NO")} ${cur}`)
+				.join(", ");
 			const lines = accounts.map(a =>
-				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency}`
+				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency || "NOK"}`
 			);
-			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${total.toLocaleString("nb-NO")} NOK`);
+			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${totalStr}`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});

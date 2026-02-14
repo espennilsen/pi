@@ -22,7 +22,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSettings } from "./settings.ts";
 import { initClient, resetClient, isClientReady, getClient } from "./client.ts";
-import { registerSupabaseTool } from "./tool.ts";
+import { registerSupabaseTool, setRpcAllowList } from "./tool.ts";
 import { startSubscriptions, stopSubscriptions } from "./realtime.ts";
 import { setStore, isStoreReady, createMemoryStore, createKyselyStore, resetStore } from "./store.ts";
 import { createLogger } from "./logger.ts";
@@ -77,6 +77,9 @@ export default function (pi: ExtensionAPI) {
 			log("skip", { reason: "url or key not configured" });
 			return;
 		}
+
+		// ── Configure RPC allow-list ────────────────────────────
+		setRpcAllowList(settings.rpc.allowList);
 
 		try {
 			initClient(settings);

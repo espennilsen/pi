@@ -29,6 +29,11 @@ export interface NotificationSettings {
 	tables: string[];
 }
 
+export interface RpcSettings {
+	/** Explicit allow-list of RPC function names. Empty = all blocked. */
+	allowList: string[];
+}
+
 export interface SupabaseSettings {
 	/** Supabase project URL. */
 	url: string | null;
@@ -42,6 +47,8 @@ export interface SupabaseSettings {
 	useKysely: boolean;
 	/** Notification settings for table change events. */
 	notifications: NotificationSettings;
+	/** RPC settings. */
+	rpc: RpcSettings;
 }
 
 const DEFAULTS: SupabaseSettings = {
@@ -55,6 +62,9 @@ const DEFAULTS: SupabaseSettings = {
 		route: "ops",
 		tables: [],
 	},
+	rpc: {
+		allowList: [],
+	},
 };
 
 export function resolveSettings(cwd: string): SupabaseSettings {
@@ -66,6 +76,7 @@ export function resolveSettings(cwd: string): SupabaseSettings {
 		const cfg = { ...(global?.["pi-supabase"] ?? {}), ...(project?.["pi-supabase"] ?? {}) };
 
 		const notifications = cfg.notifications ?? {};
+		const rpc = cfg.rpc ?? {};
 
 		return {
 			url: cfg.url ?? DEFAULTS.url,
@@ -78,8 +89,11 @@ export function resolveSettings(cwd: string): SupabaseSettings {
 				route: notifications.route ?? DEFAULTS.notifications.route,
 				tables: Array.isArray(notifications.tables) ? notifications.tables : DEFAULTS.notifications.tables,
 			},
+			rpc: {
+				allowList: Array.isArray(rpc.allowList) ? rpc.allowList : DEFAULTS.rpc.allowList,
+			},
 		};
 	} catch {
-		return { ...DEFAULTS, notifications: { ...DEFAULTS.notifications } };
+		return { ...DEFAULTS, notifications: { ...DEFAULTS.notifications }, rpc: { ...DEFAULTS.rpc } };
 	}
 }

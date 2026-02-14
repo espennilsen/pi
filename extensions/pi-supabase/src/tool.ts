@@ -250,15 +250,26 @@ async function handleCount(params: any, start: number) {
 	return text(`**${params.table}** — ${count ?? 0} row${count !== 1 ? "s" : ""} (${durationMs}ms)`);
 }
 
-/** Reject RPC function names that look like mutating operations. */
-const MUTATING_PREFIXES = ["insert", "update", "delete", "upsert", "create", "drop", "alter", "truncate", "remove", "set_", "reset_"];
+/**
+ * RPC allow-list. Only explicitly approved functions can be called.
+ * To allow a function, add it to "pi-supabase.rpc.allowList" in settings,
+ * or pass it here. Empty list = all RPC calls blocked.
+ */
+let rpcAllowList: Set<string> = new Set();
+
+export function setRpcAllowList(functions: string[]): void {
+	rpcAllowList = new Set(functions.map(f => f.toLowerCase()));
+}
 
 async function handleRpc(params: any, start: number) {
 	if (!params.function_name) return text("❌ 'function_name' is required for rpc action");
 
 	const fnLower = params.function_name.toLowerCase();
-	if (MUTATING_PREFIXES.some(p => fnLower.startsWith(p))) {
-		return text(`❌ Read-only mode: refusing to call '${params.function_name}' — function name suggests a mutating operation.`);
+	if (rpcAllowList.size === 0) {
+		return text("❌ Read-only mode: no RPC functions are allowed. Configure `pi-supabase.rpc.allowList` in settings to permit specific functions.");
+	}
+	if (!rpcAllowList.has(fnLower)) {
+		return text(`❌ Read-only mode: '${params.function_name}' is not in the RPC allow-list. Allowed: ${[...rpcAllowList].join(", ")}`);
 	}
 
 	const client = getClient();
@@ -311,7 +322,10 @@ function applyFilters(query: any, filters: any[]): any {
 			case "like":  query = query.like(f.column, f.value); break;
 			case "ilike": query = query.ilike(f.column, f.value); break;
 			case "is":    query = query.is(f.column, f.value); break;
-			case "in":    query = query.in(f.column, f.value); break;
+			case "in":
+				if (!Array.isArray(f.value)) throw new Error(`Filter 'in' on column '${f.column}' requires an array value, got ${typeof f.value}`);
+				query = query.in(f.column, f.value);
+				break;
 		}
 	}
 	return query;

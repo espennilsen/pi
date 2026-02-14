@@ -24,6 +24,9 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
       "enabled": true,
       "route": "ops",
       "tables": ["users", "orders"]
+    },
+    "rpc": {
+      "allowList": ["get_dashboard_stats", "search_products"]
     }
   }
 }
@@ -39,6 +42,7 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `notifications.enabled` | `boolean` | `false` | Enable realtime table change notifications |
 | `notifications.route` | `string` | `"ops"` | pi-channels route for notifications |
 | `notifications.tables` | `string[]` | `[]` | Tables to subscribe to for realtime changes |
+| `rpc.allowList` | `string[]` | `[]` | Explicit list of RPC functions that can be called (empty = all blocked) |
 
 ## Tool Actions
 

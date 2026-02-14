@@ -73,6 +73,7 @@ const SCHEMA = {
 				notes:                  { type: "text" as const },
 				recurring_id:           { type: "integer" as const, references: "finance_recurring.id", onDelete: "set null" as const },
 				linked_transaction_id:  { type: "integer" as const },
+				vendor_id:              { type: "integer" as const, references: "finance_vendors.id", onDelete: "set null" as const },
 				created_at:             { type: "text" as const, notNull: true },
 				updated_at:             { type: "text" as const, notNull: true },
 			},
@@ -82,6 +83,7 @@ const SCHEMA = {
 				{ columns: ["category_id"], name: "idx_fin_tx_category" },
 				{ columns: ["transaction_type"], name: "idx_fin_tx_type" },
 				{ columns: ["linked_transaction_id"], name: "idx_fin_tx_linked" },
+				{ columns: ["vendor_id"], name: "idx_fin_tx_vendor" },
 			],
 		},
 		finance_budgets: {
@@ -136,6 +138,21 @@ const SCHEMA = {
 			},
 			indexes: [
 				{ columns: ["category_id"], name: "idx_fin_kw_category" },
+			],
+		},
+		finance_vendors: {
+			columns: {
+				id:          { type: "integer" as const, primaryKey: true, autoIncrement: true },
+				name:        { type: "text" as const, notNull: true },
+				country:     { type: "text" as const },
+				category_id: { type: "integer" as const, references: "finance_categories.id", onDelete: "set null" as const },
+				ignore:      { type: "integer" as const, notNull: true, default: "0" },
+				notes:       { type: "text" as const },
+				created_at:  { type: "text" as const, notNull: true },
+				updated_at:  { type: "text" as const, notNull: true },
+			},
+			indexes: [
+				{ columns: ["name"], name: "idx_fin_vendor_name", unique: true },
 			],
 		},
 	},

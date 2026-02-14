@@ -30,11 +30,21 @@ export function resolveSettings(cwd: string): SubagentSettings {
 
 	const merged = { ...(globalRaw ?? {}), ...(projectRaw ?? {}) };
 
+	const DEFAULT_BLOCKED = [
+		"pi-webserver",
+		"pi-cron",
+		"pi-heartbeat",
+		"pi-channels",
+		"pi-web-dashboard",
+		"pi-telemetry",
+	];
+
 	return {
 		maxConcurrent: (merged.maxConcurrent as number) ?? 4,
 		maxTotal: (merged.maxTotal as number) ?? 8,
 		timeoutMs: (merged.timeoutMs as number) ?? 600_000,
 		model: (merged.model as string) ?? null,
 		extensions: Array.isArray(merged.extensions) ? merged.extensions as string[] : [],
+		blockedExtensions: Array.isArray(merged.blockedExtensions) ? merged.blockedExtensions as string[] : DEFAULT_BLOCKED,
 	};
 }

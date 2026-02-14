@@ -150,6 +150,14 @@ async function mapConcurrent<T, R>(
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
+// Hard-blocked: pi-subagent can never be loaded in subagents (prevents recursion)
+const ALWAYS_BLOCKED = new Set(["pi-subagent"]);
+
+function isBlocked(ext: string, blocklist: Set<string>): boolean {
+	const name = ext.split("/").pop()?.replace(/\/$/, "") ?? ext;
+	return ALWAYS_BLOCKED.has(name) || blocklist.has(name);
+}
+
 async function runAgent(
 	defaultCwd: string,
 	agents: AgentConfig[],
@@ -165,6 +173,8 @@ async function runAgent(
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 	allResults?: SingleResult[],
 	resultIndex?: number,
+	/** Extensions requested at the call site (from tool params) */
+	callSiteExtensions?: string[],
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
@@ -211,8 +221,13 @@ async function runAgent(
 		});
 	};
 
-	// Merge global + per-agent extension whitelists (deduplicated)
-	const mergedExtensions = [...new Set([...settings.extensions, ...(agent.extensions ?? [])])];
+	// Merge global + per-agent + call-site extension whitelists, filter blocked
+	const blocklist = new Set(settings.blockedExtensions);
+	const mergedExtensions = [...new Set([
+		...settings.extensions,
+		...(agent.extensions ?? []),
+		...(callSiteExtensions ?? []),
+	])].filter(ext => !isBlocked(ext, blocklist));
 
 	const isolated = await runIsolatedAgent({
 		prompt: `Task: ${task}`,
@@ -308,16 +323,22 @@ async function runAgent(
 
 // ── Tool Parameters ─────────────────────────────────────────────
 
+const ExtensionsSchema = Type.Optional(Type.Array(Type.String(), {
+	description: "Extension paths to load in the subagent (e.g. ['extensions/pi-brave-search']). Subagents run with -ne by default — only listed extensions are loaded. Merged with per-agent and global extensions.",
+}));
+
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Agent name" }),
 	task: Type.String({ description: "Task description" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override" })),
+	extensions: ExtensionsSchema,
 });
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Agent name for this step" }),
 	task: Type.String({ description: "Task description. Use {previous} to inject output from the prior step." }),
 	cwd: Type.Optional(Type.String({ description: "Working directory override" })),
+	extensions: ExtensionsSchema,
 });
 
 const SubagentParams = Type.Object({
@@ -329,6 +350,7 @@ const SubagentParams = Type.Object({
 		description: 'Agent discovery scope. Default: "user" (~/.pi/agent/agents). "both" includes project .pi/agents.',
 		default: "user",
 	})),
+	extensions: ExtensionsSchema,
 	cwd: Type.Optional(Type.String({ description: "Working directory (single mode)" })),
 });
 
@@ -424,6 +446,8 @@ export function registerSubagentTool(
 						ctx.cwd, agents, step.agent, taskText, step.cwd, i + 1,
 						signal, settings, pi.events, log,
 						chainUpdate, makeDetails("chain"),
+						undefined, undefined,
+						[...(params.extensions ?? []), ...(step.extensions ?? [])],
 					);
 					results.push(r);
 
@@ -493,6 +517,7 @@ export function registerSubagentTool(
 							makeDetails("parallel"),
 							allResults,
 							index,
+							[...(params.extensions ?? []), ...(t.extensions ?? [])],
 						);
 						allResults[index] = result;
 						emitParallelUpdate();
@@ -519,6 +544,8 @@ export function registerSubagentTool(
 					ctx.cwd, agents, params.agent, params.task, params.cwd, undefined,
 					signal, settings, pi.events, log,
 					onUpdate, makeDetails("single"),
+					undefined, undefined,
+					params.extensions,
 				);
 
 				const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";

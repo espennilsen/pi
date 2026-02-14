@@ -25,31 +25,51 @@ Subagents always run with `--no-extensions` (`-ne`) to prevent:
 - Subagents accessing channels, vault, finance, CRM, etc.
 - Uncontrolled extension side effects in subprocess context
 
-To whitelist specific extensions for subagents, use:
+Extensions can be whitelisted at three levels (all merged, deduplicated):
 
-### Global (all subagents)
+### 1. Tool call (agent decides at runtime)
 
 ```json
 {
-  "pi-subagent": {
-    "extensions": ["/path/to/pi-brave-search"]
-  }
+  "agent": "researcher",
+  "task": "Find pricing info for Vercel",
+  "extensions": ["extensions/pi-brave-search", "extensions/pi-webnav"]
 }
 ```
 
-### Per-agent (in agent .md frontmatter)
+### 2. Per-agent (in agent .md frontmatter)
 
 ```yaml
 ---
 name: researcher
 description: Web research agent
 tools: read, bash
-extensions: /path/to/pi-brave-search, /path/to/pi-webnav
+extensions: extensions/pi-brave-search, extensions/pi-webnav
 model: claude-haiku-4-5
 ---
 ```
 
-Global and per-agent extensions are merged (deduplicated).
+### 3. Global (all subagents)
+
+```json
+{
+  "pi-subagent": {
+    "extensions": ["extensions/pi-dotenv"]
+  }
+}
+```
+
+### Blocked extensions
+
+Some extensions are blocked by default (configurable via `blockedExtensions`). `pi-subagent` is always blocked (prevents recursion).
+
+```json
+{
+  "pi-subagent": {
+    "blockedExtensions": ["pi-webserver", "pi-cron", "pi-heartbeat", "pi-channels", "pi-web-dashboard", "pi-telemetry"]
+  }
+}
+```
 
 ## Settings
 
@@ -74,6 +94,7 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `timeoutMs` | `600000` | Subprocess timeout (10 min) |
 | `model` | `null` | Model override for subprocesses (null = use default) |
 | `extensions` | `[]` | Extension paths to whitelist for all subagents |
+| `blockedExtensions` | `[see below]` | Extensions that subagents can never load. Default: `pi-webserver`, `pi-cron`, `pi-heartbeat`, `pi-channels`, `pi-web-dashboard`, `pi-telemetry`. `pi-subagent` is always blocked. |
 
 ## Events
 

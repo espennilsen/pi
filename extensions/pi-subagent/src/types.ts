@@ -129,4 +129,6 @@ export interface SubagentSettings {
 	model: string | null;
 	/** Default extensions to whitelist for all subagents (merged with per-agent extensions) */
 	extensions: string[];
+	/** Extensions that subagents are never allowed to load (pi-subagent is always blocked) */
+	blockedExtensions: string[];
 }

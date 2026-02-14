@@ -60,6 +60,21 @@ const SCHEMA = {
 				created_at:    { type: "text" as const, notNull: true },
 			},
 		},
+		finance_vendors: {
+			columns: {
+				id:          { type: "integer" as const, primaryKey: true, autoIncrement: true },
+				name:        { type: "text" as const, notNull: true },
+				country:     { type: "text" as const },
+				category_id: { type: "integer" as const, references: "finance_categories.id", onDelete: "set null" as const },
+				ignore:      { type: "integer" as const, notNull: true, default: "0" },
+				notes:       { type: "text" as const },
+				created_at:  { type: "text" as const, notNull: true },
+				updated_at:  { type: "text" as const, notNull: true },
+			},
+			indexes: [
+				{ columns: ["name"], name: "idx_fin_vendor_name", unique: true },
+			],
+		},
 		finance_transactions: {
 			columns: {
 				id:                     { type: "integer" as const, primaryKey: true, autoIncrement: true },
@@ -73,6 +88,7 @@ const SCHEMA = {
 				notes:                  { type: "text" as const },
 				recurring_id:           { type: "integer" as const, references: "finance_recurring.id", onDelete: "set null" as const },
 				linked_transaction_id:  { type: "integer" as const },
+				vendor_id:              { type: "integer" as const, references: "finance_vendors.id", onDelete: "set null" as const },
 				created_at:             { type: "text" as const, notNull: true },
 				updated_at:             { type: "text" as const, notNull: true },
 			},
@@ -82,6 +98,7 @@ const SCHEMA = {
 				{ columns: ["category_id"], name: "idx_fin_tx_category" },
 				{ columns: ["transaction_type"], name: "idx_fin_tx_type" },
 				{ columns: ["linked_transaction_id"], name: "idx_fin_tx_linked" },
+				{ columns: ["vendor_id"], name: "idx_fin_tx_vendor" },
 			],
 		},
 		finance_budgets: {
@@ -720,10 +737,10 @@ export const store: FinanceStore = {
 		const ts = now();
 		const r = await q(
 			`INSERT INTO finance_transactions
-			 (account_id, category_id, amount, transaction_type, description, date, tags, notes, recurring_id, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (account_id, category_id, vendor_id, amount, transaction_type, description, date, tags, notes, recurring_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
-				data.account_id, data.category_id ?? null, data.amount, data.transaction_type,
+				data.account_id, data.category_id ?? null, data.vendor_id ?? null, data.amount, data.transaction_type,
 				data.description, data.date ?? today(),
 				data.tags ? JSON.stringify(data.tags) : null,
 				data.notes ?? null, data.recurring_id ?? null, ts, ts,
@@ -756,12 +773,13 @@ export const store: FinanceStore = {
 
 		await q(
 			`UPDATE finance_transactions
-			 SET account_id = ?, category_id = ?, amount = ?, transaction_type = ?,
+			 SET account_id = ?, category_id = ?, vendor_id = ?, amount = ?, transaction_type = ?,
 			     description = ?, date = ?, tags = ?, notes = ?, updated_at = ?
 			 WHERE id = ?`,
 			[
 				newAccountId,
 				data.category_id !== undefined ? data.category_id : existing.category_id,
+				data.vendor_id !== undefined ? data.vendor_id : existing.vendor_id,
 				newAmount, newType,
 				data.description ?? existing.description,
 				data.date ?? existing.date,

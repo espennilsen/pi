@@ -41,6 +41,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 				"- list_budgets, set_budget, budget_status\n" +
 				"- list_goals, add_goal, update_goal, goal_progress\n" +
 				"- list_recurring, add_recurring, process_recurring, upcoming_recurring\n" +
+				"- list_vendors, add_vendor, update_vendor, delete_vendor\n" +
 				"- spending_summary, category_breakdown, insights, trend_analysis, auto_categorize\n" +
 				"- import_csv, export_csv\n\n" +
 				"**Transaction types:** in, out\n" +
@@ -63,6 +64,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 					"list_budgets", "set_budget", "budget_status",
 					"list_goals", "add_goal", "update_goal", "goal_progress",
 					"list_recurring", "add_recurring", "update_recurring", "delete_recurring", "process_recurring", "upcoming_recurring",
+					"list_vendors", "add_vendor", "update_vendor", "delete_vendor",
 					"spending_summary", "category_breakdown",
 					"insights", "trend_analysis", "auto_categorize",
 					"import_bank", "import_bank_directory",
@@ -76,6 +78,8 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			account_id: Type.Optional(Type.Number({ description: "Account ID" })),
 			category_id: Type.Optional(Type.Number({ description: "Category ID" })),
 
+			vendor_id: Type.Optional(Type.Number({ description: "Vendor ID (for transactions)" })),
+
 			// Account fields
 			name: Type.Optional(Type.String({ description: "Name (account, category, or goal)" })),
 			account_type: Type.Optional(
@@ -84,6 +88,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 				}),
 			),
 			currency: Type.Optional(Type.String({ description: "Currency code (e.g. NOK, USD, EUR)" })),
+			country: Type.Optional(Type.String({ description: "Country code ISO 3166-1 alpha-2 (e.g. NO, US, SE) — for vendors" })),
 			balance: Type.Optional(Type.Number({ description: "Account balance" })),
 
 			// Transaction fields
@@ -137,6 +142,10 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			),
 			next_date: Type.Optional(Type.String({ description: "Next date for recurring (YYYY-MM-DD)" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether recurring is active" })),
+
+			// Vendor fields
+			ignore: Type.Optional(Type.Boolean({ description: "Mark vendor as ignored (hidden from default lists)" })),
+			include_ignored: Type.Optional(Type.Boolean({ description: "Include ignored vendors in list_vendors (default: false)" })),
 
 			// Filters
 			date_from: Type.Optional(Type.String({ description: "Filter: start date (YYYY-MM-DD)" })),
@@ -255,6 +264,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						const tx = await store.createTransaction({
 							account_id: params.account_id,
 							category_id: params.category_id,
+							vendor_id: params.vendor_id,
 							amount: params.amount,
 							transaction_type: params.transaction_type,
 							description: params.description,
@@ -271,6 +281,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						const updated = await store.updateTransaction(params.id, {
 							account_id: params.account_id,
 							category_id: params.category_id,
+							vendor_id: params.vendor_id,
 							amount: params.amount,
 							transaction_type: params.transaction_type,
 							description: params.description,
@@ -505,6 +516,48 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 							return `${icon} ${r.next_date} | **${r.description}** — ${formatAmount(r.amount)} (${r.frequency})`;
 						});
 						return text(`🔁 **Upcoming Recurring (next ${days} days)**\n\n${lines.join("\n")}`);
+					}
+
+					// ── Vendors ───────────────────────────────
+
+					case "list_vendors": {
+						const vendors = await store.getVendors(params.include_ignored ?? false);
+						if (vendors.length === 0) return text("No vendors found. Use `add_vendor` to create one.");
+						const lines = vendors.map(
+							(v) => `• **${v.name}**${v.country ? ` (${v.country})` : ""}${v.category_name ? ` → ${v.category_name}` : ""}${v.ignore ? " 🚫" : ""} — ${v.transaction_count ?? 0} txs`,
+						);
+						return text(`🏪 **Vendors** (${vendors.length})\n\n${lines.join("\n")}`);
+					}
+
+					case "add_vendor": {
+						if (!params.name) return text("❌ `name` is required to add a vendor.");
+						const vendor = await store.createVendor({
+							name: params.name,
+							country: params.country ?? undefined,
+							category_id: params.category_id ?? undefined,
+							ignore: params.ignore ?? false,
+							notes: params.notes ?? undefined,
+						});
+						return text(`✅ Vendor created: **${vendor.name}** (ID ${vendor.id})`);
+					}
+
+					case "update_vendor": {
+						if (!params.id) return text("❌ `id` is required to update a vendor.");
+						const updated = await store.updateVendor(params.id, {
+							name: params.name ?? undefined,
+							country: params.country ?? undefined,
+							category_id: params.category_id ?? undefined,
+							ignore: params.ignore,
+							notes: params.notes ?? undefined,
+						});
+						if (!updated) return text(`❌ Vendor #${params.id} not found.`);
+						return text(`✅ Vendor updated: **${updated.name}** (ID ${updated.id})`);
+					}
+
+					case "delete_vendor": {
+						if (!params.id) return text("❌ `id` is required to delete a vendor.");
+						const ok = await store.deleteVendor(params.id);
+						return text(ok ? `✅ Vendor #${params.id} deleted.` : `❌ Vendor #${params.id} not found.`);
 					}
 
 					// ── Reports ───────────────────────────────

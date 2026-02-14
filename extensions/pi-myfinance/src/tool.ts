@@ -78,6 +78,8 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			account_id: Type.Optional(Type.Number({ description: "Account ID" })),
 			category_id: Type.Optional(Type.Number({ description: "Category ID" })),
 
+			vendor_id: Type.Optional(Type.Number({ description: "Vendor ID (for transactions)" })),
+
 			// Account fields
 			name: Type.Optional(Type.String({ description: "Name (account, category, or goal)" })),
 			account_type: Type.Optional(
@@ -140,6 +142,9 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			),
 			next_date: Type.Optional(Type.String({ description: "Next date for recurring (YYYY-MM-DD)" })),
 			active: Type.Optional(Type.Boolean({ description: "Whether recurring is active" })),
+
+			// Vendor filters
+			include_ignored: Type.Optional(Type.Boolean({ description: "Include ignored/inactive vendors in list_vendors (default: false)" })),
 
 			// Filters
 			date_from: Type.Optional(Type.String({ description: "Filter: start date (YYYY-MM-DD)" })),
@@ -242,6 +247,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						const tx = await store.createTransaction({
 							account_id: params.account_id,
 							category_id: params.category_id,
+							vendor_id: params.vendor_id,
 							amount: params.amount,
 							transaction_type: params.transaction_type,
 							description: params.description,
@@ -258,6 +264,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						const updated = await store.updateTransaction(params.id, {
 							account_id: params.account_id,
 							category_id: params.category_id,
+							vendor_id: params.vendor_id,
 							amount: params.amount,
 							transaction_type: params.transaction_type,
 							description: params.description,
@@ -497,8 +504,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 					// ── Vendors ───────────────────────────────
 
 					case "list_vendors": {
-						const includeIgnored = params.active === false; // active=false means show all including ignored
-						const vendors = await store.getVendors(includeIgnored);
+						const vendors = await store.getVendors(params.include_ignored ?? false);
 						if (vendors.length === 0) return text("No vendors found. Use `add_vendor` to create one.");
 						const lines = vendors.map(
 							(v) => `• **${v.name}**${v.country ? ` (${v.country})` : ""}${v.category_name ? ` → ${v.category_name}` : ""}${v.ignore ? " 🚫" : ""} — ${v.transaction_count ?? 0} txs`,

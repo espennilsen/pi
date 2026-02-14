@@ -18,6 +18,8 @@
     "@mariozechner/pi-coding-agent": "*"
   },
   "dependencies": {
+    "@mariozechner/pi-ai": "^0.52.12",
+    "@sinclair/typebox": "^0.34.48",
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {

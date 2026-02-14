@@ -223,7 +223,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, sends to agent, then resolves them.",
 		handler: async (args: string | undefined, ctx: any) => {
 			const cwd = getCwd();
-			const argStr = args?.trim() ?? "";
+			const argStr = args?.trim().replace(/^#/, "") ?? "";
 
 			// ── Step 1: Find PR ─────────────────────────────────
 			let prNumber: number | null = null;

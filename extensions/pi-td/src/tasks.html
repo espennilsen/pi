@@ -836,9 +836,12 @@ async function fetchConfig() {
         if (resp.ok) {
           // Re-fetch and re-render detail
           if (isGlobal) {
+            var crossIssue = issues.find(function(i) { return i.id === id && i.projectPath === currentDetailProject; });
             var resp2 = await fetch('/api/td/global/detail?id=' + encodeURIComponent(id) + '&projectPath=' + encodeURIComponent(currentDetailProject));
             if (resp2.ok) {
               var detail = await resp2.json();
+              detail.project = crossIssue ? crossIssue.project : '';
+              detail.projectPath = currentDetailProject;
               renderDetail(detail, false);
             }
           } else {

@@ -80,8 +80,16 @@ function validateProjectPath(projectPath: string, res: ServerResponse): string |
 		badRequest(res, "projectPath is required");
 		return null;
 	}
-	const resolved = path.resolve(projectPath);
-	const root = path.resolve(config.rootDir);
+	// Resolve symlinks to prevent escaping the root via symlink targets
+	let resolved: string;
+	let root: string;
+	try {
+		resolved = fs.realpathSync(path.resolve(projectPath));
+		root = fs.realpathSync(path.resolve(config.rootDir));
+	} catch {
+		badRequest(res, "projectPath does not exist");
+		return null;
+	}
 	if (!resolved.startsWith(root + path.sep) && resolved !== root) {
 		badRequest(res, "projectPath is outside the cross-project root");
 		return null;

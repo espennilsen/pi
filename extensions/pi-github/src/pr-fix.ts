@@ -67,6 +67,13 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
   }
 }`;
 
+const REPLY_TO_THREAD_MUTATION = `
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {
+    comment { id }
+  }
+}`;
+
 const RESOLVE_THREAD_MUTATION = `
 mutation($threadId: ID!) {
   resolveReviewThread(input: { threadId: $threadId }) {
@@ -119,6 +126,11 @@ async function getUnresolvedThreads(owner: string, repo: string, prNumber: numbe
 	}
 
 	return threads;
+}
+
+async function replyToThread(threadId: string, body: string, cwd: string): Promise<boolean> {
+	const result = await ghGraphql<any>(REPLY_TO_THREAD_MUTATION, { threadId, body }, cwd);
+	return !!result?.data?.addPullRequestReviewThreadReply?.comment?.id;
 }
 
 async function resolveThread(threadId: string, cwd: string): Promise<boolean> {
@@ -404,12 +416,22 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				return;
 			}
 
-			// Resolve each thread
+			// Reply to and resolve each thread
 			let resolved = 0;
 			const resolvedIds = new Set<string>();
+			const shortSha = commitSha ? commitSha.slice(0, 7) : "latest";
+			const commitUrl = commitSha ? `${prInfo.url}/commits/${commitSha}` : "";
+			const commitRef = commitUrl ? `[\`${shortSha}\`](${commitUrl})` : `\`${shortSha}\``;
 
 			for (const thread of threads) {
 				try {
+					// Post a reply comment on the thread before resolving
+					const replyBody = `✅ Addressed in ${commitRef}`;
+					const replied = await replyToThread(thread.id, replyBody, cwd);
+					if (!replied) {
+						errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to post reply`);
+					}
+
 					const ok = await resolveThread(thread.id, cwd);
 					if (ok) {
 						resolved++;

@@ -107,13 +107,14 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 		execute: async (_toolCallId: string, params: any) => {
 			const action = params.action as string;
 			if (!action) return text("❌ Missing required parameter: `action`.");
+			const cwd = getCwd();
 
 			try {
 				switch (action) {
 					// ── Query actions ─────────────────────────
 
 					case "status": {
-						const result = await exec(pi, ["status"]);
+						const result = await exec(pi, ["status"], cwd);
 						return text(result);
 					}
 
@@ -123,28 +124,28 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (params.filter_type) args.push("--type", params.filter_type);
 						if (params.filter_priority) args.push("--priority", params.filter_priority);
 						if (params.filter_status) args.push("--status", params.filter_status);
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
 					case "show": {
 						if (!params.id) return text("❌ `id` is required for show.");
-						const result = await exec(pi, ["show", params.id]);
+						const result = await exec(pi, ["show", params.id], cwd);
 						return text(result);
 					}
 
 					case "ready": {
-						const result = await exec(pi, ["ready"]);
+						const result = await exec(pi, ["ready"], cwd);
 						return text(result || "No issues ready to start.");
 					}
 
 					case "next": {
-						const result = await exec(pi, ["next"]);
+						const result = await exec(pi, ["next"], cwd);
 						return text(result || "No issues available.");
 					}
 
 					case "reviewable": {
-						const result = await exec(pi, ["reviewable"]);
+						const result = await exec(pi, ["reviewable"], cwd);
 						return text(result || "No issues available for review.");
 					}
 
@@ -159,13 +160,13 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (params.labels) args.push("--labels", params.labels);
 						if (params.parent) args.push("--parent", params.parent);
 						if (params.minor) args.push("--minor");
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
 					case "start": {
 						if (!params.id) return text("❌ `id` is required for start.");
-						const result = await exec(pi, ["start", params.id]);
+						const result = await exec(pi, ["start", params.id], cwd);
 						return text(result);
 					}
 
@@ -175,7 +176,7 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (params.id) args.push("--issue", params.id);
 						if (params.log_type) args.push("--type", params.log_type);
 						args.push(params.message);
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
@@ -187,13 +188,13 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (params.decisions) for (const item of params.decisions) args.push("--decision", item);
 						if (params.uncertain) for (const item of params.uncertain) args.push("--uncertain", item);
 						if (params.message) args.push("--note", params.message);
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
 					case "review": {
 						if (!params.id) return text("❌ `id` is required for review.");
-						const result = await exec(pi, ["review", params.id]);
+						const result = await exec(pi, ["review", params.id], cwd);
 						return text(result);
 					}
 
@@ -201,7 +202,7 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (!params.id) return text("❌ `id` is required for approve.");
 						const args = ["approve", params.id];
 						if (params.reason) args.push("--reason", params.reason);
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
@@ -209,7 +210,7 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (!params.id) return text("❌ `id` is required for reject.");
 						if (!params.reason) return text("❌ `reason` is required for reject.");
 						const args = ["reject", params.id, "--reason", params.reason];
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
@@ -217,7 +218,7 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (!params.id) return text("❌ `id` is required for close.");
 						const args = ["close", params.id];
 						if (params.reason) args.push("--reason", params.reason);
-						const result = await exec(pi, args);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
@@ -225,26 +226,28 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 
 					case "block": {
 						if (!params.id) return text("❌ `id` is required for block.");
-						const result = await exec(pi, ["block", params.id]);
+						const args = ["block", params.id];
+						if (params.reason) args.push("--reason", params.reason);
+						const result = await exec(pi, args, cwd);
 						return text(result);
 					}
 
 					case "unblock": {
 						if (!params.id) return text("❌ `id` is required for unblock.");
-						const result = await exec(pi, ["unblock", params.id]);
+						const result = await exec(pi, ["unblock", params.id], cwd);
 						return text(result);
 					}
 
 					case "reopen": {
 						if (!params.id) return text("❌ `id` is required for reopen.");
-						const result = await exec(pi, ["reopen", params.id]);
+						const result = await exec(pi, ["reopen", params.id], cwd);
 						return text(result);
 					}
 
 					case "comment": {
 						if (!params.id) return text("❌ `id` is required for comment.");
 						if (!params.message) return text("❌ `message` is required for comment.");
-						const result = await exec(pi, ["comment", params.id, params.message]);
+						const result = await exec(pi, ["comment", params.id, params.message], cwd);
 						return text(result);
 					}
 
@@ -260,12 +263,16 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-async function exec(pi: ExtensionAPI, args: string[]): Promise<string> {
-	const result = await pi.exec("td", args, { timeout: 30_000 });
+async function exec(pi: ExtensionAPI, args: string[], cwd?: string): Promise<string> {
+	const result = await pi.exec("td", args, { timeout: 30_000, cwd });
 	const stdout = result.stdout?.trim() ?? "";
 	const stderr = result.stderr?.trim() ?? "";
 	if (result.code !== 0) {
 		throw new Error(stderr || stdout || `td exited with code ${result.code}`);
+	}
+	// td can exit 0 while reporting errors in stdout
+	if (stdout.startsWith("ERROR:") || stdout.startsWith("Warning: cannot")) {
+		throw new Error(stdout);
 	}
 	return stdout;
 }

@@ -3,6 +3,8 @@
  *
  * Spawns `pi` subprocesses in JSON mode for complete isolation.
  * Each run gets a fresh context — no shared state with the parent session.
+ *
+ * Captures full Message[] for rich rendering of subagent work.
  */
 
 import { spawn } from "node:child_process";
@@ -20,7 +22,8 @@ export interface RunnerOpts {
 	systemPrompt?: string;
 	signal?: AbortSignal;
 	timeoutMs?: number;
-	onEvent?: (event: any) => void;
+	/** Called after every message_end / tool_result_end event */
+	onMessage?: (msg: any) => void;
 }
 
 // ── Temp file management ────────────────────────────────────────
@@ -52,6 +55,7 @@ export async function runIsolatedAgent(
 	let tmpPath: string | null = null;
 
 	// Accumulators
+	const messages: any[] = [];
 	const textParts: string[] = [];
 	let turnCount = 0;
 	let toolCallCount = 0;
@@ -64,6 +68,8 @@ export async function runIsolatedAgent(
 	let costCacheRead = 0;
 	let costCacheWrite = 0;
 	let model: string | null = null;
+	let stopReason: string | null = null;
+	let errorMessage: string | null = null;
 	let stderr = "";
 
 	try {
@@ -91,11 +97,13 @@ export async function runIsolatedAgent(
 					? setTimeout(() => {
 							timedOut = true;
 							proc.kill("SIGTERM");
-							setTimeout(() => {
+							const killTimer = setTimeout(() => {
 								if (!proc.killed) proc.kill("SIGKILL");
 							}, 5000);
+							killTimer.unref();
 						}, timeoutMs)
 					: null;
+			if (timeoutHandle) (timeoutHandle as any).unref?.();
 			let buf = "";
 
 			const processLine = (line: string) => {
@@ -107,10 +115,9 @@ export async function runIsolatedAgent(
 					return;
 				}
 
-				opts.onEvent?.(ev);
-
 				if (ev.type === "message_end" && ev.message) {
 					const msg = ev.message;
+					messages.push(msg);
 
 					if (msg.role === "assistant") {
 						turnCount++;
@@ -123,29 +130,28 @@ export async function runIsolatedAgent(
 							if (u.cost) {
 								costInput += u.cost.input || 0;
 								costOutput += u.cost.output || 0;
-								costCacheRead +=
-									u.cost.cacheRead || 0;
-								costCacheWrite +=
-									u.cost.cacheWrite || 0;
+								costCacheRead += u.cost.cacheRead || 0;
+								costCacheWrite += u.cost.cacheWrite || 0;
 							}
 						}
-						if (!model && msg.model)
-							model = msg.model;
+						if (!model && msg.model) model = msg.model;
+						if (msg.stopReason) stopReason = msg.stopReason;
+						if (msg.errorMessage) errorMessage = msg.errorMessage;
 
 						if (Array.isArray(msg.content)) {
 							for (const block of msg.content) {
-								if (block.type === "text")
-									textParts.push(block.text);
+								if (block.type === "text") textParts.push(block.text);
 							}
 						}
 					}
+
+					opts.onMessage?.(msg);
 				}
 
-				if (
-					ev.type === "tool_execution_end" ||
-					ev.type === "tool_result_end"
-				) {
+				if (ev.type === "tool_result_end" && ev.message) {
+					messages.push(ev.message);
 					toolCallCount++;
+					opts.onMessage?.(ev.message);
 				}
 			};
 
@@ -172,25 +178,23 @@ export async function runIsolatedAgent(
 				const kill = () => {
 					aborted = true;
 					proc.kill("SIGTERM");
-					setTimeout(() => {
+					const killTimer = setTimeout(() => {
 						if (!proc.killed) proc.kill("SIGKILL");
 					}, 5000);
+					killTimer.unref();
 				};
 				if (opts.signal.aborted) kill();
-				else
-					opts.signal.addEventListener("abort", kill, {
-						once: true,
-					});
+				else opts.signal.addEventListener("abort", kill, { once: true });
 			}
 		});
 
 		const durationMs = Date.now() - startTime;
 		const totalTokens = inputTokens + outputTokens;
-		const costTotal =
-			costInput + costOutput + costCacheRead + costCacheWrite;
+		const costTotal = costInput + costOutput + costCacheRead + costCacheWrite;
 
 		const mkResult = (response: string, code: number): RunnerResult => ({
 			response,
+			messages,
 			exitCode: code,
 			inputTokens,
 			outputTokens,
@@ -206,6 +210,8 @@ export async function runIsolatedAgent(
 			turnCount,
 			durationMs,
 			model,
+			stopReason,
+			errorMessage,
 			stderr,
 		});
 
@@ -213,17 +219,7 @@ export async function runIsolatedAgent(
 		if (aborted) return mkResult("(aborted)", 1);
 		return mkResult(textParts.join("") || "(no response)", exitCode);
 	} finally {
-		if (tmpPath)
-			try {
-				fs.unlinkSync(tmpPath);
-			} catch {
-				/* ignore */
-			}
-		if (tmpDir)
-			try {
-				fs.rmdirSync(tmpDir);
-			} catch {
-				/* ignore */
-			}
+		if (tmpPath) try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+		if (tmpDir) try { fs.rmdirSync(tmpDir); } catch { /* ignore */ }
 	}
 }

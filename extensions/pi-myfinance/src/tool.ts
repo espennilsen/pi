@@ -11,6 +11,12 @@ import { generateInsights, analyzeTrends, autoCategorize } from "./insights.ts";
 import { importBankFile, importBankDirectory } from "./import-bank.ts";
 import type { TransactionFilters, GoalStatus } from "./types.ts";
 
+let log: ((event: string, data: unknown, level?: string) => void) | null = null;
+
+export function setToolLogger(logger: (event: string, data: unknown, level?: string) => void) {
+	log = logger;
+}
+
 interface ExtensionAPI {
 	registerTool(tool: any): void;
 	on(event: string, handler: (...args: any[]) => any): void;
@@ -167,6 +173,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 				const action = params.action as string;
 
 				if (!action) {
+					log?.("missing_action", { raw: JSON.stringify(params).slice(0, 200) }, "DEBUG");
 					return text(
 						"❌ Missing required parameter: `action`.\n\n" +
 						"**Usage:** `finance({ action: \"list_accounts\" })`\n\n" +
@@ -187,8 +194,16 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						const lines = accounts.map(
 							(a) => `• **${a.name}** (${a.account_type}) — ${formatAmount(a.balance, a.currency)}`,
 						);
-						const total = accounts.reduce((sum, a) => sum + a.balance, 0);
-						lines.push(`\n**Total:** ${formatAmount(total, "NOK")}`);
+						// Group totals by currency to avoid summing across different currencies
+						const byCurrency = new Map<string, number>();
+						for (const a of accounts) {
+							const cur = a.currency || "NOK";
+							byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + a.balance);
+						}
+						const totalParts = [...byCurrency.entries()]
+							.map(([cur, sum]) => formatAmount(sum, cur))
+							.join(", ");
+						lines.push(`\n**Total:** ${totalParts}`);
 						return text(`📊 **Accounts (${accounts.length})**\n\n${lines.join("\n")}`);
 					}
 
@@ -769,7 +784,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 // ── Formatting Helpers ──────────────────────────────────────────
 
 function formatAmount(amount: number, currency?: string): string {
-	const curr = currency ?? "NOK";
+	const curr = currency || "NOK";
 	return `${amount.toLocaleString("nb-NO", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${curr}`;
 }
 

@@ -522,8 +522,11 @@ function createRawStore() {
 			if (tx1.account_id === tx2.account_id) return false; // same account makes no sense
 			const db = getDb();
 			const ts = now();
-			db.prepare("UPDATE finance_transactions SET linked_transaction_id = ?, updated_at = ? WHERE id = ?").run(id2, ts, id1);
-			db.prepare("UPDATE finance_transactions SET linked_transaction_id = ?, updated_at = ? WHERE id = ?").run(id1, ts, id2);
+			const run = db.transaction(() => {
+				db.prepare("UPDATE finance_transactions SET linked_transaction_id = ?, updated_at = ? WHERE id = ?").run(id2, ts, id1);
+				db.prepare("UPDATE finance_transactions SET linked_transaction_id = ?, updated_at = ? WHERE id = ?").run(id1, ts, id2);
+			});
+			run();
 			return true;
 		},
 
@@ -533,8 +536,11 @@ function createRawStore() {
 			const db = getDb();
 			const ts = now();
 			const linkedId = tx.linked_transaction_id;
-			db.prepare("UPDATE finance_transactions SET linked_transaction_id = NULL, updated_at = ? WHERE id = ?").run(ts, id);
-			db.prepare("UPDATE finance_transactions SET linked_transaction_id = NULL, updated_at = ? WHERE id = ?").run(ts, linkedId);
+			const run = db.transaction(() => {
+				db.prepare("UPDATE finance_transactions SET linked_transaction_id = NULL, updated_at = ? WHERE id = ?").run(ts, id);
+				db.prepare("UPDATE finance_transactions SET linked_transaction_id = NULL, updated_at = ? WHERE id = ?").run(ts, linkedId);
+			});
+			run();
 			return true;
 		},
 

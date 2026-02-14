@@ -34,9 +34,9 @@ export function parseDnbTxt(filePath: string): BankTransaction[] {
 
 		let amount = 0;
 		if (utAvKonto && utAvKonto !== "") {
-			amount = parseNorwegianNumber(utAvKonto);
+			amount = -Math.abs(parseNorwegianNumber(utAvKonto));
 		} else if (innPaaKonto && innPaaKonto !== "") {
-			amount = parseNorwegianNumber(innPaaKonto);
+			amount = Math.abs(parseNorwegianNumber(innPaaKonto));
 		}
 
 		if (amount === 0) continue;

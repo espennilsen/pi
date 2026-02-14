@@ -627,10 +627,19 @@ interface MultipartResult {
 	files: Record<string, { buffer: Buffer; filename: string; contentType: string }>;
 }
 
-function readRawBody(req: http.IncomingMessage): Promise<Buffer> {
+function readRawBody(req: http.IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = [];
-		req.on("data", (chunk: Buffer) => chunks.push(chunk));
+		let size = 0;
+		req.on("data", (chunk: Buffer) => {
+			size += chunk.length;
+			if (size > maxSize) {
+				req.destroy();
+				reject(new Error(`Request body exceeds maximum size of ${maxSize} bytes`));
+				return;
+			}
+			chunks.push(chunk);
+		});
 		req.on("end", () => resolve(Buffer.concat(chunks)));
 		req.on("error", reject);
 	});

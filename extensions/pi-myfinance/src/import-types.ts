@@ -26,7 +26,9 @@ export interface BankTransaction {
 // ── Parsing Helpers ─────────────────────────────────────────────
 
 export function parseNorwegianNumber(value: string): number {
-	const cleaned = value.replace(/\s/g, "").replace(/,/g, "");
+	// Norwegian format uses period as thousands separator and comma as decimal: "1.234,56"
+	// Strip thousands separators (periods), then convert decimal comma to dot
+	const cleaned = value.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
 	return parseFloat(cleaned) || 0;
 }
 
@@ -34,7 +36,8 @@ export function parseNumericValue(value: unknown): number {
 	if (typeof value === "number") return value;
 	if (value instanceof Date) return 0;
 	const s = String(value).trim().replace(/\s/g, "");
-	const cleaned = s.replace(/"/g, "").replace(/,/g, "");
+	// Norwegian format: strip thousands periods, convert decimal comma to dot
+	const cleaned = s.replace(/"/g, "").replace(/\./g, "").replace(",", ".");
 	return parseFloat(cleaned) || 0;
 }
 

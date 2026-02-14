@@ -80,13 +80,16 @@ Key extensions:
 4. **Create a feature branch:** `git checkout -b <task-id>/<short-description>` (e.g. `td-e29be6/delete-button-icon`)
 5. **Log progress as you go:** `td log "what you did"`
 6. **Commit to the feature branch**, then handoff: `td handoff <id> --done "..."`
-7. **Submit for review:** `td review <id>`
+7. **Push and create PR:** `git push origin <branch>` then `gh pr create --fill`
+8. **Submit for review:** `td review <id>`
 
 ### Rules:
 - **Never commit to `main`** — always use a feature branch
 - **Branch names start with task ID:** `<task-id>/<short-description>`
 - **Every change needs a task** — bug fixes, features, refactors, doc updates, config changes, typo fixes — everything
 - **One task per branch** — don't mix unrelated work
+- **Always create a PR** — push the branch and `gh pr create` before handoff. No orphan branches.
+- **PR review fixes go on the PR branch** — checkout the existing PR branch, commit, and push. Don't create a new branch.
 - **No exceptions** — if you forgot to create a task, stop and create one now before continuing
 
 ## Other Conventions

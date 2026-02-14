@@ -160,18 +160,9 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 			// CSV
 			csv_data: Type.Optional(Type.String({ description: "CSV text to import" })),
 		}),
-		execute: async (rawParams: any) => {
+		execute: async (_toolCallId: string, params: any) => {
 			try {
 				const store = getFinanceStore();
-
-				// Robust param extraction — handle nested wrappers, string-typed params, etc.
-				let params: any = rawParams;
-				if (typeof params === "string") {
-					try { params = JSON.parse(params); } catch { params = {}; }
-				}
-				if (!params || typeof params !== "object") params = {};
-				if (!params.action && params.params?.action) params = params.params;
-				if (!params.action && params.input?.action) params = params.input;
 
 				const action = params.action as string;
 

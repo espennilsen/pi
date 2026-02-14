@@ -12,6 +12,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { badRequest, html, json, notFound, readBody, serverError } from "./http-helpers.ts";
 import { getAllProjectIssues, getCrossProjectStats, getProjectTree } from "./cross-project.ts";
 import { getCrossProjectConfig, loadTdSettings } from "./td-settings.ts";
+import { registerTdTool } from "./tool.ts";
 
 const TASKS_HTML = fs.readFileSync(
 	path.resolve(import.meta.dirname, "./tasks.html"),
@@ -460,6 +461,9 @@ function mountRoutes(pi: ExtensionAPI): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	// Register the td tool for LLM access
+	registerTdTool(pi, () => sessionCwd);
+
 	let webMounted = false;
 
 	function mountWeb(): void {

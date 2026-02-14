@@ -19,7 +19,7 @@ import { resolveSettings } from "./settings.ts";
 import { HeartbeatRunner } from "./heartbeat.ts";
 import { mountHeartbeatRoutes, unmountHeartbeatRoutes } from "./web.ts";
 import { createLogger } from "./logger.ts";
-import { setStore, isStoreReady, getStore, createMemoryStore, createKyselyStore } from "./store.ts";
+import { setStore, isStoreReady, getStore, createMemoryStore, createKyselyStore, resetStore } from "./store.ts";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -163,7 +163,7 @@ export default function (pi: ExtensionAPI) {
 			runner = null;
 		}
 		// Reset store to avoid stale state across sessions
-		setStore(null);
+		await resetStore();
 	});
 
 	// ── Command: /heartbeat ───────────────────────────────────

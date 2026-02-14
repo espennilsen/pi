@@ -44,6 +44,15 @@ export function isStoreReady(): boolean {
 	return activeStore !== null;
 }
 
+/** Reset all store state (call on session shutdown). */
+export async function resetStore(): Promise<void> {
+	activeStore = null;
+	try {
+		const db = await import("./db-kysely.ts");
+		db.resetDb();
+	} catch { /* db-kysely may not have been loaded */ }
+}
+
 export function getStore(): HeartbeatStore {
 	if (!activeStore) throw new Error("Heartbeat store not initialized");
 	return activeStore;

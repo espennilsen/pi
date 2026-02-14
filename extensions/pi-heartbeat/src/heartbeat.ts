@@ -236,6 +236,7 @@ export class HeartbeatRunner {
 			}, timeoutMs);
 
 			child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+			child.stdin.on("error", () => { /* ignore EPIPE / ERR_STREAM_DESTROYED */ });
 
 			rl.on("line", (line) => {
 				try {

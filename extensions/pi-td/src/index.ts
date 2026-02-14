@@ -1,7 +1,8 @@
 /**
- * pi-td-webui — td task management web UI for pi.
+ * pi-td — td task management extension for pi.
  *
- * Serves the /tasks page and /api/td/* endpoints via pi-webserver.
+ * Optionally serves the /tasks page and /api/td/* endpoints via pi-webserver.
+ * Web UI can be toggled via settings: { "pi-td": { "webui": true } }
  */
 
 import * as fs from "node:fs";
@@ -10,7 +11,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { badRequest, html, json, notFound, readBody, serverError } from "./http-helpers.ts";
 import { getAllProjectIssues, getCrossProjectStats, getProjectTree } from "./cross-project.ts";
-import { getCrossProjectConfig } from "./td-settings.ts";
+import { getCrossProjectConfig, loadTdSettings } from "./td-settings.ts";
 
 const TASKS_HTML = fs.readFileSync(
 	path.resolve(import.meta.dirname, "./tasks.html"),
@@ -459,11 +460,27 @@ function mountRoutes(pi: ExtensionAPI): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	const mountAll = () => mountRoutes(pi);
+	let webMounted = false;
+
+	function mountWeb(): void {
+		if (webMounted) return;
+		mountRoutes(pi);
+		webMounted = true;
+	}
+
+	function unmountWeb(): void {
+		if (!webMounted) return;
+		pi.events.emit("web:unmount", { name: "td-webui" });
+		pi.events.emit("web:unmount-api", { name: "td-webui-api" });
+		webMounted = false;
+	}
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionCwd = ctx.cwd;
-		mountAll();
+		const settings = loadTdSettings(ctx.cwd);
+		if (settings.webui) {
+			mountWeb();
+		}
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
@@ -475,11 +492,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.events.on("web:ready", () => {
-		mountAll();
+		const settings = loadTdSettings(sessionCwd);
+		if (settings.webui) {
+			mountWeb();
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
-		pi.events.emit("web:unmount", { name: "td-webui" });
-		pi.events.emit("web:unmount-api", { name: "td-webui-api" });
+		unmountWeb();
 	});
 }

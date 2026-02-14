@@ -1,7 +1,7 @@
 {
-  "name": "pi-td-webui",
-  "version": "0.1.0",
-  "description": "td task dashboard extension for pi-webserver",
+  "name": "pi-td",
+  "version": "0.2.0",
+  "description": "td task management extension for pi — optional web dashboard via pi-webserver",
   "type": "module",
   "keywords": [
     "pi-package"

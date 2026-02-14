@@ -1,5 +1,5 @@
 /**
- * Local HTTP helpers to keep pi-td-webui self-contained.
+ * Local HTTP helpers to keep pi-td self-contained.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";

@@ -14,11 +14,19 @@
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 
 const ACTOR = "pi-heartbeat";
-
-type Driver = "sqlite" | "postgres" | "mysql";
+const EVENT_TIMEOUT_MS = 15_000;
 
 let events: EventBus;
-let driver: Driver = "sqlite";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+		promise.then(
+			(val) => { clearTimeout(timer); resolve(val); },
+			(err) => { clearTimeout(timer); reject(err); },
+		);
+	});
+}
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -46,25 +54,20 @@ const SCHEMA = {
 export async function initDb(eventBus: EventBus): Promise<void> {
 	events = eventBus;
 
-	// Detect SQL dialect from pi-kysely
-	events.emit("kysely:info", {
-		reply: (info: { defaultDriver?: string }) => {
-			if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
-				driver = info.defaultDriver;
-			}
-		},
-	});
-
 	// Register schema (additive, idempotent)
-	await new Promise<void>((resolve, reject) => {
-		events.emit("kysely:schema:register", {
-			...SCHEMA,
-			reply: (result: { ok: boolean; errors: string[] }) => {
-				if (result.ok) resolve();
-				else reject(new Error(`Schema register failed: ${result.errors.join("; ")}`));
-			},
-		});
-	});
+	await withTimeout(
+		new Promise<void>((resolve, reject) => {
+			events.emit("kysely:schema:register", {
+				...SCHEMA,
+				reply: (result: { ok: boolean; errors: string[] }) => {
+					if (result.ok) resolve();
+					else reject(new Error(`Schema register failed: ${result.errors.join("; ")}`));
+				},
+			});
+		}),
+		EVENT_TIMEOUT_MS,
+		"kysely:schema:register",
+	);
 }
 
 // ── Query helper ────────────────────────────────────────────────
@@ -76,16 +79,20 @@ interface QueryResult {
 }
 
 function query(sql: string, params: unknown[] = []): Promise<QueryResult> {
-	return new Promise((resolve, reject) => {
-		events.emit("kysely:query", {
-			actor: ACTOR,
-			input: { sql, params },
-			reply: (result: QueryResult) => resolve(result),
-			ack: (ack: { ok: boolean; error?: string }) => {
-				if (!ack.ok) reject(new Error(ack.error));
-			},
-		});
-	});
+	return withTimeout(
+		new Promise((resolve, reject) => {
+			events.emit("kysely:query", {
+				actor: ACTOR,
+				input: { sql, params },
+				reply: (result: QueryResult) => resolve(result),
+				ack: (ack: { ok: boolean; error?: string }) => {
+					if (!ack.ok) reject(new Error(ack.error));
+				},
+			});
+		}),
+		EVENT_TIMEOUT_MS,
+		"kysely:query",
+	);
 }
 
 // ── Types ───────────────────────────────────────────────────────

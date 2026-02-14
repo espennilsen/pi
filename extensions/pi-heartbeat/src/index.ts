@@ -26,6 +26,7 @@ export default function (pi: ExtensionAPI) {
 	let runner: HeartbeatRunner | null = null;
 	let cwd = process.cwd();
 	let webMounted = false;
+	let unsubKyselyReady: (() => void) | null = null;
 
 	// ── Flag: --heartbeat ─────────────────────────────────────
 
@@ -122,7 +123,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			};
 
-			pi.events.on("kysely:ready", initKysely);
+			unsubKyselyReady = pi.events.on("kysely:ready", initKysely);
 
 			log("init", { backend: "kysely", status: "probing for kysely" });
 			let kyselyAlreadyReady = false;
@@ -153,6 +154,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		unmountWeb();
+		if (unsubKyselyReady) {
+			unsubKyselyReady();
+			unsubKyselyReady = null;
+		}
 		if (runner) {
 			runner.stop();
 			runner = null;

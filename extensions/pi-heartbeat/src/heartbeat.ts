@@ -215,18 +215,26 @@ export class HeartbeatRunner {
 			let stderr = "";
 			let settled = false;
 
+			// Parse JSON-line events from RPC stdout
+			const rl = readline.createInterface({ input: child.stdout });
+
+			function settle(result: { stdout: string; stderr: string; exitCode: number }): void {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				rl.close();
+				resolve(result);
+			}
+
 			const timeout = setTimeout(() => {
-				if (!settled) {
-					settled = true;
-					child.kill("SIGTERM");
-					resolve({ stdout: responseText, stderr: stderr + "\nHeartbeat timed out", exitCode: 1 });
-				}
+				child.kill("SIGTERM");
+				// Force kill if SIGTERM is ignored
+				setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
+				settle({ stdout: responseText, stderr: stderr + "\nHeartbeat timed out", exitCode: 1 });
 			}, timeoutMs);
 
 			child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
-			// Parse JSON-line events from RPC stdout
-			const rl = readline.createInterface({ input: child.stdout });
 			rl.on("line", (line) => {
 				try {
 					const event = JSON.parse(line);
@@ -254,19 +262,11 @@ export class HeartbeatRunner {
 			child.stdin.write(promptCmd);
 
 			child.on("close", (code) => {
-				if (!settled) {
-					settled = true;
-					clearTimeout(timeout);
-					resolve({ stdout: responseText, stderr, exitCode: code ?? 0 });
-				}
+				settle({ stdout: responseText, stderr, exitCode: code ?? 0 });
 			});
 
 			child.on("error", (err) => {
-				if (!settled) {
-					settled = true;
-					clearTimeout(timeout);
-					resolve({ stdout: responseText, stderr: stderr + "\n" + err.message, exitCode: 1 });
-				}
+				settle({ stdout: responseText, stderr: stderr + "\n" + err.message, exitCode: 1 });
 			});
 		});
 	}

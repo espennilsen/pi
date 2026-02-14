@@ -75,7 +75,7 @@ Key extensions:
 
 ### Required workflow — follow every time:
 1. **Check for existing task:** `td status` or `td ready`
-2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore`
+2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore` (use `--minor` for small/trivial changes)
 3. **Start the task:** `td start <id>`
 4. **Create a feature branch:** `git checkout -b <task-id>/<short-description>` (e.g. `td-e29be6/delete-button-icon`)
 5. **Log progress as you go:** `td log "what you did"`

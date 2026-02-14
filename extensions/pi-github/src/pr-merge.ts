@@ -149,6 +149,11 @@ async function cleanupBranches(
 	log: LogFn,
 	prNumber: number,
 ): Promise<void> {
+	if (!headBranch) {
+		ctx.ui.notify("⚠️ Head branch unknown — skipping branch cleanup.", "warning");
+		return;
+	}
+
 	const errors: string[] = [];
 
 	// Delete remote branch

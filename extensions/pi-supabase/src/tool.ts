@@ -30,7 +30,7 @@ export function registerSupabaseTool(pi: ExtensionAPI): void {
 			"Read-only access to Supabase database. " +
 			"Actions: query (select rows with filters/ordering/pagination), " +
 			"describe (table schema), tables (list all tables), " +
-			"count (count rows), rpc (call a Postgres function), " +
+			"count (count rows), rpc (call a read-only Postgres function — mutating names are blocked), " +
 			"status (connection info).",
 		parameters: Type.Object({
 			action: StringEnum(ACTIONS, {
@@ -151,7 +151,6 @@ async function handleDescribe(params: any, start: number) {
 	if (!params.table) return text("❌ 'table' is required for describe action");
 
 	const client = getClient();
-	const { data, error } = await client.rpc("", {}).throwOnError();
 
 	// Use information_schema to describe the table
 	const { data: cols, error: colErr } = await client
@@ -251,8 +250,16 @@ async function handleCount(params: any, start: number) {
 	return text(`**${params.table}** — ${count ?? 0} row${count !== 1 ? "s" : ""} (${durationMs}ms)`);
 }
 
+/** Reject RPC function names that look like mutating operations. */
+const MUTATING_PREFIXES = ["insert", "update", "delete", "upsert", "create", "drop", "alter", "truncate", "remove", "set_", "reset_"];
+
 async function handleRpc(params: any, start: number) {
 	if (!params.function_name) return text("❌ 'function_name' is required for rpc action");
+
+	const fnLower = params.function_name.toLowerCase();
+	if (MUTATING_PREFIXES.some(p => fnLower.startsWith(p))) {
+		return text(`❌ Read-only mode: refusing to call '${params.function_name}' — function name suggests a mutating operation.`);
+	}
 
 	const client = getClient();
 	const { data, error } = await client.rpc(params.function_name, params.function_args ?? {});
@@ -287,8 +294,13 @@ function handleStatus() {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+const VALID_OPERATORS = new Set(["eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike", "is", "in"]);
+
 function applyFilters(query: any, filters: any[]): any {
 	for (const f of filters) {
+		if (!VALID_OPERATORS.has(f.operator)) {
+			throw new Error(`Unknown filter operator: '${f.operator}'. Valid: ${[...VALID_OPERATORS].join(", ")}`);
+		}
 		switch (f.operator) {
 			case "eq":    query = query.eq(f.column, f.value); break;
 			case "neq":   query = query.neq(f.column, f.value); break;
@@ -300,7 +312,6 @@ function applyFilters(query: any, filters: any[]): any {
 			case "ilike": query = query.ilike(f.column, f.value); break;
 			case "is":    query = query.is(f.column, f.value); break;
 			case "in":    query = query.in(f.column, f.value); break;
-			default:      query = query.eq(f.column, f.value); break;
 		}
 	}
 	return query;

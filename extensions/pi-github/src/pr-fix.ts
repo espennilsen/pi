@@ -126,12 +126,21 @@ async function resolveThread(threadId: string, cwd: string): Promise<boolean> {
 	return !!result?.data?.resolveReviewThread?.thread?.isResolved;
 }
 
-async function getLatestCommitSha(cwd: string): Promise<string | null> {
+async function gitExec(args: string[], cwd: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
 	return new Promise((resolve) => {
-		execFile("git", ["rev-parse", "HEAD"], { cwd, timeout: 5_000 }, (err, stdout) => {
-			resolve(err ? null : stdout?.trim() || null);
+		execFile("git", args, { cwd, timeout: 15_000 }, (err, stdout, stderr) => {
+			resolve({
+				ok: !err,
+				stdout: stdout?.trim() ?? "",
+				stderr: stderr?.trim() ?? "",
+			});
 		});
 	});
+}
+
+async function getLatestCommitSha(cwd: string): Promise<string | null> {
+	const result = await gitExec(["rev-parse", "HEAD"], cwd);
+	return result.ok ? result.stdout : null;
 }
 
 async function postPrComment(prNumber: number, body: string, cwd: string): Promise<boolean> {
@@ -227,14 +236,50 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					return;
 				}
 				if (branch === "main" || branch === "master") {
-					ctx.ui.notify("❌ Cannot fix PR from main/master. Checkout the PR branch first.", "error");
-					return;
+					// On main/master — find the most recent open PR with review threads
+					ctx.ui.notify("On main — looking for open PRs with review feedback…", "info");
+					const prs = await ghJson<any[]>(["pr", "list", "--state", "open", "--json", "number,title,headRefName", "--limit", "10"], cwd);
+					if (!prs || prs.length === 0) {
+						ctx.ui.notify("❌ No open PRs found.", "error");
+						return;
+					}
+					// Use the first open PR (most recent)
+					prNumber = prs[0].number;
+					ctx.ui.notify(`Found PR #${prNumber} (${prs[0].title}) — checking out \`${prs[0].headRefName}\`…`, "info");
+				} else {
+					prNumber = await getPrForBranch(branch, cwd);
+					if (!prNumber) {
+						ctx.ui.notify(`❌ No PR found for branch \`${branch}\`.`, "error");
+						return;
+					}
 				}
-				prNumber = await getPrForBranch(branch, cwd);
-				if (!prNumber) {
-					ctx.ui.notify(`❌ No PR found for branch \`${branch}\`.`, "error");
-					return;
+			}
+
+			// Ensure we're on the PR branch
+			{
+				const prData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName"], cwd);
+				const prBranch = prData?.headRefName;
+				if (prBranch) {
+					const currentBranch = await getCurrentBranch(cwd);
+					if (currentBranch !== prBranch) {
+						ctx.ui.notify(`Switching to branch \`${prBranch}\`…`, "info");
+						const checkout = await gitExec(["checkout", prBranch], cwd);
+						if (!checkout.ok) {
+							// Branch might not exist locally — try fetching first
+							await gitExec(["fetch", "origin", `${prBranch}:${prBranch}`], cwd);
+							const retry = await gitExec(["checkout", prBranch], cwd);
+							if (!retry.ok) {
+								ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
+								return;
+							}
+						}
+					}
 				}
+			}
+
+			if (!prNumber) {
+				ctx.ui.notify("❌ Could not determine PR number.", "error");
+				return;
 			}
 
 			// ── Step 2: Get repo info ───────────────────────────
@@ -335,9 +380,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			}
 
 			// Push the branch
-			await new Promise<void>((res) => {
-				execFile("git", ["push"], { cwd, timeout: 30_000 }, () => res());
-			});
+			await gitExec(["push"], cwd);
 
 			pendingThreads = null;
 

@@ -197,7 +197,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 						// Group totals by currency to avoid summing across different currencies
 						const byCurrency = new Map<string, number>();
 						for (const a of accounts) {
-							const cur = a.currency ?? "NOK";
+							const cur = a.currency || "NOK";
 							byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + a.balance);
 						}
 						const totalParts = [...byCurrency.entries()]

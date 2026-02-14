@@ -328,7 +328,7 @@ export default function (pi: ExtensionAPI) {
 			// Group totals by currency
 			const byCurrency = new Map<string, number>();
 			for (const a of accounts) {
-				const cur = a.currency ?? "NOK";
+				const cur = a.currency || "NOK";
 				byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + Number(a.balance));
 			}
 			const totalParts = [...byCurrency.entries()]
@@ -336,7 +336,7 @@ export default function (pi: ExtensionAPI) {
 				.join(", ");
 
 			const lines = accounts.map(a =>
-				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency ?? "NOK"}`
+				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency || "NOK"}`
 			);
 			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${totalParts}`);
 			ctx.ui.notify(lines.join("\n"), "info");
@@ -504,13 +504,8 @@ export default function (pi: ExtensionAPI) {
 			// Strip surrounding quotes from account name (user may quote it)
 			accountName = accountName.replace(/^["']|["']$/g, "");
 
-			if (filePath === "~") {
-				filePath = os.homedir();
-			} else if (filePath.startsWith("~/")) {
-				filePath = path.join(os.homedir(), filePath.slice(2));
-			} else {
-				filePath = path.resolve(filePath);
-			}
+			filePath = expandHome(filePath);
+			if (!path.isAbsolute(filePath)) filePath = path.resolve(filePath);
 
 			if (!fs.existsSync(filePath)) {
 				ctx.ui.notify(`File not found: ${filePath}`, "error");

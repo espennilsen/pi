@@ -126,9 +126,9 @@ async function resolveThread(threadId: string, cwd: string): Promise<boolean> {
 	return !!result?.data?.resolveReviewThread?.thread?.isResolved;
 }
 
-async function gitExec(args: string[], cwd: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+async function gitExec(args: string[], cwd: string, timeoutMs = 15_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
 	return new Promise((resolve) => {
-		execFile("git", args, { cwd, timeout: 15_000 }, (err, stdout, stderr) => {
+		execFile("git", args, { cwd, timeout: timeoutMs }, (err, stdout, stderr) => {
 			resolve({
 				ok: !err,
 				stdout: stdout?.trim() ?? "",
@@ -237,43 +237,27 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					return;
 				}
 				if (branch === "main" || branch === "master") {
-					// On main/master — find the most recent open PR with review threads
-					ctx.ui.notify("On main — looking for open PRs with review feedback…", "info");
-					const prs = await ghJson<any[]>(["pr", "list", "--state", "open", "--json", "number,title,headRefName", "--limit", "10"], cwd);
+					// On main/master — find the most recent open PR with changes requested
+					ctx.ui.notify("On main — looking for open PRs with changes requested…", "info");
+					const prs = await ghJson<any[]>(["pr", "list", "--state", "open", "--search", "review:changes-requested", "--json", "number,title,headRefName", "--limit", "10"], cwd);
 					if (!prs || prs.length === 0) {
-						ctx.ui.notify("❌ No open PRs found.", "error");
-						return;
+						// Fall back to most recent open PR
+						const allPrs = await ghJson<any[]>(["pr", "list", "--state", "open", "--json", "number,title,headRefName", "--limit", "10"], cwd);
+						if (!allPrs || allPrs.length === 0) {
+							ctx.ui.notify("❌ No open PRs found.", "error");
+							return;
+						}
+						prNumber = allPrs[0].number;
+						ctx.ui.notify(`No PRs with changes requested — using most recent open PR #${prNumber} (${allPrs[0].title}).`, "info");
+					} else {
+						prNumber = prs[0].number;
+						ctx.ui.notify(`Found PR #${prNumber} (${prs[0].title}) — checking out \`${prs[0].headRefName}\`…`, "info");
 					}
-					// Use the first open PR (most recent)
-					prNumber = prs[0].number;
-					ctx.ui.notify(`Found PR #${prNumber} (${prs[0].title}) — checking out \`${prs[0].headRefName}\`…`, "info");
 				} else {
 					prNumber = await getPrForBranch(branch, cwd);
 					if (!prNumber) {
 						ctx.ui.notify(`❌ No PR found for branch \`${branch}\`.`, "error");
 						return;
-					}
-				}
-			}
-
-			// Ensure we're on the PR branch
-			{
-				const prData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName"], cwd);
-				const prBranch = prData?.headRefName;
-				if (prBranch) {
-					const currentBranch = await getCurrentBranch(cwd);
-					if (currentBranch !== prBranch) {
-						ctx.ui.notify(`Switching to branch \`${prBranch}\`…`, "info");
-						const checkout = await gitExec(["checkout", prBranch], cwd);
-						if (!checkout.ok) {
-							// Branch might not exist locally — try fetching first
-							await gitExec(["fetch", "origin", `${prBranch}:${prBranch}`], cwd);
-							const retry = await gitExec(["checkout", prBranch], cwd);
-							if (!retry.ok) {
-								ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
-								return;
-							}
-						}
 					}
 				}
 			}
@@ -290,13 +274,37 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				return;
 			}
 
-			// ── Step 3: Fetch unresolved threads ────────────────
+			// ── Step 3: Fetch unresolved threads BEFORE switching branches ──
 			ctx.ui.notify(`Fetching review feedback for PR #${prNumber}…`, "info");
 
 			const threads = await getUnresolvedThreads(repoInfo.owner, repoInfo.repo, prNumber, cwd);
 			if (threads.length === 0) {
 				ctx.ui.notify(`✅ PR #${prNumber} has no unresolved review threads!`, "info");
 				return;
+			}
+
+			// ── Step 4: Ensure we're on the PR branch ───────────
+			{
+				const prBranchData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName"], cwd);
+				if (!prBranchData?.headRefName) {
+					ctx.ui.notify(`❌ Could not fetch PR #${prNumber} branch info (network error or auth failure).`, "error");
+					return;
+				}
+				const prBranch = prBranchData.headRefName;
+				const currentBranch = await getCurrentBranch(cwd);
+				if (currentBranch !== prBranch) {
+					ctx.ui.notify(`Switching to branch \`${prBranch}\`…`, "info");
+					const checkout = await gitExec(["checkout", prBranch], cwd);
+					if (!checkout.ok) {
+						// Branch might not exist locally — try fetching with force-update
+						await gitExec(["fetch", "origin", `+refs/heads/${prBranch}:refs/heads/${prBranch}`], cwd, 30_000);
+						const retry = await gitExec(["checkout", prBranch], cwd);
+						if (!retry.ok) {
+							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
+							return;
+						}
+					}
+				}
 			}
 
 			// Get PR info for the prompt
@@ -312,14 +320,14 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			log("pr-fix-start", { prNumber, threadCount: threads.length });
 
-			// ── Step 4: Send feedback to agent as user message ──
+			// ── Step 5: Send feedback to agent as user message ──
 			const prompt = formatThreadsForAgent(threads, prInfo);
 			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Sending to agent…`, "info");
 
 			// Send as a follow-up user message that the agent will process
 			sendUserMessage(prompt, { deliverAs: "followUp" });
 
-			// ── Step 5: Store threads for resolution ────────────
+			// ── Step 6: Store threads for resolution ────────────
 			// The agent will process the feedback. We store the threads
 			// so /gh-pr-resolve can resolve them after the agent commits.
 			pendingThreads = { prInfo, threads };
@@ -358,7 +366,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			// Push the branch FIRST — abort if it fails so we don't
 			// resolve threads / post comments referencing a non-existent remote commit
-			const pushResult = await gitExec(["push"], cwd);
+			const pushResult = await gitExec(["push"], cwd, 30_000);
 			if (!pushResult.ok) {
 				errors.push(`git push failed: ${pushResult.stderr}`);
 				ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");

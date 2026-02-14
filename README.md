@@ -32,6 +32,7 @@ Each extension lives in `extensions/<name>/` with its own `README.md` and settin
 | [**pi-personal-crm**](https://github.com/espennilsen/pi/tree/main/extensions/pi-personal-crm) | Personal CRM with contacts, companies, interactions |
 | [**pi-projects**](https://github.com/espennilsen/pi/tree/main/extensions/pi-projects) | Project tracking dashboard with git status |
 | [**pi-subagent**](https://github.com/espennilsen/pi/tree/main/extensions/pi-subagent) | Parallel task delegation via isolated subprocesses |
+| [**pi-supabase**](https://github.com/espennilsen/pi/tree/main/extensions/pi-supabase) | Read-only Supabase queries with realtime notifications |
 | [**pi-td**](https://github.com/espennilsen/pi/tree/main/extensions/pi-td) | Task management with optional web dashboard |
 | [**pi-telemetry**](https://github.com/espennilsen/pi/tree/main/extensions/pi-telemetry) | Local-only privacy-safe event telemetry |
 | [**pi-vault**](https://github.com/espennilsen/pi/tree/main/extensions/pi-vault) | Obsidian vault tool and health dashboard |

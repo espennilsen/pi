@@ -784,7 +784,7 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 // ── Formatting Helpers ──────────────────────────────────────────
 
 function formatAmount(amount: number, currency?: string): string {
-	const curr = currency ?? "NOK";
+	const curr = currency || "NOK";
 	return `${amount.toLocaleString("nb-NO", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${curr}`;
 }
 

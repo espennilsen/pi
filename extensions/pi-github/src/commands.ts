@@ -20,7 +20,7 @@ function registerDualCommand(
 	opts: {
 		description: string;
 		completions?: string[];
-		handler: (args: string, ctx: any, cwd: string) => Promise<void>;
+		handler: (args: string, ctx: any) => Promise<void>;
 	},
 ) {
 	const def = {
@@ -29,7 +29,7 @@ function registerDualCommand(
 			? (prefix: string) => opts.completions!.filter(c => c.startsWith(prefix)).map(c => ({ value: c, label: c }))
 			: undefined,
 		handler: async (args: string | undefined, ctx: any) => {
-			await opts.handler(args?.trim() ?? "", ctx, sessionCwd);
+			await opts.handler(args?.trim() ?? "", ctx);
 		},
 	};
 	pi.registerCommand(shortName, def);

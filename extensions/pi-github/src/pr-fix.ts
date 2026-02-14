@@ -223,7 +223,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, sends to agent, then resolves them.",
 		handler: async (args: string | undefined, ctx: any) => {
 			const cwd = getCwd();
-			const argStr = args?.trim() ?? "";
+			const argStr = args?.trim().replace(/^#/, "") ?? "";
 
 			// ── Step 1: Find PR ─────────────────────────────────
 			let prNumber: number | null = null;
@@ -283,22 +283,51 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				return;
 			}
 
-			// ── Step 4: Ensure we're on the PR branch ───────────
+			// ── Step 4: Get PR info + ensure we're on the PR branch ─
+			// Single gh pr view call for all needed fields
+			const prData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName,number,title,url"], cwd);
+			if (!prData?.headRefName) {
+				ctx.ui.notify(`❌ Could not fetch PR #${prNumber} branch info (network error or auth failure).`, "error");
+				return;
+			}
+
+			const prInfo: PrInfo = {
+				number: prNumber,
+				title: prData.title ?? `PR #${prNumber}`,
+				headRefName: prData.headRefName ?? "unknown",
+				url: prData.url ?? "",
+				owner: repoInfo.owner,
+				repo: repoInfo.repo,
+			};
+
 			{
-				const prBranchData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName"], cwd);
-				if (!prBranchData?.headRefName) {
-					ctx.ui.notify(`❌ Could not fetch PR #${prNumber} branch info (network error or auth failure).`, "error");
-					return;
-				}
-				const prBranch = prBranchData.headRefName;
+				const prBranch = prData.headRefName;
 				const currentBranch = await getCurrentBranch(cwd);
 				if (currentBranch !== prBranch) {
+					// Check for dirty working tree before switching
+					const status = await gitExec(["status", "--porcelain"], cwd);
+					if (status.ok && status.stdout.length > 0) {
+						ctx.ui.notify(`❌ Working tree has uncommitted changes. Commit or stash them before running /gh-pr-fix.\n\n${status.stdout}`, "error");
+						return;
+					}
+
 					ctx.ui.notify(`Switching to branch \`${prBranch}\`…`, "info");
 					const checkout = await gitExec(["checkout", prBranch], cwd);
 					if (!checkout.ok) {
-						// Branch might not exist locally — try fetching with force-update
-						await gitExec(["fetch", "origin", `+refs/heads/${prBranch}:refs/heads/${prBranch}`], cwd, 30_000);
-						const retry = await gitExec(["checkout", prBranch], cwd);
+						// Branch might not exist locally — fetch it, then create a tracking branch
+						const localExists = await gitExec(["branch", "--list", prBranch], cwd);
+						if (localExists.ok && localExists.stdout.length > 0) {
+							// Branch exists locally but checkout failed for another reason
+							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${checkout.stderr}`, "error");
+							return;
+						}
+						// Branch doesn't exist locally — fetch and create tracking branch
+						const fetchResult = await gitExec(["fetch", "origin", prBranch], cwd, 30_000);
+						if (!fetchResult.ok) {
+							ctx.ui.notify(`❌ Failed to fetch branch \`${prBranch}\` from origin: ${fetchResult.stderr}`, "error");
+							return;
+						}
+						const retry = await gitExec(["checkout", "-b", prBranch, `origin/${prBranch}`], cwd);
 						if (!retry.ok) {
 							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
 							return;
@@ -306,17 +335,6 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					}
 				}
 			}
-
-			// Get PR info for the prompt
-			const prData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "number,title,headRefName,url"], cwd);
-			const prInfo: PrInfo = {
-				number: prNumber,
-				title: prData?.title ?? `PR #${prNumber}`,
-				headRefName: prData?.headRefName ?? "unknown",
-				url: prData?.url ?? "",
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-			};
 
 			log("pr-fix-start", { prNumber, threadCount: threads.length });
 
@@ -353,6 +371,17 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			}
 
 			const { prInfo, threads } = pendingThreads;
+
+			// Verify we're still on the PR branch before pushing
+			const currentBranch = await getCurrentBranch(cwd);
+			if (currentBranch !== prInfo.headRefName) {
+				ctx.ui.notify(
+					`❌ Current branch \`${currentBranch}\` does not match PR branch \`${prInfo.headRefName}\`.\n` +
+					`Checkout \`${prInfo.headRefName}\` first, or run /gh-pr-fix again.`,
+					"error",
+				);
+				return;
+			}
 
 			ctx.ui.notify(`Resolving ${threads.length} thread${threads.length !== 1 ? "s" : ""} on PR #${prInfo.number}…`, "info");
 

@@ -14,6 +14,10 @@ export interface HeartbeatSettings {
 	showOk: boolean;
 	prompt: string | null;
 	webui: boolean;
+	/** Use pi-kysely shared DB for persistent heartbeat history. */
+	useKysely: boolean;
+	/** Extensions to load in the subprocess. If set, uses -ne + -e for each. If null, uses -ne (no extensions). */
+	extensions: string[] | null;
 }
 
 const DEFAULTS: HeartbeatSettings = {
@@ -24,6 +28,8 @@ const DEFAULTS: HeartbeatSettings = {
 	showOk: false,
 	prompt: null,
 	webui: false,
+	useKysely: false,
+	extensions: null,
 };
 
 export function resolveSettings(cwd: string): HeartbeatSettings {
@@ -42,6 +48,8 @@ export function resolveSettings(cwd: string): HeartbeatSettings {
 			showOk: cfg.showOk ?? DEFAULTS.showOk,
 			prompt: cfg.prompt ?? DEFAULTS.prompt,
 			webui: cfg.webui ?? DEFAULTS.webui,
+			useKysely: cfg.useKysely ?? DEFAULTS.useKysely,
+			extensions: Array.isArray(cfg.extensions) ? cfg.extensions : DEFAULTS.extensions,
 		};
 	} catch {
 		return { ...DEFAULTS };

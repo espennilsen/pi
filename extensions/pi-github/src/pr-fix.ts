@@ -202,6 +202,7 @@ function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolve
 // ── Register the command ────────────────────────────────────────
 
 export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () => string): void {
+	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
 	function registerDual(shortName: string, longName: string, def: any): void {
 		pi.registerCommand(shortName, def);
@@ -269,8 +270,8 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			const prompt = formatThreadsForAgent(threads, prInfo);
 			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Sending to agent…`, "info");
 
-			// Send as a user message that the agent will process
-			ctx.addUserMessage(prompt);
+			// Send as a follow-up user message that the agent will process
+			sendUserMessage(prompt, { deliverAs: "followUp" });
 
 			// ── Step 5: Store threads for resolution ────────────
 			// The agent will process the feedback. We store the threads

@@ -95,7 +95,7 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 			uncertain: Type.Optional(Type.Array(Type.String(), { description: "Open questions" })),
 
 			// Reject/close fields
-			reason: Type.Optional(Type.String({ description: "Reason for reject/close" })),
+			reason: Type.Optional(Type.String({ description: "Reason for reject/close/block/approve" })),
 
 			// List filters
 			show_all: Type.Optional(Type.Boolean({ description: "Include closed issues in list" })),

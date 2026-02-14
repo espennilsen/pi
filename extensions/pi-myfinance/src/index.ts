@@ -16,7 +16,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { closeDb } from "./db.ts";
 import { getFinanceStore, setFinanceStore, isStoreReady, createSqliteStore, createKyselyStore } from "./store.ts";
-import { registerFinanceTool } from "./tool.ts";
+import { registerFinanceTool, setToolLogger } from "./tool.ts";
+import { createLogger } from "./logger.ts";
 import {
 	mountOnWebServer,
 	isMountedOnWebServer,
@@ -109,6 +110,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Register the finance tool
+	const log = createLogger(pi);
+	setToolLogger(log);
 	registerFinanceTool(pi);
 
 	// Re-mount when pi-webserver starts after us
@@ -325,16 +328,17 @@ export default function (pi: ExtensionAPI) {
 			// Group totals by currency
 			const byCurrency = new Map<string, number>();
 			for (const a of accounts) {
-				const cur = a.currency || "NOK";
+				const cur = a.currency ?? "NOK";
 				byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + Number(a.balance));
 			}
-			const totalStr = [...byCurrency.entries()]
+			const totalParts = [...byCurrency.entries()]
 				.map(([cur, sum]) => `${sum.toLocaleString("nb-NO")} ${cur}`)
 				.join(", ");
+
 			const lines = accounts.map(a =>
-				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency || "NOK"}`
+				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency ?? "NOK"}`
 			);
-			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${totalStr}`);
+			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${totalParts}`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
@@ -387,7 +391,7 @@ export default function (pi: ExtensionAPI) {
 			const month = now.toLocaleString("en", { month: "long", year: "numeric" });
 			const lines = [`📊 **Budget Status — ${month}:**`, ""];
 			for (const b of budgets) {
-				const spent = Number((b as any).spent ?? 0);
+				const spent = Number(b.spent ?? 0);
 				const amount = Number(b.amount);
 				const pct = amount > 0 ? Math.round((spent / amount) * 100) : 0;
 				const icon = pct > 100 ? "🔴" : pct > 80 ? "🟡" : "🟢";
@@ -497,7 +501,16 @@ export default function (pi: ExtensionAPI) {
 				accountName = parts.slice(1).join(" ");
 			}
 
-			filePath = filePath.startsWith("~") ? path.join(os.homedir(), filePath.slice(1)) : path.resolve(filePath);
+			// Strip surrounding quotes from account name (user may quote it)
+			accountName = accountName.replace(/^["']|["']$/g, "");
+
+			if (filePath === "~") {
+				filePath = os.homedir();
+			} else if (filePath.startsWith("~/")) {
+				filePath = path.join(os.homedir(), filePath.slice(2));
+			} else {
+				filePath = path.resolve(filePath);
+			}
 
 			if (!fs.existsSync(filePath)) {
 				ctx.ui.notify(`File not found: ${filePath}`, "error");

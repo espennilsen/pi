@@ -395,7 +395,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			// Push the branch FIRST — abort if it fails so we don't
 			// resolve threads / post comments referencing a non-existent remote commit
-			const pushResult = await gitExec(["push"], cwd, 30_000);
+			const pushResult = await gitExec(["push", "origin", "HEAD"], cwd, 30_000);
 			if (!pushResult.ok) {
 				errors.push(`git push failed: ${pushResult.stderr}`);
 				ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");

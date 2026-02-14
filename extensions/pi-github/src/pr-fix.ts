@@ -11,9 +11,9 @@
  * Uses gh CLI + GraphQL for thread resolution.
  */
 
-import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, ghGraphql, getCurrentBranch } from "./gh.ts";
+import { gh, ghJson, ghGraphql, gitExec, getCurrentBranch } from "./gh.ts";
+import { registerDualCommand } from "./commands.ts";
 
 type LogFn = (event: string, data: unknown, level?: string) => void;
 
@@ -138,18 +138,6 @@ async function resolveThread(threadId: string, cwd: string): Promise<boolean> {
 	return !!result?.data?.resolveReviewThread?.thread?.isResolved;
 }
 
-async function gitExec(args: string[], cwd: string, timeoutMs = 15_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-	return new Promise((resolve) => {
-		execFile("git", args, { cwd, timeout: timeoutMs }, (err, stdout, stderr) => {
-			resolve({
-				ok: !err,
-				stdout: stdout?.trim() ?? "",
-				stderr: stderr?.trim() ?? "",
-			});
-		});
-	});
-}
-
 async function getLatestCommitSha(cwd: string): Promise<string | null> {
 	const result = await gitExec(["rev-parse", "HEAD"], cwd);
 	return result.ok ? result.stdout : null;
@@ -226,16 +214,11 @@ function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolve
 export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () => string): void {
 	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
-	function registerDual(shortName: string, longName: string, def: any): void {
-		pi.registerCommand(shortName, def);
-		pi.registerCommand(longName, def);
-	}
-
-	registerDual("gh-pr-fix", "github-pr-fix", {
+	registerDualCommand(pi, "gh-pr-fix", "github-pr-fix", {
 		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, sends to agent, then resolves them.",
-		handler: async (args: string | undefined, ctx: any) => {
+		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
-			const argStr = args?.trim().replace(/^#/, "") ?? "";
+			const argStr = args.replace(/^#/, "");
 
 			// ── Step 1: Find PR ─────────────────────────────────
 			let prNumber: number | null = null;
@@ -372,9 +355,9 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 	// ── /gh-pr-resolve · /github-pr-resolve ─────────────────────
 	// Called after agent has fixed and committed the feedback.
 
-	registerDual("gh-pr-resolve", "github-pr-resolve", {
+	registerDualCommand(pi, "gh-pr-resolve", "github-pr-resolve", {
 		description: "Resolve pending PR review threads and post summary comment. Run after /gh-pr-fix.",
-		handler: async (_args: string | undefined, ctx: any) => {
+		handler: async (_args: string, ctx: any) => {
 			const cwd = getCwd();
 
 			if (!pendingThreads) {

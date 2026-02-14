@@ -9,25 +9,11 @@
  *   5. Post a summary to the agent
  */
 
-import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, getCurrentBranch } from "./gh.ts";
+import { gh, ghJson, gitExec, getCurrentBranch } from "./gh.ts";
+import { registerDualCommand } from "./commands.ts";
 
 type LogFn = (event: string, data: unknown, level?: string) => void;
-
-// ── Helpers ─────────────────────────────────────────────────────
-
-function gitExec(args: string[], cwd: string, timeoutMs = 15_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-	return new Promise((resolve) => {
-		execFile("git", args, { cwd, timeout: timeoutMs }, (err, stdout, stderr) => {
-			resolve({
-				ok: !err,
-				stdout: stdout?.trim() ?? "",
-				stderr: stderr?.trim() ?? "",
-			});
-		});
-	});
-}
 
 interface PrMergeInfo {
 	number: number;
@@ -46,16 +32,11 @@ interface PrMergeInfo {
 
 export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () => string): void {
 
-	function registerDual(shortName: string, longName: string, def: any): void {
-		pi.registerCommand(shortName, def);
-		pi.registerCommand(longName, def);
-	}
-
-	registerDual("gh-pr-merge", "github-pr-merge", {
+	registerDualCommand(pi, "gh-pr-merge", "github-pr-merge", {
 		description: "Merge a PR, delete remote branch, pull main, clean up local branch: /gh-pr-merge [pr-number] [--merge|--rebase|--squash]",
-		handler: async (args: string | undefined, ctx: any) => {
+		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
-			const parts = (args?.trim() ?? "").split(/\s+/).filter(Boolean);
+			const parts = args.split(/\s+/).filter(Boolean);
 
 			// Parse args: optional PR number and optional merge strategy
 			let prNumber: number | null = null;
@@ -103,7 +84,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			if (prData.state === "MERGED") {
 				ctx.ui.notify(`PR #${prNumber} is already merged.`, "info");
 				// Still clean up branches below
-				await cleanupBranches(prData.headRefName, prData.baseRefName, cwd, ctx, log, prNumber!);
+				await cleanupBranches(prData.headRefName ?? "", prData.baseRefName ?? "main", cwd, ctx, log, prNumber!);
 				return;
 			}
 
@@ -181,31 +162,38 @@ async function cleanupBranches(
 	}
 
 	// Switch to base branch and pull
+	let onBaseBranch = false;
 	const currentBranch = await getCurrentBranch(cwd);
-	if (currentBranch !== baseBranch) {
+	if (currentBranch === baseBranch) {
+		onBaseBranch = true;
+	} else {
 		const checkout = await gitExec(["checkout", baseBranch], cwd);
-		if (!checkout.ok) {
+		if (checkout.ok) {
+			onBaseBranch = true;
+		} else {
 			errors.push(`Failed to checkout ${baseBranch}: ${checkout.stderr}`);
 		}
 	}
 
-	const pull = await gitExec(["pull", "--ff-only"], cwd, 30_000);
-	if (pull.ok) {
-		ctx.ui.notify(`⬇️ Pulled latest \`${baseBranch}\`.`, "info");
-	} else {
-		errors.push(`Failed to pull ${baseBranch}: ${pull.stderr}`);
-	}
-
-	// Delete local branch (if it exists and we're not on it)
-	const nowOn = await getCurrentBranch(cwd);
-	if (nowOn !== headBranch) {
-		const localDelete = await gitExec(["branch", "-d", headBranch], cwd);
-		if (localDelete.ok) {
-			ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
-		} else if (localDelete.stderr.includes("not found")) {
-			// Branch doesn't exist locally — fine
+	if (onBaseBranch) {
+		const pull = await gitExec(["pull", "--ff-only"], cwd, 30_000);
+		if (pull.ok) {
+			ctx.ui.notify(`⬇️ Pulled latest \`${baseBranch}\`.`, "info");
 		} else {
-			errors.push(`Failed to delete local branch: ${localDelete.stderr}`);
+			errors.push(`Failed to pull ${baseBranch}: ${pull.stderr}`);
+		}
+
+		// Delete local branch (if it exists and we're not on it)
+		const nowOn = await getCurrentBranch(cwd);
+		if (nowOn !== headBranch) {
+			const localDelete = await gitExec(["branch", "-d", headBranch], cwd);
+			if (localDelete.ok) {
+				ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
+			} else if (localDelete.stderr.includes("not found")) {
+				// Branch doesn't exist locally — fine
+			} else {
+				errors.push(`Failed to delete local branch: ${localDelete.stderr}`);
+			}
 		}
 	}
 

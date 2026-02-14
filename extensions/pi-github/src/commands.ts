@@ -13,7 +13,7 @@ type LogFn = (event: string, data: unknown, level?: string) => void;
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function registerDualCommand(
+export function registerDualCommand(
 	pi: ExtensionAPI,
 	shortName: string,
 	longName: string,

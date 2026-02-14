@@ -1,0 +1,2465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --bg2: #12121a; --bg3: #1a1a25;
+    --fg: #e0e0e8; --fg2: #888898; --fg3: #555568;
+    --accent: #7c6ff0; --accent2: #9d8cf0;
+    --green: #4ade80; --red: #f87171; --yellow: #fbbf24; --blue: #60a5fa;
+    --border: #2a2a3a; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  /* ── Nav Tabs ───────────────────────────────────────── */
+  .nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .nav-tab { background: none; border: none; color: var(--fg2); padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: var(--radius) var(--radius) 0 0; transition: all 0.15s; }
+  .nav-tab:hover { color: var(--fg); background: var(--bg3); }
+  .nav-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); font-weight: 600; }
+
+  /* ── Cards ──────────────────────────────────────────── */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card { text-align: center; }
+  .stat-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  .stat-label { font-size: 12px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value.in { color: var(--green); }
+  .stat-value.out { color: var(--red); }
+  .stat-value.net { color: var(--accent); }
+  .stat-value.positive { color: var(--green); }
+  .stat-value.negative { color: var(--red); }
+
+  /* ── Toolbar ────────────────────────────────────────── */
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar h2 { font-size: 18px; font-weight: 700; flex-shrink: 0; }
+  .spacer { flex: 1; }
+  .search-box { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 12px; border-radius: var(--radius); font-size: 13px; width: 240px; }
+  .search-box:focus { outline: none; border-color: var(--accent); }
+  select.filter { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: var(--radius); font-size: 13px; }
+  .btn { background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { color: var(--red); }
+  .btn-danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+  /* ── Table ──────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 12px; font-size: 12px; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); font-weight: 600; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover td { background: var(--bg3); }
+  .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .amount.in { color: var(--green); }
+  .amount.out { color: var(--red); }
+  .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .type-badge.in { background: rgba(74,222,128,0.15); color: var(--green); }
+  .type-badge.out { background: rgba(248,113,113,0.15); color: var(--red); }
+  .cat-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: var(--bg3); color: var(--fg2); }
+
+  /* ── Progress Bars ──────────────────────────────────── */
+  .progress-bar { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+  .progress-fill.green { background: var(--green); }
+  .progress-fill.yellow { background: var(--yellow); }
+  .progress-fill.red { background: var(--red); }
+  .progress-fill.accent { background: var(--accent); }
+
+  /* ── Budget Cards ───────────────────────────────────── */
+  .budget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .budget-card { padding: 16px; }
+  .budget-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .budget-name { font-weight: 600; font-size: 14px; }
+  .budget-pct { font-size: 13px; font-weight: 600; }
+  .budget-amounts { display: flex; justify-content: space-between; font-size: 12px; color: var(--fg2); margin-top: 6px; }
+
+  /* ── Goal Cards ─────────────────────────────────────── */
+  .goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .goal-card { padding: 16px; }
+  .goal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .goal-name { font-weight: 600; }
+  .goal-type { font-size: 11px; color: var(--fg2); text-transform: uppercase; }
+  .goal-amounts { font-size: 20px; font-weight: 700; margin: 8px 0; }
+  .goal-deadline { font-size: 12px; color: var(--fg3); margin-top: 4px; }
+
+  /* ── Category Breakdown ─────────────────────────────── */
+  .breakdown-list { }
+  .breakdown-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .breakdown-item:last-child { border-bottom: none; }
+  .breakdown-name { flex: 1; font-size: 13px; }
+  .breakdown-bar-wrap { flex: 2; }
+  .breakdown-bar { height: 20px; background: var(--bg3); border-radius: 4px; overflow: hidden; position: relative; }
+  .breakdown-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
+  .breakdown-amount { width: 100px; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .breakdown-pct { width: 50px; text-align: right; font-size: 12px; color: var(--fg2); }
+
+  /* ── Modal ──────────────────────────────────────────── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 18px; margin-bottom: 16px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 12px; color: var(--fg2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-group input, .form-group select, .form-group textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* ── Empty state ────────────────────────────────────── */
+  .empty { text-align: center; padding: 40px; color: var(--fg3); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* ── Sections ───────────────────────────────────────── */
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 14px; font-weight: 600; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+  /* ── Account List ───────────────────────────────────── */
+  .account-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .account-card { padding: 16px; cursor: default; }
+  .account-name { font-weight: 600; margin-bottom: 4px; }
+  .account-type { font-size: 11px; color: var(--fg3); text-transform: uppercase; margin-bottom: 8px; }
+  .account-balance { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* ── Page visibility ────────────────────────────────── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Pagination ─────────────────────────────────────── */
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px; }
+
+  /* ── Charts ─────────────────────────────────────────── */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-card { padding: 20px; }
+  .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--fg2); }
+  .chart-wrap { position: relative; height: 300px; }
+  .chart-full { position: relative; height: 350px; margin-bottom: 20px; }
+
+  /* ── Import ─────────────────────────────────────────── */
+  .import-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .import-tab { background: var(--bg3); border: 1px solid var(--border); color: var(--fg2); padding: 8px 16px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .import-tab:hover { color: var(--fg); }
+  .import-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(124,111,240,0.05); }
+  .drop-zone-text { color: var(--fg2); }
+  .drop-zone-text a { color: var(--accent); text-decoration: none; }
+  .drop-zone-text a:hover { text-decoration: underline; }
+  .drop-zone-hint { font-size: 11px; color: var(--fg3); margin-top: 8px; }
+  .drop-zone-file { display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 13px; }
+  .drop-zone-file .file-name { font-weight: 600; color: var(--accent); }
+  .drop-zone-file .file-size { color: var(--fg3); font-size: 11px; }
+  .drop-zone-file .file-remove { color: var(--red); cursor: pointer; font-size: 16px; margin-left: 4px; }
+  .import-result { margin-top: 12px; padding: 12px; border-radius: var(--radius); font-size: 13px; }
+  .import-result.success { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
+  .import-result.error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
+  .import-result.info { background: rgba(124,111,240,0.1); border: 1px solid rgba(124,111,240,0.3); color: var(--accent2); }
+  .import-result ul { margin: 6px 0 0 16px; font-size: 12px; }
+  code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .form-hint { font-size: 11px; color: var(--fg3); margin-top: 4px; }
+
+  /* ── Transaction Detail Modal ───────────────────────── */
+  .tx-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .tx-detail-actions { display: flex; gap: 6px; }
+  .tx-detail-amount { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+  .tx-detail-amount.in { color: var(--green); }
+  .tx-detail-amount.out { color: var(--red); }
+  .tx-detail-desc { font-size: 15px; color: var(--fg); margin-bottom: 20px; word-break: break-word; }
+  .tx-detail-fields { border-top: 1px solid var(--border); }
+  .tx-detail-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .tx-detail-label { font-size: 13px; color: var(--fg2); flex-shrink: 0; }
+  .tx-detail-value { font-size: 13px; text-align: right; word-break: break-word; max-width: 65%; }
+  .tx-detail-value .cat-badge { font-size: 12px; }
+  .tx-detail-value .tag { display: inline-block; background: var(--bg3); color: var(--fg2); padding: 2px 8px; border-radius: 4px; font-size: 11px; margin: 1px 2px; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:active td { background: rgba(124,111,240,0.1); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav">
+    <button class="nav-tab active" data-page="dashboard">Dashboard</button>
+    <button class="nav-tab" data-page="transactions">Transactions</button>
+    <button class="nav-tab" data-page="budgets">Budgets</button>
+    <button class="nav-tab" data-page="goals">Goals</button>
+    <button class="nav-tab" data-page="vendors">Vendors</button>
+    <button class="nav-tab" data-page="reports">Reports</button>
+  </div>
+
+  <!-- ══════════════ DASHBOARD ══════════════ -->
+  <div id="page-dashboard" class="page active">
+    <div id="dash-stats" class="card-grid"></div>
+
+    <div class="section">
+      <div class="toolbar" style="margin-bottom:12px">
+        <div class="section-title" style="margin-bottom:0">Accounts</div>
+        <span class="spacer"></span>
+        <button class="btn btn-primary btn-sm" onclick="openAddAccount()">+ Add Account</button>
+      </div>
+      <div id="dash-accounts" class="account-list"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="section">
+        <div class="section-title">Spending by Category</div>
+        <div id="dash-breakdown" class="card"></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Active Goals</div>
+        <div id="dash-goals" class="goal-grid"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Recent Transactions</div>
+      <div id="dash-recent" class="card table-wrap"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ TRANSACTIONS ══════════════ -->
+  <div id="page-transactions" class="page">
+    <div class="toolbar">
+      <h2>Transactions</h2>
+      <button class="btn btn-primary" onclick="openAddTransaction()">+ Add</button>
+      <button class="btn" onclick="openImport()">⬆ Import</button>
+      <button class="btn" onclick="exportCsv()">⬇ Export</button>
+      <button class="btn" onclick="runAutoCategorize()">🏷️ Auto-Categorize</button>
+    </div>
+    <div class="toolbar" style="margin-top:-8px">
+      <input type="text" id="tx-search" class="search-box" placeholder="Search...">
+      <select id="tx-type-filter" class="filter">
+        <option value="">All Types</option>
+        <option value="in">In</option>
+        <option value="out">Out</option>
+      </select>
+      <select id="tx-account-filter" class="filter"><option value="">All Accounts</option></select>
+      <select id="tx-category-filter" class="filter"><option value="">All Categories</option></select>
+      <select id="tx-subcategory-filter" class="filter" style="display:none"><option value="">All Sub-categories</option></select>
+      <input type="date" id="tx-date-from" class="filter" title="From date">
+      <input type="date" id="tx-date-to" class="filter" title="To date">
+    </div>
+    <div id="tx-table" class="card table-wrap"></div>
+    <div id="tx-pagination" class="pagination"></div>
+  </div>
+
+  <!-- ══════════════ BUDGETS ══════════════ -->
+  <div id="page-budgets" class="page">
+    <div class="toolbar">
+      <h2>Budgets</h2>
+      <select id="budget-month" class="filter"></select>
+      <select id="budget-year" class="filter"></select>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" onclick="openAddBudget()">+ Set Budget</button>
+    </div>
+    <div id="budget-grid" class="budget-grid"></div>
+  </div>
+
+  <!-- ══════════════ GOALS ══════════════ -->
+  <div id="page-goals" class="page">
+    <div class="toolbar">
+      <h2>Goals</h2>
+      <select id="goal-status-filter" class="filter">
+        <option value="">All</option>
+        <option value="active" selected>Active</option>
+        <option value="completed">Completed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" onclick="openAddGoal()">+ Add Goal</button>
+    </div>
+    <div id="goal-grid" class="goal-grid"></div>
+  </div>
+
+  <!-- ══════════════ VENDORS ══════════════ -->
+  <div id="page-vendors" class="page">
+    <div class="toolbar">
+      <h2>Vendors</h2>
+      <input type="text" id="vendor-search" class="search-box" placeholder="Search vendors...">
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--fg2);cursor:pointer">
+        <input type="checkbox" id="vendor-show-ignored"> Show ignored
+      </label>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" onclick="openAddVendor()">+ Add Vendor</button>
+    </div>
+    <div id="vendor-table" class="card table-wrap"></div>
+  </div>
+
+  <!-- ══════════════ REPORTS ══════════════ -->
+  <div id="page-reports" class="page">
+    <div class="toolbar">
+      <h2>Reports</h2>
+      <select id="report-range" class="filter">
+        <option value="1">This Month</option>
+        <option value="last-month">Last Month</option>
+        <option value="3" selected>Last 3 Months</option>
+        <option value="6">Last 6 Months</option>
+        <option value="12">Last 12 Months</option>
+        <option value="this-year">This Year</option>
+        <option value="last-year">Last Year</option>
+      </select>
+      <select id="report-category" class="filter"><option value="">All Categories</option></select>
+      <select id="report-subcategory" class="filter" style="display:none"><option value="">All Sub-categories</option></select>
+      <span class="spacer"></span>
+      <button id="report-clear-filter" class="btn btn-sm" style="display:none" onclick="clearReportCategoryFilter()">✕ Clear filter</button>
+    </div>
+
+    <div class="chart-grid">
+      <div class="card chart-card">
+        <h3>Income vs Expenses</h3>
+        <div class="chart-wrap"><canvas id="chart-income-expense"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <h3>Spending by Category</h3>
+        <div class="chart-wrap"><canvas id="chart-category-pie" style="cursor:pointer"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card chart-card" style="margin-bottom:20px">
+      <h3>Monthly Net (Income − Expenses)</h3>
+      <div class="chart-full"><canvas id="chart-net-trend"></canvas></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Top Spending Categories</div>
+      <div id="report-top-categories" class="card"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ TRANSACTION DETAIL MODAL ══════════════ -->
+<div id="modal-tx-detail" class="modal-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="tx-detail-header">
+      <div class="tx-detail-type"><span id="txd-type-badge" class="type-badge"></span></div>
+      <div class="tx-detail-actions">
+        <button class="btn btn-sm" id="txd-edit-btn" title="Edit">✏️ Edit</button>
+        <button class="btn btn-sm btn-danger" id="txd-delete-btn" title="Delete">🗑️ Delete</button>
+      </div>
+    </div>
+    <div class="tx-detail-amount" id="txd-amount"></div>
+    <div class="tx-detail-desc" id="txd-desc"></div>
+    <div class="tx-detail-fields">
+      <div class="tx-detail-row">
+        <span class="tx-detail-label">📅 Date</span>
+        <span class="tx-detail-value" id="txd-date"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-account-row">
+        <span class="tx-detail-label">🏦 Account</span>
+        <span class="tx-detail-value" id="txd-account"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-from-row" style="display:none">
+        <span class="tx-detail-label">🏦 From</span>
+        <span class="tx-detail-value" id="txd-from-account"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-to-row" style="display:none">
+        <span class="tx-detail-label">🏦 To</span>
+        <span class="tx-detail-value" id="txd-to-account"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-link-row" style="display:none">
+        <span class="tx-detail-label">🔗 Linked</span>
+        <span class="tx-detail-value" id="txd-link-value"></span>
+      </div>
+      <div class="tx-detail-row">
+        <span class="tx-detail-label">📂 Category</span>
+        <span class="tx-detail-value" id="txd-category"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-vendor-row" style="display:none">
+        <span class="tx-detail-label">🏪 Vendor</span>
+        <span class="tx-detail-value" id="txd-vendor"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-tags-row" style="display:none">
+        <span class="tx-detail-label">🏷️ Tags</span>
+        <span class="tx-detail-value" id="txd-tags"></span>
+      </div>
+      <div class="tx-detail-row" id="txd-notes-row" style="display:none">
+        <span class="tx-detail-label">📝 Notes</span>
+        <span class="tx-detail-value" id="txd-notes"></span>
+      </div>
+    </div>
+    <div class="form-actions" style="margin-top:20px">
+      <button class="btn" onclick="closeModal('modal-tx-detail')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD ACCOUNT MODAL ══════════════ -->
+<div id="modal-account" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <h3 id="modal-account-title">Add Account</h3>
+    <input type="hidden" id="account-edit-id">
+
+    <!-- Read-only view (shown when viewing an existing account) -->
+    <div id="account-readonly" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:24px">
+          <div><span style="color:var(--fg2);font-size:12px;text-transform:uppercase;letter-spacing:0.5px">Name</span><div id="account-ro-name" style="font-size:15px;margin-top:2px"></div></div>
+          <div><span style="color:var(--fg2);font-size:12px;text-transform:uppercase;letter-spacing:0.5px">Type</span><div id="account-ro-type" style="font-size:15px;margin-top:2px"></div></div>
+          <div><span style="color:var(--fg2);font-size:12px;text-transform:uppercase;letter-spacing:0.5px">Currency</span><div id="account-ro-currency" style="font-size:15px;margin-top:2px"></div></div>
+        </div>
+        <div>
+          <span style="color:var(--fg2);font-size:12px;text-transform:uppercase;letter-spacing:0.5px">Balance</span>
+          <div id="account-ro-balance" style="font-size:22px;font-weight:700;margin-top:2px"></div>
+        </div>
+        <div id="account-ro-notes-wrap" style="display:none">
+          <span style="color:var(--fg2);font-size:12px;text-transform:uppercase;letter-spacing:0.5px">Notes</span>
+          <div id="account-ro-notes" style="font-size:14px;margin-top:2px;color:var(--fg2)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit form -->
+    <div id="account-form">
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="account-name" placeholder="e.g. DNB Brukskonto">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="account-type">
+            <option value="checking">Checking</option>
+            <option value="savings">Savings</option>
+            <option value="credit">Credit</option>
+            <option value="cash">Cash</option>
+            <option value="investment">Investment</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <input type="text" id="account-currency" value="NOK" maxlength="3" placeholder="NOK">
+        </div>
+      </div>
+
+      <!-- Import section (new accounts only) -->
+      <div id="account-import-section">
+        <div class="form-group">
+          <label>Import Transactions <span style="font-weight:normal;text-transform:none;letter-spacing:0">(optional)</span></label>
+          <div class="drop-zone" id="account-drop-zone">
+            <input type="file" id="account-import-file" accept=".csv,.txt,.xlsx" style="display:none">
+            <div class="drop-zone-text" id="account-drop-text">
+              <div style="font-size:24px;margin-bottom:6px">📄</div>
+              <div>Drop a bank statement here, or <a href="#" onclick="event.preventDefault();document.getElementById('account-import-file').click()">browse</a></div>
+              <div class="drop-zone-hint">CSV, DNB .txt/.xlsx, SAS Mastercard .xlsx</div>
+            </div>
+            <div class="drop-zone-file" id="account-file-name" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label id="account-balance-label">Current Balance</label>
+        <input type="number" id="account-balance" step="0.01" value="0" placeholder="0.00">
+        <div id="account-balance-hint" class="form-hint">Your actual balance right now. If you import transactions, an opening balance adjustment will reconcile the difference.</div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="account-notes" rows="2"></textarea>
+      </div>
+    </div>
+
+    <!-- Result area for import feedback -->
+    <div id="account-import-result" style="display:none"></div>
+
+    <div class="form-actions">
+      <div id="account-delete-wrap" style="display:none;margin-right:auto">
+        <button class="btn btn-danger btn-sm" id="account-delete-btn" onclick="confirmDeleteAccount()">🗑️ Delete</button>
+        <span id="account-delete-confirm" style="display:none">
+          <span style="font-size:13px;color:var(--red);margin-right:6px">Delete account?</span>
+          <button class="btn btn-danger btn-sm" onclick="doDeleteAccount()">Yes</button>
+          <button class="btn btn-sm" onclick="cancelDeleteAccount()">No</button>
+        </span>
+      </div>
+      <button class="btn" onclick="closeModal('modal-account')">Close</button>
+      <button class="btn btn-primary" id="account-edit-btn" onclick="enableAccountEdit()" style="display:none">✏️ Edit</button>
+      <button class="btn btn-primary" id="account-save-btn" onclick="saveAccount()" style="display:none">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD TRANSACTION MODAL ══════════════ -->
+<div id="modal-tx" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-tx-title">Add Transaction</h3>
+    <input type="hidden" id="tx-edit-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type</label>
+        <select id="tx-type"><option value="out">Out</option><option value="in">In</option></select>
+      </div>
+      <div class="form-group">
+        <label>Amount</label>
+        <input type="number" id="tx-amount" step="0.01" min="0" placeholder="0.00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <input type="text" id="tx-desc" placeholder="e.g. REMA 1000 Grünerløkka">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Account</label>
+        <select id="tx-account"></select>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="tx-category"><option value="">Uncategorized</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" id="tx-subcategory-group" style="display:none">
+        <label>Sub-category</label>
+        <select id="tx-subcategory"><option value="">— None —</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="tx-date">
+      </div>
+      <div class="form-group">
+        <label>Tags (comma-separated)</label>
+        <input type="text" id="tx-tags" placeholder="groceries, weekly">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="tx-notes" rows="2"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal('modal-tx')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTransaction()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD BUDGET MODAL ══════════════ -->
+<div id="modal-budget" class="modal-overlay">
+  <div class="modal">
+    <h3>Set Budget</h3>
+    <div class="form-group">
+      <label>Category</label>
+      <select id="budget-category"></select>
+    </div>
+    <div class="form-group" id="budget-subcategory-group" style="display:none">
+      <label>Sub-category</label>
+      <select id="budget-subcategory"><option value="">— All sub-categories —</option></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Amount</label>
+        <input type="number" id="budget-amount" step="0.01" min="0" placeholder="5000">
+      </div>
+      <div class="form-group">
+        <label>Period</label>
+        <select id="budget-period"><option value="monthly">Monthly</option><option value="annual">Annual</option></select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal('modal-budget')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBudget()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD GOAL MODAL ══════════════ -->
+<div id="modal-goal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-goal-title">Add Goal</h3>
+    <input type="hidden" id="goal-edit-id">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="goal-name" placeholder="e.g. Emergency Fund">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type</label>
+        <select id="goal-type"><option value="savings">Savings</option><option value="debt">Debt Payoff</option><option value="purchase">Purchase</option></select>
+      </div>
+      <div class="form-group">
+        <label>Target Amount</label>
+        <input type="number" id="goal-target" step="0.01" min="0">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Current Amount</label>
+        <input type="number" id="goal-current" step="0.01" min="0" value="0">
+      </div>
+      <div class="form-group">
+        <label>Deadline</label>
+        <input type="date" id="goal-deadline">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="goal-notes" rows="2"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal('modal-goal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveGoal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD/EDIT VENDOR MODAL ══════════════ -->
+<div id="modal-vendor" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-vendor-title">Add Vendor</h3>
+    <input type="hidden" id="vendor-edit-id">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="vendor-name" placeholder="e.g. REMA 1000">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Country</label>
+        <input type="text" id="vendor-country" placeholder="e.g. NO" maxlength="2">
+        <div class="form-hint">ISO country code (NO, US, SE, etc.)</div>
+      </div>
+      <div class="form-group">
+        <label>Default Category</label>
+        <select id="vendor-category"><option value="">— None —</option></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="vendor-ignore"> Ignore this vendor
+      </label>
+      <div class="form-hint">Ignored vendors are hidden from vendor lists but still linked to transactions</div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="vendor-notes" rows="2"></textarea>
+    </div>
+    <div id="vendor-tx-count" style="font-size:12px;color:var(--fg2);margin-bottom:12px;display:none"></div>
+    <div class="form-actions">
+      <div id="vendor-delete-wrap" style="display:none;margin-right:auto">
+        <button class="btn btn-danger btn-sm" onclick="deleteVendor()">🗑️ Delete</button>
+      </div>
+      <button class="btn" onclick="closeModal('modal-vendor')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVendor()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ IMPORT MODAL ══════════════ -->
+<div id="modal-import" class="modal-overlay">
+  <div class="modal" style="max-width:560px">
+    <h3>Import Transactions</h3>
+
+    <!-- Tab selector -->
+    <div class="import-tabs">
+      <button class="import-tab active" data-tab="file" onclick="switchImportTab('file')">📁 Upload File</button>
+      <button class="import-tab" data-tab="csv" onclick="switchImportTab('csv')">📋 Paste CSV</button>
+    </div>
+
+    <!-- Shared: Account picker -->
+    <div class="form-group">
+      <label>Target Account</label>
+      <select id="import-account"></select>
+    </div>
+
+    <!-- Tab: File upload -->
+    <div id="import-tab-file" class="import-tab-content">
+      <div class="form-group">
+        <label>Bank Statement File</label>
+        <div class="drop-zone" id="import-drop-zone">
+          <input type="file" id="import-file" accept=".csv,.txt,.xlsx" style="display:none">
+          <div class="drop-zone-text">
+            <div style="font-size:28px;margin-bottom:8px">📄</div>
+            <div>Drag &amp; drop a file here, or <a href="#" onclick="event.preventDefault();document.getElementById('import-file').click()">browse</a></div>
+            <div class="drop-zone-hint">Supports CSV, DNB .txt, DNB .xlsx, SAS Mastercard .xlsx</div>
+          </div>
+          <div class="drop-zone-file" id="import-file-name" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Paste CSV -->
+    <div id="import-tab-csv" class="import-tab-content" style="display:none">
+      <div class="form-group">
+        <label>CSV Data</label>
+        <textarea id="import-csv" rows="8" placeholder="date,amount,description&#10;2026-01-15,-450,REMA 1000&#10;2026-01-16,25000,Salary" style="font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div style="font-size:11px;color:var(--fg3);margin-top:-8px;margin-bottom:12px">
+        Required columns: <code>date</code>, <code>amount</code>. Optional: <code>description</code>, <code>type</code>, <code>category</code>, <code>tags</code>, <code>notes</code>
+      </div>
+    </div>
+
+    <!-- Result area -->
+    <div id="import-result" style="display:none"></div>
+
+    <div class="form-actions">
+      <button class="btn" onclick="closeImport()">Cancel</button>
+      <button class="btn btn-primary" id="import-submit-btn" onclick="submitImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── API ─────────────────────────────────────────────────────────
+
+const API = (() => {
+  const base = window.location.pathname.includes('/finance')
+    ? '/api/finance'
+    : '/api/finance';
+  async function call(path, opts = {}) {
+    const res = await fetch(base + path, {
+      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      ...opts,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      const e = new Error(err.error || res.statusText);
+      e.retry = !!err.retry;
+      e.status = res.status;
+      throw e;
+    }
+    return res.json();
+  }
+  return {
+    get: (p) => call(p),
+    post: (p, body) => call(p, { method: 'POST', body: JSON.stringify(body) }),
+    patch: (p, body) => call(p, { method: 'PATCH', body: JSON.stringify(body) }),
+    del: (p) => call(p, { method: 'DELETE' }),
+  };
+})();
+
+// ── State ───────────────────────────────────────────────────────
+
+let accounts = [];
+let categories = [];
+let txPage = 0;
+const TX_PER_PAGE = 50;
+
+// ── Formatting ──────────────────────────────────────────────────
+
+function fmt(n) {
+  return Number(n).toLocaleString('nb-NO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  return d.slice(0, 10);
+}
+
+function progressColor(pct) {
+  if (pct > 100) return 'red';
+  if (pct > 80) return 'yellow';
+  return 'green';
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+// ── Navigation ──────────────────────────────────────────────────
+
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+    loadPage(tab.dataset.page);
+  });
+});
+
+function loadPage(page) {
+  switch (page) {
+    case 'dashboard': loadDashboard(); break;
+    case 'transactions': loadTransactions(); break;
+    case 'budgets': loadBudgets(); break;
+    case 'goals': loadGoals(); break;
+    case 'vendors': loadVendors(); break;
+    case 'reports': loadReports(); break;
+  }
+}
+
+// ── Modal ───────────────────────────────────────────────────────
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ── Dashboard ───────────────────────────────────────────────────
+
+async function loadDashboard() {
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth() + 1;
+
+  const [accs, summary, breakdown, goals, recent] = await Promise.all([
+    API.get('/accounts'),
+    API.get(`/reports/summary?year=${year}&month=${month}`),
+    API.get(`/reports/breakdown?year=${year}&month=${month}`),
+    API.get('/goals?status=active'),
+    API.get('/transactions?limit=10'),
+  ]);
+
+  accounts = accs;
+
+  // Stats
+  const totalBalance = accs.reduce((s, a) => s + a.balance, 0);
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="card stat-card"><div class="stat-value">${fmt(totalBalance)}</div><div class="stat-label">Net Worth (NOK)</div></div>
+    <div class="card stat-card"><div class="stat-value in">+${fmt(summary.total_income)}</div><div class="stat-label">In</div></div>
+    <div class="card stat-card"><div class="stat-value out">-${fmt(summary.total_expenses)}</div><div class="stat-label">Out</div></div>
+    <div class="card stat-card"><div class="stat-value ${summary.net >= 0 ? 'positive' : 'negative'}">${summary.net >= 0 ? '+' : ''}${fmt(summary.net)}</div><div class="stat-label">Net This Month</div></div>
+  `;
+
+  // Accounts
+  const acctTypes = { checking: '🏦', savings: '💰', credit: '💳', cash: '💵', investment: '📈' };
+  document.getElementById('dash-accounts').innerHTML = accs.length === 0
+    ? '<div class="empty"><div class="empty-icon">🏦</div><button class="btn btn-primary" onclick="openAddAccount()">+ Add Your First Account</button></div>'
+    : accs.map(a => `
+        <div class="card account-card" onclick="editAccount(${a.id})" style="cursor:pointer" title="Click to edit">
+          <div class="account-name">${acctTypes[a.account_type] || '🏦'} ${esc(a.name)}</div>
+          <div class="account-type">${a.account_type} · ${a.currency}</div>
+          <div class="account-balance">${fmt(a.balance)}</div>
+        </div>
+      `).join('');
+
+  // Breakdown
+  if (breakdown.length === 0) {
+    document.getElementById('dash-breakdown').innerHTML = '<div class="empty">No expenses this month</div>';
+  } else {
+    const maxAmt = Math.max(...breakdown.map(b => b.amount));
+    document.getElementById('dash-breakdown').innerHTML = `
+      <div class="breakdown-list">${breakdown.slice(0, 8).map(b => `
+        <div class="breakdown-item">
+          <div class="breakdown-name">${esc(b.category_name)}</div>
+          <div class="breakdown-bar-wrap"><div class="breakdown-bar"><div class="breakdown-bar-fill" style="width:${(b.amount / maxAmt * 100).toFixed(1)}%"></div></div></div>
+          <div class="breakdown-amount">${fmt(b.amount)}</div>
+          <div class="breakdown-pct">${b.percentage}%</div>
+        </div>
+      `).join('')}</div>
+    `;
+  }
+
+  // Goals
+  document.getElementById('dash-goals').innerHTML = goals.length === 0
+    ? '<div class="empty">No active goals</div>'
+    : goals.map(g => renderGoalCard(g)).join('');
+
+  // Recent transactions
+  document.getElementById('dash-recent').innerHTML = recent.length === 0
+    ? '<div class="empty">No transactions yet</div>'
+    : renderTxTable(recent);
+}
+
+// ── Accounts ────────────────────────────────────────────────────
+
+let accountImportFile = null;
+let accountOriginalBalance = 0;
+
+function openAddAccount() {
+  document.getElementById('modal-account-title').textContent = 'Add Account';
+  document.getElementById('account-edit-id').value = '';
+  document.getElementById('account-name').value = '';
+  document.getElementById('account-type').value = 'checking';
+  document.getElementById('account-currency').value = 'NOK';
+  document.getElementById('account-balance').value = '';
+  document.getElementById('account-notes').value = '';
+  document.getElementById('account-import-section').style.display = '';
+  document.getElementById('account-balance-label').textContent = 'Current Balance';
+  document.getElementById('account-balance-hint').style.display = '';
+  document.getElementById('account-import-result').style.display = 'none';
+  document.getElementById('account-save-btn').style.display = '';
+  document.getElementById('account-save-btn').disabled = false;
+  document.getElementById('account-save-btn').textContent = 'Create Account';
+  document.getElementById('account-edit-btn').style.display = 'none';
+  document.getElementById('account-delete-wrap').style.display = 'none';
+  document.getElementById('account-readonly').style.display = 'none';
+  document.getElementById('account-form').style.display = '';
+  cancelDeleteAccount();
+  accountImportFile = null;
+  accountOriginalBalance = 0;
+  document.getElementById('account-import-file').value = '';
+  document.getElementById('account-drop-text').style.display = '';
+  document.getElementById('account-file-name').style.display = 'none';
+  openModal('modal-account');
+}
+
+async function editAccount(id) {
+  const a = await API.get(`/accounts/${id}`);
+  document.getElementById('modal-account-title').textContent = a.name;
+  document.getElementById('account-edit-id').value = a.id;
+  accountOriginalBalance = a.balance;
+
+  // Populate form fields (hidden initially)
+  document.getElementById('account-name').value = a.name;
+  document.getElementById('account-type').value = a.account_type;
+  document.getElementById('account-currency').value = a.currency;
+  document.getElementById('account-balance').value = a.balance;
+  document.getElementById('account-notes').value = a.notes || '';
+
+  // Populate read-only view
+  const acctTypes = { checking: 'Checking', savings: 'Savings', credit: 'Credit', cash: 'Cash', investment: 'Investment' };
+  document.getElementById('account-ro-name').textContent = a.name;
+  document.getElementById('account-ro-type').textContent = acctTypes[a.account_type] || a.account_type;
+  document.getElementById('account-ro-currency').textContent = a.currency;
+  document.getElementById('account-ro-balance').textContent = fmt(a.balance);
+  if (a.notes) {
+    document.getElementById('account-ro-notes').textContent = a.notes;
+    document.getElementById('account-ro-notes-wrap').style.display = '';
+  } else {
+    document.getElementById('account-ro-notes-wrap').style.display = 'none';
+  }
+
+  // Show read-only, hide form
+  document.getElementById('account-readonly').style.display = '';
+  document.getElementById('account-form').style.display = 'none';
+  document.getElementById('account-import-result').style.display = 'none';
+
+  // Show Edit button, hide Save
+  document.getElementById('account-edit-btn').style.display = '';
+  document.getElementById('account-save-btn').style.display = 'none';
+  document.getElementById('account-delete-wrap').style.display = 'none';
+  cancelDeleteAccount();
+  accountImportFile = null;
+  openModal('modal-account');
+}
+
+function enableAccountEdit() {
+  document.getElementById('modal-account-title').textContent = 'Edit Account';
+  document.getElementById('account-readonly').style.display = 'none';
+  document.getElementById('account-form').style.display = '';
+  document.getElementById('account-import-section').style.display = 'none';
+  document.getElementById('account-balance-label').textContent = 'Balance';
+  document.getElementById('account-balance-hint').textContent = 'Changing the balance will create a Balance Adjustment transaction.';
+  document.getElementById('account-balance-hint').style.display = '';
+  document.getElementById('account-edit-btn').style.display = 'none';
+  document.getElementById('account-save-btn').style.display = '';
+  document.getElementById('account-save-btn').textContent = 'Save';
+  document.getElementById('account-save-btn').disabled = false;
+  document.getElementById('account-delete-wrap').style.display = '';
+}
+
+function showAccountFile(file) {
+  accountImportFile = file;
+  const sizeKB = (file.size / 1024).toFixed(1);
+  document.getElementById('account-drop-text').style.display = 'none';
+  const nameEl = document.getElementById('account-file-name');
+  nameEl.innerHTML = `<span class="file-name">📄 ${esc(file.name)}</span> <span class="file-size">(${sizeKB} KB)</span> <span class="file-remove" onclick="event.stopPropagation();removeAccountFile()" title="Remove">✕</span>`;
+  nameEl.style.display = 'flex';
+}
+
+function removeAccountFile() {
+  accountImportFile = null;
+  document.getElementById('account-import-file').value = '';
+  document.getElementById('account-drop-text').style.display = '';
+  document.getElementById('account-file-name').style.display = 'none';
+}
+
+// Drop zone for account modal
+document.addEventListener('DOMContentLoaded', () => {
+  const zone = document.getElementById('account-drop-zone');
+  const input = document.getElementById('account-import-file');
+  zone.addEventListener('click', () => { if (!accountImportFile) input.click(); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) showAccountFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) showAccountFile(input.files[0]); });
+});
+
+async function saveAccount() {
+  const editId = document.getElementById('account-edit-id').value;
+  const name = document.getElementById('account-name').value.trim();
+  const accountType = document.getElementById('account-type').value;
+  const currency = document.getElementById('account-currency').value.trim() || 'NOK';
+  const statedBalance = parseFloat(document.getElementById('account-balance').value) || 0;
+  const notes = document.getElementById('account-notes').value.trim() || undefined;
+
+  if (!name) { alert('Account name is required'); return; }
+
+  const btn = document.getElementById('account-save-btn');
+  const resultEl = document.getElementById('account-import-result');
+  btn.disabled = true;
+  resultEl.style.display = 'none';
+
+  try {
+    if (editId) {
+      // ── Edit existing account ──
+      const diff = statedBalance - accountOriginalBalance;
+
+      // If balance changed, create a Balance Adjustment transaction instead of setting balance directly
+      if (Math.abs(diff) >= 0.01) {
+        await API.post('/transactions', {
+          account_id: parseInt(editId),
+          amount: Math.abs(diff),
+          transaction_type: diff > 0 ? 'in' : 'out',
+          description: 'Balance Adjustment',
+          date: new Date().toISOString().slice(0, 10),
+          notes: `Manual adjustment: ${fmt(accountOriginalBalance)} → ${fmt(statedBalance)}`,
+        });
+      }
+
+      // Save other fields (balance will be correct from the adjustment tx)
+      await API.patch(`/accounts/${editId}`, { name, account_type: accountType, currency, notes });
+      closeModal('modal-account');
+      accounts = await API.get('/accounts');
+      loadDashboard();
+      return;
+    }
+
+    // ── Create new account ──
+    // 1. Create with balance=0 (transactions will build up the balance)
+    const account = await API.post('/accounts', { name, account_type: accountType, currency, balance: 0, notes });
+
+    // 2. Import file if provided
+    let importResult = null;
+    if (accountImportFile) {
+      btn.textContent = 'Importing…';
+      const formData = new FormData();
+      formData.append('file', accountImportFile);
+      formData.append('account_id', String(account.id));
+
+      const base = window.location.pathname.includes('/finance') ? '/api/finance' : '/api/finance';
+      const res = await fetch(base + '/transactions/import-file', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      importResult = await res.json();
+    }
+
+    // 3. Get the balance after import (sum of transactions)
+    const updated = await API.get(`/accounts/${account.id}`);
+    const computedBalance = updated.balance;
+
+    // 4. If stated balance differs, create an Opening Balance adjustment
+    if (statedBalance !== 0 && Math.abs(statedBalance - computedBalance) >= 0.01) {
+      const diff = statedBalance - computedBalance;
+      await API.post('/transactions', {
+        account_id: account.id,
+        amount: Math.abs(diff),
+        transaction_type: diff > 0 ? 'in' : 'out',
+        description: 'Opening Balance Adjustment',
+        date: importResult ? undefined : new Date().toISOString().slice(0, 10),
+        notes: 'Auto-created to reconcile imported history with current balance',
+      });
+    } else if (statedBalance !== 0 && !accountImportFile) {
+      // No import, just set the balance directly via an opening balance tx
+      await API.post('/transactions', {
+        account_id: account.id,
+        amount: Math.abs(statedBalance),
+        transaction_type: statedBalance > 0 ? 'in' : 'out',
+        description: 'Opening Balance',
+        date: new Date().toISOString().slice(0, 10),
+      });
+    }
+
+    // 5. Show result
+    let html = `<div class="import-result success">✅ Account "${esc(name)}" created</div>`;
+    if (importResult) {
+      const { imported, skipped, categorized, linked, errors } = importResult;
+      html += `<div class="import-result ${errors?.length ? 'info' : 'success'}" style="margin-top:6px">`;
+      html += `📥 ${imported} transaction${imported !== 1 ? 's' : ''} imported`;
+      if (categorized > 0) html += ` (${categorized} auto-categorized)`;
+      if (linked > 0) html += ` (${linked} transfers linked)`;
+      if (skipped > 0) html += ` · ${skipped} skipped`;
+      html += '</div>';
+      if (errors?.length) {
+        html += `<div class="import-result error" style="margin-top:6px">⚠️ ${errors.length} error${errors.length !== 1 ? 's' : ''}:<ul>${errors.slice(0, 5).map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
+      }
+    }
+    if (statedBalance !== 0 && Math.abs(statedBalance - computedBalance) >= 0.01) {
+      const diff = statedBalance - computedBalance;
+      html += `<div class="import-result info" style="margin-top:6px">⚖️ Opening balance adjustment: ${diff > 0 ? '+' : ''}${fmt(diff)} to match current balance of ${fmt(statedBalance)}</div>`;
+    }
+
+    resultEl.innerHTML = html;
+    resultEl.style.display = '';
+    btn.textContent = 'Done';
+    btn.disabled = false;
+    btn.onclick = () => { closeModal('modal-account'); btn.onclick = saveAccount; };
+
+    accounts = await API.get('/accounts');
+    loadDashboard();
+  } catch (err) {
+    resultEl.innerHTML = `<div class="import-result error">❌ ${esc(err.message)}</div>`;
+    resultEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = editId ? 'Save' : 'Create Account';
+  }
+}
+
+function confirmDeleteAccount() {
+  document.getElementById('account-delete-btn').style.display = 'none';
+  document.getElementById('account-delete-confirm').style.display = '';
+}
+
+function cancelDeleteAccount() {
+  document.getElementById('account-delete-btn').style.display = '';
+  document.getElementById('account-delete-confirm').style.display = 'none';
+}
+
+async function doDeleteAccount() {
+  const id = document.getElementById('account-edit-id').value;
+  if (!id) return;
+  await API.del(`/accounts/${id}`);
+  closeModal('modal-account');
+  accounts = await API.get('/accounts');
+  loadDashboard();
+}
+
+// ── Transactions ────────────────────────────────────────────────
+
+async function loadTransactions() {
+  // Populate filters
+  if (accounts.length === 0) accounts = await API.get('/accounts');
+  if (categories.length === 0) categories = await API.get('/categories');
+
+  const acctFilter = document.getElementById('tx-account-filter');
+  if (acctFilter.options.length <= 1) {
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name;
+      acctFilter.appendChild(opt);
+    });
+  }
+
+  const catFilter = document.getElementById('tx-category-filter');
+  if (catFilter.options.length <= 1) {
+    populateCategorySelect(catFilter, true);
+  }
+
+  await fetchTransactions();
+}
+
+async function fetchTransactions() {
+  const params = new URLSearchParams();
+  const search = document.getElementById('tx-search').value;
+  const type = document.getElementById('tx-type-filter').value;
+  const account = document.getElementById('tx-account-filter').value;
+  const category = document.getElementById('tx-category-filter').value;
+  const dateFrom = document.getElementById('tx-date-from').value;
+  const dateTo = document.getElementById('tx-date-to').value;
+
+  const subcategory = document.getElementById('tx-subcategory-filter').value;
+
+  if (search) params.set('q', search);
+  if (type) params.set('type', type);
+  if (account) params.set('account_id', account);
+  if (subcategory) {
+    params.set('category_id', subcategory);
+  } else if (category) {
+    // Filter by parent category — include parent + all children
+    const childIds = categories.filter(c => c.parent_id === parseInt(category)).map(c => c.id);
+    params.set('category_ids', [category, ...childIds].join(','));
+  }
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  params.set('limit', TX_PER_PAGE);
+  params.set('offset', txPage * TX_PER_PAGE);
+
+  const txs = await API.get('/transactions?' + params);
+
+  document.getElementById('tx-table').innerHTML = txs.length === 0
+    ? '<div class="empty"><div class="empty-icon">💳</div>No transactions found</div>'
+    : renderTxTable(txs, true);
+
+  // Pagination
+  const pagEl = document.getElementById('tx-pagination');
+  const hasMore = txs.length === TX_PER_PAGE;
+  pagEl.innerHTML = `
+    <button class="btn btn-sm" ${txPage === 0 ? 'disabled' : ''} onclick="txPage--;fetchTransactions()">← Prev</button>
+    <span style="color:var(--fg2);font-size:13px">Page ${txPage + 1}</span>
+    <button class="btn btn-sm" ${!hasMore ? 'disabled' : ''} onclick="txPage++;fetchTransactions()">Next →</button>
+  `;
+}
+
+function renderTxTable(txs, showActions = false) {
+  return `<table>
+    <thead><tr>
+      <th>Date</th><th>Description</th><th>Category</th><th>Account</th><th>Type</th><th style="text-align:right">Amount</th>
+      ${showActions ? '<th></th>' : ''}
+    </tr></thead>
+    <tbody>
+      ${txs.map(t => `<tr class="clickable" onclick="openTxDetail(${t.id})">
+        <td>${fmtDate(t.date)}</td>
+        <td>${esc(t.description)}${t.tags ? ' <span style="color:var(--fg3);font-size:11px">' + JSON.parse(t.tags).map(t => '#' + t).join(' ') + '</span>' : ''}</td>
+        <td>${t.category_name ? '<span class="cat-badge">' + esc(t.category_name) + '</span>' : '<span style="color:var(--fg3)">—</span>'}</td>
+        <td style="color:var(--fg2)">${esc(t.account_name || '')}${t.linked_account_name ? ' → ' + esc(t.linked_account_name) : ''}</td>
+        <td><span class="type-badge ${t.transaction_type}">${t.transaction_type}</span></td>
+        <td class="amount ${t.transaction_type}" style="text-align:right">${t.transaction_type === 'out' ? '-' : '+'}${fmt(t.amount)}</td>
+        ${showActions ? `<td>
+          <button class="btn btn-sm" onclick="event.stopPropagation();editTransaction(${t.id})" title="Edit">✏️</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTransaction(${t.id})" title="Delete">🗑️</button>
+        </td>` : ''}
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+// Transaction filters
+['tx-search', 'tx-type-filter', 'tx-account-filter', 'tx-date-from', 'tx-date-to'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(el.tagName === 'INPUT' && el.type === 'text' ? 'input' : 'change', () => { txPage = 0; fetchTransactions(); });
+});
+
+// Category filter drives sub-category filter
+document.getElementById('tx-category-filter').addEventListener('change', () => {
+  const parentId = document.getElementById('tx-category-filter').value;
+  const subSel = document.getElementById('tx-subcategory-filter');
+  if (parentId) {
+    const hasChildren = populateSubcategorySelect(subSel, parentId);
+    subSel.style.display = hasChildren ? '' : 'none';
+  } else {
+    subSel.style.display = 'none';
+    subSel.innerHTML = '<option value="">All Sub-categories</option>';
+  }
+  txPage = 0; fetchTransactions();
+});
+document.getElementById('tx-subcategory-filter').addEventListener('change', () => { txPage = 0; fetchTransactions(); });
+
+// Transaction form: category drives sub-category
+document.getElementById('tx-category').addEventListener('change', () => {
+  const parentId = document.getElementById('tx-category').value;
+  const subGroup = document.getElementById('tx-subcategory-group');
+  const subSel = document.getElementById('tx-subcategory');
+  if (parentId) {
+    const hasChildren = populateSubcategorySelect(subSel, parentId);
+    subGroup.style.display = hasChildren ? '' : 'none';
+  } else {
+    subGroup.style.display = 'none';
+    subSel.innerHTML = '<option value="">— None —</option>';
+  }
+});
+
+function populateCategorySelect(sel, includeAll = false) {
+  const existing = sel.options.length;
+  if (existing > 1) return; // already populated
+  if (!includeAll && sel.options.length === 0) {
+    sel.innerHTML = '<option value="">Uncategorized</option>';
+  }
+  // Only top-level categories
+  const topLevel = categories.filter(c => !c.parent_id);
+  topLevel.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = (cat.icon || '') + ' ' + cat.name;
+    sel.appendChild(opt);
+  });
+}
+
+function populateSubcategorySelect(sel, parentId) {
+  sel.innerHTML = '<option value="">— None —</option>';
+  if (!parentId) return;
+  const children = categories.filter(c => c.parent_id === parseInt(parentId));
+  children.forEach(child => {
+    const opt = document.createElement('option');
+    opt.value = child.id;
+    opt.textContent = (child.icon || '') + ' ' + child.name;
+    sel.appendChild(opt);
+  });
+  return children.length > 0;
+}
+
+function openAddTransaction() {
+  document.getElementById('modal-tx-title').textContent = 'Add Transaction';
+  document.getElementById('tx-edit-id').value = '';
+  document.getElementById('tx-type').value = 'out';
+  document.getElementById('tx-amount').value = '';
+  document.getElementById('tx-desc').value = '';
+  document.getElementById('tx-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tx-tags').value = '';
+  document.getElementById('tx-notes').value = '';
+
+  // Populate selects
+  const acctSel = document.getElementById('tx-account');
+  acctSel.innerHTML = accounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+
+  const catSel = document.getElementById('tx-category');
+  catSel.innerHTML = '<option value="">Uncategorized</option>';
+  populateCategorySelect(catSel);
+  document.getElementById('tx-subcategory-group').style.display = 'none';
+  document.getElementById('tx-subcategory').innerHTML = '<option value="">— None —</option>';
+
+  openModal('modal-tx');
+}
+
+async function editTransaction(id) {
+  const tx = await API.get(`/transactions/${id}`);
+  document.getElementById('modal-tx-title').textContent = 'Edit Transaction';
+  document.getElementById('tx-edit-id').value = tx.id;
+  document.getElementById('tx-type').value = tx.transaction_type;
+  document.getElementById('tx-amount').value = tx.amount;
+  document.getElementById('tx-desc').value = tx.description;
+  document.getElementById('tx-date').value = tx.date;
+  document.getElementById('tx-tags').value = tx.tags ? JSON.parse(tx.tags).join(', ') : '';
+  document.getElementById('tx-notes').value = tx.notes || '';
+
+  const acctSel = document.getElementById('tx-account');
+  acctSel.innerHTML = accounts.map(a => `<option value="${a.id}" ${a.id === tx.account_id ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+
+  const catSel = document.getElementById('tx-category');
+  catSel.innerHTML = '<option value="">Uncategorized</option>';
+  populateCategorySelect(catSel);
+
+  // Set category — figure out if it's a parent or child
+  const subGroup = document.getElementById('tx-subcategory-group');
+  const subSel = document.getElementById('tx-subcategory');
+  if (tx.category_id) {
+    const cat = categories.find(c => c.id === tx.category_id);
+    if (cat && cat.parent_id) {
+      // It's a sub-category — select parent first, then child
+      catSel.value = cat.parent_id;
+      const hasChildren = populateSubcategorySelect(subSel, cat.parent_id);
+      subGroup.style.display = hasChildren ? '' : 'none';
+      subSel.value = tx.category_id;
+    } else {
+      catSel.value = tx.category_id;
+      const hasChildren = populateSubcategorySelect(subSel, tx.category_id);
+      subGroup.style.display = hasChildren ? '' : 'none';
+    }
+  } else {
+    subGroup.style.display = 'none';
+    subSel.innerHTML = '<option value="">— None —</option>';
+  }
+
+  openModal('modal-tx');
+}
+
+async function saveTransaction() {
+  const editId = document.getElementById('tx-edit-id').value;
+  const tags = document.getElementById('tx-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+  const data = {
+    account_id: parseInt(document.getElementById('tx-account').value),
+    category_id: document.getElementById('tx-subcategory').value ? parseInt(document.getElementById('tx-subcategory').value) : (document.getElementById('tx-category').value ? parseInt(document.getElementById('tx-category').value) : null),
+    amount: parseFloat(document.getElementById('tx-amount').value),
+    transaction_type: document.getElementById('tx-type').value,
+    description: document.getElementById('tx-desc').value,
+    date: document.getElementById('tx-date').value,
+    tags: tags.length > 0 ? tags : undefined,
+    notes: document.getElementById('tx-notes').value || undefined,
+  };
+
+  if (!data.amount || !data.description || !data.account_id) {
+    alert('Amount, description, and account are required');
+    return;
+  }
+
+  if (editId) {
+    await API.patch(`/transactions/${editId}`, data);
+  } else {
+    await API.post('/transactions', data);
+  }
+  closeModal('modal-tx');
+  fetchTransactions();
+  // Refresh dashboard stats if visible
+  if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+}
+
+async function deleteTransaction(id) {
+  if (!confirm('Delete this transaction?')) return;
+  await API.del(`/transactions/${id}`);
+  closeModal('modal-tx-detail');
+  fetchTransactions();
+  if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+}
+
+async function openTxDetail(id) {
+  const tx = await API.get(`/transactions/${id}`);
+
+  // Type badge
+  const badge = document.getElementById('txd-type-badge');
+  badge.className = 'type-badge ' + tx.transaction_type;
+  badge.textContent = tx.transaction_type;
+
+  // Amount
+  const amountEl = document.getElementById('txd-amount');
+  const prefix = tx.transaction_type === 'out' ? '-' : '+';
+  amountEl.textContent = prefix + fmt(tx.amount) + ' NOK';
+  amountEl.className = 'tx-detail-amount ' + tx.transaction_type;
+
+  // Description
+  document.getElementById('txd-desc').textContent = tx.description || '(no description)';
+
+  // Date
+  document.getElementById('txd-date').textContent = fmtDate(tx.date);
+
+  // Account — show from/to for linked transfers, single account otherwise
+  const acct = accounts.find(a => a.id === tx.account_id);
+  const accountRow = document.getElementById('txd-account-row');
+  const fromRow = document.getElementById('txd-from-row');
+  const toRow = document.getElementById('txd-to-row');
+  const linkRow = document.getElementById('txd-link-row');
+
+  if (tx.linked_account_name) {
+    // Linked transfer — show from/to based on direction
+    const fromName = tx.transaction_type === 'out' ? (acct ? acct.name : '—') : tx.linked_account_name;
+    const toName = tx.transaction_type === 'out' ? tx.linked_account_name : (acct ? acct.name : '—');
+    document.getElementById('txd-from-account').textContent = fromName;
+    document.getElementById('txd-to-account').textContent = toName;
+    accountRow.style.display = 'none';
+    fromRow.style.display = '';
+    toRow.style.display = '';
+    linkRow.style.display = '';
+    document.getElementById('txd-link-value').innerHTML = '<span style="color:var(--fg2)">Linked to #' + tx.linked_transaction_id + '</span> <button class="btn btn-sm btn-danger" onclick="unlinkTransfer(' + id + ')" title="Unlink">✕</button>';
+  } else {
+    document.getElementById('txd-account').textContent = acct ? acct.name : '—';
+    accountRow.style.display = '';
+    fromRow.style.display = 'none';
+    toRow.style.display = 'none';
+    linkRow.style.display = '';
+    document.getElementById('txd-link-value').innerHTML = '<button class="btn btn-sm" onclick="openLinkTransfer(' + id + ')">🔗 Find matching transaction</button>';
+  }
+
+  // Category
+  const cat = categories.find(c => c.id === tx.category_id);
+  if (cat) {
+    const parent = categories.find(c => c.id === cat.parent_id);
+    const catLabel = parent ? (parent.icon || '') + ' ' + parent.name + ' › ' + (cat.icon || '') + ' ' + cat.name : (cat.icon || '') + ' ' + cat.name;
+    document.getElementById('txd-category').innerHTML = '<span class="cat-badge">' + esc(catLabel) + '</span>';
+  } else {
+    document.getElementById('txd-category').innerHTML = '<span style="color:var(--fg3)">Uncategorized</span>';
+  }
+
+  // Vendor
+  const vendorRow = document.getElementById('txd-vendor-row');
+  if (tx.vendor_name) {
+    document.getElementById('txd-vendor').textContent = tx.vendor_name;
+    vendorRow.style.display = '';
+  } else {
+    vendorRow.style.display = 'none';
+  }
+
+  // Tags
+  const tagsRow = document.getElementById('txd-tags-row');
+  if (tx.tags) {
+    const tags = JSON.parse(tx.tags);
+    if (tags.length > 0) {
+      document.getElementById('txd-tags').innerHTML = tags.map(t => '<span class="tag">#' + esc(t) + '</span>').join(' ');
+      tagsRow.style.display = '';
+    } else {
+      tagsRow.style.display = 'none';
+    }
+  } else {
+    tagsRow.style.display = 'none';
+  }
+
+  // Notes
+  const notesRow = document.getElementById('txd-notes-row');
+  if (tx.notes) {
+    document.getElementById('txd-notes').textContent = tx.notes;
+    notesRow.style.display = '';
+  } else {
+    notesRow.style.display = 'none';
+  }
+
+  // Wire up edit/delete buttons
+  document.getElementById('txd-edit-btn').onclick = () => { closeModal('modal-tx-detail'); editTransaction(id); };
+  document.getElementById('txd-delete-btn').onclick = () => { deleteTransaction(id); };
+
+  // Show unlink button in header for linked transfers
+  let unlinkBtn = document.getElementById('txd-unlink-btn');
+  if (tx.linked_transaction_id) {
+    if (!unlinkBtn) {
+      unlinkBtn = document.createElement('button');
+      unlinkBtn.id = 'txd-unlink-btn';
+      unlinkBtn.className = 'btn btn-sm';
+      unlinkBtn.title = 'Unlink transfer';
+      document.querySelector('.tx-detail-actions').insertBefore(unlinkBtn, document.getElementById('txd-edit-btn'));
+    }
+    unlinkBtn.textContent = '🔗 Unlink';
+    unlinkBtn.onclick = () => unlinkTransfer(id);
+    unlinkBtn.style.display = '';
+  } else if (unlinkBtn) {
+    unlinkBtn.style.display = 'none';
+  }
+
+  openModal('modal-tx-detail');
+}
+
+async function openLinkTransfer(txId) {
+  const matches = await API.get(`/transactions/${txId}/matches`);
+  if (matches.length === 0) {
+    alert('No matching transfers found. Matches look for same amount ± 3 days on a different account.');
+    return;
+  }
+  // Build a simple selection UI in the link row
+  const linkValue = document.getElementById('txd-link-value');
+  let html = '<div style="text-align:left"><div style="font-size:12px;color:var(--fg2);margin-bottom:6px">' + matches.length + ' match' + (matches.length !== 1 ? 'es' : '') + ' found:</div>';
+  matches.forEach(m => {
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-size:12px">
+        <div><strong>${esc(m.account_name || '?')}</strong></div>
+        <div style="color:var(--fg2)">${fmtDate(m.date)} · ${esc(m.description)}</div>
+      </div>
+      <div class="amount ${m.transaction_type}" style="font-size:13px">${m.transaction_type === 'out' ? '-' : '+'}${fmt(m.amount)}</div>
+      <button class="btn btn-sm btn-primary" onclick="linkTransfer(${txId}, ${m.id})">Link</button>
+    </div>`;
+  });
+  html += '</div>';
+  linkValue.innerHTML = html;
+}
+
+async function linkTransfer(txId, linkedId) {
+  await API.post(`/transactions/${txId}/link`, { linked_id: linkedId });
+  openTxDetail(txId); // refresh detail
+}
+
+async function unlinkTransfer(txId) {
+  if (!confirm('Unlink this transfer?')) return;
+  await API.post(`/transactions/${txId}/unlink`, {});
+  openTxDetail(txId); // refresh detail
+}
+
+function exportCsv() {
+  const params = new URLSearchParams();
+  const account = document.getElementById('tx-account-filter').value;
+  const dateFrom = document.getElementById('tx-date-from').value;
+  const dateTo = document.getElementById('tx-date-to').value;
+  if (account) params.set('account_id', account);
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  window.open('/api/finance/transactions/export.csv?' + params, '_blank');
+}
+
+// ── Auto-Categorize ─────────────────────────────────────────────
+
+async function runAutoCategorize() {
+  try {
+    const r = await API.post('/transactions/auto-categorize');
+    fetchTransactions();
+  } catch (e) {
+    console.error('Auto-categorize failed:', e.message);
+  }
+}
+
+// ── Import ──────────────────────────────────────────────────────
+
+let importSelectedFile = null;
+
+function openImport() {
+  // Populate account picker
+  const sel = document.getElementById('import-account');
+  sel.innerHTML = accounts.map(a => `<option value="${a.id}">${esc(a.name)} (${a.account_type})</option>`).join('');
+  if (accounts.length === 0) {
+    sel.innerHTML = '<option value="">No accounts — create one first</option>';
+  }
+  // Reset state
+  importSelectedFile = null;
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-csv').value = '';
+  document.getElementById('import-result').style.display = 'none';
+  document.getElementById('import-submit-btn').disabled = false;
+  document.getElementById('import-submit-btn').textContent = 'Import';
+  showDropZoneDefault();
+  switchImportTab('file');
+  openModal('modal-import');
+}
+
+function closeImport() {
+  closeModal('modal-import');
+  importSelectedFile = null;
+}
+
+function switchImportTab(tab) {
+  document.querySelectorAll('.import-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('import-tab-file').style.display = tab === 'file' ? '' : 'none';
+  document.getElementById('import-tab-csv').style.display = tab === 'csv' ? '' : 'none';
+  document.getElementById('import-result').style.display = 'none';
+}
+
+function showDropZoneDefault() {
+  document.getElementById('import-file-name').style.display = 'none';
+  document.querySelector('.drop-zone-text').style.display = '';
+}
+
+function showDropZoneFile(file) {
+  importSelectedFile = file;
+  const sizeKB = (file.size / 1024).toFixed(1);
+  document.querySelector('.drop-zone-text').style.display = 'none';
+  const nameEl = document.getElementById('import-file-name');
+  nameEl.innerHTML = `<span class="file-name">📄 ${esc(file.name)}</span> <span class="file-size">(${sizeKB} KB)</span> <span class="file-remove" onclick="event.stopPropagation();removeImportFile()" title="Remove">✕</span>`;
+  nameEl.style.display = 'flex';
+}
+
+function removeImportFile() {
+  importSelectedFile = null;
+  document.getElementById('import-file').value = '';
+  showDropZoneDefault();
+}
+
+// Drop zone events
+document.addEventListener('DOMContentLoaded', () => {
+  const zone = document.getElementById('import-drop-zone');
+  const input = document.getElementById('import-file');
+
+  zone.addEventListener('click', () => { if (!importSelectedFile) input.click(); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) showDropZoneFile(file);
+  });
+  input.addEventListener('change', () => {
+    if (input.files[0]) showDropZoneFile(input.files[0]);
+  });
+});
+
+async function submitImport() {
+  const accountId = document.getElementById('import-account').value;
+  if (!accountId) { alert('Please select a target account'); return; }
+
+  const resultEl = document.getElementById('import-result');
+  const btn = document.getElementById('import-submit-btn');
+  const activeTab = document.querySelector('.import-tab.active').dataset.tab;
+
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  resultEl.style.display = 'none';
+
+  try {
+    let result;
+
+    if (activeTab === 'csv') {
+      // Paste CSV mode
+      const csv = document.getElementById('import-csv').value.trim();
+      if (!csv) { alert('Please paste CSV data'); btn.disabled = false; btn.textContent = 'Import'; return; }
+      result = await API.post('/transactions/import', { csv, account_id: parseInt(accountId) });
+    } else {
+      // File upload mode
+      if (!importSelectedFile) { alert('Please select a file'); btn.disabled = false; btn.textContent = 'Import'; return; }
+
+      const formData = new FormData();
+      formData.append('file', importSelectedFile);
+      formData.append('account_id', accountId);
+
+      const base = window.location.pathname.includes('/finance') ? '/api/finance' : '/api/finance';
+      const res = await fetch(base + '/transactions/import-file', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      result = await res.json();
+    }
+
+    // Show result
+    const hasErrors = result.errors && result.errors.length > 0;
+    const imported = result.imported ?? 0;
+    const skipped = result.skipped ?? 0;
+    const categorized = result.categorized ?? 0;
+    const linked = result.linked ?? 0;
+
+    let html = '';
+    if (imported > 0) {
+      html += `<div class="import-result success">✅ Imported ${imported} transaction${imported !== 1 ? 's' : ''}`;
+      if (categorized > 0) html += ` (${categorized} auto-categorized)`;
+      if (linked > 0) html += ` (${linked} transfers linked)`;
+      if (skipped > 0) html += ` · ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
+      html += '</div>';
+    } else if (!hasErrors) {
+      html += '<div class="import-result info">No new transactions to import (all duplicates or empty file)</div>';
+    }
+    if (hasErrors) {
+      html += `<div class="import-result error" style="margin-top:8px">⚠️ ${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}:<ul>${result.errors.slice(0, 10).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`;
+      if (result.errors.length > 10) html += `<div style="margin-top:4px">…and ${result.errors.length - 10} more</div>`;
+      html += '</div>';
+    }
+
+    resultEl.innerHTML = html;
+    resultEl.style.display = '';
+    btn.disabled = false;
+
+    // Refresh transactions list if we imported something
+    if (imported > 0) {
+      accounts = await API.get('/accounts');
+      loadTransactions();
+      btn.textContent = 'Done';
+      btn.onclick = () => { closeImport(); btn.onclick = submitImport; };
+    } else {
+      btn.textContent = 'Import';
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<div class="import-result error">❌ ${esc(err.message)}</div>`;
+    resultEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
+}
+
+// ── Budgets ─────────────────────────────────────────────────────
+
+function initBudgetSelectors() {
+  const monthSel = document.getElementById('budget-month');
+  const yearSel = document.getElementById('budget-year');
+  if (monthSel.options.length > 0) return;
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  months.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    if (i === now.getMonth()) opt.selected = true;
+    monthSel.appendChild(opt);
+  });
+
+  for (let y = now.getFullYear() - 2; y <= now.getFullYear() + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = y;
+    if (y === now.getFullYear()) opt.selected = true;
+    yearSel.appendChild(opt);
+  }
+
+  monthSel.addEventListener('change', loadBudgets);
+  yearSel.addEventListener('change', loadBudgets);
+}
+
+async function loadBudgets() {
+  initBudgetSelectors();
+  const year = document.getElementById('budget-year').value;
+  const month = document.getElementById('budget-month').value;
+
+  const budgets = await API.get(`/budgets/status?year=${year}&month=${month}`);
+
+  if (budgets.length === 0) {
+    document.getElementById('budget-grid').innerHTML = '<div class="empty"><div class="empty-icon">📊</div>No budgets set for this period.<br>Click "+ Set Budget" to start.</div>';
+    return;
+  }
+
+  document.getElementById('budget-grid').innerHTML = budgets.map(b => {
+    const spent = b.spent || 0;
+    const pct = b.amount > 0 ? Math.round(spent / b.amount * 100) : 0;
+    const remaining = b.amount - spent;
+    return `
+      <div class="card budget-card">
+        <div class="budget-header">
+          <span class="budget-name">${esc(b.category_name)}</span>
+          <span class="budget-pct" style="color:var(--${progressColor(pct)})">${pct}%</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill ${progressColor(pct)}" style="width:${Math.min(pct, 100)}%"></div></div>
+        <div class="budget-amounts">
+          <span>${fmt(spent)} spent</span>
+          <span>${remaining >= 0 ? fmt(remaining) + ' left' : fmt(Math.abs(remaining)) + ' over!'}</span>
+          <span>of ${fmt(b.amount)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openAddBudget() {
+  if (categories.length === 0) { alert('Loading categories...'); return; }
+  const catSel = document.getElementById('budget-category');
+  catSel.innerHTML = '';
+  const subGroup = document.getElementById('budget-subcategory-group');
+  const subSel = document.getElementById('budget-subcategory');
+  subGroup.style.display = 'none';
+  subSel.innerHTML = '<option value="">— All sub-categories —</option>';
+  // Only expense top-level categories
+  const expCats = categories.filter(c => !c.parent_id && (c.category_type === 'expense' || c.category_type === 'both'));
+  expCats.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = (cat.icon || '') + ' ' + cat.name;
+    catSel.appendChild(opt);
+  });
+  // Trigger sub-category populate for first selected
+  if (expCats.length > 0) {
+    const children = categories.filter(c => c.parent_id === expCats[0].id && (c.category_type === 'expense' || c.category_type === 'both'));
+    if (children.length > 0) {
+      populateSubcategorySelect(subSel, expCats[0].id);
+      subGroup.style.display = '';
+    }
+  }
+  catSel.onchange = () => {
+    const pid = catSel.value;
+    const hasChildren = populateSubcategorySelect(subSel, pid);
+    subGroup.style.display = hasChildren ? '' : 'none';
+  };
+  document.getElementById('budget-amount').value = '';
+  document.getElementById('budget-period').value = 'monthly';
+  openModal('modal-budget');
+}
+
+async function saveBudget() {
+  const year = parseInt(document.getElementById('budget-year').value);
+  const month = parseInt(document.getElementById('budget-month').value);
+  const data = {
+    category_id: document.getElementById('budget-subcategory').value ? parseInt(document.getElementById('budget-subcategory').value) : parseInt(document.getElementById('budget-category').value),
+    amount: parseFloat(document.getElementById('budget-amount').value),
+    period: document.getElementById('budget-period').value,
+    month,
+    year,
+  };
+  if (!data.amount) { alert('Amount is required'); return; }
+  await API.post('/budgets', data);
+  closeModal('modal-budget');
+  loadBudgets();
+}
+
+// ── Goals ───────────────────────────────────────────────────────
+
+async function loadGoals() {
+  const status = document.getElementById('goal-status-filter').value;
+  const goals = await API.get('/goals' + (status ? '?status=' + status : ''));
+
+  if (goals.length === 0) {
+    document.getElementById('goal-grid').innerHTML = '<div class="empty"><div class="empty-icon">🎯</div>No goals yet.<br>Click "+ Add Goal" to start.</div>';
+    return;
+  }
+
+  document.getElementById('goal-grid').innerHTML = goals.map(g => renderGoalCard(g, true)).join('');
+}
+
+document.getElementById('goal-status-filter').addEventListener('change', loadGoals);
+
+function renderGoalCard(g, showActions = false) {
+  const pct = g.target_amount > 0 ? Math.round(g.current_amount / g.target_amount * 100) : 0;
+  const typeIcons = { savings: '💰', debt: '💳', purchase: '🛍️' };
+  let deadlineHtml = '';
+  if (g.deadline) {
+    const daysLeft = Math.ceil((new Date(g.deadline).getTime() - Date.now()) / 86400000);
+    deadlineHtml = `<div class="goal-deadline">${daysLeft > 0 ? daysLeft + ' days left' : 'Past deadline!'} · ${fmtDate(g.deadline)}</div>`;
+  }
+  return `
+    <div class="card goal-card">
+      <div class="goal-header">
+        <span class="goal-name">${typeIcons[g.goal_type] || '🎯'} ${esc(g.name)}</span>
+        <span class="goal-type">${g.goal_type}</span>
+      </div>
+      <div class="goal-amounts">${fmt(g.current_amount)} <span style="color:var(--fg3);font-size:14px;font-weight:400">/ ${fmt(g.target_amount)}</span></div>
+      <div class="progress-bar"><div class="progress-fill accent" style="width:${Math.min(pct, 100)}%"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <span style="font-size:12px;color:var(--fg2)">${pct}% complete</span>
+        ${showActions ? `<div>
+          <button class="btn btn-sm" onclick="editGoal(${g.id})" title="Edit">✏️</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteGoal(${g.id})" title="Delete">🗑️</button>
+        </div>` : ''}
+      </div>
+      ${deadlineHtml}
+    </div>
+  `;
+}
+
+function openAddGoal() {
+  document.getElementById('modal-goal-title').textContent = 'Add Goal';
+  document.getElementById('goal-edit-id').value = '';
+  document.getElementById('goal-name').value = '';
+  document.getElementById('goal-type').value = 'savings';
+  document.getElementById('goal-target').value = '';
+  document.getElementById('goal-current').value = '0';
+  document.getElementById('goal-deadline').value = '';
+  document.getElementById('goal-notes').value = '';
+  openModal('modal-goal');
+}
+
+async function editGoal(id) {
+  const g = await API.get(`/goals/${id}`);
+  document.getElementById('modal-goal-title').textContent = 'Edit Goal';
+  document.getElementById('goal-edit-id').value = g.id;
+  document.getElementById('goal-name').value = g.name;
+  document.getElementById('goal-type').value = g.goal_type;
+  document.getElementById('goal-target').value = g.target_amount;
+  document.getElementById('goal-current').value = g.current_amount;
+  document.getElementById('goal-deadline').value = g.deadline || '';
+  document.getElementById('goal-notes').value = g.notes || '';
+  openModal('modal-goal');
+}
+
+async function saveGoal() {
+  const editId = document.getElementById('goal-edit-id').value;
+  const data = {
+    name: document.getElementById('goal-name').value,
+    goal_type: document.getElementById('goal-type').value,
+    target_amount: parseFloat(document.getElementById('goal-target').value),
+    current_amount: parseFloat(document.getElementById('goal-current').value) || 0,
+    deadline: document.getElementById('goal-deadline').value || undefined,
+    notes: document.getElementById('goal-notes').value || undefined,
+  };
+  if (!data.name || !data.target_amount) { alert('Name and target amount are required'); return; }
+
+  if (editId) {
+    await API.patch(`/goals/${editId}`, data);
+  } else {
+    await API.post('/goals', data);
+  }
+  closeModal('modal-goal');
+  loadGoals();
+  if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+}
+
+async function deleteGoal(id) {
+  if (!confirm('Delete this goal?')) return;
+  await API.del(`/goals/${id}`);
+  loadGoals();
+}
+
+// ── Vendors ─────────────────────────────────────────────────────
+
+let vendors = [];
+
+async function loadVendors() {
+  const includeIgnored = document.getElementById('vendor-show-ignored').checked;
+  vendors = await API.get('/vendors?include_ignored=' + includeIgnored);
+  renderVendorTable();
+}
+
+function renderVendorTable() {
+  const search = (document.getElementById('vendor-search').value || '').toLowerCase();
+  const filtered = search
+    ? vendors.filter(v => v.name.toLowerCase().includes(search) || (v.country || '').toLowerCase().includes(search))
+    : vendors;
+
+  const el = document.getElementById('vendor-table');
+  if (filtered.length === 0) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div>' + (vendors.length === 0 ? 'No vendors yet. Click "+ Add Vendor" to start.' : 'No matching vendors.') + '</div>';
+    return;
+  }
+
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Name</th><th>Country</th><th>Default Category</th><th>Transactions</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>
+      ${filtered.map(v => `<tr class="clickable" onclick="editVendor(${v.id})" ${v.ignore ? 'style="opacity:0.5"' : ''}>
+        <td><strong>${esc(v.name)}</strong></td>
+        <td>${v.country ? '<span style="font-size:12px">' + esc(v.country) + '</span>' : '<span style="color:var(--fg3)">—</span>'}</td>
+        <td>${v.category_name ? '<span class="cat-badge">' + esc(v.category_name) + '</span>' : '<span style="color:var(--fg3)">—</span>'}</td>
+        <td style="color:var(--fg2)">${v.transaction_count || 0}</td>
+        <td>${v.ignore ? '<span style="color:var(--fg3);font-size:12px">🚫 Ignored</span>' : '<span style="color:var(--green);font-size:12px">✓ Active</span>'}</td>
+        <td>
+          <button class="btn btn-sm" onclick="event.stopPropagation();editVendor(${v.id})" title="Edit">✏️</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteVendor(${v.id})" title="Delete">🗑️</button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+document.getElementById('vendor-search').addEventListener('input', renderVendorTable);
+document.getElementById('vendor-show-ignored').addEventListener('change', loadVendors);
+
+function openAddVendor() {
+  document.getElementById('modal-vendor-title').textContent = 'Add Vendor';
+  document.getElementById('vendor-edit-id').value = '';
+  document.getElementById('vendor-name').value = '';
+  document.getElementById('vendor-country').value = '';
+  document.getElementById('vendor-ignore').checked = false;
+  document.getElementById('vendor-notes').value = '';
+  document.getElementById('vendor-delete-wrap').style.display = 'none';
+  document.getElementById('vendor-tx-count').style.display = 'none';
+
+  const catSel = document.getElementById('vendor-category');
+  catSel.innerHTML = '<option value="">— None —</option>';
+  populateVendorCategorySelect(catSel);
+
+  openModal('modal-vendor');
+}
+
+async function editVendor(id) {
+  const v = await API.get('/vendors/' + id);
+  document.getElementById('modal-vendor-title').textContent = 'Edit Vendor';
+  document.getElementById('vendor-edit-id').value = v.id;
+  document.getElementById('vendor-name').value = v.name;
+  document.getElementById('vendor-country').value = v.country || '';
+  document.getElementById('vendor-ignore').checked = !!v.ignore;
+  document.getElementById('vendor-notes').value = v.notes || '';
+  document.getElementById('vendor-delete-wrap').style.display = '';
+
+  if (v.transaction_count > 0) {
+    document.getElementById('vendor-tx-count').textContent = '📊 ' + v.transaction_count + ' transaction' + (v.transaction_count !== 1 ? 's' : '') + ' linked to this vendor';
+    document.getElementById('vendor-tx-count').style.display = '';
+  } else {
+    document.getElementById('vendor-tx-count').style.display = 'none';
+  }
+
+  const catSel = document.getElementById('vendor-category');
+  catSel.innerHTML = '<option value="">— None —</option>';
+  populateVendorCategorySelect(catSel);
+  if (v.category_id) catSel.value = v.category_id;
+
+  openModal('modal-vendor');
+}
+
+function populateVendorCategorySelect(sel) {
+  const topLevel = categories.filter(c => !c.parent_id);
+  topLevel.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = (cat.icon || '') + ' ' + cat.name;
+    sel.appendChild(opt);
+    // Add sub-categories indented
+    const children = categories.filter(c => c.parent_id === cat.id);
+    children.forEach(child => {
+      const copt = document.createElement('option');
+      copt.value = child.id;
+      copt.textContent = '  └ ' + (child.icon || '') + ' ' + child.name;
+      sel.appendChild(copt);
+    });
+  });
+}
+
+async function saveVendor() {
+  const editId = document.getElementById('vendor-edit-id').value;
+  const data = {
+    name: document.getElementById('vendor-name').value.trim(),
+    country: document.getElementById('vendor-country').value.trim().toUpperCase() || undefined,
+    category_id: document.getElementById('vendor-category').value ? parseInt(document.getElementById('vendor-category').value) : null,
+    ignore: document.getElementById('vendor-ignore').checked,
+    notes: document.getElementById('vendor-notes').value.trim() || undefined,
+  };
+
+  if (!data.name) { alert('Vendor name is required'); return; }
+
+  if (editId) {
+    await API.patch('/vendors/' + editId, data);
+  } else {
+    await API.post('/vendors', data);
+  }
+  closeModal('modal-vendor');
+  loadVendors();
+}
+
+async function deleteVendor(id) {
+  if (!id && document.getElementById('vendor-edit-id').value) {
+    id = parseInt(document.getElementById('vendor-edit-id').value);
+  }
+  if (!id) return;
+  if (!confirm('Delete this vendor? Transactions will be unlinked.')) return;
+  await API.del('/vendors/' + id);
+  closeModal('modal-vendor');
+  loadVendors();
+}
+
+// ── Reports ─────────────────────────────────────────────────────
+
+const CHART_COLORS = [
+  '#7c6ff0', '#f87171', '#4ade80', '#fbbf24', '#60a5fa',
+  '#f472b6', '#a78bfa', '#34d399', '#fb923c', '#818cf8',
+  '#e879f9', '#2dd4bf', '#facc15', '#38bdf8', '#c084fc',
+];
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { labels: { color: '#888898', font: { size: 12 } } },
+  },
+  scales: {
+    x: { ticks: { color: '#555568' }, grid: { color: '#1a1a25' } },
+    y: { ticks: { color: '#555568' }, grid: { color: '#1a1a25' } },
+  },
+};
+
+let chartIncomeExpense = null;
+let chartCategoryPie = null;
+let chartNetTrend = null;
+
+let reportBreakdownCache = []; // cache full breakdown for pie click filtering
+
+document.getElementById('report-range').addEventListener('change', loadReports);
+document.getElementById('report-category').addEventListener('change', () => {
+  updateReportSubcategoryFilter();
+  loadReports();
+});
+document.getElementById('report-subcategory').addEventListener('change', loadReports);
+
+function populateReportCategoryFilter() {
+  const sel = document.getElementById('report-category');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>';
+  const topLevel = categories.filter(c => !c.parent_id);
+  for (const c of topLevel) {
+    sel.innerHTML += `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`;
+  }
+  sel.value = current;
+}
+
+function updateReportSubcategoryFilter() {
+  const parentId = document.getElementById('report-category').value;
+  const subSel = document.getElementById('report-subcategory');
+  if (!parentId) {
+    subSel.style.display = 'none';
+    subSel.innerHTML = '<option value="">All Sub-categories</option>';
+    return;
+  }
+  const children = categories.filter(c => c.parent_id === parseInt(parentId));
+  if (children.length === 0) {
+    subSel.style.display = 'none';
+    subSel.innerHTML = '<option value="">All Sub-categories</option>';
+    return;
+  }
+  subSel.innerHTML = '<option value="">All Sub-categories</option>';
+  for (const c of children) {
+    subSel.innerHTML += `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`;
+  }
+  subSel.style.display = '';
+}
+
+function getReportCategoryIds() {
+  const parentId = document.getElementById('report-category').value;
+  const subId = document.getElementById('report-subcategory').value;
+  if (subId) return [parseInt(subId)];
+  if (parentId) {
+    const pid = parseInt(parentId);
+    const childIds = categories.filter(c => c.parent_id === pid).map(c => c.id);
+    return [pid, ...childIds];
+  }
+  return null; // no filter
+}
+
+function setReportCategoryFilter(categoryName) {
+  // Find the category by name — could be parent or child
+  const cat = categories.find(c => c.name === categoryName);
+  if (!cat) return;
+
+  if (cat.parent_id) {
+    // It's a sub-category: set parent, then sub
+    document.getElementById('report-category').value = cat.parent_id;
+    updateReportSubcategoryFilter();
+    document.getElementById('report-subcategory').value = cat.id;
+  } else {
+    document.getElementById('report-category').value = cat.id;
+    updateReportSubcategoryFilter();
+  }
+  document.getElementById('report-clear-filter').style.display = '';
+  loadReports();
+}
+
+function clearReportCategoryFilter() {
+  document.getElementById('report-category').value = '';
+  document.getElementById('report-subcategory').value = '';
+  document.getElementById('report-subcategory').style.display = 'none';
+  document.getElementById('report-clear-filter').style.display = 'none';
+  loadReports();
+}
+
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function getReportDateRange() {
+  const range = document.getElementById('report-range').value;
+  const now = new Date();
+  let dateFrom, dateTo, months;
+
+  if (range === 'last-month') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0); // last day of prev month
+    dateFrom = localDateStr(start);
+    dateTo = localDateStr(end);
+    months = 1;
+  } else if (range === 'this-year') {
+    dateFrom = now.getFullYear() + '-01-01';
+    dateTo = localDateStr(now);
+    months = now.getMonth() + 1;
+  } else if (range === 'last-year') {
+    const y = now.getFullYear() - 1;
+    dateFrom = y + '-01-01';
+    dateTo = y + '-12-31';
+    months = 12;
+  } else {
+    months = parseInt(range);
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+    dateFrom = localDateStr(startDate);
+    dateTo = localDateStr(now);
+  }
+
+  return { dateFrom, dateTo, months };
+}
+
+async function loadReports() {
+  const { dateFrom, dateTo, months } = getReportDateRange();
+  const range = document.getElementById('report-range').value;
+
+  // Build trend params — pass date bounds for fixed-range filters
+  let trendParams = `months=${months}`;
+  if (range === 'last-month' || range === 'last-year') {
+    trendParams += `&date_from=${dateFrom}&date_to=${dateTo}`;
+  }
+
+  const [trend, breakdown] = await Promise.all([
+    API.get(`/reports/trend?${trendParams}`),
+    API.get(`/reports/breakdown-range?date_from=${dateFrom}&date_to=${dateTo}`),
+  ]);
+
+  // Apply category filter to breakdown
+  const filterIds = getReportCategoryIds();
+  const filteredBreakdown = filterIds
+    ? breakdown.filter(b => filterIds.includes(b.category_id))
+    : breakdown;
+
+  // Show/hide clear button
+  const hasFilter = document.getElementById('report-category').value !== '';
+  document.getElementById('report-clear-filter').style.display = hasFilter ? '' : 'none';
+
+  // Cache full breakdown for pie chart clicks
+  reportBreakdownCache = breakdown;
+
+  // Populate category filter if needed
+  populateReportCategoryFilter();
+
+  renderIncomeExpenseChart(trend);
+  renderCategoryPieChart(filteredBreakdown);
+  renderNetTrendChart(trend);
+  renderTopCategories(filteredBreakdown);
+}
+
+function destroyChart(chart) {
+  if (chart) chart.destroy();
+  return null;
+}
+
+function renderIncomeExpenseChart(trend) {
+  chartIncomeExpense = destroyChart(chartIncomeExpense);
+  const ctx = document.getElementById('chart-income-expense');
+  if (trend.length === 0) { ctx.parentElement.innerHTML = '<div class="empty">No data</div>'; return; }
+
+  chartIncomeExpense = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: trend.map(t => t.month),
+      datasets: [
+        {
+          label: 'Income',
+          data: trend.map(t => t.income),
+          backgroundColor: 'rgba(74, 222, 128, 0.7)',
+          borderColor: '#4ade80',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+        {
+          label: 'Expenses',
+          data: trend.map(t => t.expenses),
+          backgroundColor: 'rgba(248, 113, 113, 0.7)',
+          borderColor: '#f87171',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      plugins: {
+        ...chartDefaults.plugins,
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)} NOK`,
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderCategoryPieChart(breakdown) {
+  chartCategoryPie = destroyChart(chartCategoryPie);
+  const ctx = document.getElementById('chart-category-pie');
+  if (breakdown.length === 0) { ctx.parentElement.innerHTML = '<div class="empty">No data</div>'; return; }
+
+  const top = breakdown.slice(0, 10);
+  const otherAmount = breakdown.slice(10).reduce((s, b) => s + b.amount, 0);
+  const labels = top.map(b => b.category_name);
+  const data = top.map(b => b.amount);
+  const colors = top.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+
+  if (otherAmount > 0) {
+    labels.push('Other');
+    data.push(otherAmount);
+    colors.push('#555568');
+  }
+
+  chartCategoryPie = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: colors,
+        borderColor: '#0a0a0f',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (event, elements) => {
+        if (elements.length === 0) return;
+        const idx = elements[0].index;
+        const label = labels[idx];
+        if (label === 'Other') return;
+        setReportCategoryFilter(label);
+      },
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#888898', font: { size: 11 }, padding: 8,
+            generateLabels: (chart) => {
+              const data = chart.data;
+              return data.labels.map((label, i) => ({
+                text: label,
+                fillStyle: data.datasets[0].backgroundColor[i],
+                strokeStyle: data.datasets[0].borderColor,
+                lineWidth: data.datasets[0].borderWidth,
+                hidden: false,
+                index: i,
+              }));
+            },
+          },
+          onClick: (e, legendItem) => {
+            const label = legendItem.text;
+            if (label === 'Other') return;
+            setReportCategoryFilter(label);
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((s, v) => s + v, 0);
+              const pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+              return `${ctx.label}: ${fmt(ctx.raw)} NOK (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderNetTrendChart(trend) {
+  chartNetTrend = destroyChart(chartNetTrend);
+  const ctx = document.getElementById('chart-net-trend');
+  if (trend.length === 0) { ctx.parentElement.innerHTML = '<div class="empty">No data</div>'; return; }
+
+  // Cumulative net worth
+  let cumulative = 0;
+  const cumulativeData = trend.map(t => { cumulative += t.net; return cumulative; });
+
+  chartNetTrend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trend.map(t => t.month),
+      datasets: [
+        {
+          label: 'Monthly Net',
+          data: trend.map(t => t.net),
+          borderColor: '#7c6ff0',
+          backgroundColor: 'rgba(124, 111, 240, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        },
+        {
+          label: 'Cumulative',
+          data: cumulativeData,
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.05)',
+          fill: false,
+          tension: 0.3,
+          borderDash: [5, 5],
+          pointRadius: 3,
+        },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      plugins: {
+        ...chartDefaults.plugins,
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)} NOK`,
+          },
+        },
+      },
+      scales: {
+        ...chartDefaults.scales,
+        y: {
+          ...chartDefaults.scales.y,
+          ticks: {
+            ...chartDefaults.scales.y.ticks,
+            callback: (v) => fmt(v),
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderTopCategories(breakdown) {
+  const el = document.getElementById('report-top-categories');
+  if (breakdown.length === 0) {
+    el.innerHTML = '<div class="empty">No spending data</div>';
+    return;
+  }
+
+  const maxAmt = Math.max(...breakdown.map(b => b.amount));
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>#</th><th>Category</th><th>Amount</th><th>%</th><th style="width:40%">Share</th><th>Transactions</th></tr></thead>
+      <tbody>
+        ${breakdown.slice(0, 15).map((b, i) => `
+          <tr style="cursor:pointer" onclick="setReportCategoryFilter('${esc(b.category_name).replace(/'/g, "\\'")}')">
+            <td style="color:var(--fg3)">${i + 1}</td>
+            <td><strong>${esc(b.category_name)}</strong></td>
+            <td class="amount out">${fmt(b.amount)} NOK</td>
+            <td style="color:var(--fg2)">${b.percentage}%</td>
+            <td>
+              <div class="progress-bar">
+                <div class="progress-fill accent" style="width:${(b.amount / maxAmt * 100).toFixed(1)}%"></div>
+              </div>
+            </td>
+            <td style="color:var(--fg2);text-align:center">${b.transaction_count}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── Init ────────────────────────────────────────────────────────
+
+async function init(attempt = 0) {
+  const MAX_RETRIES = 10;
+  const RETRY_DELAY = 1000; // ms
+  try {
+    [accounts, categories] = await Promise.all([
+      API.get('/accounts'),
+      API.get('/categories'),
+    ]);
+    loadDashboard();
+  } catch (err) {
+    if (err.retry && attempt < MAX_RETRIES) {
+      document.querySelector('.container').innerHTML = `<div class="empty"><div class="empty-icon">⏳</div>Waiting for finance store to initialize… (attempt ${attempt + 1}/${MAX_RETRIES})</div>`;
+      setTimeout(() => init(attempt + 1), RETRY_DELAY);
+      return;
+    }
+    document.querySelector('.container').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div>Failed to load: ${esc(err.message)}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -24,6 +24,7 @@ import {
 	stopStandaloneServer,
 } from "./web.ts";
 import { analyzeBudgetRisk, detectAnomalies } from "./insights.ts";
+import { importBankFile } from "./import-bank.ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -309,6 +310,218 @@ export default function (pi: ExtensionAPI) {
 			fs.writeFileSync(outPath, csv, "utf-8");
 			const lineCount = csv.split("\n").length - 1;
 			ctx.ui.notify(`Exported ${lineCount} transactions to ${outPath}`, "info");
+		},
+	});
+
+	// ── Read-only commands ────────────────────────────────────
+
+	pi.registerCommand("finance-accounts", {
+		description: "List accounts with balances",
+		handler: async (_args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const accounts = await getFinanceStore().getAccounts();
+			if (accounts.length === 0) { ctx.ui.notify("No accounts.", "info"); return; }
+
+			// Group totals by currency
+			const byCurrency = new Map<string, number>();
+			for (const a of accounts) {
+				const cur = a.currency || "NOK";
+				byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + Number(a.balance));
+			}
+			const totalStr = [...byCurrency.entries()]
+				.map(([cur, sum]) => `${sum.toLocaleString("nb-NO")} ${cur}`)
+				.join(", ");
+			const lines = accounts.map(a =>
+				`  ${a.name} (${a.account_type}): ${Number(a.balance).toLocaleString("nb-NO")} ${a.currency || "NOK"}`
+			);
+			lines.unshift(`💳 **${accounts.length} Account${accounts.length !== 1 ? "s" : ""}** — Total: ${totalStr}`);
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-recent", {
+		description: "Show recent transactions: /finance-recent [count]",
+		handler: async (args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const limit = Math.min(parseInt(args?.trim() || "20") || 20, 100);
+			const txs = await getFinanceStore().getTransactions({ limit });
+			if (txs.length === 0) { ctx.ui.notify("No transactions.", "info"); return; }
+
+			const lines = [`📋 **Last ${txs.length} transactions:**`, ""];
+			for (const t of txs) {
+				const sign = t.transaction_type === "in" ? "+" : "-";
+				const cat = t.category_name ? ` [${t.category_name}]` : "";
+				lines.push(`  ${t.date} ${sign}${Number(t.amount).toLocaleString("nb-NO")} ${t.description}${cat} (${t.account_name ?? "?"})`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-search", {
+		description: "Search transactions: /finance-search <query>",
+		handler: async (args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const query = args?.trim();
+			if (!query) { ctx.ui.notify("Usage: /finance-search <query>", "error"); return; }
+
+			const txs = await getFinanceStore().searchTransactions(query, 30);
+			if (txs.length === 0) { ctx.ui.notify(`No transactions matching "${query}".`, "info"); return; }
+
+			const lines = [`🔍 **${txs.length} result${txs.length !== 1 ? "s" : ""} for "${query}":**`, ""];
+			for (const t of txs) {
+				const sign = t.transaction_type === "in" ? "+" : "-";
+				lines.push(`  ${t.date} ${sign}${Number(t.amount).toLocaleString("nb-NO")} ${t.description} (${t.account_name ?? "?"})`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-budgets", {
+		description: "Show budget status for current month",
+		handler: async (_args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const now = new Date();
+			const budgets = await getFinanceStore().getBudgetStatus(now.getFullYear(), now.getMonth() + 1);
+			if (budgets.length === 0) { ctx.ui.notify("No budgets configured.", "info"); return; }
+
+			const month = now.toLocaleString("en", { month: "long", year: "numeric" });
+			const lines = [`📊 **Budget Status — ${month}:**`, ""];
+			for (const b of budgets) {
+				const spent = Number((b as any).spent ?? 0);
+				const amount = Number(b.amount);
+				const pct = amount > 0 ? Math.round((spent / amount) * 100) : 0;
+				const icon = pct > 100 ? "🔴" : pct > 80 ? "🟡" : "🟢";
+				lines.push(`  ${icon} ${b.category_name ?? "?"}: ${spent.toLocaleString("nb-NO")} / ${amount.toLocaleString("nb-NO")} NOK (${pct}%)`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-goals", {
+		description: "Show financial goals and progress",
+		handler: async (_args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const goals = await getFinanceStore().getGoals();
+			if (goals.length === 0) { ctx.ui.notify("No financial goals.", "info"); return; }
+
+			const lines = [`🎯 **Financial Goals:**`, ""];
+			for (const g of goals) {
+				const current = Number(g.current_amount);
+				const target = Number(g.target_amount);
+				const pct = target > 0 ? Math.round((current / target) * 100) : 0;
+				const icon = g.status === "completed" ? "✅" : g.status === "cancelled" ? "❌" : pct >= 80 ? "🟢" : pct >= 40 ? "🟡" : "⚪";
+				const deadline = g.deadline ? ` (deadline: ${g.deadline})` : "";
+				lines.push(`  ${icon} ${g.name}: ${current.toLocaleString("nb-NO")} / ${target.toLocaleString("nb-NO")} NOK (${pct}%)${deadline}`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-recurring", {
+		description: "Show upcoming recurring transactions",
+		handler: async (_args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const recurring = await getFinanceStore().getUpcomingRecurring(30);
+			if (recurring.length === 0) { ctx.ui.notify("No upcoming recurring transactions.", "info"); return; }
+
+			const lines = [`🔁 **Upcoming Recurring (next 30 days):**`, ""];
+			for (const r of recurring) {
+				const sign = r.transaction_type === "in" ? "+" : "-";
+				lines.push(`  ${r.next_date} ${sign}${Number(r.amount).toLocaleString("nb-NO")} ${r.description} (${r.frequency}, ${r.account_name ?? "?"})`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-trend", {
+		description: "Show monthly income/expense trend: /finance-trend [months]",
+		handler: async (args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const months = Math.min(parseInt(args?.trim() || "6") || 6, 24);
+			const trend = await getFinanceStore().getMonthlyTrend(months);
+			if (trend.length === 0) { ctx.ui.notify("No transaction data.", "info"); return; }
+
+			const lines = [`📈 **Monthly Trend (last ${trend.length} months):**`, ""];
+			for (const m of trend) {
+				const netIcon = m.net >= 0 ? "🟢" : "🔴";
+				lines.push(`  ${m.month}: In ${Number(m.income).toLocaleString("nb-NO")} · Out ${Number(m.expenses).toLocaleString("nb-NO")} · ${netIcon} Net ${Number(m.net).toLocaleString("nb-NO")}`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("finance-categories", {
+		description: "List spending categories",
+		handler: async (_args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+			const now = new Date();
+			const breakdown = await getFinanceStore().getCategoryBreakdown(now.getFullYear(), now.getMonth() + 1);
+			if (breakdown.length === 0) { ctx.ui.notify("No spending this month.", "info"); return; }
+
+			const month = now.toLocaleString("en", { month: "long", year: "numeric" });
+			const lines = [`📂 **Spending by Category — ${month}:**`, ""];
+			for (const c of breakdown) {
+				lines.push(`  ${c.category_name}: ${Number(c.amount).toLocaleString("nb-NO")} NOK (${c.percentage}%, ${c.transaction_count} txns)`);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	// ── Bank statement import ────────────────────────────────
+
+	pi.registerCommand("finance-import-bank", {
+		description: "Import bank statement: /finance-import-bank <path> <account-name>. Auto-detects DNB, SAS Mastercard, Amex formats.",
+		handler: async (args, ctx) => {
+			if (!isStoreReady()) { ctx.ui.notify("Finance store not initialized", "error"); return; }
+
+			const argStr = args?.trim() ?? "";
+			// Parse: path can be quoted, account name is the rest
+			let filePath: string;
+			let accountName: string;
+
+			const quotedMatch = argStr.match(/^"([^"]+)"\s+(.+)$/);
+			const singleQuotedMatch = argStr.match(/^'([^']+)'\s+(.+)$/);
+			if (quotedMatch) {
+				filePath = quotedMatch[1];
+				accountName = quotedMatch[2].trim();
+			} else if (singleQuotedMatch) {
+				filePath = singleQuotedMatch[1];
+				accountName = singleQuotedMatch[2].trim();
+			} else {
+				const parts = argStr.split(/\s+/);
+				if (parts.length < 2) {
+					ctx.ui.notify('Usage: /finance-import-bank <path> <account-name>\nExample: /finance-import-bank ~/Downloads/transactions.xlsx "DNB Brukskonto"', "error");
+					return;
+				}
+				filePath = parts[0];
+				accountName = parts.slice(1).join(" ");
+			}
+
+			filePath = filePath.startsWith("~") ? path.join(os.homedir(), filePath.slice(1)) : path.resolve(filePath);
+
+			if (!fs.existsSync(filePath)) {
+				ctx.ui.notify(`File not found: ${filePath}`, "error");
+				return;
+			}
+
+			ctx.ui.notify(`Importing ${path.basename(filePath)} into "${accountName}"…`, "info");
+
+			try {
+				const result = await importBankFile(getFinanceStore(), filePath, accountName, { skipDuplicates: true });
+				const lines = [
+					`✅ Import complete: ${result.account_name}`,
+					`  Imported: ${result.imported} · Skipped: ${result.skipped} · Categorized: ${result.categorized}`,
+				];
+				if (result.linked > 0) lines.push(`  Linked transfers: ${result.linked}`);
+				if (result.errors.length > 0) {
+					lines.push(`  ⚠️ ${result.errors.length} error(s):`);
+					for (const e of result.errors.slice(0, 5)) lines.push(`    - ${e}`);
+					if (result.errors.length > 5) lines.push(`    … and ${result.errors.length - 5} more`);
+				}
+				ctx.ui.notify(lines.join("\n"), result.errors.length > 0 ? "warning" : "info");
+			} catch (err: any) {
+				ctx.ui.notify(`❌ Import failed: ${err.message}`, "error");
+			}
 		},
 	});
 

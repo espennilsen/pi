@@ -11,6 +11,8 @@ export interface AgentConfig {
 	description: string;
 	tools?: string[];
 	model?: string;
+	/** Extension paths to whitelist for this agent (subagents run with -ne by default) */
+	extensions?: string[];
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -21,6 +23,8 @@ export interface AgentConfig {
 export interface RunnerResult {
 	/** Final text response */
 	response: string;
+	/** Full message history from the subprocess */
+	messages: any[];
 	/** Process exit code */
 	exitCode: number;
 	/** Token usage */
@@ -42,6 +46,10 @@ export interface RunnerResult {
 	durationMs: number;
 	/** Model actually used */
 	model: string | null;
+	/** Stop reason (if any) */
+	stopReason: string | null;
+	/** Error message (if any) */
+	errorMessage: string | null;
 	/** stderr output */
 	stderr: string;
 }
@@ -63,6 +71,9 @@ export interface SingleResult {
 	agentSource: "user" | "project" | "unknown";
 	task: string;
 	exitCode: number;
+	/** Full message history for rich rendering */
+	messages: any[];
+	/** Final text response (convenience) */
 	response: string;
 	stderr: string;
 	usage: UsageStats;
@@ -70,6 +81,13 @@ export interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+}
+
+export interface SubagentDetails {
+	mode: "single" | "parallel" | "chain";
+	agentScope: AgentScope;
+	projectAgentsDir: string | null;
+	results: SingleResult[];
 }
 
 // ── Tracker types ───────────────────────────────────────────────
@@ -109,4 +127,8 @@ export interface SubagentSettings {
 	maxTotal: number;
 	timeoutMs: number;
 	model: string | null;
+	/** Default extensions to whitelist for all subagents (merged with per-agent extensions) */
+	extensions: string[];
+	/** Extensions that subagents are never allowed to load (pi-subagent is always blocked) */
+	blockedExtensions: string[];
 }

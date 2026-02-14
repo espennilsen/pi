@@ -154,12 +154,28 @@ export function registerFinanceTool(pi: ExtensionAPI): void {
 		execute: async (rawParams: any) => {
 			try {
 				const store = getFinanceStore();
-				// Some models nest params under an extra key — unwrap if needed
-				const params = rawParams?.action ? rawParams : (rawParams?.params ?? rawParams?.input ?? rawParams);
-				const action = params?.action as string;
+
+				// Robust param extraction — handle nested wrappers, string-typed params, etc.
+				let params: any = rawParams;
+				if (typeof params === "string") {
+					try { params = JSON.parse(params); } catch { params = {}; }
+				}
+				if (!params || typeof params !== "object") params = {};
+				if (!params.action && params.params?.action) params = params.params;
+				if (!params.action && params.input?.action) params = params.input;
+
+				const action = params.action as string;
 
 				if (!action) {
-					return text(`❌ Missing required parameter: action. Received: ${JSON.stringify(rawParams).slice(0, 200)}\n\nAvailable actions: list_accounts, add_transaction, spending_summary, insights, etc.`);
+					return text(
+						"❌ Missing required parameter: `action`.\n\n" +
+						"**Usage:** `finance({ action: \"list_accounts\" })`\n\n" +
+						"**Read-only actions:** list_accounts, list_transactions, search_transactions, spending_summary, " +
+						"category_breakdown, budget_status, list_goals, goal_progress, list_recurring, upcoming_recurring, " +
+						"insights, trend_analysis\n\n" +
+						"**Write actions:** add_account, add_transaction, set_budget, add_goal, add_recurring, auto_categorize\n\n" +
+						"**Import/Export:** import_bank, import_bank_directory, import_csv, export_csv",
+					);
 				}
 
 				switch (action) {

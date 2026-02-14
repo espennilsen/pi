@@ -67,8 +67,21 @@ Key extensions:
 - Validate with `npm run typecheck` (tsc --noEmit), test with `npm test`
 - Keep web UIs as single HTML files (vanilla JS + inline CSS), served from extension root
 
-## Conventions
+## Task Management (MANDATORY)
 
-- `td` CLI for task management; tasks tracked in `.todos/`
+**Every piece of work MUST be tracked with `td`.** No exceptions — no matter how small the change.
+
+Before starting any work:
+1. **Check for existing task:** `td status` or `td ready`
+2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore`
+3. **Start the task:** `td start <id>`
+4. **Log progress as you go:** `td log "what you did"`
+5. **Handoff when done:** `td handoff <id> --done "..." `
+6. **Submit for review:** `td review <id>`
+
+This applies to bug fixes, features, refactors, doc updates, config changes — everything. If you're changing code, there must be a `td` task for it.
+
+## Other Conventions
+
 - Each extension owns its own DB tables (prefixed by extension name)
 - Tools return structured markdown for LLM consumption

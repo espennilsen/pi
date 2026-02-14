@@ -11,6 +11,8 @@ export interface AgentConfig {
 	description: string;
 	tools?: string[];
 	model?: string;
+	/** Extension paths to whitelist for this agent (subagents run with -ne by default) */
+	extensions?: string[];
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -125,4 +127,6 @@ export interface SubagentSettings {
 	maxTotal: number;
 	timeoutMs: number;
 	model: string | null;
+	/** Default extensions to whitelist for all subagents (merged with per-agent extensions) */
+	extensions: string[];
 }

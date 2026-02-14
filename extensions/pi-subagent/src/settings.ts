@@ -35,5 +35,6 @@ export function resolveSettings(cwd: string): SubagentSettings {
 		maxTotal: (merged.maxTotal as number) ?? 8,
 		timeoutMs: (merged.timeoutMs as number) ?? 600_000,
 		model: (merged.model as string) ?? null,
+		extensions: Array.isArray(merged.extensions) ? merged.extensions as string[] : [],
 	};
 }

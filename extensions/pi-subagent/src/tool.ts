@@ -211,11 +211,15 @@ async function runAgent(
 		});
 	};
 
+	// Merge global + per-agent extension whitelists (deduplicated)
+	const mergedExtensions = [...new Set([...settings.extensions, ...(agent.extensions ?? [])])];
+
 	const isolated = await runIsolatedAgent({
 		prompt: `Task: ${task}`,
 		cwd: cwd ?? defaultCwd,
 		model: agent.model ?? settings.model ?? undefined,
 		tools: agent.tools?.length ? agent.tools.join(",") : undefined,
+		extensions: mergedExtensions,
 		systemPrompt: agent.systemPrompt.trim() || undefined,
 		signal,
 		timeoutMs: settings.timeoutMs,

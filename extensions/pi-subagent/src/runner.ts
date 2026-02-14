@@ -24,6 +24,13 @@ export interface RunnerOpts {
 	timeoutMs?: number;
 	/** Called after every message_end / tool_result_end event */
 	onMessage?: (msg: any) => void;
+	/**
+	 * Extension paths to load via -e flags.
+	 * When provided (even if empty), --no-extensions (-ne) is always added
+	 * to prevent subagents from loading all extensions (including pi-subagent).
+	 * Default: undefined (adds -ne with no -e flags — tools-only subagent).
+	 */
+	extensions?: string[];
 }
 
 // ── Temp file management ────────────────────────────────────────
@@ -45,7 +52,14 @@ export async function runIsolatedAgent(
 	opts: RunnerOpts,
 ): Promise<RunnerResult> {
 	const startTime = Date.now();
-	const args = ["--mode", "json", "-p", "--no-session"];
+	const args = ["--mode", "json", "-p", "--no-session", "-ne"];
+
+	// Whitelist specific extensions via -e (subagents never get full extension discovery)
+	if (opts.extensions?.length) {
+		for (const ext of opts.extensions) {
+			args.push("-e", ext);
+		}
+	}
 
 	if (opts.model) args.push("--model", opts.model);
 	if (opts.provider) args.push("--provider", opts.provider);

@@ -30,7 +30,7 @@ export function registerSupabaseTool(pi: ExtensionAPI): void {
 			"Read-only access to Supabase database. " +
 			"Actions: query (select rows with filters/ordering/pagination), " +
 			"describe (table schema), tables (list all tables), " +
-			"count (count rows), rpc (call a read-only Postgres function — mutating names are blocked), " +
+			"count (count rows), rpc (call an allow-listed Postgres function), " +
 			"status (connection info).",
 		parameters: Type.Object({
 			action: StringEnum(ACTIONS, {

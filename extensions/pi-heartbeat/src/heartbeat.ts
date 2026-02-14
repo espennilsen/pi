@@ -214,6 +214,7 @@ export class HeartbeatRunner {
 			let responseText = "";
 			let stderr = "";
 			let settled = false;
+			let killTimer: ReturnType<typeof setTimeout> | null = null;
 
 			// Parse JSON-line events from RPC stdout
 			const rl = readline.createInterface({ input: child.stdout });
@@ -222,6 +223,7 @@ export class HeartbeatRunner {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timeout);
+				if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 				rl.close();
 				resolve(result);
 			}
@@ -229,7 +231,7 @@ export class HeartbeatRunner {
 			const timeout = setTimeout(() => {
 				child.kill("SIGTERM");
 				// Force kill if SIGTERM is ignored
-				setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
+				killTimer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
 				settle({ stdout: responseText, stderr: stderr + "\nHeartbeat timed out", exitCode: 1 });
 			}, timeoutMs);
 

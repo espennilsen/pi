@@ -322,7 +322,11 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 							return;
 						}
 						// Branch doesn't exist locally — fetch and create tracking branch
-						await gitExec(["fetch", "origin", prBranch], cwd, 30_000);
+						const fetchResult = await gitExec(["fetch", "origin", prBranch], cwd, 30_000);
+						if (!fetchResult.ok) {
+							ctx.ui.notify(`❌ Failed to fetch branch \`${prBranch}\` from origin: ${fetchResult.stderr}`, "error");
+							return;
+						}
 						const retry = await gitExec(["checkout", "-b", prBranch, `origin/${prBranch}`], cwd);
 						if (!retry.ok) {
 							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");

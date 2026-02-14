@@ -92,7 +92,9 @@ export function serialize(jobs: CronJob[]): string {
 		if (job.channel !== "cron") flags.push(`channel:${job.channel}`);
 		if (job.disabled) flags.push("disabled");
 		const flagStr = flags.length > 0 ? "  " + flags.join("  ") : "";
-		lines.push(`${job.schedule}  ${job.name}${flagStr}  ${job.prompt}`);
+		// Collapse newlines/excess whitespace — crontab format is strictly one job per line
+		const prompt = job.prompt.replace(/[\r\n]+/g, " ").replace(/\s{2,}/g, " ").trim();
+		lines.push(`${job.schedule}  ${job.name}${flagStr}  ${prompt}`);
 	}
 
 	return lines.join("\n") + "\n";

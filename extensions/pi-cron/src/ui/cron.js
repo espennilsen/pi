@@ -165,7 +165,7 @@ async function saveJob(e) {
     action: mode,
     name: document.getElementById('jobFormName').value.trim(),
     schedule: document.getElementById('jobFormSchedule').value.trim(),
-    prompt: document.getElementById('jobFormPrompt').value.trim(),
+    prompt: document.getElementById('jobFormPrompt').value.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim(),
     channel: document.getElementById('jobFormChannel').value.trim() || 'cron',
   };
   if (!data.name || !data.schedule || !data.prompt) {

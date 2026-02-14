@@ -75,11 +75,14 @@ Before starting any work:
 1. **Check for existing task:** `td status` or `td ready`
 2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore`
 3. **Start the task:** `td start <id>`
-4. **Log progress as you go:** `td log "what you did"`
-5. **Handoff when done:** `td handoff <id> --done "..." `
-6. **Submit for review:** `td review <id>`
+4. **Create a feature branch:** `git checkout -b <task-id>/<short-description>` (e.g. `td-e29be6/delete-button-icon`)
+5. **Log progress as you go:** `td log "what you did"`
+6. **Commit to the feature branch**, then handoff: `td handoff <id> --done "..."`
+7. **Submit for review:** `td review <id>`
 
-This applies to bug fixes, features, refactors, doc updates, config changes — everything. If you're changing code, there must be a `td` task for it.
+Every task gets its own feature branch. Never commit directly to `main`. Branch names always start with the task ID followed by `/`.
+
+This applies to bug fixes, features, refactors, doc updates, config changes — everything. If you're changing code, there must be a `td` task and a feature branch for it.
 
 ## Other Conventions
 

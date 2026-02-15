@@ -5,8 +5,9 @@
  *   1. Find the PR (by argument or current branch)
  *   2. Get PR details
  *   3. Post pre-merge summary (title, changes, body preview)
- *   4. Merge the PR (squash by default, configurable)
- *   5. Clean up: delete remote/local branch, pull base, prune
+ *   4. Post summary comment on the PR (strategy, stats, file list)
+ *   5. Merge the PR (squash by default, configurable)
+ *   6. Clean up: delete remote/local branch, pull base, prune
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -26,6 +27,7 @@ interface PrMergeInfo {
 	deletions: number;
 	changedFiles: number;
 	body: string;
+	files: { path: string; additions: number; deletions: number }[];
 }
 
 // ── Register the command ────────────────────────────────────────
@@ -72,7 +74,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 
 			// ── Step 2: Get PR details ──────────────────────────
 			const prData = await ghJson<any>(
-				["pr", "view", String(prNumber), "--json", "number,title,headRefName,baseRefName,url,commits,additions,deletions,changedFiles,body,state"],
+				["pr", "view", String(prNumber), "--json", "number,title,headRefName,baseRefName,url,commits,additions,deletions,changedFiles,body,state,files"],
 				cwd,
 			);
 
@@ -104,11 +106,25 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 				deletions: prData.deletions ?? 0,
 				changedFiles: prData.changedFiles ?? 0,
 				body: prData.body ?? "",
+				files: (prData.files ?? []).map((f: any) => ({
+					path: f.path ?? "",
+					additions: f.additions ?? 0,
+					deletions: f.deletions ?? 0,
+				})),
 			};
 
 			// ── Step 3: Pre-merge summary ───────────────────────
 			const preview = buildPreMergeSummary(prInfo, strategy);
 			ctx.ui.notify(preview, "info");
+
+			// ── Step 3b: Post summary comment on PR ─────────────
+			const comment = buildMergeComment(prInfo, strategy);
+			const commentResult = await gh(["pr", "comment", String(prNumber), "--body", comment], cwd);
+			if (commentResult.ok) {
+				ctx.ui.notify("💬 Posted merge summary comment on PR.", "info");
+			} else {
+				ctx.ui.notify(`⚠️ Could not post summary comment: ${commentResult.stderr}`, "warning");
+			}
 
 			// ── Step 4: Merge the PR ────────────────────────────
 			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
@@ -245,6 +261,40 @@ async function cleanupBranches(
 }
 
 // ── Summary builders ────────────────────────────────────────────
+
+function buildMergeComment(pr: PrMergeInfo, strategy: string): string {
+	const lines: string[] = [];
+
+	lines.push("## 🔀 Merge Summary");
+	lines.push("");
+	lines.push(`| | |`);
+	lines.push(`|---|---|`);
+	lines.push(`| **Strategy** | ${strategy} |`);
+	lines.push(`| **Branch** | \`${pr.headRefName}\` → \`${pr.baseRefName}\` |`);
+
+	if (pr.commits) {
+		lines.push(`| **Commits** | ${pr.commits} |`);
+	}
+	if (pr.additions || pr.deletions || pr.changedFiles) {
+		lines.push(`| **Changed files** | ${pr.changedFiles} |`);
+		lines.push(`| **Diff** | +${pr.additions} −${pr.deletions} |`);
+	}
+
+	if (pr.files.length > 0) {
+		lines.push("");
+		lines.push("<details>");
+		lines.push("<summary>📁 Changed files</summary>");
+		lines.push("");
+		for (const f of pr.files) {
+			const stat = `+${f.additions} −${f.deletions}`;
+			lines.push(`- \`${f.path}\` (${stat})`);
+		}
+		lines.push("");
+		lines.push("</details>");
+	}
+
+	return lines.join("\n");
+}
 
 function buildPreMergeSummary(pr: PrMergeInfo, strategy: string): string {
 	const lines: string[] = [];

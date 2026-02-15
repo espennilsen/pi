@@ -406,7 +406,7 @@ const COLLAPSED_ITEM_COUNT = 10;
 
 export function registerSubagentTool(
 	pi: ExtensionAPI,
-	settings: SubagentSettings,
+	getSettings: (cwd: string) => SubagentSettings,
 	log: Logger = () => {},
 ): void {
 	pi.registerTool({
@@ -436,6 +436,7 @@ export function registerSubagentTool(
 		parameters: SubagentParams,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			const settings = getSettings(ctx.cwd);
 			const scope: AgentScope = params.agentScope ?? "user";
 			const discovery = discoverAgents(ctx.cwd, scope);
 			const agents = discovery.agents;

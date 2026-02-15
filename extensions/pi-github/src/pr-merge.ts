@@ -188,10 +188,12 @@ async function cleanupBranches(
 			errors.push(`Failed to pull ${baseBranch}: ${pull.stderr}`);
 		}
 
-		// Delete local branch (if it exists and we're not on it)
+		// Delete local branch (if it exists and we're not on it).
+		// Use -D (force) because squash/rebase merges on GitHub don't create
+		// a local merge commit, so git branch -d thinks it's "not fully merged".
 		const nowOn = await getCurrentBranch(cwd);
 		if (nowOn !== headBranch) {
-			const localDelete = await gitExec(["branch", "-d", headBranch], cwd);
+			const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
 			if (localDelete.ok) {
 				ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
 			} else if (localDelete.stderr.includes("not found")) {

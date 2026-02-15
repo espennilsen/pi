@@ -199,8 +199,9 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 			// Each handler receives { event, body, ack, ... }
 
 			socketClient.on("message", async ({ event, ack }: { event: SlackMessageEvent; ack: () => Promise<void> }) => {
-				await ack();
 				try {
+					await ack();
+
 					// Ignore bot messages (including our own)
 					if (event.bot_id || event.subtype === "bot_message") return;
 					// Ignore message_changed, message_deleted, etc.
@@ -208,9 +209,11 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 					if (!event.text) return;
 					if (!isAllowed(event.channel)) return;
 
-					// Skip messages that @mention the bot — these are handled
-					// by the app_mention listener to avoid duplicate responses
-					if (botUserId && event.text.includes(`<@${botUserId}>`)) return;
+					// Skip messages that @mention the bot in channels/groups — these are
+					// handled by the app_mention listener to avoid duplicate responses.
+					// DMs (im) and multi-party DMs (mpim) don't fire app_mention, so we
+					// must NOT skip those here.
+					if (botUserId && (event.channel_type === "channel" || event.channel_type === "group") && event.text.includes(`<@${botUserId}>`)) return;
 
 					// In channels/groups, optionally only respond to @mentions
 					// (app_mention events are handled separately below)
@@ -229,13 +232,14 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							eventType: "message",
 						}),
 					});
-				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
+				} catch (err) { console.error("[pi-channels:slack] message handler error:", err); }
 			});
 
 			// ── App mention events ──────────────────────────
 			socketClient.on("app_mention", async ({ event, ack }: { event: SlackMentionEvent; ack: () => Promise<void> }) => {
-				await ack();
 				try {
+					await ack();
+
 					if (!isAllowed(event.channel)) return;
 
 					const sender = event.thread_ts
@@ -250,7 +254,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							eventType: "app_mention",
 						}),
 					});
-				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
+				} catch (err) { console.error("[pi-channels:slack] app_mention handler error:", err); }
 			});
 
 			// ── Slash commands ───────────────────────────────
@@ -287,13 +291,15 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							command: body.command,
 						},
 					});
-				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
+				} catch (err) { console.error("[pi-channels:slack] slash_commands handler error:", err); }
 			});
 
 			// ── Interactive payloads (future: button clicks, modals) ──
 			socketClient.on("interactive", async ({ body, ack }: { body: any; ack: () => Promise<void> }) => {
-				await ack();
-				// TODO: handle interactive payloads (block actions, modals)
+				try {
+					await ack();
+					// TODO: handle interactive payloads (block actions, modals)
+				} catch (err) { console.error("[pi-channels:slack] interactive handler error:", err); }
 			});
 
 			await socketClient.start();

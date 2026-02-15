@@ -51,5 +51,8 @@ export function resolveSettings(cwd: string): SubagentSettings {
 		model: (merged.model as string) ?? null,
 		extensions: Array.isArray(merged.extensions) ? merged.extensions as string[] : [],
 		blockedExtensions,
+		maxPoolSize: (merged.maxPoolSize as number) ?? 20,
+		maxDepth: (merged.maxDepth as number) ?? 4,
+
 	};
 }

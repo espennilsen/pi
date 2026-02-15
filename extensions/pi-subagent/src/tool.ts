@@ -21,9 +21,12 @@ import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { runIsolatedAgent } from "./runner.ts";
 import { discoverAgents } from "./agents.ts";
 import { oneShotTracker } from "./tracker.ts";
+import { AgentPool, type PoolLogger } from "./pool.ts";
 import type {
 	AgentConfig,
 	AgentScope,
+	PoolDetails,
+	PoolEntry,
 	SingleResult,
 	SubagentDetails,
 	SubagentSettings,
@@ -380,11 +383,34 @@ const ChainItem = Type.Object({
 	noSkills: Type.Optional(Type.Boolean({ description: "Disable skill discovery (-ns)" })),
 });
 
+const OrchestratorItem = Type.Object({
+	agent: Type.String({ description: "Agent type for the root orchestrator (e.g. 'planner', 'worker')" }),
+	task: Type.String({ description: "High-level task for the orchestrator. It will spawn/manage sub-agents autonomously." }),
+	id: Type.Optional(Type.String({ description: "ID for the root agent (default: 'root')" })),
+	extensions: ExtensionsSchema,
+	skills: SkillsSchema,
+	thinking: ThinkingSchema,
+	model: ModelSchema,
+	noTools: Type.Optional(Type.Boolean({ description: "Disable all built-in tools for the root agent" })),
+	noSkills: Type.Optional(Type.Boolean({ description: "Disable skill discovery for the root agent" })),
+});
+
 const SubagentParams = Type.Object({
+	// ── Existing one-shot modes ──────────────────────
 	agent: Type.Optional(Type.String({ description: "Agent name (single mode)" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate (single mode)" })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
+	// ── New: orchestrator mode ───────────────────────
+	orchestrator: Type.Optional(OrchestratorItem),
+	// ── New: pool management actions ─────────────────
+	action: Type.Optional(StringEnum(
+		["spawn", "send", "list", "kill", "kill-all"] as const,
+		{ description: "Pool management action. Use with id/message params." },
+	)),
+	id: Type.Optional(Type.String({ description: "Agent ID (for spawn/send/kill pool actions)" })),
+	message: Type.Optional(Type.String({ description: "Message to send (for 'send' pool action)" })),
+	// ── Shared options ───────────────────────────────
 	agentScope: Type.Optional(StringEnum(["user", "project", "both"] as const, {
 		description: 'Agent discovery scope. Default: "user" (~/.pi/agent/agents). "both" includes project .pi/agents.',
 		default: "user",
@@ -404,6 +430,18 @@ export type Logger = (event: string, data: unknown, level?: string) => void;
 
 const COLLAPSED_ITEM_COUNT = 10;
 
+/** Shared pool instance — created on first orchestrator/pool use, disposed on session end. */
+let activePool: AgentPool | null = null;
+
+export function getActivePool(): AgentPool | null { return activePool; }
+
+export async function disposePool(): Promise<void> {
+	if (activePool) {
+		await activePool.dispose();
+		activePool = null;
+	}
+}
+
 export function registerSubagentTool(
 	pi: ExtensionAPI,
 	getSettings: (cwd: string) => SubagentSettings,
@@ -416,10 +454,21 @@ export function registerSubagentTool(
 			"Delegate tasks to specialized subagents running as isolated pi subprocesses.",
 			"Each subagent gets a fresh context window — no shared state with this session.",
 			"",
-			"MODES:",
+			"MODES (one-shot — fire and forget):",
 			"• Single: { agent, task } — one agent, one task",
 			"• Parallel: { tasks: [{agent, task}, ...] } — concurrent execution with streaming progress",
 			"• Chain: { chain: [{agent, task}, ...] } — sequential pipeline, use {previous} for prior output",
+			"",
+			"MODES (long-lived — persistent context):",
+			"• Orchestrator: { orchestrator: {agent, task} } — hierarchical agent tree. The root agent gets",
+			"  spawn_agent, send_message, kill_agent, list_agents tools and can build an org of sub-agents.",
+			"  Sub-agents can spawn their own children, creating arbitrary depth hierarchies.",
+			"• Pool actions: Manual pool management for long-lived agents:",
+			'  - { action: "spawn", id: "worker-1", agent: "worker", task: "..." } — spawn a persistent agent',
+			'  - { action: "send", id: "worker-1", message: "..." } — send follow-up (agent keeps context)',
+			'  - { action: "list" } — show all pool agents',
+			'  - { action: "kill", id: "worker-1" } — kill agent and its children',
+			'  - { action: "kill-all" } — tear down entire pool',
 			"",
 			"AGENTS: Defined in ~/.pi/agent/agents/*.md (name, description, tools, model in frontmatter).",
 			"",
@@ -441,12 +490,23 @@ export function registerSubagentTool(
 			const discovery = discoverAgents(ctx.cwd, scope);
 			const agents = discovery.agents;
 
+			const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
+
+			// ── Pool actions (spawn/send/list/kill/kill-all) ──
+			if (params.action) {
+				return await handlePoolAction(params, settings, agents, ctx.cwd, log, text);
+			}
+
+			// ── Orchestrator mode ─────────────────────────────
+			if (params.orchestrator) {
+				return await handleOrchestrator(params, settings, agents, ctx.cwd, log, text);
+			}
+
+			// ── One-shot modes (existing) ─────────────────────
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
 			const hasSingle = Boolean(params.agent && params.task);
 			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
-
-			const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
 			const makeDetails = (mode: "single" | "parallel" | "chain") => (results: SingleResult[]): SubagentDetails => ({
 				mode,
@@ -457,7 +517,7 @@ export function registerSubagentTool(
 
 			if (modeCount !== 1) {
 				const avail = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-				return text(`Provide exactly one mode (agent+task, tasks, or chain).\nAvailable agents: ${avail}`);
+				return text(`Provide exactly one mode (agent+task, tasks, chain, orchestrator, or action).\nAvailable agents: ${avail}`);
 			}
 
 			// ── Confirmation for project-local agents ─────────
@@ -652,6 +712,33 @@ export function registerSubagentTool(
 		// ── TUI Rendering ─────────────────────────────────────
 
 		renderCall(args: any, theme: any) {
+			// ── Orchestrator rendering ────────────────────
+			if (args.orchestrator) {
+				const o = args.orchestrator;
+				const preview = o.task.length > 60 ? `${o.task.slice(0, 60)}...` : o.task;
+				let t = theme.fg("toolTitle", theme.bold("subagent ")) +
+					theme.fg("accent", `orchestrator`) +
+					theme.fg("muted", ` [${o.agent}]`);
+				t += `\n  ${theme.fg("dim", preview)}`;
+				return new Text(t, 0, 0);
+			}
+
+			// ── Pool action rendering ─────────────────────
+			if (args.action) {
+				let t = theme.fg("toolTitle", theme.bold("subagent ")) +
+					theme.fg("accent", `pool:${args.action}`);
+				if (args.id) t += theme.fg("muted", ` ${args.id}`);
+				if (args.message) {
+					const preview = args.message.length > 50 ? `${args.message.slice(0, 50)}...` : args.message;
+					t += `\n  ${theme.fg("dim", preview)}`;
+				}
+				if (args.task) {
+					const preview = args.task.length > 50 ? `${args.task.slice(0, 50)}...` : args.task;
+					t += `\n  ${theme.fg("dim", preview)}`;
+				}
+				return new Text(t, 0, 0);
+			}
+
 			const scope: AgentScope = args.agentScope ?? "user";
 
 			if (args.chain?.length > 0) {
@@ -690,6 +777,12 @@ export function registerSubagentTool(
 		},
 
 		renderResult(result: any, { expanded }: { expanded: boolean }, theme: any) {
+			// ── Pool/orchestrator details ─────────────────
+			const poolDetails = result.details as PoolDetails | undefined;
+			if (poolDetails && (poolDetails.mode === "orchestrator" || poolDetails.mode === "pool")) {
+				return renderPoolResult(poolDetails, result, expanded, theme);
+			}
+
 			const details = result.details as SubagentDetails | undefined;
 			if (!details || details.results.length === 0) {
 				const t = result.content[0];
@@ -821,4 +914,266 @@ export function registerSubagentTool(
 			return new Text(t, 0, 0);
 		},
 	});
+}
+
+// ── Pool action handler ─────────────────────────────────────────
+
+async function handlePoolAction(
+	params: any,
+	settings: SubagentSettings,
+	agents: AgentConfig[],
+	cwd: string,
+	log: Logger,
+	text: (t: string) => { content: { type: "text"; text: string }[]; details: {} },
+): Promise<any> {
+	const ensurePool = async (): Promise<AgentPool> => {
+		if (!activePool) {
+			activePool = new AgentPool(settings, agents, cwd, log as PoolLogger);
+			await activePool.startServer();
+		}
+		return activePool;
+	};
+
+	switch (params.action) {
+		case "spawn": {
+			if (!params.id || !params.agent || !params.task) {
+				return text('spawn requires id, agent, and task. Example: { action: "spawn", id: "worker-1", agent: "worker", task: "..." }');
+			}
+			const agentConfig = agents.find(a => a.name === params.agent);
+			if (!agentConfig) {
+				return text(`Unknown agent: ${params.agent}. Available: ${agents.map(a => a.name).join(", ")}`);
+			}
+			const pool = await ensurePool();
+			try {
+				const result = await pool.spawn({
+					id: params.id,
+					agent: agentConfig,
+					task: params.task,
+					cwd,
+					model: params.model,
+					thinking: params.thinking,
+					extensions: params.extensions,
+					skills: params.skills,
+					noTools: params.noTools,
+					noSkills: params.noSkills,
+				});
+				return {
+					content: [{ type: "text" as const, text: `✓ Spawned "${params.id}" (${params.agent}). Response:\n\n${result.response}` }],
+					details: makePoolDetails(pool),
+				};
+			} catch (err: any) {
+				return { content: [{ type: "text" as const, text: `✗ Spawn failed: ${err.message}` }], details: {}, isError: true };
+			}
+		}
+
+		case "send": {
+			if (!params.id || !params.message) {
+				return text('send requires id and message. Example: { action: "send", id: "worker-1", message: "..." }');
+			}
+			if (!activePool) return text("No active pool. Spawn an agent first.");
+			try {
+				const result = await activePool.send(params.id, params.message);
+				return {
+					content: [{ type: "text" as const, text: `Response from ${params.id}:\n\n${result.response}` }],
+					details: makePoolDetails(activePool),
+				};
+			} catch (err: any) {
+				return { content: [{ type: "text" as const, text: `✗ Send failed: ${err.message}` }], details: makePoolDetails(activePool), isError: true };
+			}
+		}
+
+		case "list": {
+			if (!activePool || activePool.size === 0) return text("No active pool agents.");
+			const entries = activePool.list();
+			const lines = entries.map(e => {
+				const indent = "  ".repeat(e.depth);
+				const parent = e.parentId ? ` ← ${e.parentId}` : "";
+				return `${indent}${e.id} (${e.agentName}) [${e.state}]${parent} — ${fmtUsage(e.usage, e.model ?? undefined)}`;
+			});
+			return {
+				content: [{ type: "text" as const, text: `Pool: ${entries.length} agent(s)\n\n${lines.join("\n")}` }],
+				details: makePoolDetails(activePool),
+			};
+		}
+
+		case "kill": {
+			if (!params.id) return text('kill requires id. Example: { action: "kill", id: "worker-1" }');
+			if (!activePool) return text("No active pool.");
+			try {
+				await activePool.kill(params.id);
+				return {
+					content: [{ type: "text" as const, text: `✓ Killed "${params.id}"` }],
+					details: makePoolDetails(activePool),
+				};
+			} catch (err: any) {
+				return { content: [{ type: "text" as const, text: `✗ Kill failed: ${err.message}` }], details: {}, isError: true };
+			}
+		}
+
+		case "kill-all": {
+			if (!activePool) return text("No active pool.");
+			await disposePool();
+			return text("✓ All pool agents killed and pool disposed.");
+		}
+
+		default:
+			return text(`Unknown action: ${params.action}`);
+	}
+}
+
+// ── Orchestrator handler ────────────────────────────────────────
+
+async function handleOrchestrator(
+	params: any,
+	settings: SubagentSettings,
+	agents: AgentConfig[],
+	cwd: string,
+	log: Logger,
+	text: (t: string) => { content: { type: "text"; text: string }[]; details: {} },
+): Promise<any> {
+	const o = params.orchestrator;
+	const agentConfig = agents.find(a => a.name === o.agent);
+	if (!agentConfig) {
+		return text(`Unknown agent: ${o.agent}. Available: ${agents.map(a => a.name).join(", ")}`);
+	}
+
+	// Create or reuse pool
+	if (!activePool) {
+		activePool = new AgentPool(settings, agents, cwd, log as PoolLogger);
+	}
+	await activePool.startServer();
+
+	const rootId = o.id ?? "root";
+
+	try {
+		const result = await activePool.spawn({
+			id: rootId,
+			agent: agentConfig,
+			task: o.task,
+			cwd,
+			model: o.model ?? params.model,
+			thinking: o.thinking ?? params.thinking,
+			extensions: [...(params.extensions ?? []), ...(o.extensions ?? [])],
+			skills: [...(params.skills ?? []), ...(o.skills ?? [])],
+			noTools: o.noTools ?? params.noTools,
+			noSkills: o.noSkills ?? params.noSkills,
+		});
+
+		const pool = activePool;
+		const poolEntries = pool.list();
+		const totalUsage = pool.totalUsage();
+
+		return {
+			content: [{ type: "text" as const, text: result.response || "(no output)" }],
+			details: {
+				mode: "orchestrator" as const,
+				agents: poolEntries,
+				rootId,
+				totalUsage,
+			} satisfies PoolDetails,
+		};
+	} catch (err: any) {
+		return {
+			content: [{ type: "text" as const, text: `✗ Orchestrator failed: ${err.message}` }],
+			details: activePool ? makePoolDetails(activePool) : {},
+			isError: true,
+		};
+	}
+}
+
+// ── Pool details helper ─────────────────────────────────────────
+
+function makePoolDetails(pool: AgentPool): PoolDetails {
+	return {
+		mode: "pool",
+		agents: pool.list(),
+		rootId: null,
+		totalUsage: pool.totalUsage(),
+	};
+}
+
+// ── Pool result renderer ────────────────────────────────────────
+
+function renderPoolResult(details: PoolDetails, result: any, expanded: boolean, theme: any): any {
+	const fg = theme.fg.bind(theme);
+	const agents = details.agents;
+
+	if (agents.length === 0) {
+		const t = result.content[0];
+		return new Text(t?.type === "text" ? t.text : "(no output)", 0, 0);
+	}
+
+	const modeLabel = details.mode === "orchestrator" ? "orchestrator" : "pool";
+	const alive = agents.filter(a => a.state !== "dead").length;
+	const statusText = `${alive}/${agents.length} agents alive`;
+	const icon = fg("accent", "🔷");
+
+	if (expanded) {
+		const container = new Container();
+		container.addChild(new Text(`${icon} ${fg("toolTitle", theme.bold(modeLabel + " "))}${fg("accent", statusText)}`, 0, 0));
+
+		// Build tree display
+		const roots = agents.filter(a => !a.parentId);
+		const childrenOf = (parentId: string) => agents.filter(a => a.parentId === parentId);
+
+		const renderNode = (agent: PoolEntry, indent: number) => {
+			const stateIcon = agent.state === "idle" ? fg("success", "●")
+				: agent.state === "streaming" ? fg("warning", "◉")
+				: agent.state === "dead" ? fg("error", "○")
+				: fg("muted", "◌");
+			const prefix = "  ".repeat(indent);
+			const usage = fmtUsage(agent.usage, agent.model ?? undefined);
+			container.addChild(new Text(
+				`${prefix}${stateIcon} ${fg("accent", agent.id)} ${fg("muted", `(${agent.agentName})`)} ${fg("dim", usage)}`,
+				0, 0,
+			));
+			const taskPreview = agent.task.length > 60 ? `${agent.task.slice(0, 60)}...` : agent.task;
+			container.addChild(new Text(`${prefix}  ${fg("dim", taskPreview)}`, 0, 0));
+			for (const child of childrenOf(agent.id)) {
+				renderNode(child, indent + 1);
+			}
+		};
+
+		container.addChild(new Spacer(1));
+		for (const root of roots) renderNode(root, 0);
+
+		const totalUsage = fmtUsage(details.totalUsage);
+		if (totalUsage) {
+			container.addChild(new Spacer(1));
+			container.addChild(new Text(fg("dim", `Total: ${totalUsage}`), 0, 0));
+		}
+
+		// Show final output
+		const mdTheme = getMarkdownTheme();
+		const outputText = result.content[0]?.type === "text" ? result.content[0].text : "";
+		if (outputText) {
+			container.addChild(new Spacer(1));
+			container.addChild(new Text(fg("muted", "─── Output ───"), 0, 0));
+			container.addChild(new Markdown(outputText.trim(), 0, 0, mdTheme));
+		}
+
+		return container;
+	}
+
+	// Collapsed view
+	let t = `${icon} ${fg("toolTitle", theme.bold(modeLabel + " "))}${fg("accent", statusText)}`;
+	for (const agent of agents) {
+		const stateIcon = agent.state === "idle" ? fg("success", "●")
+			: agent.state === "streaming" ? fg("warning", "◉")
+			: agent.state === "dead" ? fg("error", "○")
+			: fg("muted", "◌");
+		const indent = "  ".repeat(agent.depth);
+		t += `\n${indent}${stateIcon} ${fg("accent", agent.id)} ${fg("muted", `(${agent.agentName})`)}`;
+	}
+	const totalUsage = fmtUsage(details.totalUsage);
+	if (totalUsage) t += `\n${fg("dim", `Total: ${totalUsage}`)}`;
+
+	const outputText = result.content[0]?.type === "text" ? result.content[0].text : "";
+	if (outputText) {
+		const preview = outputText.split("\n").slice(0, 5).join("\n");
+		t += `\n\n${fg("toolOutput", preview)}`;
+		if (outputText.split("\n").length > 5) t += `\n${fg("muted", "(Ctrl+O to expand)")}`;
+	}
+
+	return new Text(t, 0, 0);
 }

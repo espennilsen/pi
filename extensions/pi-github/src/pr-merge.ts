@@ -3,10 +3,10 @@
  *
  * Workflow:
  *   1. Find the PR (by argument or current branch)
- *   2. Merge the PR (squash by default, configurable)
- *   3. Delete the remote branch
- *   4. Pull main locally and delete the local branch
- *   5. Post a summary to the agent
+ *   2. Get PR details
+ *   3. Post pre-merge summary (title, changes, body preview)
+ *   4. Merge the PR (squash by default, configurable)
+ *   5. Clean up: delete remote/local branch, pull base, prune
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -84,7 +84,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			if (prData.state === "MERGED") {
 				ctx.ui.notify(`PR #${prNumber} is already merged.`, "info");
 				// Still clean up branches below
-				await cleanupBranches(prData.headRefName ?? "", prData.baseRefName ?? "main", cwd, ctx, log, prNumber!);
+				await cleanupBranches(prData.headRefName ?? "", prData.baseRefName ?? "main", cwd, ctx, log, prNumber!, undefined);
 				return;
 			}
 
@@ -106,9 +106,11 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 				body: prData.body ?? "",
 			};
 
-			ctx.ui.notify(`Merging PR #${prInfo.number} (${prInfo.title}) via ${strategy}…`, "info");
+			// ── Step 3: Pre-merge summary ───────────────────────
+			const preview = buildPreMergeSummary(prInfo, strategy);
+			ctx.ui.notify(preview, "info");
 
-			// ── Step 3: Merge the PR ────────────────────────────
+			// ── Step 4: Merge the PR ────────────────────────────
 			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
 			const mergeResult = await gh(mergeArgs, cwd);
 
@@ -117,19 +119,32 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 				return;
 			}
 
+			// Verify the merge actually happened — gh pr merge can exit 0 without merging
+			const verifyData = await ghJson<any>(
+				["pr", "view", String(prNumber), "--json", "state"],
+				cwd,
+			);
+			if (verifyData === null) {
+				ctx.ui.notify(`⚠️ Could not verify merge state for PR #${prNumber} — the API call failed. The merge may have succeeded; check GitHub manually.`, "warning");
+				return;
+			} else if (verifyData.state !== "MERGED") {
+				const stateHint = verifyData.state === "OPEN"
+					? "The merge may require approvals or CI checks to pass."
+					: `Unexpected state: ${verifyData.state}.`;
+				ctx.ui.notify(`❌ PR #${prNumber} was not merged (state: ${verifyData.state}). ${stateHint}`, "error");
+				return;
+			}
+
 			ctx.ui.notify(`✅ PR #${prInfo.number} merged via ${strategy}.`, "info");
 
-			// ── Step 4: Clean up branches ───────────────────────
-			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number);
-
-			// ── Step 5: Summary ─────────────────────────────────
-			const summary = buildSummary(prInfo, strategy);
-			ctx.ui.notify(summary, "info");
+			// ── Step 5: Clean up branches ───────────────────────
+			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number, strategy);
 
 			log("pr-merge", {
 				prNumber: prInfo.number,
 				strategy,
 				branch: prInfo.headRefName,
+				base: prInfo.baseRefName,
 				commits: prInfo.commits,
 				additions: prInfo.additions,
 				deletions: prInfo.deletions,
@@ -148,6 +163,7 @@ async function cleanupBranches(
 	ctx: any,
 	log: LogFn,
 	prNumber: number,
+	strategy?: string,
 ): Promise<void> {
 	if (!headBranch) {
 		ctx.ui.notify("⚠️ Head branch unknown — skipping branch cleanup.", "warning");
@@ -188,16 +204,33 @@ async function cleanupBranches(
 			errors.push(`Failed to pull ${baseBranch}: ${pull.stderr}`);
 		}
 
-		// Delete local branch (if it exists and we're not on it)
+		// Delete local branch (if it exists and we're not on it).
+		// Use -D (force) because squash/rebase merges on GitHub don't create
+		// a local merge commit, so git branch -d thinks it's "not fully merged".
 		const nowOn = await getCurrentBranch(cwd);
 		if (nowOn !== headBranch) {
-			const localDelete = await gitExec(["branch", "-d", headBranch], cwd);
+			// Guard: warn about local-only commits before force-deleting.
+			// Only warn for true merge strategy where SHAs are preserved.
+			// Squash/rebase always diverge (different SHAs), so just log at debug level.
+			if (strategy === "merge") {
+				const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
+				if (localOnly.ok && localOnly.stdout.trim().length > 0) {
+					const localCommits = localOnly.stdout.split("\n").filter(Boolean);
+					if (localCommits.length > 0) {
+						ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\`:\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+					}
+				}
+			} else {
+				log("pr-merge-local-commits", { prNumber, headBranch, baseBranch, strategy, note: "skipped local-only check (squash/rebase SHAs diverge)" });
+			}
+
+			const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
 			if (localDelete.ok) {
 				ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
 			} else if (localDelete.stderr.includes("not found")) {
 				// Branch doesn't exist locally — fine
 			} else {
-				errors.push(`Failed to delete local branch: ${localDelete.stderr}`);
+				errors.push(`Could not delete local branch \`${headBranch}\` (branch is still safe): ${localDelete.stderr}`);
 			}
 		}
 	}
@@ -206,26 +239,39 @@ async function cleanupBranches(
 	await gitExec(["fetch", "--prune"], cwd, 30_000);
 
 	if (errors.length > 0) {
-		ctx.ui.notify(`⚠️ Cleanup issues:\n${errors.map(e => `  - ${e}`).join("\n")}`, "warning");
+		ctx.ui.notify(`⚠️ Branch cleanup incomplete (no data was lost):\n${errors.map(e => `  - ${e}`).join("\n")}`, "warning");
 		log("pr-merge-cleanup-errors", { prNumber, errors });
 	}
 }
 
-// ── Summary builder ─────────────────────────────────────────────
+// ── Summary builders ────────────────────────────────────────────
 
-function buildSummary(pr: PrMergeInfo, strategy: string): string {
+function buildPreMergeSummary(pr: PrMergeInfo, strategy: string): string {
 	const lines: string[] = [];
 
-	lines.push(`### ✅ Merged PR #${pr.number}: ${pr.title}`);
+	lines.push(`### 🔀 Merging PR #${pr.number}: ${pr.title}`);
 	lines.push("");
 	lines.push(`**Strategy:** ${strategy} into \`${pr.baseRefName}\``);
-	lines.push(`**Branch:** \`${pr.headRefName}\` → deleted`);
+	lines.push(`**Branch:** \`${pr.headRefName}\``);
 
 	if (pr.additions || pr.deletions || pr.changedFiles) {
 		lines.push(`**Changes:** ${pr.changedFiles} file${pr.changedFiles !== 1 ? "s" : ""} (+${pr.additions} -${pr.deletions})`);
 	}
 
+	if (pr.commits) {
+		lines.push(`**Commits:** ${pr.commits}`);
+	}
+
 	lines.push(`**URL:** ${pr.url}`);
+
+	if (pr.body) {
+		const trimmed = pr.body.trim();
+		if (trimmed.length > 0) {
+			const preview = trimmed.length > 300 ? trimmed.slice(0, 300) + "…" : trimmed;
+			lines.push("");
+			lines.push(preview);
+		}
+	}
 
 	return lines.join("\n");
 }

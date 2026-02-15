@@ -144,7 +144,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 
 			ctx.ui.notify(`✅ PR #${prInfo.number} merged via ${strategy}.`, "info");
 
-			// ── Step 4b: Post summary comment on PR ─────────────
+			// ── Step 5: Post summary comment on PR ──────────────
 			const comment = buildMergeComment(prInfo, strategy);
 			const commentResult = await gh(["pr", "comment", String(prNumber), "--body", comment], cwd);
 			if (commentResult.ok) {
@@ -153,7 +153,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 				ctx.ui.notify(`⚠️ Could not post summary comment: ${commentResult.stderr}`, "warning");
 			}
 
-			// ── Step 5: Clean up branches ───────────────────────
+			// ── Step 6: Clean up branches ───────────────────────
 			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number, strategy);
 
 			log("pr-merge", {

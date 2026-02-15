@@ -33,7 +33,6 @@ import {
 	getAuthenticatedEmail,
 	getConsentUrl,
 	clearTokens,
-	closeDb,
 } from "./auth.ts";
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
@@ -185,7 +184,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		stopNotifications();
 		unmountGmailRoutes(pi.events);
-		closeDb();
 	});
 
 	// ── Commands ────────────────────────────────────────────────

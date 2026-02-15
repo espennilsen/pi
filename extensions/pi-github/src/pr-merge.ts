@@ -5,8 +5,8 @@
  *   1. Find the PR (by argument or current branch)
  *   2. Get PR details
  *   3. Post pre-merge summary (title, changes, body preview)
- *   4. Post summary comment on the PR (strategy, stats, file list)
- *   5. Merge the PR (squash by default, configurable)
+ *   4. Merge the PR (squash by default, configurable)
+ *   5. Post summary comment on the PR (strategy, stats, file list)
  *   6. Clean up: delete remote/local branch, pull base, prune
  */
 

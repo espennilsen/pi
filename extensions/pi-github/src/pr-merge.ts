@@ -84,7 +84,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			if (prData.state === "MERGED") {
 				ctx.ui.notify(`PR #${prNumber} is already merged.`, "info");
 				// Still clean up branches below
-				await cleanupBranches(prData.headRefName ?? "", prData.baseRefName ?? "main", cwd, ctx, log, prNumber!);
+				await cleanupBranches(prData.headRefName ?? "", prData.baseRefName ?? "main", cwd, ctx, log, prNumber!, undefined);
 				return;
 			}
 
@@ -126,6 +126,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			);
 			if (verifyData === null) {
 				ctx.ui.notify(`⚠️ Could not verify merge state for PR #${prNumber} — the API call failed. The merge may have succeeded; check GitHub manually.`, "warning");
+				return;
 			} else if (verifyData.state !== "MERGED") {
 				const stateHint = verifyData.state === "OPEN"
 					? "The merge may require approvals or CI checks to pass."
@@ -137,7 +138,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			ctx.ui.notify(`✅ PR #${prInfo.number} merged via ${strategy}.`, "info");
 
 			// ── Step 5: Clean up branches ───────────────────────
-			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number);
+			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number, strategy);
 
 			log("pr-merge", {
 				prNumber: prInfo.number,
@@ -162,6 +163,7 @@ async function cleanupBranches(
 	ctx: any,
 	log: LogFn,
 	prNumber: number,
+	strategy?: string,
 ): Promise<void> {
 	if (!headBranch) {
 		ctx.ui.notify("⚠️ Head branch unknown — skipping branch cleanup.", "warning");
@@ -207,13 +209,19 @@ async function cleanupBranches(
 		// a local merge commit, so git branch -d thinks it's "not fully merged".
 		const nowOn = await getCurrentBranch(cwd);
 		if (nowOn !== headBranch) {
-			// Guard: warn if there are local-only commits not in the base branch
-			const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
-			if (localOnly.ok && localOnly.stdout.length > 0) {
-				const localCommits = localOnly.stdout.split("\n").filter(Boolean);
-				if (localCommits.length > 0) {
-					ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\` (may be from squash/rebase merge):\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+			// Guard: warn about local-only commits before force-deleting.
+			// Only warn for true merge strategy where SHAs are preserved.
+			// Squash/rebase always diverge (different SHAs), so just log at debug level.
+			if (strategy === "merge") {
+				const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
+				if (localOnly.ok && localOnly.stdout.trim().length > 0) {
+					const localCommits = localOnly.stdout.split("\n").filter(Boolean);
+					if (localCommits.length > 0) {
+						ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\`:\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+					}
 				}
+			} else {
+				log("pr-merge-local-commits", { prNumber, headBranch, baseBranch, strategy, note: "skipped local-only check (squash/rebase SHAs diverge)" });
 			}
 
 			const localDelete = await gitExec(["branch", "-D", headBranch], cwd);

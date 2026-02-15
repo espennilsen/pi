@@ -8,7 +8,10 @@
  *   - Text messages
  *   - Photos (downloaded → temp file → passed as image attachment)
  *   - Documents (text files downloaded → content included in message)
- *   - File size validation (max 1MB)
+ *   - Voice messages (downloaded → transcribed → passed as text)
+ *   - Audio files (music/recordings → transcribed → passed as text)
+ *   - Audio documents (files with audio MIME → routed through transcription)
+ *   - File size validation (1MB for docs/photos, 10MB for voice/audio)
  *   - MIME type filtering (text-like files only for documents)
  *
  * Config (in settings.json under pi-channels.adapters.telegram):
@@ -32,10 +35,13 @@ import type {
 	OnIncomingMessage,
 	IncomingMessage,
 	IncomingAttachment,
+	TranscriptionConfig,
 } from "../types.ts";
+import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.ts";
 
 const MAX_LENGTH = 4096;
 const MAX_FILE_SIZE = 1_048_576; // 1MB
+const MAX_AUDIO_SIZE = 10_485_760; // 10MB — voice/audio files are larger
 
 /** MIME types we treat as text documents (content inlined into the prompt). */
 const TEXT_MIME_TYPES = new Set([
@@ -71,6 +77,20 @@ function isImageMime(mime: string | undefined): boolean {
 	return mime.startsWith("image/");
 }
 
+/** Audio MIME types that can be transcribed. */
+const AUDIO_MIME_PREFIXES = ["audio/"];
+const AUDIO_MIME_TYPES = new Set([
+	"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm",
+	"audio/x-m4a", "audio/flac", "audio/aac", "audio/mp3",
+	"video/ogg", // .ogg containers can be audio-only
+]);
+
+function isAudioMime(mime: string | undefined): boolean {
+	if (!mime) return false;
+	if (AUDIO_MIME_TYPES.has(mime)) return true;
+	return AUDIO_MIME_PREFIXES.some(p => mime.startsWith(p));
+}
+
 function isTextDocument(mimeType: string | undefined, filename: string | undefined): boolean {
 	if (mimeType && TEXT_MIME_TYPES.has(mimeType)) return true;
 	if (filename) {
@@ -89,6 +109,19 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 
 	if (!botToken) {
 		throw new Error("Telegram adapter requires botToken");
+	}
+
+	// ── Transcription setup ─────────────────────────────────
+	const transcriptionConfig = config.transcription as TranscriptionConfig | undefined;
+	let transcriber: TranscriptionProvider | null = null;
+	let transcriberError: string | null = null;
+	if (transcriptionConfig?.enabled) {
+		try {
+			transcriber = createTranscriptionProvider(transcriptionConfig);
+		} catch (err: any) {
+			transcriberError = err.message ?? "Unknown transcription config error";
+			console.error(`[pi-channels] Transcription config error: ${transcriberError}`);
+		}
 	}
 
 	const apiBase = `https://api.telegram.org/bot${botToken}`;
@@ -133,7 +166,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 	 * Download a file from Telegram by file_id.
 	 * Returns { path, size } or null on failure.
 	 */
-	async function downloadFile(fileId: string, suggestedName?: string): Promise<{ localPath: string; size: number } | null> {
+	async function downloadFile(fileId: string, suggestedName?: string, maxSize = MAX_FILE_SIZE): Promise<{ localPath: string; size: number } | null> {
 		try {
 			// Get file info
 			const infoRes = await fetch(`${apiBase}/getFile?file_id=${fileId}`);
@@ -148,7 +181,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			const fileSize = info.result.file_size ?? 0;
 
 			// Size check before downloading
-			if (fileSize > MAX_FILE_SIZE) return null;
+			if (fileSize > maxSize) return null;
 
 			// Download
 			const fileUrl = `https://api.telegram.org/file/bot${botToken}/${info.result.file_path}`;
@@ -158,7 +191,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			const buffer = Buffer.from(await fileRes.arrayBuffer());
 
 			// Double-check size after download
-			if (buffer.length > MAX_FILE_SIZE) return null;
+			if (buffer.length > maxSize) return null;
 
 			// Write to temp file
 			const ext = path.extname(info.result.file_path) || path.extname(suggestedName || "") || "";
@@ -354,12 +387,172 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				};
 			}
 
+			// Audio documents — route through transcription
+			if (isAudioMime(mimeType)) {
+				if (!transcriber) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: transcriberError
+							? `⚠️ Audio transcription misconfigured: ${transcriberError}`
+							: `⚠️ Audio files are not supported. Please type your message.`,
+						metadata: { ...metadata, rejected: true, hasAudio: true },
+					};
+				}
+
+				if (doc.file_size && doc.file_size > MAX_AUDIO_SIZE) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ Audio file too large: ${filename || "audio"} (${formatSize(doc.file_size)}, max 10MB).`,
+						metadata: { ...metadata, rejected: true, hasAudio: true },
+					};
+				}
+
+				const downloaded = await downloadFile(doc.file_id, filename, MAX_AUDIO_SIZE);
+				if (!downloaded) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: caption || `🎵 ${filename || "audio"} (failed to download)`,
+						metadata: { ...metadata, hasAudio: true },
+					};
+				}
+
+				const result = await transcriber.transcribe(downloaded.localPath);
+				if (!result.ok || !result.text) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `🎵 ${filename || "audio"} (transcription failed${result.error ? ": " + result.error : ""})`,
+						metadata: { ...metadata, hasAudio: true },
+					};
+				}
+
+				const label = filename ? `Audio: ${filename}` : "Audio file";
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎵 [${label}]: ${result.text}`,
+					metadata: { ...metadata, hasAudio: true, audioTitle: filename },
+				};
+			}
+
 			// Unsupported file type
 			return {
 				adapter: "telegram",
 				sender: chatId,
-				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files and images.`,
+				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files, images, and audio.`,
 				metadata: { ...metadata, rejected: true },
+			};
+		}
+
+		// ── Voice message ──────────────────────────────────
+		if (msg.voice) {
+			const voice = msg.voice;
+
+			if (!transcriber) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: transcriberError
+						? `⚠️ Voice transcription misconfigured: ${transcriberError}`
+						: "⚠️ Voice messages are not supported. Please type your message.",
+					metadata: { ...metadata, rejected: true, hasVoice: true },
+				};
+			}
+
+			// Size check
+			if (voice.file_size && voice.file_size > MAX_AUDIO_SIZE) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `⚠️ Voice message too large (${formatSize(voice.file_size)}, max 10MB).`,
+					metadata: { ...metadata, rejected: true, hasVoice: true },
+				};
+			}
+
+			const downloaded = await downloadFile(voice.file_id, "voice.ogg", MAX_AUDIO_SIZE);
+			if (!downloaded) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: "🎤 (voice message — failed to download)",
+					metadata: { ...metadata, hasVoice: true },
+				};
+			}
+
+			const result = await transcriber.transcribe(downloaded.localPath);
+			if (!result.ok || !result.text) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎤 (voice message — transcription failed${result.error ? ": " + result.error : ""})`,
+					metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
+				};
+			}
+
+			return {
+				adapter: "telegram",
+				sender: chatId,
+				text: `🎤 [Voice message]: ${result.text}`,
+				metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
+			};
+		}
+
+		// ── Audio file (sent as music) ─────────────────────
+		if (msg.audio) {
+			const audio = msg.audio;
+
+			if (!transcriber) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: transcriberError
+						? `⚠️ Audio transcription misconfigured: ${transcriberError}`
+						: "⚠️ Audio files are not supported. Please type your message.",
+					metadata: { ...metadata, rejected: true, hasAudio: true },
+				};
+			}
+
+			if (audio.file_size && audio.file_size > MAX_AUDIO_SIZE) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `⚠️ Audio too large (${formatSize(audio.file_size)}, max 10MB).`,
+					metadata: { ...metadata, rejected: true, hasAudio: true },
+				};
+			}
+
+			const audioName = audio.title || audio.performer || "audio";
+			const downloaded = await downloadFile(audio.file_id, `${audioName}.mp3`, MAX_AUDIO_SIZE);
+			if (!downloaded) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: caption || `🎵 ${audioName} (failed to download)`,
+					metadata: { ...metadata, hasAudio: true },
+				};
+			}
+
+			const result = await transcriber.transcribe(downloaded.localPath);
+			if (!result.ok || !result.text) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎵 ${audioName} (transcription failed${result.error ? ": " + result.error : ""})`,
+					metadata: { ...metadata, hasAudio: true, audioTitle: audio.title, audioDuration: audio.duration },
+				};
+			}
+
+			const label = audio.title
+				? `Audio: ${audio.title}${audio.performer ? ` by ${audio.performer}` : ""}`
+				: "Audio";
+			return {
+				adapter: "telegram",
+				sender: chatId,
+				text: `🎵 [${label}]: ${result.text}`,
+				metadata: { ...metadata, hasAudio: true, audioTitle: audio.title, audioDuration: audio.duration },
 			};
 		}
 
@@ -373,7 +566,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			};
 		}
 
-		// Unsupported message type (sticker, voice, etc.) — ignore
+		// Unsupported message type (sticker, video, etc.) — ignore
 		return null;
 	}
 
@@ -448,6 +641,22 @@ interface TelegramMessage {
 		file_id: string;
 		file_unique_id: string;
 		file_name?: string;
+		mime_type?: string;
+		file_size?: number;
+	};
+	voice?: {
+		file_id: string;
+		file_unique_id: string;
+		duration: number;
+		mime_type?: string;
+		file_size?: number;
+	};
+	audio?: {
+		file_id: string;
+		file_unique_id: string;
+		duration: number;
+		performer?: string;
+		title?: string;
 		mime_type?: string;
 		file_size?: number;
 	};

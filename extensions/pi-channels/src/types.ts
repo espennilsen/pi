@@ -21,7 +21,7 @@ export interface ChannelMessage {
 
 export interface IncomingAttachment {
 	/** Attachment type */
-	type: "image" | "document";
+	type: "image" | "document" | "audio";
 	/** Local file path (temporary, downloaded by the adapter) */
 	path: string;
 	/** Original filename (if available) */
@@ -30,6 +30,26 @@ export interface IncomingAttachment {
 	mimeType?: string;
 	/** File size in bytes */
 	size?: number;
+}
+
+// ── Transcription config ────────────────────────────────────────
+
+export interface TranscriptionConfig {
+	/** Enable voice/audio transcription (default: false) */
+	enabled: boolean;
+	/**
+	 * Transcription provider:
+	 * - "apple"      — macOS SFSpeechRecognizer (free, offline, no API key)
+	 * - "openai"     — Whisper API
+	 * - "elevenlabs" — Scribe API
+	 */
+	provider: "apple" | "openai" | "elevenlabs";
+	/** API key for cloud providers (supports env:VAR_NAME). Not needed for apple. */
+	apiKey?: string;
+	/** Model name (e.g. "whisper-1", "scribe_v1"). Provider-specific default used if omitted. */
+	model?: string;
+	/** ISO 639-1 language hint (e.g. "en", "no"). Optional. */
+	language?: string;
 }
 
 export interface IncomingMessage {

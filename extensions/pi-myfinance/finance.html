@@ -1915,6 +1915,24 @@ async function deleteGoal(id) {
 
 let vendors = [];
 
+let vendorSortCol = 'transaction_count';
+let vendorSortDir = 'desc';
+
+function toggleVendorSort(col) {
+  if (vendorSortCol === col) {
+    vendorSortDir = vendorSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    vendorSortCol = col;
+    vendorSortDir = col === 'transaction_count' ? 'desc' : 'asc';
+  }
+  renderVendorTable();
+}
+
+function vendorSortIndicator(col) {
+  if (vendorSortCol !== col) return '';
+  return vendorSortDir === 'asc' ? ' ▲' : ' ▼';
+}
+
 async function loadVendors() {
   const includeIgnored = document.getElementById('vendor-show-ignored').checked;
   vendors = await API.get('/vendors?include_ignored=' + includeIgnored);
@@ -1923,9 +1941,9 @@ async function loadVendors() {
 
 function renderVendorTable() {
   const search = (document.getElementById('vendor-search').value || '').toLowerCase();
-  const filtered = search
+  let filtered = search
     ? vendors.filter(v => v.name.toLowerCase().includes(search) || (v.country || '').toLowerCase().includes(search))
-    : vendors;
+    : [...vendors];
 
   const el = document.getElementById('vendor-table');
   if (filtered.length === 0) {
@@ -1933,9 +1951,31 @@ function renderVendorTable() {
     return;
   }
 
+  // Sort
+  filtered.sort((a, b) => {
+    let av, bv;
+    switch (vendorSortCol) {
+      case 'name': av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); break;
+      case 'country': av = (a.country || '').toLowerCase(); bv = (b.country || '').toLowerCase(); break;
+      case 'category': av = (a.category_name || '').toLowerCase(); bv = (b.category_name || '').toLowerCase(); break;
+      case 'transaction_count': av = a.transaction_count || 0; bv = b.transaction_count || 0; break;
+      case 'status': av = a.ignore ? 1 : 0; bv = b.ignore ? 1 : 0; break;
+      default: return 0;
+    }
+    if (av < bv) return vendorSortDir === 'asc' ? -1 : 1;
+    if (av > bv) return vendorSortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const thStyle = 'cursor:pointer;user-select:none';
   el.innerHTML = `<table>
     <thead><tr>
-      <th>Name</th><th>Country</th><th>Default Category</th><th>Transactions</th><th>Status</th><th></th>
+      <th style="${thStyle}" onclick="toggleVendorSort('name')">Name${vendorSortIndicator('name')}</th>
+      <th style="${thStyle}" onclick="toggleVendorSort('country')">Country${vendorSortIndicator('country')}</th>
+      <th style="${thStyle}" onclick="toggleVendorSort('category')">Default Category${vendorSortIndicator('category')}</th>
+      <th style="${thStyle}" onclick="toggleVendorSort('transaction_count')">Transactions${vendorSortIndicator('transaction_count')}</th>
+      <th style="${thStyle}" onclick="toggleVendorSort('status')">Status${vendorSortIndicator('status')}</th>
+      <th></th>
     </tr></thead>
     <tbody>
       ${filtered.map(v => `<tr class="clickable" onclick="editVendor(${v.id})" ${v.ignore ? 'style="opacity:0.5"' : ''}>

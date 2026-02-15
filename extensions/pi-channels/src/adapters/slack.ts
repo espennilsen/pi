@@ -234,7 +234,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 							eventType: "message",
 						}),
 					});
-				} catch (err) { log?.("slack-handler-error", { handler: "message", error: String(err) }, "error"); }
+				} catch (err) { log?.("slack-handler-error", { handler: "message", error: String(err) }, "ERROR"); }
 			});
 
 			// ── App mention events ──────────────────────────
@@ -256,7 +256,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 							eventType: "app_mention",
 						}),
 					});
-				} catch (err) { log?.("slack-handler-error", { handler: "app_mention", error: String(err) }, "error"); }
+				} catch (err) { log?.("slack-handler-error", { handler: "app_mention", error: String(err) }, "ERROR"); }
 			});
 
 			// ── Slash commands ───────────────────────────────
@@ -293,7 +293,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 							command: body.command,
 						},
 					});
-				} catch (err) { log?.("slack-handler-error", { handler: "slash_commands", error: String(err) }, "error"); }
+				} catch (err) { log?.("slack-handler-error", { handler: "slash_commands", error: String(err) }, "ERROR"); }
 			});
 
 			// ── Interactive payloads (future: button clicks, modals) ──
@@ -301,7 +301,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 				try {
 					await ack();
 					// TODO: handle interactive payloads (block actions, modals)
-				} catch (err) { log?.("slack-handler-error", { handler: "interactive", error: String(err) }, "error"); }
+				} catch (err) { log?.("slack-handler-error", { handler: "interactive", error: String(err) }, "ERROR"); }
 			});
 
 			await socketClient.start();

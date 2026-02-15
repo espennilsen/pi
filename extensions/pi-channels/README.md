@@ -189,7 +189,12 @@ Commands work in both private and group chats. In groups, `/command@botname` for
   "polling": true,
   "parseMode": "Markdown",
   "pollingTimeout": 30,
-  "allowedChatIds": ["-100123456"]
+  "allowedChatIds": ["-100123456"],
+  "transcription": {
+    "enabled": true,
+    "provider": "apple",
+    "language": "en"
+  }
 }
 ```
 
@@ -199,6 +204,37 @@ Commands work in both private and group chats. In groups, `/command@botname` for
 - `allowedChatIds` restricts which chats can send messages (security)
 - `parseMode` optional (default: plain text)
 - Supports typing indicators when bridge is active
+
+#### Supported message types
+
+| Type | Description |
+|------|-------------|
+| Text | Standard text messages |
+| Images | Photo attachments (sent as base64 in bridge mode) |
+| Documents | File attachments (≤1 MB, text-extractable formats) |
+| Voice messages | 🎤 Telegram voice recordings → transcribed to text |
+| Audio files | 🎵 Music/recordings sent as audio → transcribed to text |
+| Audio documents | Files with audio MIME types → auto-detected and transcribed |
+
+Voice and audio messages are automatically transcribed to text before reaching the agent. The transcribed text is prefixed with 🎤 (voice) or 🎵 (audio) to indicate the source.
+
+#### Transcription config
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable voice/audio transcription. |
+| `provider` | — | `"apple"`, `"openai"`, or `"elevenlabs"`. |
+| `apiKey` | — | API key for cloud providers. Supports `"env:VAR_NAME"`. Not needed for `apple`. |
+| `model` | provider default | Model name (e.g. `"whisper-1"`, `"scribe_v1"`). |
+| `language` | — | ISO 639-1 language hint (e.g. `"en"`, `"no"`). Optional. |
+
+**Providers:**
+
+- **`apple`** — macOS SFSpeechRecognizer. Free, on-device, no API key. Requires macOS 13+. Auto-compiles a Swift CLI helper on first use.
+- **`openai`** — Whisper API (`POST /v1/audio/transcriptions`). Requires `apiKey`. Default model: `whisper-1`. Pricing: ~$0.006/minute.
+- **`elevenlabs`** — Scribe API (`POST /v1/speech-to-text`). Requires `apiKey`. Default model: `scribe_v1`.
+
+If transcription is not configured, voice/audio messages return a helpful fallback message instead of failing silently.
 
 ### Webhook
 
@@ -295,8 +331,11 @@ src/
 ├── events.ts             # channel:* event handlers + bridge wiring
 ├── tool.ts               # LLM tool (notify)
 ├── adapters/
-│   ├── telegram.ts       # Telegram Bot API adapter (with typing support)
-│   └── webhook.ts        # Generic webhook adapter
+│   ├── telegram.ts       # Telegram Bot API adapter (voice, audio, typing)
+│   ├── slack.ts          # Slack adapter (Socket Mode + Web API)
+│   ├── webhook.ts        # Generic webhook adapter
+│   ├── transcription.ts  # Pluggable transcription (apple/openai/elevenlabs)
+│   └── transcribe-apple.swift  # macOS SFSpeechRecognizer CLI helper
 └── bridge/
     ├── bridge.ts         # Core bridge — per-sender queues, concurrency, lifecycle
     ├── commands.ts       # Bot command registry (/start, /help, /abort, /status, /new)

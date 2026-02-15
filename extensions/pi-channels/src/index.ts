@@ -45,6 +45,7 @@ import { createLogger } from "./logger.ts";
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	const registry = new ChannelRegistry();
+	registry.setLogger(log);
 	let bridge: ChatBridge | null = null;
 
 	// ── Flag: --chat-bridge ───────────────────────────────────
@@ -63,7 +64,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const config = loadConfig(ctx.cwd);
-		registry.loadConfig(config);
+		registry.loadConfig(config, ctx.cwd);
 
 		const errors = registry.getErrors();
 		for (const err of errors) {

@@ -117,15 +117,6 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			const preview = buildPreMergeSummary(prInfo, strategy);
 			ctx.ui.notify(preview, "info");
 
-			// ── Step 3b: Post summary comment on PR ─────────────
-			const comment = buildMergeComment(prInfo, strategy);
-			const commentResult = await gh(["pr", "comment", String(prNumber), "--body", comment], cwd);
-			if (commentResult.ok) {
-				ctx.ui.notify("💬 Posted merge summary comment on PR.", "info");
-			} else {
-				ctx.ui.notify(`⚠️ Could not post summary comment: ${commentResult.stderr}`, "warning");
-			}
-
 			// ── Step 4: Merge the PR ────────────────────────────
 			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
 			const mergeResult = await gh(mergeArgs, cwd);
@@ -152,6 +143,15 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			}
 
 			ctx.ui.notify(`✅ PR #${prInfo.number} merged via ${strategy}.`, "info");
+
+			// ── Step 4b: Post summary comment on PR ─────────────
+			const comment = buildMergeComment(prInfo, strategy);
+			const commentResult = await gh(["pr", "comment", String(prNumber), "--body", comment], cwd);
+			if (commentResult.ok) {
+				ctx.ui.notify("💬 Posted merge summary comment on PR.", "info");
+			} else {
+				ctx.ui.notify(`⚠️ Could not post summary comment: ${commentResult.stderr}`, "warning");
+			}
 
 			// ── Step 5: Clean up branches ───────────────────────
 			await cleanupBranches(prInfo.headRefName, prInfo.baseRefName, cwd, ctx, log, prInfo.number, strategy);
@@ -281,13 +281,20 @@ function buildMergeComment(pr: PrMergeInfo, strategy: string): string {
 	}
 
 	if (pr.files.length > 0) {
+		const maxFiles = 50;
+		const displayFiles = pr.files.slice(0, maxFiles);
+		const remaining = pr.files.length - displayFiles.length;
+
 		lines.push("");
 		lines.push("<details>");
 		lines.push("<summary>📁 Changed files</summary>");
 		lines.push("");
-		for (const f of pr.files) {
+		for (const f of displayFiles) {
 			const stat = `+${f.additions} −${f.deletions}`;
 			lines.push(`- \`${f.path}\` (${stat})`);
+		}
+		if (remaining > 0) {
+			lines.push(`- …and ${remaining} more file${remaining !== 1 ? "s" : ""}`);
 		}
 		lines.push("");
 		lines.push("</details>");

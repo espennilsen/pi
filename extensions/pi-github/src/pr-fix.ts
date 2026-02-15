@@ -4,9 +4,10 @@
  * Workflow:
  *   1. Find the PR for the current branch (or specified PR number)
  *   2. Fetch all unresolved review threads from the PR
- *   3. Present them as a structured prompt to the agent
- *   4. After the agent fixes and commits, resolve the threads on GitHub
- *   5. Post a summary comment on the PR linking the fix commit
+ *   3. Present them to the agent with instructions to validate each thread
+ *      with the user before making changes (flag ambiguous/subjective feedback)
+ *   4. User confirms which threads to fix; agent implements the fixes
+ *   5. Run /gh-pr-resolve to resolve threads on GitHub and post summary comment
  *
  * Uses gh CLI + GraphQL for thread resolution.
  */
@@ -182,7 +183,11 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo): string 
 		lines.push("");
 	}
 
-	lines.push("**Instructions:** Fix each issue above. After fixing, I will commit the changes, resolve the threads on GitHub, and post a summary comment.");
+	lines.push("**Instructions:**");
+	lines.push("1. Present each thread above to the user as a numbered list with a brief summary of the feedback and your assessment (agree/disagree/needs discussion).");
+	lines.push("2. If any feedback is ambiguous, subjective, or you disagree with it, flag it and ask the user what they want to do.");
+	lines.push("3. Wait for the user to confirm which threads to fix before making any code changes.");
+	lines.push("4. After fixing, run `/gh-pr-resolve` to resolve the threads on GitHub and post a summary comment.");
 
 	return lines.join("\n");
 }
@@ -335,20 +340,17 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			// ── Step 5: Send feedback to agent as user message ──
 			const prompt = formatThreadsForAgent(threads, prInfo);
-			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Sending to agent…`, "info");
+			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Presenting for review…`, "info");
 
-			// Send as a follow-up user message that the agent will process
+			// Send as a follow-up user message that the agent will process.
+			// The agent will present the feedback to the user for validation
+			// before making any code changes.
 			sendUserMessage(prompt, { deliverAs: "followUp" });
 
 			// ── Step 6: Store threads for resolution ────────────
 			// The agent will process the feedback. We store the threads
 			// so /gh-pr-resolve can resolve them after the agent commits.
 			pendingThreads = { prInfo, threads };
-
-			ctx.ui.notify(
-				`💡 After fixing the issues, run \`/gh-pr-resolve\` to resolve the threads on GitHub and post a summary comment.`,
-				"info",
-			);
 		},
 	});
 

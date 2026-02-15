@@ -15,7 +15,9 @@ import {
 	isAuthenticated,
 	getAuthenticatedEmail,
 	clearTokens,
+	verifyOAuthState,
 } from "./auth.ts";
+import { escapeHtml } from "./utils.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -81,10 +83,12 @@ function authStatusPage(authenticated: boolean, email: string | null): string {
 ${
 	authenticated
 		? `<div class="status connected">
-			<p>✅ <strong>Connected</strong> as <code>${email}</code></p>
+			<p>✅ <strong>Connected</strong> as <code>${escapeHtml(email ?? "")}</code></p>
 		</div>
-		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a>
-		<a href="/gmail/logout" class="btn btn-danger">Disconnect</a></p>`
+		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a></p>
+		<form method="POST" action="/gmail/logout" style="display:inline">
+			<button type="submit" class="btn btn-danger" style="border:none;cursor:pointer;font-size:inherit">Disconnect</button>
+		</form>`
 		: `<div class="status disconnected">
 			<p>⚠️ <strong>Not connected</strong></p>
 			<p>Click below to authorize pi to access your Gmail account.</p>
@@ -126,7 +130,7 @@ function successPage(email: string): string {
 <body>
 <div class="success">
   <h1>✅ Gmail Connected!</h1>
-  <p>Authenticated as <code>${email}</code></p>
+  <p>Authenticated as <code>${escapeHtml(email)}</code></p>
   <p>You can close this tab and return to pi.</p>
 </div>
 </body>
@@ -148,7 +152,7 @@ function errorPage(error: string): string {
 <body>
 <div class="error">
   <h1>❌ Authentication Failed</h1>
-  <p>${error}</p>
+  <p>${escapeHtml(error)}</p>
   <p><a href="/gmail">Try again</a></p>
 </div>
 </body>
@@ -202,9 +206,15 @@ export function mountGmailRoutes(
 				const url = new URL(req.url ?? "/", `http://localhost:${serverPort}`);
 				const code = url.searchParams.get("code");
 				const error = url.searchParams.get("error");
+				const state = url.searchParams.get("state");
 
 				if (error) {
 					html(res, errorPage(`Google returned error: ${error}`));
+					return;
+				}
+
+				if (!verifyOAuthState(state)) {
+					html(res, errorPage("Invalid or missing OAuth state parameter. Please try again."), 403);
 					return;
 				}
 
@@ -222,8 +232,8 @@ export function mountGmailRoutes(
 				return;
 			}
 
-			// Logout
-			if (req.method === "GET" && p === "/logout") {
+			// Logout (POST only to prevent CSRF via GET)
+			if (req.method === "POST" && p === "/logout") {
 				clearTokens(agentDir);
 				res.writeHead(302, { Location: "/gmail" });
 				res.end();

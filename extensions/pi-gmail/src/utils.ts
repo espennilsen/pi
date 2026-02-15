@@ -2,8 +2,6 @@
  * Shared utilities for pi-gmail.
  */
 
-import { execFile } from "node:child_process";
-
 // ── HTML escaping ───────────────────────────────────────────────
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -37,19 +35,20 @@ export function resolveEnv(value: string | undefined): string {
 
 /**
  * Open a URL in the default browser, cross-platform.
- * Uses execFile with argument array to prevent shell injection.
  */
 export function openUrl(url: string): void {
+	const { exec } = require("node:child_process") as typeof import("node:child_process");
+
 	switch (process.platform) {
 		case "darwin":
-			execFile("open", [url]);
+			exec(`open "${url}"`);
 			break;
 		case "win32":
-			execFile("cmd", ["/c", "start", "", url]);
+			exec(`start "" "${url}"`);
 			break;
 		default:
 			// Linux and other Unix-like
-			execFile("xdg-open", [url]);
+			exec(`xdg-open "${url}"`);
 			break;
 	}
 }

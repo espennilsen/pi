@@ -25,7 +25,7 @@ Self-contained pi extension providing full Gmail integration via Google's REST A
 - **No SDK dependency** — Direct REST via `fetch` to `gmail.googleapis.com/gmail/v1/users/me/*`.
 - **No direct imports** between extensions — all integration via event bus (`web:mount`, `web:mount-api`, `web:ready`, `channel:send`).
 - **Safety gates** — `send`, `send_draft`, `archive`, `trash` actions require `ctx.ui.confirm()` before execution.
-- **Token auto-refresh** — Access tokens refreshed 5 minutes before expiry; refresh tokens persisted in SQLite.
+- **Token auto-refresh** — Access tokens refreshed 5 minutes before expiry; refresh tokens persisted in JSON file (`db/gmail-tokens.json`).
 - **Single tool, multi-action** — One `gmail` tool with StringEnum action parameter (same pattern as pi-calendar).
 
 ## Token Storage

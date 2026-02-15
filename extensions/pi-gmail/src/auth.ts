@@ -10,7 +10,9 @@
 
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as crypto from "node:crypto";
 import type { OAuthTokens, GmailSettings } from "./types.ts";
+import { resolveEnv } from "./utils.ts";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -27,6 +29,30 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const TOKENS_FILENAME = "gmail-tokens.json";
 
 let cachedTokens: OAuthTokens | null = null;
+
+// ── OAuth state for CSRF protection ─────────────────────────────
+
+let pendingOAuthState: string | null = null;
+
+export function generateOAuthState(): string {
+	const state = crypto.randomBytes(32).toString("hex");
+	pendingOAuthState = state;
+	return state;
+}
+
+export function verifyOAuthState(state: string | null): boolean {
+	if (!state || !pendingOAuthState) return false;
+	const valid = crypto.timingSafeEqual(
+		Buffer.from(state),
+		Buffer.from(pendingOAuthState),
+	);
+	pendingOAuthState = null; // consume — single use
+	return valid;
+}
+
+// ── Token refresh mutex ─────────────────────────────────────────
+
+let refreshPromise: Promise<string> | null = null;
 
 // ── Token file path ─────────────────────────────────────────────
 
@@ -52,7 +78,7 @@ export function loadTokens(agentDir: string): OAuthTokens | null {
 export function saveTokens(agentDir: string, tokens: OAuthTokens): void {
 	const tokensPath = getTokensPath(agentDir);
 	fs.mkdirSync(path.dirname(tokensPath), { recursive: true });
-	fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2), "utf-8");
+	fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2), { encoding: "utf-8", mode: 0o600 });
 	cachedTokens = tokens;
 }
 
@@ -72,6 +98,8 @@ export function getConsentUrl(settings: GmailSettings, redirectUri: string): str
 	const clientId = resolveEnv(settings.clientId ?? "");
 	if (!clientId) throw new Error("Gmail clientId not configured");
 
+	const state = generateOAuthState();
+
 	const params = new URLSearchParams({
 		client_id: clientId,
 		redirect_uri: redirectUri,
@@ -79,6 +107,7 @@ export function getConsentUrl(settings: GmailSettings, redirectUri: string): str
 		scope: SCOPES,
 		access_type: "offline",
 		prompt: "consent",
+		state,
 	});
 
 	return `${GOOGLE_AUTH_URL}?${params.toString()}`;
@@ -145,7 +174,21 @@ export async function getAccessToken(
 		return tokens.access_token;
 	}
 
-	// Refresh the token
+	// Use mutex to prevent concurrent refresh races
+	if (refreshPromise) return refreshPromise;
+
+	refreshPromise = refreshAccessToken(settings, agentDir, tokens).finally(() => {
+		refreshPromise = null;
+	});
+
+	return refreshPromise;
+}
+
+async function refreshAccessToken(
+	settings: GmailSettings,
+	agentDir: string,
+	tokens: OAuthTokens,
+): Promise<string> {
 	const clientId = resolveEnv(settings.clientId ?? "");
 	const clientSecret = resolveEnv(settings.clientSecret ?? "");
 
@@ -205,11 +248,4 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 	if (!resp.ok) return "unknown";
 	const data = await resp.json() as any;
 	return data.email ?? "unknown";
-}
-
-function resolveEnv(value: string): string {
-	if (value.startsWith("env:")) {
-		return process.env[value.slice(4)] ?? "";
-	}
-	return value;
 }

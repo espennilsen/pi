@@ -37,6 +37,7 @@ import {
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
+import { resolveEnv, openUrl } from "./utils.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -62,16 +63,26 @@ function getSettings(cwd: string): FullGmailSettings {
 	};
 }
 
-function resolveEnv(value: string | undefined): string {
-	if (!value) return "";
-	if (value.startsWith("env:")) return process.env[value.slice(4)] ?? "";
-	return value;
-}
-
 // ── Notification polling ────────────────────────────────────────
 
 let notificationTimer: ReturnType<typeof setInterval> | null = null;
 let lastCheckTimestamp: number = Date.now();
+
+// Track notified message IDs to prevent re-notification (capped at 500)
+const MAX_SEEN_IDS = 500;
+const notifiedMessageIds = new Set<string>();
+
+function trackNotified(id: string): void {
+	notifiedMessageIds.add(id);
+	// Evict oldest entries when set grows too large
+	if (notifiedMessageIds.size > MAX_SEEN_IDS) {
+		const iter = notifiedMessageIds.values();
+		const toRemove = notifiedMessageIds.size - MAX_SEEN_IDS;
+		for (let i = 0; i < toRemove; i++) {
+			notifiedMessageIds.delete(iter.next().value!);
+		}
+	}
+}
 
 function startNotifications(
 	pi: ExtensionAPI,
@@ -97,22 +108,29 @@ function startNotifications(
 			const afterStr = `${afterDate.getFullYear()}/${afterDate.getMonth() + 1}/${afterDate.getDate()}`;
 			const fullQuery = `${query} after:${afterStr}`;
 
-			const list = await client.listMessages(settings, agentDir, fullQuery, 5);
+			const list = await client.listMessages(settings, agentDir, fullQuery, 10);
 			if (list.messages && list.messages.length > 0) {
-				const messages = await Promise.all(
-					list.messages.slice(0, 5).map((m) =>
-						client.getMessage(settings, agentDir, m.id, "metadata"),
-					),
-				);
+				// Filter out already-notified messages
+				const newMessages = list.messages.filter((m) => !notifiedMessageIds.has(m.id));
+				if (newMessages.length > 0) {
+					const messages = await Promise.all(
+						newMessages.slice(0, 5).map((m) =>
+							client.getMessage(settings, agentDir, m.id, "metadata"),
+						),
+					);
 
-				const summary = messages.map((m, i) => formatSearchResult(m, i)).join("\n\n");
-				const text = `📧 **New Gmail messages (${list.messages.length}):**\n\n${summary}`;
+					const summary = messages.map((m, i) => formatSearchResult(m, i)).join("\n\n");
+					const text = `📧 **New Gmail messages (${newMessages.length}):**\n\n${summary}`;
 
-				pi.events.emit("channel:send", {
-					channel,
-					text,
-					source: "pi-gmail",
-				});
+					pi.events.emit("channel:send", {
+						channel,
+						text,
+						source: "pi-gmail",
+					});
+
+					// Mark all fetched messages as seen (not just the displayed ones)
+					for (const m of newMessages) trackNotified(m.id);
+				}
 			}
 
 			lastCheckTimestamp = Date.now();
@@ -216,8 +234,7 @@ export default function (pi: ExtensionAPI) {
 				// Open browser to auth page
 				const url = `http://localhost:${webPort}/gmail/auth`;
 				ctx.ui.notify(`Opening browser: ${url}`, "info");
-				const { exec: execCmd } = await import("node:child_process");
-				execCmd(`open "${url}"`, () => {});
+				openUrl(url);
 			} else {
 				// No webserver — show the URL for manual copy
 				try {

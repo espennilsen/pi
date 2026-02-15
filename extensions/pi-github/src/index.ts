@@ -8,8 +8,7 @@
  *   - /gh-notifications — GitHub notifications
  *   - /gh-pr-create    — Create PR for current branch
  *   - /gh-pr-review    — Show PR review feedback
- *   - /gh-pr-fix       — Fix PR review feedback (fetches threads, sends to agent)
- *   - /gh-pr-resolve   — Resolve threads on GitHub after fixing
+ *   - /gh-pr-fix       — Fix PR review feedback (validates with user, fixes, resolves)
  *   - /gh-pr-merge     — Merge PR, delete remote/local branch, pull base
  *   - /gh-actions      — List recent workflow runs
  *
@@ -19,7 +18,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerCommands, setSessionCwd } from "./commands.ts";
-import { registerPrFixCommand, resetPendingThreads } from "./pr-fix.ts";
+import { registerPrFixCommand, resetPrFixState } from "./pr-fix.ts";
 import { registerPrMergeCommand } from "./pr-merge.ts";
 import { createLogger } from "./logger.ts";
 
@@ -43,16 +42,16 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_switch", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
-		resetPendingThreads();
+		resetPrFixState();
 	});
 
 	pi.on("session_fork", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
-		resetPendingThreads();
+		resetPrFixState();
 	});
 
 	pi.on("session_shutdown", async () => {
-		resetPendingThreads();
+		resetPrFixState();
 	});
 }

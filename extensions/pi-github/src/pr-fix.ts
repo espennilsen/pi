@@ -4,9 +4,10 @@
  * Workflow:
  *   1. Find the PR for the current branch (or specified PR number)
  *   2. Fetch all unresolved review threads from the PR
- *   3. Present them as a structured prompt to the agent
- *   4. After the agent fixes and commits, resolve the threads on GitHub
- *   5. Post a summary comment on the PR linking the fix commit
+ *   3. Present them to the agent with instructions to validate each
+ *      thread with the user before making changes
+ *   4. User confirms which threads to fix; agent implements the fixes
+ *   5. Agent commits, pushes, resolves threads, and posts summary — all in one flow
  *
  * Uses gh CLI + GraphQL for thread resolution.
  */
@@ -182,7 +183,11 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo): string 
 		lines.push("");
 	}
 
-	lines.push("**Instructions:** Fix each issue above. After fixing, I will commit the changes, resolve the threads on GitHub, and post a summary comment.");
+	lines.push("**Instructions:**");
+	lines.push("1. Present each thread above to the user as a numbered list with a brief summary of the feedback and your assessment (agree/disagree/needs discussion).");
+	lines.push("2. If any feedback is ambiguous, subjective, or you disagree with it, flag it and ask the user what they want to do.");
+	lines.push("3. Wait for the user to confirm which threads to fix before making any code changes.");
+	lines.push("4. After fixing, commit the changes, resolve the threads on GitHub, and post a summary comment.");
 
 	return lines.join("\n");
 }
@@ -209,13 +214,98 @@ function buildSummaryComment(threads: ReviewThread[], commitSha: string, resolve
 	return lines.join("\n");
 }
 
+// ── Resolve threads helper (used by agent after fixing) ─────────
+
+async function resolveAndSummarize(
+	prInfo: PrInfo,
+	threads: ReviewThread[],
+	cwd: string,
+	ctx: any,
+	log: LogFn,
+): Promise<void> {
+	// Verify we're still on the PR branch before pushing
+	const currentBranch = await getCurrentBranch(cwd);
+	if (currentBranch !== prInfo.headRefName) {
+		ctx.ui.notify(
+			`❌ Current branch \`${currentBranch}\` does not match PR branch \`${prInfo.headRefName}\`.`,
+			"error",
+		);
+		return;
+	}
+
+	ctx.ui.notify(`Resolving ${threads.length} thread${threads.length !== 1 ? "s" : ""} on PR #${prInfo.number}…`, "info");
+
+	const commitSha = await getLatestCommitSha(cwd);
+	if (!commitSha) {
+		ctx.ui.notify("⚠️ Could not get latest commit SHA.", "warning");
+	}
+
+	const errors: string[] = [];
+
+	// Push first — abort if it fails
+	const pushResult = await gitExec(["push", "origin", "HEAD"], cwd, 30_000);
+	if (!pushResult.ok) {
+		ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");
+		log("pr-fix-resolve", { prNumber: prInfo.number, resolved: 0, total: threads.length, errors: 1, pushFailed: true });
+		return;
+	}
+
+	// Reply to and resolve each thread
+	let resolved = 0;
+	const resolvedIds = new Set<string>();
+	const shortSha = commitSha ? commitSha.slice(0, 7) : "latest";
+	const commitUrl = commitSha ? `${prInfo.url}/commits/${commitSha}` : "";
+	const commitRef = commitUrl ? `[\`${shortSha}\`](${commitUrl})` : `\`${shortSha}\``;
+
+	for (const thread of threads) {
+		try {
+			const replyBody = `✅ Addressed in ${commitRef}`;
+			const replied = await replyToThread(thread.id, replyBody, cwd);
+			if (!replied) {
+				errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to post reply`);
+			}
+
+			const ok = await resolveThread(thread.id, cwd);
+			if (ok) {
+				resolved++;
+				resolvedIds.add(thread.id);
+			} else {
+				errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to resolve`);
+			}
+		} catch (err: any) {
+			errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — ${err.message}`);
+		}
+	}
+
+	// Post summary comment
+	if (commitSha) {
+		const comment = buildSummaryComment(threads, commitSha, resolved, resolvedIds);
+		const posted = await postPrComment(prInfo.number, comment, cwd);
+		if (!posted) {
+			errors.push("Failed to post summary comment");
+		}
+	}
+
+	const lines: string[] = [];
+	lines.push(`✅ Resolved ${resolved}/${threads.length} threads on PR #${prInfo.number}`);
+	if (commitSha) lines.push(`Commit: ${commitSha.slice(0, 7)}`);
+	if (errors.length > 0) {
+		lines.push("");
+		lines.push(`⚠️ ${errors.length} issue${errors.length !== 1 ? "s" : ""}:`);
+		lines.push(...errors.map(e => `  - ${e}`));
+	}
+
+	ctx.ui.notify(lines.join("\n"), errors.length > 0 ? "warning" : "info");
+	log("pr-fix-resolve", { prNumber: prInfo.number, resolved, total: threads.length, errors: errors.length });
+}
+
 // ── Register the command ────────────────────────────────────────
 
 export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () => string): void {
 	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
 	registerDualCommand(pi, "gh-pr-fix", "github-pr-fix", {
-		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, sends to agent, then resolves them.",
+		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, validates with user, fixes, resolves on GitHub.",
 		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
 			const argStr = args.replace(/^#/, "");
@@ -232,11 +322,9 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					return;
 				}
 				if (branch === "main" || branch === "master") {
-					// On main/master — find the most recent open PR with changes requested
 					ctx.ui.notify("On main — looking for open PRs with changes requested…", "info");
 					const prs = await ghJson<any[]>(["pr", "list", "--state", "open", "--search", "review:changes-requested", "--json", "number,title,headRefName", "--limit", "10"], cwd);
 					if (!prs || prs.length === 0) {
-						// Fall back to most recent open PR
 						const allPrs = await ghJson<any[]>(["pr", "list", "--state", "open", "--json", "number,title,headRefName", "--limit", "10"], cwd);
 						if (!allPrs || allPrs.length === 0) {
 							ctx.ui.notify("❌ No open PRs found.", "error");
@@ -269,7 +357,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				return;
 			}
 
-			// ── Step 3: Fetch unresolved threads BEFORE switching branches ──
+			// ── Step 3: Fetch unresolved threads ────────────────
 			ctx.ui.notify(`Fetching review feedback for PR #${prNumber}…`, "info");
 
 			const threads = await getUnresolvedThreads(repoInfo.owner, repoInfo.repo, prNumber, cwd);
@@ -279,7 +367,6 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			}
 
 			// ── Step 4: Get PR info + ensure we're on the PR branch ─
-			// Single gh pr view call for all needed fields
 			const prData = await ghJson<any>(["pr", "view", String(prNumber), "--json", "headRefName,number,title,url"], cwd);
 			if (!prData?.headRefName) {
 				ctx.ui.notify(`❌ Could not fetch PR #${prNumber} branch info (network error or auth failure).`, "error");
@@ -299,7 +386,6 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				const prBranch = prData.headRefName;
 				const currentBranch = await getCurrentBranch(cwd);
 				if (currentBranch !== prBranch) {
-					// Check for dirty working tree before switching
 					const status = await gitExec(["status", "--porcelain"], cwd);
 					if (status.ok && status.stdout.length > 0) {
 						ctx.ui.notify(`❌ Working tree has uncommitted changes. Commit or stash them before running /gh-pr-fix.\n\n${status.stdout}`, "error");
@@ -309,14 +395,11 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					ctx.ui.notify(`Switching to branch \`${prBranch}\`…`, "info");
 					const checkout = await gitExec(["checkout", prBranch], cwd);
 					if (!checkout.ok) {
-						// Branch might not exist locally — fetch it, then create a tracking branch
 						const localExists = await gitExec(["branch", "--list", prBranch], cwd);
 						if (localExists.ok && localExists.stdout.length > 0) {
-							// Branch exists locally but checkout failed for another reason
 							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${checkout.stderr}`, "error");
 							return;
 						}
-						// Branch doesn't exist locally — fetch and create tracking branch
 						const fetchResult = await gitExec(["fetch", "origin", prBranch], cwd, 30_000);
 						if (!fetchResult.ok) {
 							ctx.ui.notify(`❌ Failed to fetch branch \`${prBranch}\` from origin: ${fetchResult.stderr}`, "error");
@@ -333,130 +416,38 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 
 			log("pr-fix-start", { prNumber, threadCount: threads.length });
 
-			// ── Step 5: Send feedback to agent as user message ──
+			// ── Step 5: Send feedback to agent for validation ───
 			const prompt = formatThreadsForAgent(threads, prInfo);
-			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Sending to agent…`, "info");
+			ctx.ui.notify(`Found ${threads.length} unresolved thread${threads.length !== 1 ? "s" : ""} on PR #${prNumber}. Presenting for review…`, "info");
 
-			// Send as a follow-up user message that the agent will process
+			// Store context for the resolve tool
+			activePrFix = { prInfo, threads, cwd };
+
 			sendUserMessage(prompt, { deliverAs: "followUp" });
-
-			// ── Step 6: Store threads for resolution ────────────
-			// The agent will process the feedback. We store the threads
-			// so /gh-pr-resolve can resolve them after the agent commits.
-			pendingThreads = { prInfo, threads };
-
-			ctx.ui.notify(
-				`💡 After fixing the issues, run \`/gh-pr-resolve\` to resolve the threads on GitHub and post a summary comment.`,
-				"info",
-			);
 		},
 	});
 
-	// ── /gh-pr-resolve · /github-pr-resolve ─────────────────────
-	// Called after agent has fixed and committed the feedback.
+	// ── gh-pr-resolve tool (called by agent after fixing) ───────
 
 	registerDualCommand(pi, "gh-pr-resolve", "github-pr-resolve", {
-		description: "Resolve pending PR review threads and post summary comment. Run after /gh-pr-fix.",
+		description: "Resolve review threads on GitHub after fixing. Called by agent after /gh-pr-fix.",
 		handler: async (_args: string, ctx: any) => {
-			const cwd = getCwd();
-
-			if (!pendingThreads) {
-				ctx.ui.notify("❌ No pending review threads. Run /gh-pr-fix first.", "error");
+			if (!activePrFix) {
+				ctx.ui.notify("❌ No active PR fix session. Run /gh-pr-fix first.", "error");
 				return;
 			}
 
-			const { prInfo, threads } = pendingThreads;
-
-			// Verify we're still on the PR branch before pushing
-			const currentBranch = await getCurrentBranch(cwd);
-			if (currentBranch !== prInfo.headRefName) {
-				ctx.ui.notify(
-					`❌ Current branch \`${currentBranch}\` does not match PR branch \`${prInfo.headRefName}\`.\n` +
-					`Checkout \`${prInfo.headRefName}\` first, or run /gh-pr-fix again.`,
-					"error",
-				);
-				return;
-			}
-
-			ctx.ui.notify(`Resolving ${threads.length} thread${threads.length !== 1 ? "s" : ""} on PR #${prInfo.number}…`, "info");
-
-			// Get the latest commit SHA for the summary
-			const commitSha = await getLatestCommitSha(cwd);
-			if (!commitSha) {
-				ctx.ui.notify("⚠️ Could not get latest commit SHA.", "warning");
-			}
-
-			const errors: string[] = [];
-
-			// Push the branch FIRST — abort if it fails so we don't
-			// resolve threads / post comments referencing a non-existent remote commit
-			const pushResult = await gitExec(["push", "origin", "HEAD"], cwd, 30_000);
-			if (!pushResult.ok) {
-				errors.push(`git push failed: ${pushResult.stderr}`);
-				ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");
-				// Don't clear pendingThreads so the user can retry
-				log("pr-fix-resolve", { prNumber: prInfo.number, resolved: 0, total: threads.length, errors: 1, pushFailed: true });
-				return;
-			}
-
-			// Reply to and resolve each thread
-			let resolved = 0;
-			const resolvedIds = new Set<string>();
-			const shortSha = commitSha ? commitSha.slice(0, 7) : "latest";
-			const commitUrl = commitSha ? `${prInfo.url}/commits/${commitSha}` : "";
-			const commitRef = commitUrl ? `[\`${shortSha}\`](${commitUrl})` : `\`${shortSha}\``;
-
-			for (const thread of threads) {
-				try {
-					// Post a reply comment on the thread before resolving
-					const replyBody = `✅ Addressed in ${commitRef}`;
-					const replied = await replyToThread(thread.id, replyBody, cwd);
-					if (!replied) {
-						errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to post reply`);
-					}
-
-					const ok = await resolveThread(thread.id, cwd);
-					if (ok) {
-						resolved++;
-						resolvedIds.add(thread.id);
-					} else {
-						errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — failed to resolve`);
-					}
-				} catch (err: any) {
-					errors.push(`Thread at ${thread.path}:${thread.line ?? "?"} — ${err.message}`);
-				}
-			}
-
-			// Post summary comment
-			if (commitSha) {
-				const comment = buildSummaryComment(threads, commitSha, resolved, resolvedIds);
-				const posted = await postPrComment(prInfo.number, comment, cwd);
-				if (!posted) {
-					errors.push("Failed to post summary comment");
-				}
-			}
-
-			pendingThreads = null;
-
-			const lines: string[] = [];
-			lines.push(`✅ Resolved ${resolved}/${threads.length} threads on PR #${prInfo.number}`);
-			if (commitSha) lines.push(`Commit: ${commitSha.slice(0, 7)}`);
-			if (errors.length > 0) {
-				lines.push("");
-				lines.push(`⚠️ ${errors.length} issue${errors.length !== 1 ? "s" : ""}:`);
-				lines.push(...errors.map(e => `  - ${e}`));
-			}
-
-			ctx.ui.notify(lines.join("\n"), errors.length > 0 ? "warning" : "info");
-			log("pr-fix-resolve", { prNumber: prInfo.number, resolved, total: threads.length, errors: errors.length });
+			const { prInfo, threads, cwd } = activePrFix;
+			activePrFix = null;
+			await resolveAndSummarize(prInfo, threads, cwd, ctx, log);
 		},
 	});
 }
 
 // ── State ───────────────────────────────────────────────────────
 
-let pendingThreads: { prInfo: PrInfo; threads: ReviewThread[] } | null = null;
+let activePrFix: { prInfo: PrInfo; threads: ReviewThread[]; cwd: string } | null = null;
 
-export function resetPendingThreads(): void {
-	pendingThreads = null;
+export function resetPrFixState(): void {
+	activePrFix = null;
 }

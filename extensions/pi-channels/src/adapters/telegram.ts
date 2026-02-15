@@ -8,7 +8,8 @@
  *   - Text messages
  *   - Photos (downloaded → temp file → passed as image attachment)
  *   - Documents (text files downloaded → content included in message)
- *   - File size validation (max 1MB)
+ *   - Voice messages (downloaded → transcribed → passed as text)
+ *   - File size validation (1MB for docs/photos, 10MB for voice/audio)
  *   - MIME type filtering (text-like files only for documents)
  *
  * Config (in settings.json under pi-channels.adapters.telegram):
@@ -32,10 +33,13 @@ import type {
 	OnIncomingMessage,
 	IncomingMessage,
 	IncomingAttachment,
+	TranscriptionConfig,
 } from "../types.ts";
+import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.ts";
 
 const MAX_LENGTH = 4096;
 const MAX_FILE_SIZE = 1_048_576; // 1MB
+const MAX_AUDIO_SIZE = 10_485_760; // 10MB — voice/audio files are larger
 
 /** MIME types we treat as text documents (content inlined into the prompt). */
 const TEXT_MIME_TYPES = new Set([
@@ -91,6 +95,17 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 		throw new Error("Telegram adapter requires botToken");
 	}
 
+	// ── Transcription setup ─────────────────────────────────
+	const transcriptionConfig = config.transcription as TranscriptionConfig | undefined;
+	let transcriber: TranscriptionProvider | null = null;
+	if (transcriptionConfig?.enabled) {
+		try {
+			transcriber = createTranscriptionProvider(transcriptionConfig);
+		} catch {
+			// Config error — transcription will be unavailable
+		}
+	}
+
 	const apiBase = `https://api.telegram.org/bot${botToken}`;
 	let offset = 0;
 	let running = false;
@@ -133,7 +148,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 	 * Download a file from Telegram by file_id.
 	 * Returns { path, size } or null on failure.
 	 */
-	async function downloadFile(fileId: string, suggestedName?: string): Promise<{ localPath: string; size: number } | null> {
+	async function downloadFile(fileId: string, suggestedName?: string, maxSize = MAX_FILE_SIZE): Promise<{ localPath: string; size: number } | null> {
 		try {
 			// Get file info
 			const infoRes = await fetch(`${apiBase}/getFile?file_id=${fileId}`);
@@ -148,7 +163,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			const fileSize = info.result.file_size ?? 0;
 
 			// Size check before downloading
-			if (fileSize > MAX_FILE_SIZE) return null;
+			if (fileSize > maxSize) return null;
 
 			// Download
 			const fileUrl = `https://api.telegram.org/file/bot${botToken}/${info.result.file_path}`;
@@ -158,7 +173,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			const buffer = Buffer.from(await fileRes.arrayBuffer());
 
 			// Double-check size after download
-			if (buffer.length > MAX_FILE_SIZE) return null;
+			if (buffer.length > maxSize) return null;
 
 			// Write to temp file
 			const ext = path.extname(info.result.file_path) || path.extname(suggestedName || "") || "";
@@ -363,6 +378,57 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			};
 		}
 
+		// ── Voice message ──────────────────────────────────
+		if (msg.voice) {
+			const voice = msg.voice;
+
+			if (!transcriber) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: "⚠️ Voice messages are not supported. Please type your message.",
+					metadata: { ...metadata, rejected: true, hasVoice: true },
+				};
+			}
+
+			// Size check
+			if (voice.file_size && voice.file_size > MAX_AUDIO_SIZE) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `⚠️ Voice message too large (${formatSize(voice.file_size)}, max 10MB).`,
+					metadata: { ...metadata, rejected: true, hasVoice: true },
+				};
+			}
+
+			const downloaded = await downloadFile(voice.file_id, "voice.ogg", MAX_AUDIO_SIZE);
+			if (!downloaded) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: "🎤 (voice message — failed to download)",
+					metadata: { ...metadata, hasVoice: true },
+				};
+			}
+
+			const result = await transcriber.transcribe(downloaded.localPath);
+			if (!result.ok || !result.text) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎤 (voice message — transcription failed${result.error ? ": " + result.error : ""})`,
+					metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
+				};
+			}
+
+			return {
+				adapter: "telegram",
+				sender: chatId,
+				text: `🎤 [Voice message]: ${result.text}`,
+				metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
+			};
+		}
+
 		// ── Text ───────────────────────────────────────────
 		if (msg.text) {
 			return {
@@ -373,7 +439,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			};
 		}
 
-		// Unsupported message type (sticker, voice, etc.) — ignore
+		// Unsupported message type (sticker, video, etc.) — ignore
 		return null;
 	}
 
@@ -448,6 +514,13 @@ interface TelegramMessage {
 		file_id: string;
 		file_unique_id: string;
 		file_name?: string;
+		mime_type?: string;
+		file_size?: number;
+	};
+	voice?: {
+		file_id: string;
+		file_unique_id: string;
+		duration: number;
 		mime_type?: string;
 		file_size?: number;
 	};

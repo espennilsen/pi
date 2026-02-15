@@ -71,8 +71,8 @@ function validateFile(filePath: string): TranscriptionResult | null {
 
 // ── Apple Provider ──────────────────────────────────────────────
 
-const SWIFT_HELPER_SRC = path.join(__dirname, "transcribe-apple.swift");
-const SWIFT_HELPER_BIN = path.join(__dirname, "transcribe-apple");
+const SWIFT_HELPER_SRC = path.join(import.meta.dirname, "transcribe-apple.swift");
+const SWIFT_HELPER_BIN = path.join(import.meta.dirname, "transcribe-apple");
 
 class AppleProvider implements TranscriptionProvider {
 	private language: string | undefined;

@@ -58,11 +58,27 @@ interface Draft {
 const drafts = new Map<string, Draft>();
 let draftCounter = 0;
 
+/** Max number of drafts kept in memory */
+const MAX_DRAFTS = 20;
+/** Draft TTL: 30 minutes */
+const DRAFT_TTL_MS = 30 * 60 * 1000;
+
 function createDraft(data: Omit<Draft, "id" | "createdAt">): Draft {
+	// Expire old drafts
+	const now = Date.now();
+	for (const [id, d] of drafts) {
+		if (now - d.createdAt > DRAFT_TTL_MS) drafts.delete(id);
+	}
+	// Evict oldest if at capacity
+	while (drafts.size >= MAX_DRAFTS) {
+		const oldest = drafts.keys().next().value!;
+		drafts.delete(oldest);
+	}
+
 	const draft: Draft = {
 		...data,
 		id: `draft-${++draftCounter}`,
-		createdAt: Date.now(),
+		createdAt: now,
 	};
 	drafts.set(draft.id, draft);
 	return draft;
@@ -244,13 +260,13 @@ export function registerGmailTool(
 							? original.subject
 							: `Re: ${original.subject}`;
 
-						// Extract Message-ID header for In-Reply-To
+						// Use RFC 2822 Message-ID for In-Reply-To/References headers
 						const draft = createDraft({
 							to: original.from,
 							subject: replySubject,
 							body: params.body,
 							threadId: original.threadId,
-							inReplyTo: original.id,
+							inReplyTo: original.messageId || undefined,
 						});
 						return textResult(formatDraftPreview(draft, `Reply to: ${original.from}`));
 					}
@@ -260,7 +276,13 @@ export function registerGmailTool(
 						if (config.readOnly) {
 							return textResult("Gmail is in read-only mode. Write operations are disabled.");
 						}
+						// confirmBeforeSend is enforced by the draft-based flow:
+						// the agent must first compose/reply (creating a draft for user review)
+						// then explicitly call send with the draft_id.
 						if (!params.draft_id) {
+							if (config.confirmBeforeSend) {
+								return textResult("Confirmation required: use compose or reply first to create a draft, then send with the returned draft_id.");
+							}
 							return textResult("Missing required parameter: draft_id. Use compose or reply first to create a draft.");
 						}
 						const draft = drafts.get(params.draft_id);

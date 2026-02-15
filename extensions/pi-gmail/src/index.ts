@@ -21,7 +21,6 @@ import { createGmailAuthFromEnv, type GmailAuth } from "./auth.ts";
 import { GmailClient } from "./client.ts";
 import type { GmailConfig } from "./types.ts";
 import { registerGmailTool } from "./tool.ts";
-import type { GmailConfig } from "./types.ts";
 
 // ── Shared state ────────────────────────────────────────────────
 

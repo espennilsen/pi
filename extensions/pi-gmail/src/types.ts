@@ -9,6 +9,8 @@ export interface GmailMessage {
 	threadId: string;
 	labelIds: string[];
 	snippet: string;
+	/** RFC 2822 Message-ID header (e.g. "<CABx...@mail.gmail.com>") */
+	messageId: string;
 	/** Parsed headers for convenience */
 	from: string;
 	to: string;

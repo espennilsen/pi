@@ -360,6 +360,7 @@ function parseMessage(raw: RawMessage): GmailMessage {
 		threadId: raw.threadId,
 		labelIds: raw.labelIds ?? [],
 		snippet: raw.snippet,
+		messageId: getHeader("Message-ID") || getHeader("Message-Id"),
 		from: getHeader("From"),
 		to: getHeader("To"),
 		subject: getHeader("Subject"),

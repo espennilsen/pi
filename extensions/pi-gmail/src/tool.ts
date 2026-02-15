@@ -29,7 +29,7 @@ import type { GmailMessage, GmailThread, GmailConfig } from "./types.ts";
 // ── Types ───────────────────────────────────────────────────────
 
 interface GmailToolParams {
-	action: "inbox" | "unread" | "search" | "read" | "thread" | "labels" | "compose" | "reply" | "send";
+	action: "inbox" | "unread" | "search" | "read" | "thread" | "labels" | "add-label" | "remove-label" | "compose" | "reply" | "send";
 	query?: string;
 	id?: string;
 	maxResults?: number;
@@ -39,6 +39,7 @@ interface GmailToolParams {
 	cc?: string;
 	bcc?: string;
 	draft_id?: string;
+	label_id?: string;
 }
 
 // ── Draft store (in-memory, per session) ────────────────────────
@@ -62,6 +63,32 @@ let draftCounter = 0;
 const MAX_DRAFTS = 20;
 /** Draft TTL: 30 minutes */
 const DRAFT_TTL_MS = 30 * 60 * 1000;
+
+// ── System label name mapping ───────────────────────────────────
+
+const SYSTEM_LABEL_NAMES: Record<string, string> = {
+	INBOX: "Inbox",
+	SENT: "Sent",
+	DRAFT: "Drafts",
+	TRASH: "Trash",
+	SPAM: "Spam",
+	STARRED: "Starred",
+	IMPORTANT: "Important",
+	UNREAD: "Unread",
+	CATEGORY_PERSONAL: "Personal",
+	CATEGORY_SOCIAL: "Social",
+	CATEGORY_PROMOTIONS: "Promotions",
+	CATEGORY_UPDATES: "Updates",
+	CATEGORY_FORUMS: "Forums",
+	CHAT: "Chat",
+};
+
+function labelDisplayName(label: { id: string; name: string; type: string }): string {
+	if (label.type === "system") {
+		return SYSTEM_LABEL_NAMES[label.id] ?? label.name;
+	}
+	return label.name;
+}
 
 function createDraft(data: Omit<Draft, "id" | "createdAt">): Draft {
 	// Expire old drafts
@@ -97,11 +124,12 @@ export function registerGmailTool(
 		description:
 			"Read, search, compose, and send Gmail. " +
 			"Read: inbox, unread, search (Gmail query), read (message by ID), thread, labels. " +
+			"Labels: add-label (apply label to message), remove-label (remove label from message). " +
 			"Write: compose (create draft), reply (draft reply), send (send a draft by draft_id). " +
 			"Compose and reply only create drafts — use send with the returned draft_id to actually send.",
 		parameters: Type.Object({
 			action: StringEnum(
-				["inbox", "unread", "search", "read", "thread", "labels", "compose", "reply", "send"] as const,
+				["inbox", "unread", "search", "read", "thread", "labels", "add-label", "remove-label", "compose", "reply", "send"] as const,
 				{ description: "Action to perform" },
 			) as any,
 			query: Type.Optional(
@@ -137,6 +165,9 @@ export function registerGmailTool(
 			),
 			draft_id: Type.Optional(
 				Type.String({ description: "Draft ID from compose/reply to send (for send action)" }),
+			),
+			label_id: Type.Optional(
+				Type.String({ description: "Label ID (for add-label/remove-label). Get IDs from the labels action." }),
 			),
 		}) as any,
 
@@ -212,20 +243,45 @@ export function registerGmailTool(
 									l.messagesTotal != null
 										? ` (${l.messagesTotal} messages, ${l.messagesUnread ?? 0} unread)`
 										: "";
-								lines.push(`- **${l.name}**${stats} — id: \`${l.id}\``);
+								lines.push(`- **${labelDisplayName(l)}**${stats} — id: \`${l.id}\``);
 							}
 						}
 
 						lines.push("", "### System Labels");
 						for (const l of systemLabels) {
+							const displayName = labelDisplayName(l);
 							const stats =
 								l.messagesTotal != null
 									? ` (${l.messagesTotal} messages, ${l.messagesUnread ?? 0} unread)`
 									: "";
-							lines.push(`- **${l.name}**${stats} — id: \`${l.id}\``);
+							lines.push(`- **${displayName}**${stats} — id: \`${l.id}\``);
 						}
 
 						return textResult(lines.join("\n"));
+					}
+
+					case "add-label": {
+						const config = getConfig();
+						if (config.readOnly) {
+							return textResult("Gmail is in read-only mode. Write operations are disabled.");
+						}
+						if (!params.id || !params.label_id) {
+							return textResult("Missing required parameters: id (message ID), label_id");
+						}
+						await client.modifyMessageLabels(params.id, [params.label_id]);
+						return textResult(`✅ Label \`${params.label_id}\` added to message \`${params.id}\``);
+					}
+
+					case "remove-label": {
+						const config = getConfig();
+						if (config.readOnly) {
+							return textResult("Gmail is in read-only mode. Write operations are disabled.");
+						}
+						if (!params.id || !params.label_id) {
+							return textResult("Missing required parameters: id (message ID), label_id");
+						}
+						await client.modifyMessageLabels(params.id, undefined, [params.label_id]);
+						return textResult(`✅ Label \`${params.label_id}\` removed from message \`${params.id}\``);
 					}
 
 					case "compose": {

@@ -20,6 +20,7 @@ import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { createGmailAuthFromEnv, type GmailAuth } from "./auth.ts";
 import { GmailClient } from "./client.ts";
 import type { GmailConfig } from "./types.ts";
+import { registerGmailTool } from "./tool.ts";
 
 // ── Shared state ────────────────────────────────────────────────
 
@@ -164,4 +165,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// ── LLM tool ──────────────────────────────────────────────
+
+	registerGmailTool(pi, () => client);
 }

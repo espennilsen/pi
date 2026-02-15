@@ -114,11 +114,13 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 	// ── Transcription setup ─────────────────────────────────
 	const transcriptionConfig = config.transcription as TranscriptionConfig | undefined;
 	let transcriber: TranscriptionProvider | null = null;
+	let transcriberError: string | null = null;
 	if (transcriptionConfig?.enabled) {
 		try {
 			transcriber = createTranscriptionProvider(transcriptionConfig);
-		} catch {
-			// Config error — transcription will be unavailable
+		} catch (err: any) {
+			transcriberError = err.message ?? "Unknown transcription config error";
+			console.error(`[pi-channels] Transcription config error: ${transcriberError}`);
 		}
 	}
 
@@ -391,7 +393,9 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 					return {
 						adapter: "telegram",
 						sender: chatId,
-						text: `⚠️ Audio files are not supported. Please type your message.`,
+						text: transcriberError
+							? `⚠️ Audio transcription misconfigured: ${transcriberError}`
+							: `⚠️ Audio files are not supported. Please type your message.`,
 						metadata: { ...metadata, rejected: true, hasAudio: true },
 					};
 				}
@@ -451,7 +455,9 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				return {
 					adapter: "telegram",
 					sender: chatId,
-					text: "⚠️ Voice messages are not supported. Please type your message.",
+					text: transcriberError
+						? `⚠️ Voice transcription misconfigured: ${transcriberError}`
+						: "⚠️ Voice messages are not supported. Please type your message.",
 					metadata: { ...metadata, rejected: true, hasVoice: true },
 				};
 			}
@@ -502,7 +508,9 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				return {
 					adapter: "telegram",
 					sender: chatId,
-					text: "⚠️ Audio files are not supported. Please type your message.",
+					text: transcriberError
+						? `⚠️ Audio transcription misconfigured: ${transcriberError}`
+						: "⚠️ Audio files are not supported. Please type your message.",
 					metadata: { ...metadata, rejected: true, hasAudio: true },
 				};
 			}

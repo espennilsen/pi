@@ -76,7 +76,7 @@ const SWIFT_HELPER_BIN = path.join(__dirname, "transcribe-apple");
 
 class AppleProvider implements TranscriptionProvider {
 	private language: string | undefined;
-	private compiled = false;
+	private compilePromise: Promise<TranscriptionResult> | null = null;
 
 	constructor(config: TranscriptionConfig) {
 		this.language = config.language;
@@ -90,12 +90,12 @@ class AppleProvider implements TranscriptionProvider {
 		const fileErr = validateFile(filePath);
 		if (fileErr) return fileErr;
 
-		// Compile Swift helper on first use
-		if (!this.compiled) {
-			const compileResult = await this.compileHelper();
-			if (!compileResult.ok) return compileResult;
-			this.compiled = true;
+		// Compile Swift helper on first use (promise-based lock prevents races)
+		if (!this.compilePromise) {
+			this.compilePromise = this.compileHelper();
 		}
+		const compileResult = await this.compilePromise;
+		if (!compileResult.ok) return compileResult;
 
 		const lang = language || this.language;
 		const args = [filePath];

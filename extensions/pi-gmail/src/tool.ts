@@ -19,10 +19,9 @@ import {
 	formatMessageList,
 	formatSearchResult,
 	buildRawMessage,
-	formatSize,
 } from "./formatter.ts";
 import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
-import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
+import type { GmailSettings, GmailMessage } from "./types.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -244,13 +243,13 @@ export function registerGmailTool(
 
 					const email = getAuthenticatedEmail(agentDir);
 					const replyTo = params.reply_all
-						? filterAddresses([from, to].join(", "), email ?? "")  || from
+						? [from, to].filter((a) => a && !a.includes(email ?? "")).join(", ") || from
 						: from;
 
 					const raw = buildRawMessage({
 						from: email ?? undefined,
 						to: replyTo,
-						cc: params.reply_all ? filterAddresses(getHeader("Cc"), email ?? "") || undefined : undefined,
+						cc: params.reply_all ? getHeader("Cc") : undefined,
 						subject: subject.startsWith("Re:") ? subject : `Re: ${subject}`,
 						body: params.body,
 						inReplyTo: messageId,
@@ -315,26 +314,20 @@ export function registerGmailTool(
 					const drafts = await client.listDrafts(settings, agentDir, maxResults);
 					if (drafts.length === 0) return text("No drafts.");
 
-					// Fetch full drafts in parallel (batches of 10)
-					const fullDrafts = await fetchDrafts(settings, agentDir, drafts.map((d) => d.id));
-					const lines = fullDrafts.map((full) => {
+					// Fetch full drafts for display
+					const lines: string[] = [];
+					for (const d of drafts) {
+						const full = await client.getDraft(settings, agentDir, d.id);
 						const headers = full.message?.payload?.headers ?? [];
 						const to = headers.find((h) => h.name.toLowerCase() === "to")?.value ?? "";
 						const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value ?? "(no subject)";
-						return `- **${subject}** → ${to} (draft ID: ${full.id})`;
-					});
+						lines.push(`- **${subject}** → ${to} (draft ID: ${d.id})`);
+					}
 					return text(`**Drafts (${drafts.length}):**\n\n${lines.join("\n")}`);
 				}
 
 				case "delete_draft": {
 					if (!params.draft_id) return text("Missing required field: draft_id");
-
-					const confirmed = await ctx.ui.confirm(
-						"Delete draft?",
-						`Permanently delete draft ${params.draft_id}?`,
-					);
-					if (!confirmed) return text("❌ Delete cancelled by user.");
-
 					await client.deleteDraft(settings, agentDir, params.draft_id);
 					return text(`✓ Draft ${params.draft_id} deleted.`);
 				}
@@ -365,7 +358,6 @@ export function registerGmailTool(
 					);
 					if (!confirmed) return text("❌ Trash cancelled.");
 
-					// Use dedicated trash endpoint for proper trash lifecycle (30-day auto-delete)
 					for (const msgId of msgIds) {
 						await client.trashMessage(settings, agentDir, msgId);
 					}
@@ -431,27 +423,20 @@ export function registerGmailTool(
 					if (!savePath) {
 						// Try to get filename from the message
 						const msg = await client.getMessage(settings, agentDir, params.id);
-						const rawFilename = findAttachmentFilename(msg, params.attachment_id) ?? `attachment-${params.attachment_id}`;
-						// Sanitize: strip path separators and ".." segments from email-sourced filename
-						const sanitized = rawFilename.replace(/\.\./g, "_").replace(/[/\\]/g, "_");
-						savePath = path.join(ctx.cwd, sanitized);
+						const filename = findAttachmentFilename(msg, params.attachment_id) ?? `attachment-${params.attachment_id}`;
+						savePath = path.join(ctx.cwd, filename);
 					}
 
-					// Resolve and normalize path (handles ".." segments in both relative and absolute paths)
-					// Strip leading "@" or "@/" — pi tool convention where "@" is a cwd-relative prefix
-					savePath = savePath.replace(/^@\/?/, "");
-					savePath = path.resolve(ctx.cwd, savePath);
-
-					// Prevent path traversal — normalized path must stay within cwd
-					const resolvedCwd = path.resolve(ctx.cwd);
-					if (!savePath.startsWith(resolvedCwd + path.sep) && savePath !== resolvedCwd) {
-						return text(`❌ Path traversal blocked: resolved path "${savePath}" is outside working directory.`);
+					// Resolve path
+					savePath = savePath.replace(/^@/, "");
+					if (!path.isAbsolute(savePath)) {
+						savePath = path.resolve(ctx.cwd, savePath);
 					}
 
 					fs.mkdirSync(path.dirname(savePath), { recursive: true });
 					fs.writeFileSync(savePath, data);
 
-					return text(`✓ Attachment saved to: ${savePath} (${formatSize(data.length)})`);
+					return text(`✓ Attachment saved to: ${savePath} (${formatAttachmentSize(data.length)})`);
 				}
 
 				default:
@@ -483,69 +468,6 @@ async function fetchMessages(
 	return results;
 }
 
-async function fetchDrafts(
-	settings: GmailSettings,
-	agentDir: string,
-	ids: string[],
-): Promise<GmailDraft[]> {
-	const results: GmailDraft[] = [];
-	const batchSize = 10;
-
-	for (let i = 0; i < ids.length; i += batchSize) {
-		const batch = ids.slice(i, i + batchSize);
-		const fetched = await Promise.all(
-			batch.map((id) => client.getDraft(settings, agentDir, id)),
-		);
-		results.push(...fetched);
-	}
-
-	return results;
-}
-
-/**
- * Split an RFC 5322 address list on commas, respecting quoted strings.
- * e.g. `"Doe, John" <john@x.com>, other@x.com` → [`"Doe, John" <john@x.com>`, `other@x.com`]
- */
-function splitAddresses(header: string): string[] {
-	const addresses: string[] = [];
-	let current = "";
-	let inQuotes = false;
-
-	for (let i = 0; i < header.length; i++) {
-		const ch = header[i]!;
-		if (ch === '"' && (i === 0 || header[i - 1] !== "\\")) {
-			inQuotes = !inQuotes;
-		}
-		if (ch === "," && !inQuotes) {
-			const trimmed = current.trim();
-			if (trimmed) addresses.push(trimmed);
-			current = "";
-		} else {
-			current += ch;
-		}
-	}
-	const trimmed = current.trim();
-	if (trimmed) addresses.push(trimmed);
-
-	return addresses;
-}
-
-/**
- * Parse an address list, filter out the user's own email, and recombine.
- * Handles RFC 5322 quoted display names with commas.
- */
-function filterAddresses(header: string, userEmail: string): string {
-	if (!header || !userEmail) return header;
-	const extractEmail = (addr: string): string => {
-		const match = addr.match(/<([^>]+)>/);
-		return (match ? match[1]! : addr).trim().toLowerCase();
-	};
-	const myEmail = userEmail.toLowerCase();
-	return splitAddresses(header)
-		.filter((a) => extractEmail(a) !== myEmail)
-		.join(", ");
-}
-
 function findAttachmentFilename(msg: GmailMessage, attachmentId: string): string | null {
 	function search(part: any): string | null {
 		if (part.body?.attachmentId === attachmentId && part.filename) {
@@ -562,4 +484,9 @@ function findAttachmentFilename(msg: GmailMessage, attachmentId: string): string
 	return msg.payload ? search(msg.payload) : null;
 }
 
-
+function formatAttachmentSize(bytes: number): string {
+	if (bytes === 0) return "0B";
+	const units = ["B", "KB", "MB", "GB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(1024));
+	return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)}${units[i]}`;
+}

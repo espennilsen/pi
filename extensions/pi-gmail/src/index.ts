@@ -33,11 +33,11 @@ import {
 	getAuthenticatedEmail,
 	getConsentUrl,
 	clearTokens,
+	closeDb,
 } from "./auth.ts";
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
-import { resolveEnv, openUrl } from "./utils.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -57,40 +57,22 @@ function getSettings(cwd: string): FullGmailSettings {
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, any>;
 	const project = sm.getProjectSettings() as Record<string, any>;
-	const globalSettings = global?.["pi-gmail"] ?? {};
-	const projectSettings = project?.["pi-gmail"] ?? {};
 	return {
-		...globalSettings,
-		...projectSettings,
-		// Deep merge nested notifications so project keys don't clobber global defaults
-		notifications: {
-			...globalSettings?.notifications,
-			...projectSettings?.notifications,
-		},
+		...global?.["pi-gmail"],
+		...project?.["pi-gmail"],
 	};
+}
+
+function resolveEnv(value: string | undefined): string {
+	if (!value) return "";
+	if (value.startsWith("env:")) return process.env[value.slice(4)] ?? "";
+	return value;
 }
 
 // ── Notification polling ────────────────────────────────────────
 
-let notificationTimer: ReturnType<typeof setTimeout> | null = null;
+let notificationTimer: ReturnType<typeof setInterval> | null = null;
 let lastCheckTimestamp: number = Date.now();
-let pollGeneration = 0;
-
-// Track notified message IDs to prevent re-notification (capped at 500)
-const MAX_SEEN_IDS = 500;
-const notifiedMessageIds = new Set<string>();
-
-function trackNotified(id: string): void {
-	notifiedMessageIds.add(id);
-	// Evict oldest entries when set grows too large
-	if (notifiedMessageIds.size > MAX_SEEN_IDS) {
-		const iter = notifiedMessageIds.values();
-		const toRemove = notifiedMessageIds.size - MAX_SEEN_IDS;
-		for (let i = 0; i < toRemove; i++) {
-			notifiedMessageIds.delete(iter.next().value!);
-		}
-	}
-}
 
 function startNotifications(
 	pi: ExtensionAPI,
@@ -98,71 +80,52 @@ function startNotifications(
 	agentDir: string,
 	log: ReturnType<typeof createLogger>,
 ): void {
-	if (notificationTimer !== null) return; // already polling
 	const notif = settings.notifications;
 	if (!notif?.enabled) return;
 
 	const intervalMs = (notif.intervalMinutes ?? 5) * 60 * 1000;
 	const query = notif.query ?? "is:unread";
 	const channel = notif.channel ?? "default";
-	const generation = ++pollGeneration;
 
 	log("notifications", { status: "starting", intervalMs, query, channel });
 
-	// Self-scheduling setTimeout pattern to avoid overlapping polls
-	async function poll() {
-		// Quiesce if stop was called or a new generation started
-		if (notificationTimer === null || generation !== pollGeneration) return;
-
+	notificationTimer = setInterval(async () => {
 		try {
 			if (!isAuthenticated(agentDir)) return;
 
-			// Search for new messages since last check (epoch seconds for precise filtering)
-			const afterEpoch = Math.floor(lastCheckTimestamp / 1000);
-			const fullQuery = `${query} after:${afterEpoch}`;
+			// Search for new messages since last check
+			const afterDate = new Date(lastCheckTimestamp);
+			const afterStr = `${afterDate.getFullYear()}/${afterDate.getMonth() + 1}/${afterDate.getDate()}`;
+			const fullQuery = `${query} after:${afterStr}`;
 
-			const list = await client.listMessages(settings, agentDir, fullQuery, 10);
+			const list = await client.listMessages(settings, agentDir, fullQuery, 5);
 			if (list.messages && list.messages.length > 0) {
-				// Filter out already-notified messages
-				const newMessages = list.messages.filter((m) => !notifiedMessageIds.has(m.id));
-				if (newMessages.length > 0) {
-					const messages = await Promise.all(
-						newMessages.slice(0, 5).map((m) =>
-							client.getMessage(settings, agentDir, m.id, "metadata"),
-						),
-					);
+				const messages = await Promise.all(
+					list.messages.slice(0, 5).map((m) =>
+						client.getMessage(settings, agentDir, m.id, "metadata"),
+					),
+				);
 
-					const summary = messages.map((m, i) => formatSearchResult(m, i)).join("\n\n");
-					const text = `📧 **New Gmail messages (${newMessages.length}):**\n\n${summary}`;
+				const summary = messages.map((m, i) => formatSearchResult(m, i)).join("\n\n");
+				const text = `📧 **New Gmail messages (${list.messages.length}):**\n\n${summary}`;
 
-					pi.events.emit("channel:send", {
-						channel,
-						text,
-						source: "pi-gmail",
-					});
-
-					// Mark all fetched messages as seen (not just the displayed ones)
-					for (const m of newMessages) trackNotified(m.id);
-				}
+				pi.events.emit("channel:send", {
+					channel,
+					text,
+					source: "pi-gmail",
+				});
 			}
 
 			lastCheckTimestamp = Date.now();
 		} catch (err: any) {
 			log("notification-error", { error: err.message }, "ERROR");
 		}
-
-		// Schedule next poll only if still active and same generation
-		if (notificationTimer !== null && generation === pollGeneration) {
-			notificationTimer = setTimeout(poll, intervalMs);
-		}
-	}
-
-	notificationTimer = setTimeout(poll, intervalMs);
+	}, intervalMs);
 }
 
 function stopNotifications(): void {
 	if (notificationTimer) {
-		clearTimeout(notificationTimer);
+		clearInterval(notificationTimer);
 		notificationTimer = null;
 	}
 }
@@ -174,7 +137,7 @@ export default function (pi: ExtensionAPI) {
 	let cachedSettings: FullGmailSettings | null = null;
 
 	const getSettingsCached = (): GmailSettings => {
-		if (!cachedSettings) throw new Error("Gmail not initialized. Waiting for session_start.");
+		if (!cachedSettings) cachedSettings = getSettings(".");
 		return cachedSettings;
 	};
 
@@ -219,13 +182,10 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.events.on("gmail:disconnected", () => {
-		stopNotifications();
-	});
-
 	pi.on("session_shutdown", async () => {
 		stopNotifications();
 		unmountGmailRoutes(pi.events);
+		closeDb();
 	});
 
 	// ── Commands ────────────────────────────────────────────────
@@ -258,7 +218,8 @@ export default function (pi: ExtensionAPI) {
 				// Open browser to auth page
 				const url = `http://localhost:${webPort}/gmail/auth`;
 				ctx.ui.notify(`Opening browser: ${url}`, "info");
-				openUrl(url);
+				const { exec: execCmd } = await import("node:child_process");
+				execCmd(`open "${url}"`, () => {});
 			} else {
 				// No webserver — show the URL for manual copy
 				try {
@@ -293,7 +254,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (!confirmed) return;
 
-			await clearTokens(agentDir);
+			clearTokens(agentDir);
 			stopNotifications();
 			ctx.ui.setStatus("gmail", "Gmail: not connected");
 			ctx.ui.notify(`Gmail disconnected (${email}).`, "info");

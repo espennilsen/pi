@@ -15,10 +15,7 @@ import {
 	isAuthenticated,
 	getAuthenticatedEmail,
 	clearTokens,
-	verifyOAuthState,
 } from "./auth.ts";
-import * as crypto from "node:crypto";
-import { escapeHtml } from "./utils.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -57,26 +54,9 @@ function getRedirectUri(): string {
 	return `http://localhost:${serverPort}/gmail/callback`;
 }
 
-// ── CSRF token for logout form ──────────────────────────────────
-
-let logoutCsrfToken: string | null = null;
-
-function generateLogoutCsrf(): string {
-	logoutCsrfToken = crypto.randomBytes(32).toString("hex");
-	return logoutCsrfToken;
-}
-
-function verifyLogoutCsrf(token: string | null): boolean {
-	if (!token || !logoutCsrfToken) return false;
-	const tokenBuf = Buffer.from(token);
-	const expectedBuf = Buffer.from(logoutCsrfToken);
-	if (tokenBuf.length !== expectedBuf.length) return false;
-	return crypto.timingSafeEqual(tokenBuf, expectedBuf);
-}
-
 // ── HTML pages ──────────────────────────────────────────────────
 
-function authStatusPage(authenticated: boolean, email: string | null, csrfToken: string): string {
+function authStatusPage(authenticated: boolean, email: string | null): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -101,13 +81,10 @@ function authStatusPage(authenticated: boolean, email: string | null, csrfToken:
 ${
 	authenticated
 		? `<div class="status connected">
-			<p>✅ <strong>Connected</strong> as <code>${escapeHtml(email ?? "")}</code></p>
+			<p>✅ <strong>Connected</strong> as <code>${email}</code></p>
 		</div>
-		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a></p>
-		<form method="POST" action="/gmail/logout" style="display:inline">
-			<input type="hidden" name="_csrf" value="${csrfToken}" />
-			<button type="submit" class="btn btn-danger" style="border:none;cursor:pointer;font-size:inherit">Disconnect</button>
-		</form>`
+		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a>
+		<a href="/gmail/logout" class="btn btn-danger">Disconnect</a></p>`
 		: `<div class="status disconnected">
 			<p>⚠️ <strong>Not connected</strong></p>
 			<p>Click below to authorize pi to access your Gmail account.</p>
@@ -149,7 +126,7 @@ function successPage(email: string): string {
 <body>
 <div class="success">
   <h1>✅ Gmail Connected!</h1>
-  <p>Authenticated as <code>${escapeHtml(email)}</code></p>
+  <p>Authenticated as <code>${email}</code></p>
   <p>You can close this tab and return to pi.</p>
 </div>
 </body>
@@ -171,7 +148,7 @@ function errorPage(error: string): string {
 <body>
 <div class="error">
   <h1>❌ Authentication Failed</h1>
-  <p>${escapeHtml(error)}</p>
+  <p>${error}</p>
   <p><a href="/gmail">Try again</a></p>
 </div>
 </body>
@@ -204,8 +181,7 @@ export function mountGmailRoutes(
 			if (req.method === "GET" && p === "/") {
 				const authed = isAuthenticated(agentDir);
 				const email = getAuthenticatedEmail(agentDir);
-				const csrf = generateLogoutCsrf();
-				html(res, authStatusPage(authed, email, csrf));
+				html(res, authStatusPage(authed, email));
 				return;
 			}
 
@@ -226,15 +202,9 @@ export function mountGmailRoutes(
 				const url = new URL(req.url ?? "/", `http://localhost:${serverPort}`);
 				const code = url.searchParams.get("code");
 				const error = url.searchParams.get("error");
-				const state = url.searchParams.get("state");
 
 				if (error) {
 					html(res, errorPage(`Google returned error: ${error}`));
-					return;
-				}
-
-				if (!verifyOAuthState(state)) {
-					html(res, errorPage("Invalid or missing OAuth state parameter. Please try again."), 403);
 					return;
 				}
 
@@ -252,28 +222,9 @@ export function mountGmailRoutes(
 				return;
 			}
 
-			// Logout (POST with CSRF token validation)
-			if (req.method === "POST" && p === "/logout") {
-				// Parse URL-encoded form body to extract CSRF token (capped at 4KB)
-				const body = await new Promise<string>((resolve, reject) => {
-					let data = "";
-					req.on("data", (chunk: Buffer) => {
-						data += chunk.toString();
-						if (data.length > 4096) { req.destroy(); reject(new Error("Body too large")); }
-					});
-					req.on("end", () => resolve(data));
-					req.on("error", reject);
-				}).catch(() => "");
-				const params = new URLSearchParams(body);
-				const csrfToken = params.get("_csrf");
-
-				if (!verifyLogoutCsrf(csrfToken)) {
-					html(res, errorPage("Invalid CSRF token. Please go back and try again."), 403);
-					return;
-				}
-
-				await clearTokens(agentDir);
-				bus.emit("gmail:disconnected", {});
+			// Logout
+			if (req.method === "GET" && p === "/logout") {
+				clearTokens(agentDir);
 				res.writeHead(302, { Location: "/gmail" });
 				res.end();
 				return;

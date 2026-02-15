@@ -7,13 +7,13 @@ description: Gmail extension for pi — search, read, compose, send, and manage 
 
 Self-contained pi extension providing full Gmail integration via Google's REST API. OAuth 2.0 auth with token persistence, LLM tool for email operations, web-based auth flow, and optional email notifications via pi-channels.
 
-**Stack:** TypeScript · Gmail API v1 REST · OAuth 2.0
+**Stack:** TypeScript · better-sqlite3 · Gmail API v1 REST · OAuth 2.0
 
 ## Architecture
 
 - `src/index.ts` — Extension entry point. Registers tool, commands, mounts web routes, starts notifications.
 - `src/types.ts` — All shared types: OAuthTokens, GmailMessage, GmailThread, GmailLabel, ParsedEmail, etc.
-- `src/auth.ts` — OAuth 2.0 flow: consent URL generation, code exchange, token storage (JSON file), auto-refresh.
+- `src/auth.ts` — OAuth 2.0 flow: consent URL generation, code exchange, token storage (SQLite), auto-refresh.
 - `src/client.ts` — Thin REST client over Gmail API v1. Direct fetch calls, no SDK dependency.
 - `src/tool.ts` — LLM tool with 18 actions: search, read, read_thread, list_inbox, list_unread, list_labels, compose, reply, send, send_draft, list_drafts, delete_draft, archive, trash, label, mark_read, mark_unread, download_attachment.
 - `src/formatter.ts` — Converts raw Gmail API responses to clean markdown for LLM. HTML stripping, body truncation, thread formatting, RFC 2822 message builder.
@@ -25,12 +25,14 @@ Self-contained pi extension providing full Gmail integration via Google's REST A
 - **No SDK dependency** — Direct REST via `fetch` to `gmail.googleapis.com/gmail/v1/users/me/*`.
 - **No direct imports** between extensions — all integration via event bus (`web:mount`, `web:mount-api`, `web:ready`, `channel:send`).
 - **Safety gates** — `send`, `send_draft`, `archive`, `trash` actions require `ctx.ui.confirm()` before execution.
-- **Token auto-refresh** — Access tokens refreshed 5 minutes before expiry; refresh tokens persisted in JSON file (`db/gmail-tokens.json`).
+- **Token auto-refresh** — Access tokens refreshed 5 minutes before expiry; refresh tokens persisted in SQLite.
 - **Single tool, multi-action** — One `gmail` tool with StringEnum action parameter (same pattern as pi-calendar).
 
-## Token Storage
+## DB Schema
 
-OAuth tokens persisted as `db/gmail-tokens.json` under agent home directory. Simple JSON file — no database dependency.
+- `gmail_tokens` — id (PK, always 1), email, access_token, refresh_token, expires_at, scope, updated_at
+
+Stored in `db/gmail.db` under agent home directory.
 
 ## Settings
 
@@ -68,5 +70,7 @@ OAuth tokens persisted as `db/gmail-tokens.json` under agent home directory. Sim
 ## Conventions
 
 - No console.log — use logger.
+- Parameterized queries only in SQLite.
+- WAL mode enabled.
 - Tool output truncated to stay under 50KB context limit.
 - `env:VAR_NAME` pattern for secrets in settings.

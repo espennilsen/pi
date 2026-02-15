@@ -2,17 +2,16 @@
  * OAuth 2.0 authentication for Gmail API.
  *
  * Handles:
- *   - Token storage in a JSON file (~/.pi/agent/db/gmail-tokens.json)
+ *   - Token storage in SQLite (db/gmail.db)
  *   - OAuth consent URL generation
  *   - Authorization code exchange
  *   - Automatic access token refresh
  */
 
+import Database from "better-sqlite3";
 import * as path from "node:path";
 import * as fs from "node:fs";
-import * as crypto from "node:crypto";
 import type { OAuthTokens, GmailSettings } from "./types.ts";
-import { resolveEnv } from "./utils.ts";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -26,42 +25,34 @@ const SCOPES = [
 
 // Token refresh buffer — refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
-const TOKENS_FILENAME = "gmail-tokens.json";
 
+let db: Database.Database | null = null;
 let cachedTokens: OAuthTokens | null = null;
 
-// ── OAuth state for CSRF protection ─────────────────────────────
+// ── DB setup ────────────────────────────────────────────────────
 
-let pendingOAuthState: string | null = null;
+function getDb(agentDir: string): Database.Database {
+	if (db) return db;
 
-export function generateOAuthState(): string {
-	const state = crypto.randomBytes(32).toString("hex");
-	pendingOAuthState = state;
-	return state;
-}
+	const dbPath = path.join(agentDir, "db", "gmail.db");
+	fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-export function verifyOAuthState(state: string | null): boolean {
-	if (!state || !pendingOAuthState) return false;
-	const stateBuffer = Buffer.from(state);
-	const expectedBuffer = Buffer.from(pendingOAuthState);
-	// timingSafeEqual throws RangeError if lengths differ
-	if (stateBuffer.length !== expectedBuffer.length) {
-		pendingOAuthState = null;
-		return false;
-	}
-	const valid = crypto.timingSafeEqual(stateBuffer, expectedBuffer);
-	pendingOAuthState = null; // consume — single use
-	return valid;
-}
+	db = new Database(dbPath);
+	db.pragma("journal_mode = WAL");
 
-// ── Token refresh mutex ─────────────────────────────────────────
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS gmail_tokens (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			email TEXT NOT NULL,
+			access_token TEXT NOT NULL,
+			refresh_token TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			scope TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)
+	`);
 
-let refreshPromise: Promise<string> | null = null;
-
-// ── Token file path ─────────────────────────────────────────────
-
-function getTokensPath(agentDir: string): string {
-	return path.join(agentDir, "db", TOKENS_FILENAME);
+	return db;
 }
 
 // ── Token storage ───────────────────────────────────────────────
@@ -69,43 +60,39 @@ function getTokensPath(agentDir: string): string {
 export function loadTokens(agentDir: string): OAuthTokens | null {
 	if (cachedTokens) return cachedTokens;
 
-	const tokensPath = getTokensPath(agentDir);
-	try {
-		const data = fs.readFileSync(tokensPath, "utf-8");
-		cachedTokens = JSON.parse(data) as OAuthTokens;
-		return cachedTokens;
-	} catch {
-		return null;
-	}
+	const d = getDb(agentDir);
+	const row = d.prepare("SELECT * FROM gmail_tokens WHERE id = 1").get() as any;
+	if (!row) return null;
+
+	cachedTokens = {
+		email: row.email,
+		access_token: row.access_token,
+		refresh_token: row.refresh_token,
+		expires_at: row.expires_at,
+		scope: row.scope,
+	};
+	return cachedTokens;
 }
 
 export function saveTokens(agentDir: string, tokens: OAuthTokens): void {
-	const tokensPath = getTokensPath(agentDir);
-	fs.mkdirSync(path.dirname(tokensPath), { recursive: true });
-	fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2), { encoding: "utf-8", mode: 0o600 });
+	const d = getDb(agentDir);
+	d.prepare(`
+		INSERT INTO gmail_tokens (id, email, access_token, refresh_token, expires_at, scope)
+		VALUES (1, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			email = excluded.email,
+			access_token = excluded.access_token,
+			refresh_token = excluded.refresh_token,
+			expires_at = excluded.expires_at,
+			scope = excluded.scope,
+			updated_at = datetime('now')
+	`).run(tokens.email, tokens.access_token, tokens.refresh_token, tokens.expires_at, tokens.scope);
 	cachedTokens = tokens;
 }
 
-export async function clearTokens(agentDir: string): Promise<void> {
-	// Revoke refresh token at Google before deleting locally
-	const tokens = loadTokens(agentDir);
-	if (tokens?.refresh_token) {
-		try {
-			await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tokens.refresh_token)}`, {
-				method: "POST",
-				headers: { "Content-Type": "application/x-www-form-urlencoded" },
-			});
-		} catch {
-			// Best-effort — continue with local cleanup
-		}
-	}
-
-	const tokensPath = getTokensPath(agentDir);
-	try {
-		fs.unlinkSync(tokensPath);
-	} catch {
-		// file may not exist
-	}
+export function clearTokens(agentDir: string): void {
+	const d = getDb(agentDir);
+	d.prepare("DELETE FROM gmail_tokens WHERE id = 1").run();
 	cachedTokens = null;
 }
 
@@ -115,8 +102,6 @@ export function getConsentUrl(settings: GmailSettings, redirectUri: string): str
 	const clientId = resolveEnv(settings.clientId ?? "");
 	if (!clientId) throw new Error("Gmail clientId not configured");
 
-	const state = generateOAuthState();
-
 	const params = new URLSearchParams({
 		client_id: clientId,
 		redirect_uri: redirectUri,
@@ -124,7 +109,6 @@ export function getConsentUrl(settings: GmailSettings, redirectUri: string): str
 		scope: SCOPES,
 		access_type: "offline",
 		prompt: "consent",
-		state,
 	});
 
 	return `${GOOGLE_AUTH_URL}?${params.toString()}`;
@@ -191,21 +175,7 @@ export async function getAccessToken(
 		return tokens.access_token;
 	}
 
-	// Use mutex to prevent concurrent refresh races
-	if (refreshPromise) return refreshPromise;
-
-	refreshPromise = refreshAccessToken(settings, agentDir, tokens).finally(() => {
-		refreshPromise = null;
-	});
-
-	return refreshPromise;
-}
-
-async function refreshAccessToken(
-	settings: GmailSettings,
-	agentDir: string,
-	tokens: OAuthTokens,
-): Promise<string> {
+	// Refresh the token
 	const clientId = resolveEnv(settings.clientId ?? "");
 	const clientSecret = resolveEnv(settings.clientSecret ?? "");
 
@@ -226,12 +196,6 @@ async function refreshAccessToken(
 
 	if (!resp.ok) {
 		const err = await resp.text();
-		// On 4xx errors (revoked token, invalid grant), clear stale tokens
-		// to break the retry loop and guide the user to re-authenticate
-		if (resp.status >= 400 && resp.status < 500) {
-			await clearTokens(agentDir);
-			throw new Error(`Gmail refresh token revoked or invalid (${resp.status}). Run /gmail-auth to reconnect.`);
-		}
 		throw new Error(`Token refresh failed: ${resp.status} ${err}`);
 	}
 
@@ -271,4 +235,19 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 	if (!resp.ok) return "unknown";
 	const data = await resp.json() as any;
 	return data.email ?? "unknown";
+}
+
+function resolveEnv(value: string): string {
+	if (value.startsWith("env:")) {
+		return process.env[value.slice(4)] ?? "";
+	}
+	return value;
+}
+
+export function closeDb(): void {
+	if (db) {
+		db.close();
+		db = null;
+	}
+	cachedTokens = null;
 }

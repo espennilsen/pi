@@ -75,7 +75,7 @@ export async function getMessage(
 	id: string,
 	format: "full" | "metadata" | "minimal" | "raw" = "full",
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}?format=${format}`);
+	return gmailFetch(settings, agentDir, `/messages/${id}?format=${format}`);
 }
 
 export async function getThread(
@@ -84,7 +84,7 @@ export async function getThread(
 	id: string,
 	format: "full" | "metadata" | "minimal" = "full",
 ): Promise<GmailThread> {
-	return gmailFetch(settings, agentDir, `/threads/${encodeURIComponent(id)}?format=${format}`);
+	return gmailFetch(settings, agentDir, `/threads/${id}?format=${format}`);
 }
 
 // ── Labels ──────────────────────────────────────────────────────
@@ -97,18 +97,6 @@ export async function listLabels(
 	return data.labels ?? [];
 }
 
-// ── Trash ────────────────────────────────────────────────────────
-
-export async function trashMessage(
-	settings: GmailSettings,
-	agentDir: string,
-	id: string,
-): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/trash`, {
-		method: "POST",
-	});
-}
-
 // ── Modify messages ─────────────────────────────────────────────
 
 export async function modifyMessage(
@@ -118,7 +106,7 @@ export async function modifyMessage(
 	addLabelIds?: string[],
 	removeLabelIds?: string[],
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/modify`, {
+	return gmailFetch(settings, agentDir, `/messages/${id}/modify`, {
 		method: "POST",
 		body: JSON.stringify({
 			addLabelIds: addLabelIds ?? [],
@@ -127,6 +115,25 @@ export async function modifyMessage(
 	});
 }
 
+export async function trashMessage(
+	settings: GmailSettings,
+	agentDir: string,
+	id: string,
+): Promise<GmailMessage> {
+	return gmailFetch(settings, agentDir, `/messages/${id}/trash`, {
+		method: "POST",
+	});
+}
+
+export async function untrashMessage(
+	settings: GmailSettings,
+	agentDir: string,
+	id: string,
+): Promise<GmailMessage> {
+	return gmailFetch(settings, agentDir, `/messages/${id}/untrash`, {
+		method: "POST",
+	});
+}
 
 // ── Send ────────────────────────────────────────────────────────
 
@@ -187,7 +194,7 @@ export async function getDraft(
 	agentDir: string,
 	draftId: string,
 ): Promise<GmailDraft> {
-	return gmailFetch(settings, agentDir, `/drafts/${encodeURIComponent(draftId)}?format=full`);
+	return gmailFetch(settings, agentDir, `/drafts/${draftId}?format=full`);
 }
 
 export async function deleteDraft(
@@ -195,7 +202,7 @@ export async function deleteDraft(
 	agentDir: string,
 	draftId: string,
 ): Promise<void> {
-	await gmailFetch(settings, agentDir, `/drafts/${encodeURIComponent(draftId)}`, {
+	await gmailFetch(settings, agentDir, `/drafts/${draftId}`, {
 		method: "DELETE",
 	});
 }
@@ -211,7 +218,7 @@ export async function getAttachment(
 	return gmailFetch(
 		settings,
 		agentDir,
-		`/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+		`/messages/${messageId}/attachments/${attachmentId}`,
 	);
 }
 

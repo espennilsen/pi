@@ -284,6 +284,8 @@
     <div class="toolbar">
       <h2>Vendors</h2>
       <input type="text" id="vendor-search" class="search-box" placeholder="Search vendors...">
+      <select id="vendor-country-filter" class="filter"><option value="">All Countries</option></select>
+      <select id="vendor-category-filter" class="filter"><option value="">All Categories</option></select>
       <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--fg2);cursor:pointer">
         <input type="checkbox" id="vendor-show-ignored"> Show ignored
       </label>
@@ -1936,14 +1938,59 @@ function vendorSortIndicator(col) {
 async function loadVendors() {
   const includeIgnored = document.getElementById('vendor-show-ignored').checked;
   vendors = await API.get('/vendors?include_ignored=' + includeIgnored);
+  populateVendorFilters();
   renderVendorTable();
+}
+
+function populateVendorFilters() {
+  // Country filter
+  const countryFilter = document.getElementById('vendor-country-filter');
+  const prevCountry = countryFilter.value;
+  const countries = [...new Set(vendors.map(v => v.country).filter(Boolean))].sort();
+  countryFilter.innerHTML = '<option value="">All Countries</option>';
+  countries.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    countryFilter.appendChild(opt);
+  });
+  countryFilter.value = prevCountry;
+
+  // Category filter
+  const catFilter = document.getElementById('vendor-category-filter');
+  const prevCat = catFilter.value;
+  const cats = [...new Map(vendors.filter(v => v.category_name).map(v => [v.category_id, v.category_name])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  catFilter.innerHTML = '<option value="">All Categories</option>';
+  const noCatOpt = document.createElement('option');
+  noCatOpt.value = 'none';
+  noCatOpt.textContent = '— Uncategorized —';
+  catFilter.appendChild(noCatOpt);
+  cats.forEach(([id, name]) => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = name;
+    catFilter.appendChild(opt);
+  });
+  catFilter.value = prevCat;
 }
 
 function renderVendorTable() {
   const search = (document.getElementById('vendor-search').value || '').toLowerCase();
-  let filtered = search
-    ? vendors.filter(v => v.name.toLowerCase().includes(search) || (v.country || '').toLowerCase().includes(search))
-    : [...vendors];
+  const countryVal = document.getElementById('vendor-country-filter').value;
+  const categoryVal = document.getElementById('vendor-category-filter').value;
+
+  let filtered = [...vendors];
+  if (search) {
+    filtered = filtered.filter(v => v.name.toLowerCase().includes(search) || (v.country || '').toLowerCase().includes(search));
+  }
+  if (countryVal) {
+    filtered = filtered.filter(v => v.country === countryVal);
+  }
+  if (categoryVal === 'none') {
+    filtered = filtered.filter(v => !v.category_id);
+  } else if (categoryVal) {
+    filtered = filtered.filter(v => v.category_id === parseInt(categoryVal));
+  }
 
   const el = document.getElementById('vendor-table');
   if (filtered.length === 0) {
@@ -1994,6 +2041,8 @@ function renderVendorTable() {
 }
 
 document.getElementById('vendor-search').addEventListener('input', renderVendorTable);
+document.getElementById('vendor-country-filter').addEventListener('change', renderVendorTable);
+document.getElementById('vendor-category-filter').addEventListener('change', renderVendorTable);
 document.getElementById('vendor-show-ignored').addEventListener('change', loadVendors);
 
 function openAddVendor() {

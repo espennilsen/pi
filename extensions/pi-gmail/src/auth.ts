@@ -43,6 +43,8 @@ interface CachedToken {
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+const LOOPBACK_PORT = 8914;
+const LOOPBACK_REDIRECT = `http://127.0.0.1:${LOOPBACK_PORT}`;
 
 /** Buffer before expiry to refresh proactively (5 minutes) */
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -54,6 +56,8 @@ const DEFAULT_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 export class GmailAuth {
 	private config: GmailAuthConfig;
 	private cachedToken: CachedToken | null = null;
+	/** Pending refresh promise — deduplicates concurrent refresh calls */
+	private refreshPromise: Promise<string> | null = null;
 
 	constructor(config: GmailAuthConfig) {
 		this.config = config;
@@ -61,7 +65,7 @@ export class GmailAuth {
 
 	/**
 	 * Get a valid access token. Returns cached token if still valid,
-	 * otherwise refreshes automatically.
+	 * otherwise refreshes automatically. Concurrent calls are deduplicated.
 	 */
 	async getAccessToken(): Promise<string> {
 		if (this.cachedToken && Date.now() < this.cachedToken.expiresAt - EXPIRY_BUFFER_MS) {
@@ -83,8 +87,21 @@ export class GmailAuth {
 
 	/**
 	 * Force refresh the access token.
+	 * Concurrent calls are deduplicated — only one refresh request fires.
 	 */
 	async refresh(): Promise<string> {
+		if (this.refreshPromise) {
+			return this.refreshPromise;
+		}
+		this.refreshPromise = this.doRefresh();
+		try {
+			return await this.refreshPromise;
+		} finally {
+			this.refreshPromise = null;
+		}
+	}
+
+	private async doRefresh(): Promise<string> {
 		const body = new URLSearchParams({
 			client_id: this.config.clientId,
 			client_secret: this.config.clientSecret,
@@ -113,10 +130,18 @@ export class GmailAuth {
 	}
 
 	/**
-	 * Check if credentials are configured (does not validate them).
+	 * Check if all credentials are configured for normal operation.
 	 */
 	isConfigured(): boolean {
 		return !!(this.config.clientId && this.config.clientSecret && this.config.refreshToken);
+	}
+
+	/**
+	 * Check if client credentials are set (enough to generate consent URL).
+	 * Does not require refreshToken — that's obtained via the auth flow.
+	 */
+	hasClientCredentials(): boolean {
+		return !!(this.config.clientId && this.config.clientSecret);
 	}
 
 	/**
@@ -134,10 +159,10 @@ export class GmailAuth {
 
 	/**
 	 * Generate the OAuth consent URL for initial setup.
-	 * User visits this URL, grants access, gets an auth code,
-	 * then exchanges it for a refresh token via exchangeAuthCode().
+	 * Uses loopback redirect (http://127.0.0.1) — the deprecated OOB flow
+	 * is blocked for new OAuth clients since Oct 2022.
 	 */
-	getConsentUrl(redirectUri: string = "urn:ietf:wg:oauth:2.0:oob"): string {
+	getConsentUrl(redirectUri: string = LOOPBACK_REDIRECT): string {
 		const scopes = [...DEFAULT_SCOPES, ...(this.config.scopes ?? [])];
 		const params = new URLSearchParams({
 			client_id: this.config.clientId,
@@ -151,12 +176,69 @@ export class GmailAuth {
 	}
 
 	/**
+	 * Start a temporary local HTTP server, open the consent URL,
+	 * capture the auth code callback, exchange it for tokens, and shut down.
+	 * Returns the refresh token.
+	 */
+	async authorizeWithLocalServer(): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+		const http = await import("node:http");
+
+		return new Promise((resolve, reject) => {
+			const server = http.createServer(async (req, res) => {
+				const url = new URL(req.url ?? "/", LOOPBACK_REDIRECT);
+				const code = url.searchParams.get("code");
+				const error = url.searchParams.get("error");
+
+				if (error) {
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end(`<h1>Authorization failed</h1><p>${error}</p><p>You can close this tab.</p>`);
+					server.close();
+					reject(new Error(`OAuth denied: ${error}`));
+					return;
+				}
+
+				if (!code) {
+					res.writeHead(400, { "Content-Type": "text/html" });
+					res.end("<h1>Missing authorization code</h1>");
+					return;
+				}
+
+				res.writeHead(200, { "Content-Type": "text/html" });
+				res.end("<h1>✅ Authorization successful!</h1><p>You can close this tab and return to the terminal.</p>");
+
+				try {
+					const tokens = await this.exchangeAuthCode(code, LOOPBACK_REDIRECT);
+					server.close();
+					resolve(tokens);
+				} catch (err) {
+					server.close();
+					reject(err);
+				}
+			});
+
+			server.listen(LOOPBACK_PORT, "127.0.0.1", () => {
+				// Server is ready — consent URL uses this port
+			});
+
+			server.on("error", (err) => {
+				reject(new Error(`Failed to start local auth server: ${err.message}`));
+			});
+
+			// Auto-close after 5 minutes
+			setTimeout(() => {
+				server.close();
+				reject(new Error("OAuth authorization timed out (5 minutes)"));
+			}, 5 * 60 * 1000);
+		});
+	}
+
+	/**
 	 * Exchange an authorization code for tokens (including refresh token).
 	 * Used during initial setup only.
 	 */
 	async exchangeAuthCode(
 		code: string,
-		redirectUri: string = "urn:ietf:wg:oauth:2.0:oob",
+		redirectUri: string = LOOPBACK_REDIRECT,
 	): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
 		const body = new URLSearchParams({
 			client_id: this.config.clientId,
@@ -205,21 +287,27 @@ export class GmailAuth {
 
 /**
  * Create a GmailAuth instance from environment variables.
- * Supports "env:VAR_NAME" pattern for settings-based config.
+ * Override values support the "env:VAR_NAME" pattern (resolved via process.env).
  */
 export function createGmailAuthFromEnv(overrides?: Partial<GmailAuthConfig>): GmailAuth {
 	const config: GmailAuthConfig = {
-		clientId: overrides?.clientId ?? resolveEnv("GOOGLE_CLIENT_ID") ?? "",
-		clientSecret: overrides?.clientSecret ?? resolveEnv("GOOGLE_CLIENT_SECRET") ?? "",
-		refreshToken: overrides?.refreshToken ?? resolveEnv("GOOGLE_REFRESH_TOKEN") ?? "",
+		clientId: resolveEnvValue(overrides?.clientId) ?? process.env.GOOGLE_CLIENT_ID ?? "",
+		clientSecret: resolveEnvValue(overrides?.clientSecret) ?? process.env.GOOGLE_CLIENT_SECRET ?? "",
+		refreshToken: resolveEnvValue(overrides?.refreshToken) ?? process.env.GOOGLE_REFRESH_TOKEN ?? "",
 		scopes: overrides?.scopes,
 	};
 	return new GmailAuth(config);
 }
 
 /**
- * Resolve env var value: if value starts with "env:", read from process.env.
+ * Resolve "env:VAR_NAME" pattern to the actual environment variable value.
+ * If the value doesn't start with "env:", returns it as-is.
  */
-function resolveEnv(name: string): string | undefined {
-	return process.env[name];
+function resolveEnvValue(value: string | undefined): string | undefined {
+	if (!value) return undefined;
+	if (value.startsWith("env:")) {
+		const envVar = value.slice(4);
+		return process.env[envVar] ?? undefined;
+	}
+	return value;
 }

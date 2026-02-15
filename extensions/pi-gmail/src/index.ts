@@ -38,6 +38,10 @@ export default function (pi: ExtensionAPI) {
 				"pi-gmail: Not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN env vars.",
 				"warning",
 			);
+			// Keep auth for /gmail-auth flow (only needs client credentials)
+			if (!auth.hasClientCredentials()) {
+				auth = null;
+			}
 			return;
 		}
 
@@ -45,6 +49,7 @@ export default function (pi: ExtensionAPI) {
 		const validation = await auth.validate();
 		if (!validation.ok) {
 			ctx.ui.notify(`pi-gmail: Auth validation failed: ${validation.error}`, "warning");
+			auth = null;
 		}
 	});
 
@@ -80,13 +85,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("gmail-auth", {
-		description: "Generate OAuth consent URL or exchange auth code: /gmail-auth [code]",
+		description: "Start OAuth flow or exchange auth code: /gmail-auth [code]",
 		handler: async (args, ctx) => {
 			if (!auth) {
 				auth = createGmailAuthFromEnv();
 			}
 
-			if (!auth.isConfigured()) {
+			if (!auth.hasClientCredentials()) {
 				ctx.ui.notify(
 					"Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first. Run /gmail-setup for instructions.",
 					"warning",
@@ -96,19 +101,36 @@ export default function (pi: ExtensionAPI) {
 
 			const code = args?.trim();
 			if (!code) {
-				// Generate consent URL
-				const url = auth.getConsentUrl();
-				ctx.ui.notify(`Visit this URL to authorize:\n\n${url}\n\nThen run: /gmail-auth <authorization-code>`, "info");
+				// Start local server and generate consent URL
+				const consentUrl = auth.getConsentUrl();
+				ctx.ui.notify(
+					`Starting OAuth flow...\n\nVisit this URL to authorize:\n${consentUrl}\n\nA local server is listening for the callback.`,
+					"info",
+				);
+				try {
+					const tokens = await auth.authorizeWithLocalServer();
+					const masked = tokens.refreshToken.slice(0, 10) + "…" + tokens.refreshToken.slice(-4);
+					ctx.ui.notify(
+						`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nSet GOOGLE_REFRESH_TOKEN in your environment. The full token has been printed to stdout.`,
+						"info",
+					);
+					// Print full token to stdout (not to ui.notify which may be logged)
+					process.stdout.write(`\nGOOGLE_REFRESH_TOKEN=${tokens.refreshToken}\n\n`);
+				} catch (err: any) {
+					ctx.ui.notify(`❌ OAuth flow failed: ${err.message}`, "warning");
+				}
 				return;
 			}
 
-			// Exchange code for tokens
+			// Manual code exchange (fallback)
 			try {
 				const tokens = await auth.exchangeAuthCode(code);
+				const masked = tokens.refreshToken.slice(0, 10) + "…" + tokens.refreshToken.slice(-4);
 				ctx.ui.notify(
-					`✅ Authentication successful!\n\nRefresh token: ${tokens.refreshToken}\n\nSet this as GOOGLE_REFRESH_TOKEN in your environment.`,
+					`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nSet GOOGLE_REFRESH_TOKEN in your environment. The full token has been printed to stdout.`,
 					"info",
 				);
+				process.stdout.write(`\nGOOGLE_REFRESH_TOKEN=${tokens.refreshToken}\n\n`);
 			} catch (err: any) {
 				ctx.ui.notify(`❌ Code exchange failed: ${err.message}`, "warning");
 			}

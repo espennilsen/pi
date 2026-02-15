@@ -43,10 +43,10 @@ export type {
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
-	pi.on("session_start", async (_event, ctx) => {
-		const settings = resolveSettings(ctx.cwd);
-		registerSubagentTool(pi, settings, log);
-	});
+	// Register tool synchronously — tools registered in session_start are not visible to the model.
+	// Settings are resolved lazily per-invocation using ctx.cwd so project-level settings
+	// (.pi/settings.json) are read from the correct directory, not process.cwd() at load time.
+	registerSubagentTool(pi, resolveSettings, log);
 
 	// Inject available agents into system prompt (user-scope only to prevent prompt injection from untrusted repos)
 	pi.on("before_agent_start", async (event: any, ctx: any) => {

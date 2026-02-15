@@ -26,11 +26,34 @@ const DEFAULT_MAX_RESULTS = 25;
 /** Rate limit: minimum ms between requests */
 const MIN_REQUEST_INTERVAL_MS = 100;
 
+// ── Concurrency helpers ─────────────────────────────────────────
+
+/** Max concurrent detail-fetches (getMessage/getThread) per list call */
+const CONCURRENCY_LIMIT = 5;
+
+/** Run async tasks with bounded concurrency. */
+async function pMap<T, R>(items: T[], fn: (item: T) => Promise<R>, concurrency: number): Promise<R[]> {
+	const results: R[] = new Array(items.length);
+	let nextIndex = 0;
+
+	async function worker(): Promise<void> {
+		while (nextIndex < items.length) {
+			const i = nextIndex++;
+			results[i] = await fn(items[i]);
+		}
+	}
+
+	const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+	await Promise.all(workers);
+	return results;
+}
+
 // ── Client ──────────────────────────────────────────────────────
 
 export class GmailClient {
 	private auth: GmailAuth;
-	private lastRequestTime = 0;
+	/** Promise-based sequential queue for rate limiting */
+	private requestQueue: Promise<void> = Promise.resolve();
 
 	constructor(auth: GmailAuth) {
 		this.auth = auth;
@@ -63,7 +86,7 @@ export class GmailClient {
 		}>(`/messages?${params.toString()}`);
 
 		const refs = data.messages ?? [];
-		const messages = await Promise.all(refs.map((ref) => this.getMessage(ref.id)));
+		const messages = await pMap(refs, (ref) => this.getMessage(ref.id), CONCURRENCY_LIMIT);
 
 		return {
 			messages,
@@ -123,7 +146,7 @@ export class GmailClient {
 		}>(`/threads?${params.toString()}`);
 
 		const threadRefs = data.threads ?? [];
-		const threads = await Promise.all(threadRefs.map((ref) => this.getThread(ref.id)));
+		const threads = await pMap(threadRefs, (ref) => this.getThread(ref.id), CONCURRENCY_LIMIT);
 
 		return {
 			threads,
@@ -205,6 +228,8 @@ export class GmailClient {
 		to: string;
 		subject: string;
 		body: string;
+		/** Sender address (for alias/send-as). Omit to use primary address. */
+		from?: string;
 		cc?: string;
 		bcc?: string;
 		replyTo?: string;
@@ -219,6 +244,7 @@ export class GmailClient {
 			"Content-Type: text/plain; charset=utf-8",
 			`Date: ${new Date().toUTCString()}`,
 		];
+		if (options.from) headers.unshift(`From: ${options.from}`);
 		if (options.cc) headers.push(`Cc: ${options.cc}`);
 		if (options.bcc) headers.push(`Bcc: ${options.bcc}`);
 		if (options.replyTo) headers.push(`Reply-To: ${options.replyTo}`);
@@ -243,15 +269,17 @@ export class GmailClient {
 
 	// ── Internal ──────────────────────────────────────────────
 
-	private async request<T>(path: string, init?: RequestInit): Promise<T> {
-		// Simple rate limiting
-		const now = Date.now();
-		const elapsed = now - this.lastRequestTime;
-		if (elapsed < MIN_REQUEST_INTERVAL_MS) {
-			await sleep(MIN_REQUEST_INTERVAL_MS - elapsed);
-		}
-		this.lastRequestTime = Date.now();
+	private request<T>(path: string, init?: RequestInit): Promise<T> {
+		// Chain requests through a sequential queue so rate limiting
+		// works correctly even with concurrent callers.
+		const ticket = this.requestQueue.then(() => sleep(MIN_REQUEST_INTERVAL_MS));
+		const result = ticket.then(() => this.doRequest<T>(path, init));
+		// Update queue to wait for this request to finish (ignore errors for queue chaining)
+		this.requestQueue = result.then(() => {}, () => {});
+		return result;
+	}
 
+	private async doRequest<T>(path: string, init?: RequestInit): Promise<T> {
 		const headers = await this.auth.getHeaders();
 		const url = `${API_BASE}${path}`;
 		const res = await fetch(url, {

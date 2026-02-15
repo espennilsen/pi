@@ -16,13 +16,16 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { createGmailAuthFromEnv, type GmailAuth } from "./auth.ts";
 import { GmailClient } from "./client.ts";
+import type { GmailConfig } from "./types.ts";
 
 // ── Shared state ────────────────────────────────────────────────
 
 let auth: GmailAuth | null = null;
 let client: GmailClient | null = null;
+let config: GmailConfig = { readOnly: true, confirmBeforeSend: true };
 
 export function getAuth(): GmailAuth | null {
 	return auth;
@@ -32,10 +35,25 @@ export function getClient(): GmailClient | null {
 	return client;
 }
 
+export function getConfig(): GmailConfig {
+	return config;
+}
+
 // ── Extension entry ─────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
+		// Load config from settings
+		const agentDir = getAgentDir();
+		const sm = SettingsManager.create(ctx.cwd, agentDir);
+		const globalSettings = sm.getGlobalSettings() as Record<string, any>;
+		const projectSettings = sm.getProjectSettings() as Record<string, any>;
+		const gmailSettings = { ...(globalSettings?.["pi-gmail"] ?? {}), ...(projectSettings?.["pi-gmail"] ?? {}) };
+		config = {
+			readOnly: gmailSettings.readOnly ?? true,
+			confirmBeforeSend: gmailSettings.confirmBeforeSend ?? true,
+		};
+
 		// Initialize auth from env vars
 		auth = createGmailAuthFromEnv();
 

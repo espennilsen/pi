@@ -42,10 +42,14 @@ export function generateOAuthState(): string {
 
 export function verifyOAuthState(state: string | null): boolean {
 	if (!state || !pendingOAuthState) return false;
-	const valid = crypto.timingSafeEqual(
-		Buffer.from(state),
-		Buffer.from(pendingOAuthState),
-	);
+	const stateBuffer = Buffer.from(state);
+	const expectedBuffer = Buffer.from(pendingOAuthState);
+	// timingSafeEqual throws RangeError if lengths differ
+	if (stateBuffer.length !== expectedBuffer.length) {
+		pendingOAuthState = null;
+		return false;
+	}
+	const valid = crypto.timingSafeEqual(stateBuffer, expectedBuffer);
 	pendingOAuthState = null; // consume — single use
 	return valid;
 }

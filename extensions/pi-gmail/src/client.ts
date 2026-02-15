@@ -75,7 +75,7 @@ export async function getMessage(
 	id: string,
 	format: "full" | "metadata" | "minimal" | "raw" = "full",
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${id}?format=${format}`);
+	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}?format=${format}`);
 }
 
 export async function getThread(
@@ -84,7 +84,7 @@ export async function getThread(
 	id: string,
 	format: "full" | "metadata" | "minimal" = "full",
 ): Promise<GmailThread> {
-	return gmailFetch(settings, agentDir, `/threads/${id}?format=${format}`);
+	return gmailFetch(settings, agentDir, `/threads/${encodeURIComponent(id)}?format=${format}`);
 }
 
 // ── Labels ──────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ export async function modifyMessage(
 	addLabelIds?: string[],
 	removeLabelIds?: string[],
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${id}/modify`, {
+	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/modify`, {
 		method: "POST",
 		body: JSON.stringify({
 			addLabelIds: addLabelIds ?? [],
@@ -120,7 +120,7 @@ export async function trashMessage(
 	agentDir: string,
 	id: string,
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${id}/trash`, {
+	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/trash`, {
 		method: "POST",
 	});
 }
@@ -130,7 +130,7 @@ export async function untrashMessage(
 	agentDir: string,
 	id: string,
 ): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${id}/untrash`, {
+	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/untrash`, {
 		method: "POST",
 	});
 }
@@ -194,7 +194,7 @@ export async function getDraft(
 	agentDir: string,
 	draftId: string,
 ): Promise<GmailDraft> {
-	return gmailFetch(settings, agentDir, `/drafts/${draftId}?format=full`);
+	return gmailFetch(settings, agentDir, `/drafts/${encodeURIComponent(draftId)}?format=full`);
 }
 
 export async function deleteDraft(
@@ -202,7 +202,7 @@ export async function deleteDraft(
 	agentDir: string,
 	draftId: string,
 ): Promise<void> {
-	await gmailFetch(settings, agentDir, `/drafts/${draftId}`, {
+	await gmailFetch(settings, agentDir, `/drafts/${encodeURIComponent(draftId)}`, {
 		method: "DELETE",
 	});
 }
@@ -218,7 +218,7 @@ export async function getAttachment(
 	return gmailFetch(
 		settings,
 		agentDir,
-		`/messages/${messageId}/attachments/${attachmentId}`,
+		`/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
 	);
 }
 

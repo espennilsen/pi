@@ -240,7 +240,7 @@ export class GmailClient {
 	}): Promise<{ id: string; threadId: string }> {
 		const headers = [
 			`To: ${options.to}`,
-			`Subject: ${options.subject}`,
+			`Subject: ${encodeHeaderValue(options.subject)}`,
 			"Content-Type: text/plain; charset=utf-8",
 			`Date: ${new Date().toUTCString()}`,
 		];
@@ -280,19 +280,36 @@ export class GmailClient {
 	}
 
 	private async doRequest<T>(path: string, init?: RequestInit): Promise<T> {
-		const headers = await this.auth.getHeaders();
-		const url = `${API_BASE}${path}`;
-		const res = await fetch(url, {
-			...init,
-			headers: { ...headers, ...(init?.headers as Record<string, string>) },
-		});
+		const maxRetries = 3;
+		let lastError: Error | null = null;
 
-		if (!res.ok) {
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			const headers = await this.auth.getHeaders();
+			const url = `${API_BASE}${path}`;
+			const res = await fetch(url, {
+				...init,
+				headers: { ...headers, ...(init?.headers as Record<string, string>) },
+			});
+
+			if (res.ok) {
+				return (await res.json()) as T;
+			}
+
 			const errBody = await res.text();
-			throw new Error(`Gmail API error (${res.status} ${res.statusText}): ${errBody}`);
+			lastError = new Error(`Gmail API error (${res.status} ${res.statusText}): ${errBody}`);
+
+			// Retry on 429 (rate limit) and 5xx (transient server errors)
+			const retryable = res.status === 429 || res.status >= 500;
+			if (!retryable || attempt === maxRetries) {
+				throw lastError;
+			}
+
+			// Exponential backoff: 1s, 2s, 4s
+			const backoff = Math.pow(2, attempt) * 1000;
+			await sleep(backoff);
 		}
 
-		return (await res.json()) as T;
+		throw lastError!;
 	}
 }
 
@@ -410,4 +427,17 @@ function base64UrlEncode(data: string): string {
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * RFC 2047 encode a header value if it contains non-ASCII characters.
+ * Uses =?UTF-8?B?...?= (Base64 encoded-word) syntax.
+ */
+function encodeHeaderValue(value: string): string {
+	// Check if value contains non-ASCII characters
+	if (/^[\x20-\x7E]*$/.test(value)) {
+		return value; // Pure ASCII, no encoding needed
+	}
+	const encoded = Buffer.from(value, "utf-8").toString("base64");
+	return `=?UTF-8?B?${encoded}?=`;
 }

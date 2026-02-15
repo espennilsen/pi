@@ -320,15 +320,17 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 				let threadsToResolve = threads;
 				const argParts = argStr.split(/\s+/).filter(Boolean);
 				if (argParts.length > 0) {
-					const indices = argParts.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
-					if (indices.length > 0) {
-						threadsToResolve = indices
-							.filter(i => i >= 1 && i <= threads.length)
-							.map(i => threads[i - 1]);
-						if (threadsToResolve.length === 0) {
-							ctx.ui.notify(`❌ No valid thread numbers. Valid range: 1–${threads.length}.`, "error");
-							return;
-						}
+					const indices = [...new Set(argParts.map(s => parseInt(s, 10)).filter(n => !isNaN(n)))];
+					if (indices.length === 0) {
+						ctx.ui.notify(`❌ No valid thread numbers in arguments. Valid range: 1–${threads.length}.`, "error");
+						return;
+					}
+					threadsToResolve = indices
+						.filter(i => i >= 1 && i <= threads.length)
+						.map(i => threads[i - 1]);
+					if (threadsToResolve.length === 0) {
+						ctx.ui.notify(`❌ No valid thread numbers. Valid range: 1–${threads.length}.`, "error");
+						return;
 					}
 				}
 

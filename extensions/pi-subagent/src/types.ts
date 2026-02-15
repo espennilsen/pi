@@ -120,6 +120,89 @@ export interface OneShotEntry {
 	responsePreview?: string;
 }
 
+// ── Pool types (orchestrator + long-lived agents) ───────────────
+
+export type RpcAgentState = "starting" | "idle" | "streaming" | "dead";
+
+export interface PoolAgentNode {
+	/** Unique agent ID within the pool */
+	id: string;
+	/** Agent config name (e.g. "worker", "scout") */
+	agentName: string;
+	/** Parent agent ID (null for root) */
+	parentId: string | null;
+	/** Child agent IDs */
+	childIds: string[];
+	/** Depth in the tree (root = 0) */
+	depth: number;
+	/** Current process state */
+	state: RpcAgentState;
+	/** When this agent was spawned */
+	startedAt: number;
+	/** Cumulative usage stats */
+	usage: UsageStats;
+	/** Model in use */
+	model: string | null;
+	/** Initial task description */
+	task: string;
+	/** Agent source (user/project) */
+	agentSource: "user" | "project" | "unknown";
+}
+
+export interface PoolEntry {
+	id: string;
+	agentName: string;
+	state: RpcAgentState;
+	parentId: string | null;
+	childIds: string[];
+	depth: number;
+	startedAt: number;
+	usage: UsageStats;
+	model: string | null;
+	task: string;
+}
+
+/** IPC request from shim → pool server */
+export interface PoolIpcRequest {
+	/** Request ID for correlation */
+	requestId: string;
+	/** ID of the agent making the request */
+	agentId: string;
+	/** Action to perform */
+	action: "spawn" | "send" | "kill" | "list";
+	/** For spawn: agent config name */
+	agentName?: string;
+	/** For spawn: initial task */
+	task?: string;
+	/** For spawn: agent ID to assign */
+	spawnId?: string;
+	/** For send: target agent ID */
+	targetId?: string;
+	/** For send: message content */
+	message?: string;
+	/** For kill: agent ID to kill */
+	killId?: string;
+}
+
+/** IPC response from pool server → shim */
+export interface PoolIpcResponse {
+	/** Matching request ID */
+	requestId: string;
+	/** Whether the operation succeeded */
+	success: boolean;
+	/** Response text (agent output, status, etc.) */
+	data?: string;
+	/** Error message if !success */
+	error?: string;
+}
+
+export interface PoolDetails {
+	mode: "orchestrator" | "pool";
+	agents: PoolEntry[];
+	rootId: string | null;
+	totalUsage: UsageStats;
+}
+
 // ── Settings ────────────────────────────────────────────────────
 
 export interface SubagentSettings {
@@ -131,4 +214,12 @@ export interface SubagentSettings {
 	extensions: string[];
 	/** Extensions that subagents are never allowed to load (pi-subagent is always blocked) */
 	blockedExtensions: string[];
+	/** Max agents in a single pool (orchestrator/pool mode) */
+	maxPoolSize: number;
+	/** Max tree depth for orchestrator mode (root = 0) */
+	maxDepth: number;
+	/** Timeout for a single send_message call (ms) */
+	sendTimeoutMs: number;
+	/** Idle timeout — kill agents inactive for this long (ms, 0 = disabled) */
+	idleTimeoutMs: number;
 }

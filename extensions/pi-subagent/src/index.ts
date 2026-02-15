@@ -1,8 +1,10 @@
 /**
- * pi-subagent — Parallel task delegation extension for pi.
+ * pi-subagent — Task delegation extension for pi.
  *
  * Provides:
  *   - subagent tool — spawn isolated pi subprocesses (single/parallel/chain)
+ *   - Orchestrator mode — hierarchical agent trees with inter-agent messaging
+ *   - Pool management — long-lived RPC agents with persistent context
  *   - Agent discovery from ~/.pi/agent/agents/*.md and .pi/agents/*.md
  *   - One-shot tracking with event bus integration
  *
@@ -12,7 +14,10 @@
  *       "maxConcurrent": 4,
  *       "maxTotal": 8,
  *       "timeoutMs": 600000,
- *       "model": null
+ *       "model": null,
+ *       "maxPoolSize": 20,
+ *       "maxDepth": 4,
+ *       "sendTimeoutMs": 120000
  *     }
  *   }
  *
@@ -22,7 +27,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerSubagentTool } from "./tool.ts";
+import { registerSubagentTool, disposePool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";
 import { discoverAgents } from "./agents.ts";
 import { createLogger } from "./logger.ts";
@@ -30,6 +35,8 @@ import { createLogger } from "./logger.ts";
 export { runIsolatedAgent } from "./runner.ts";
 export { discoverAgents } from "./agents.ts";
 export { oneShotTracker } from "./tracker.ts";
+export { AgentPool } from "./pool.ts";
+export { RpcAgent } from "./rpc-agent.ts";
 export type {
 	AgentConfig,
 	AgentScope,
@@ -38,6 +45,9 @@ export type {
 	SubagentSettings,
 	OneShotEntry,
 	OneShotStatus,
+	PoolAgentNode,
+	PoolEntry,
+	PoolDetails,
 } from "./types.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -100,10 +110,27 @@ export default function (pi: ExtensionAPI) {
 			"",
 			"**Per-task overrides:** model, thinking (off/minimal/low/medium/high/xhigh), extensions, skills, noTools, noSkills",
 			"",
+			"**Orchestrator (hierarchical agent tree — agents spawn and message each other):**",
+			'```json',
+			'{ "orchestrator": { "agent": "planner", "task": "Build the auth system. Spawn specialists as needed." } }',
+			'```',
+			"The root agent gets spawn_agent, send_message, kill_agent, list_agents tools.",
+			"Sub-agents also get these tools and can spawn their own children (max depth: 4).",
+			"",
+			"**Pool (manual long-lived agents — persistent context across messages):**",
+			'```json',
+			'{ "action": "spawn", "id": "worker-1", "agent": "worker", "task": "Start on auth" }',
+			'{ "action": "send", "id": "worker-1", "message": "Now refactor the middleware" }',
+			'{ "action": "list" }',
+			'{ "action": "kill", "id": "worker-1" }',
+			'```',
+			"",
 			"**Tips:**",
 			"- Use scout (haiku) for fast recon, planner/reviewer (sonnet) for analysis, worker for implementation",
 			"- Parallel is ideal for independent tasks — results stream back as they complete",
 			"- Chain is ideal for multi-step workflows where each step builds on the previous",
+			"- Orchestrator is ideal when the task benefits from autonomous delegation and coordination",
+			"- Pool is ideal when you want to manually manage long-lived agents with persistent context",
 			"- Extensions: subagents run with -ne (no extensions). Whitelist only what's needed.",
 		].join("\n");
 
@@ -111,6 +138,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		// Pool cleanup — kill all long-lived agents
+		await disposePool();
 		// Tracker cleanup
 		const { oneShotTracker } = await import("./tracker.ts");
 		oneShotTracker.dispose();

@@ -2,13 +2,12 @@
  * OAuth 2.0 authentication for Gmail API.
  *
  * Handles:
- *   - Token storage in SQLite (db/gmail.db)
+ *   - Token storage in a JSON file (~/.pi/agent/db/gmail-tokens.json)
  *   - OAuth consent URL generation
  *   - Authorization code exchange
  *   - Automatic access token refresh
  */
 
-import Database from "better-sqlite3";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import type { OAuthTokens, GmailSettings } from "./types.ts";
@@ -25,34 +24,14 @@ const SCOPES = [
 
 // Token refresh buffer — refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const TOKENS_FILENAME = "gmail-tokens.json";
 
-let db: Database.Database | null = null;
 let cachedTokens: OAuthTokens | null = null;
 
-// ── DB setup ────────────────────────────────────────────────────
+// ── Token file path ─────────────────────────────────────────────
 
-function getDb(agentDir: string): Database.Database {
-	if (db) return db;
-
-	const dbPath = path.join(agentDir, "db", "gmail.db");
-	fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-
-	db = new Database(dbPath);
-	db.pragma("journal_mode = WAL");
-
-	db.exec(`
-		CREATE TABLE IF NOT EXISTS gmail_tokens (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			email TEXT NOT NULL,
-			access_token TEXT NOT NULL,
-			refresh_token TEXT NOT NULL,
-			expires_at INTEGER NOT NULL,
-			scope TEXT NOT NULL,
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)
-	`);
-
-	return db;
+function getTokensPath(agentDir: string): string {
+	return path.join(agentDir, "db", TOKENS_FILENAME);
 }
 
 // ── Token storage ───────────────────────────────────────────────
@@ -60,39 +39,30 @@ function getDb(agentDir: string): Database.Database {
 export function loadTokens(agentDir: string): OAuthTokens | null {
 	if (cachedTokens) return cachedTokens;
 
-	const d = getDb(agentDir);
-	const row = d.prepare("SELECT * FROM gmail_tokens WHERE id = 1").get() as any;
-	if (!row) return null;
-
-	cachedTokens = {
-		email: row.email,
-		access_token: row.access_token,
-		refresh_token: row.refresh_token,
-		expires_at: row.expires_at,
-		scope: row.scope,
-	};
-	return cachedTokens;
+	const tokensPath = getTokensPath(agentDir);
+	try {
+		const data = fs.readFileSync(tokensPath, "utf-8");
+		cachedTokens = JSON.parse(data) as OAuthTokens;
+		return cachedTokens;
+	} catch {
+		return null;
+	}
 }
 
 export function saveTokens(agentDir: string, tokens: OAuthTokens): void {
-	const d = getDb(agentDir);
-	d.prepare(`
-		INSERT INTO gmail_tokens (id, email, access_token, refresh_token, expires_at, scope)
-		VALUES (1, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			email = excluded.email,
-			access_token = excluded.access_token,
-			refresh_token = excluded.refresh_token,
-			expires_at = excluded.expires_at,
-			scope = excluded.scope,
-			updated_at = datetime('now')
-	`).run(tokens.email, tokens.access_token, tokens.refresh_token, tokens.expires_at, tokens.scope);
+	const tokensPath = getTokensPath(agentDir);
+	fs.mkdirSync(path.dirname(tokensPath), { recursive: true });
+	fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2), "utf-8");
 	cachedTokens = tokens;
 }
 
 export function clearTokens(agentDir: string): void {
-	const d = getDb(agentDir);
-	d.prepare("DELETE FROM gmail_tokens WHERE id = 1").run();
+	const tokensPath = getTokensPath(agentDir);
+	try {
+		fs.unlinkSync(tokensPath);
+	} catch {
+		// file may not exist
+	}
 	cachedTokens = null;
 }
 
@@ -242,12 +212,4 @@ function resolveEnv(value: string): string {
 		return process.env[value.slice(4)] ?? "";
 	}
 	return value;
-}
-
-export function closeDb(): void {
-	if (db) {
-		db.close();
-		db = null;
-	}
-	cachedTokens = null;
 }

@@ -111,7 +111,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			ctx.ui.notify(preview, "info");
 
 			// ── Step 4: Merge the PR ────────────────────────────
-			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`, "--delete-branch"];
+			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
 			const mergeResult = await gh(mergeArgs, cwd);
 
 			if (!mergeResult.ok) {
@@ -124,8 +124,13 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 				["pr", "view", String(prNumber), "--json", "state"],
 				cwd,
 			);
-			if (verifyData?.state !== "MERGED") {
-				ctx.ui.notify(`❌ PR #${prNumber} was not merged (state: ${verifyData?.state ?? "unknown"}). The merge may require approvals or CI checks to pass.`, "error");
+			if (verifyData === null) {
+				ctx.ui.notify(`⚠️ Could not verify merge state for PR #${prNumber} — the API call failed. The merge may have succeeded; check GitHub manually.`, "warning");
+			} else if (verifyData.state !== "MERGED") {
+				const stateHint = verifyData.state === "OPEN"
+					? "The merge may require approvals or CI checks to pass."
+					: `Unexpected state: ${verifyData.state}.`;
+				ctx.ui.notify(`❌ PR #${prNumber} was not merged (state: ${verifyData.state}). ${stateHint}`, "error");
 				return;
 			}
 
@@ -202,6 +207,15 @@ async function cleanupBranches(
 		// a local merge commit, so git branch -d thinks it's "not fully merged".
 		const nowOn = await getCurrentBranch(cwd);
 		if (nowOn !== headBranch) {
+			// Guard: warn if there are local-only commits not in the base branch
+			const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
+			if (localOnly.ok && localOnly.stdout.length > 0) {
+				const localCommits = localOnly.stdout.split("\n").filter(Boolean);
+				if (localCommits.length > 0) {
+					ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\` (may be from squash/rebase merge):\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+				}
+			}
+
 			const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
 			if (localDelete.ok) {
 				ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");

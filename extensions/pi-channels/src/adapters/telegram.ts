@@ -9,6 +9,8 @@
  *   - Photos (downloaded → temp file → passed as image attachment)
  *   - Documents (text files downloaded → content included in message)
  *   - Voice messages (downloaded → transcribed → passed as text)
+ *   - Audio files (music/recordings → transcribed → passed as text)
+ *   - Audio documents (files with audio MIME → routed through transcription)
  *   - File size validation (1MB for docs/photos, 10MB for voice/audio)
  *   - MIME type filtering (text-like files only for documents)
  *
@@ -73,6 +75,20 @@ const TEXT_EXTENSIONS = new Set([
 function isImageMime(mime: string | undefined): boolean {
 	if (!mime) return false;
 	return mime.startsWith("image/");
+}
+
+/** Audio MIME types that can be transcribed. */
+const AUDIO_MIME_PREFIXES = ["audio/"];
+const AUDIO_MIME_TYPES = new Set([
+	"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm",
+	"audio/x-m4a", "audio/flac", "audio/aac", "audio/mp3",
+	"video/ogg", // .ogg containers can be audio-only
+]);
+
+function isAudioMime(mime: string | undefined): boolean {
+	if (!mime) return false;
+	if (AUDIO_MIME_TYPES.has(mime)) return true;
+	return AUDIO_MIME_PREFIXES.some(p => mime.startsWith(p));
 }
 
 function isTextDocument(mimeType: string | undefined, filename: string | undefined): boolean {
@@ -369,11 +385,60 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				};
 			}
 
+			// Audio documents — route through transcription
+			if (isAudioMime(mimeType)) {
+				if (!transcriber) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ Audio files are not supported. Please type your message.`,
+						metadata: { ...metadata, rejected: true, hasAudio: true },
+					};
+				}
+
+				if (doc.file_size && doc.file_size > MAX_AUDIO_SIZE) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ Audio file too large: ${filename || "audio"} (${formatSize(doc.file_size)}, max 10MB).`,
+						metadata: { ...metadata, rejected: true, hasAudio: true },
+					};
+				}
+
+				const downloaded = await downloadFile(doc.file_id, filename, MAX_AUDIO_SIZE);
+				if (!downloaded) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: caption || `🎵 ${filename || "audio"} (failed to download)`,
+						metadata: { ...metadata, hasAudio: true },
+					};
+				}
+
+				const result = await transcriber.transcribe(downloaded.localPath);
+				if (!result.ok || !result.text) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `🎵 ${filename || "audio"} (transcription failed${result.error ? ": " + result.error : ""})`,
+						metadata: { ...metadata, hasAudio: true },
+					};
+				}
+
+				const label = filename ? `Audio: ${filename}` : "Audio file";
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎵 [${label}]: ${result.text}`,
+					metadata: { ...metadata, hasAudio: true, audioTitle: filename },
+				};
+			}
+
 			// Unsupported file type
 			return {
 				adapter: "telegram",
 				sender: chatId,
-				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files and images.`,
+				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files, images, and audio.`,
 				metadata: { ...metadata, rejected: true },
 			};
 		}
@@ -426,6 +491,60 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 				sender: chatId,
 				text: `🎤 [Voice message]: ${result.text}`,
 				metadata: { ...metadata, hasVoice: true, voiceDuration: voice.duration },
+			};
+		}
+
+		// ── Audio file (sent as music) ─────────────────────
+		if (msg.audio) {
+			const audio = msg.audio;
+
+			if (!transcriber) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: "⚠️ Audio files are not supported. Please type your message.",
+					metadata: { ...metadata, rejected: true, hasAudio: true },
+				};
+			}
+
+			if (audio.file_size && audio.file_size > MAX_AUDIO_SIZE) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `⚠️ Audio too large (${formatSize(audio.file_size)}, max 10MB).`,
+					metadata: { ...metadata, rejected: true, hasAudio: true },
+				};
+			}
+
+			const audioName = audio.title || audio.performer || "audio";
+			const downloaded = await downloadFile(audio.file_id, `${audioName}.mp3`, MAX_AUDIO_SIZE);
+			if (!downloaded) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: caption || `🎵 ${audioName} (failed to download)`,
+					metadata: { ...metadata, hasAudio: true },
+				};
+			}
+
+			const result = await transcriber.transcribe(downloaded.localPath);
+			if (!result.ok || !result.text) {
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: `🎵 ${audioName} (transcription failed${result.error ? ": " + result.error : ""})`,
+					metadata: { ...metadata, hasAudio: true, audioTitle: audio.title, audioDuration: audio.duration },
+				};
+			}
+
+			const label = audio.title
+				? `Audio: ${audio.title}${audio.performer ? ` by ${audio.performer}` : ""}`
+				: "Audio";
+			return {
+				adapter: "telegram",
+				sender: chatId,
+				text: `🎵 [${label}]: ${result.text}`,
+				metadata: { ...metadata, hasAudio: true, audioTitle: audio.title, audioDuration: audio.duration },
 			};
 		}
 
@@ -521,6 +640,15 @@ interface TelegramMessage {
 		file_id: string;
 		file_unique_id: string;
 		duration: number;
+		mime_type?: string;
+		file_size?: number;
+	};
+	audio?: {
+		file_id: string;
+		file_unique_id: string;
+		duration: number;
+		performer?: string;
+		title?: string;
 		mime_type?: string;
 		file_size?: number;
 	};

@@ -200,83 +200,94 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 
 			socketClient.on("message", async ({ event, ack }: { event: SlackMessageEvent; ack: () => Promise<void> }) => {
 				await ack();
+				try {
+					// Ignore bot messages (including our own)
+					if (event.bot_id || event.subtype === "bot_message") return;
+					// Ignore message_changed, message_deleted, etc.
+					if (event.subtype) return;
+					if (!event.text) return;
+					if (!isAllowed(event.channel)) return;
 
-				// Ignore bot messages (including our own)
-				if (event.bot_id || event.subtype === "bot_message") return;
-				// Ignore message_changed, message_deleted, etc.
-				if (event.subtype) return;
-				if (!event.text) return;
-				if (!isAllowed(event.channel)) return;
+					// Skip messages that @mention the bot — these are handled
+					// by the app_mention listener to avoid duplicate responses
+					if (botUserId && event.text.includes(`<@${botUserId}>`)) return;
 
-				// In channels, optionally only respond to @mentions
-				// (app_mention events are handled separately below)
-				if (respondToMentionsOnly && event.channel_type === "channel") return;
+					// In channels/groups, optionally only respond to @mentions
+					// (app_mention events are handled separately below)
+					if (respondToMentionsOnly && (event.channel_type === "channel" || event.channel_type === "group")) return;
 
-				// Use channel:threadTs as sender key for threaded conversations
-				const sender = event.thread_ts
-					? `${event.channel}:${event.thread_ts}`
-					: event.channel;
+					// Use channel:threadTs as sender key for threaded conversations
+					const sender = event.thread_ts
+						? `${event.channel}:${event.thread_ts}`
+						: event.channel;
 
-				onMessage({
-					adapter: "slack",
-					sender,
-					text: stripBotMention(event.text),
-					metadata: buildMetadata(event, {
-						eventType: "message",
-					}),
-				});
+					onMessage({
+						adapter: "slack",
+						sender,
+						text: stripBotMention(event.text),
+						metadata: buildMetadata(event, {
+							eventType: "message",
+						}),
+					});
+				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
 			});
 
 			// ── App mention events ──────────────────────────
 			socketClient.on("app_mention", async ({ event, ack }: { event: SlackMentionEvent; ack: () => Promise<void> }) => {
 				await ack();
+				try {
+					if (!isAllowed(event.channel)) return;
 
-				if (!isAllowed(event.channel)) return;
+					const sender = event.thread_ts
+						? `${event.channel}:${event.thread_ts}`
+						: event.channel;
 
-				const sender = event.thread_ts
-					? `${event.channel}:${event.thread_ts}`
-					: event.channel;
-
-				onMessage({
-					adapter: "slack",
-					sender,
-					text: stripBotMention(event.text),
-					metadata: buildMetadata(event, {
-						eventType: "app_mention",
-					}),
-				});
+					onMessage({
+						adapter: "slack",
+						sender,
+						text: stripBotMention(event.text),
+						metadata: buildMetadata(event, {
+							eventType: "app_mention",
+						}),
+					});
+				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
 			});
 
 			// ── Slash commands ───────────────────────────────
 			socketClient.on("slash_commands", async ({ body, ack }: { body: SlackCommandPayload; ack: (response?: any) => Promise<void> }) => {
-				if (body.command !== slashCommand) {
-					await ack();
-					return;
-				}
+				try {
+					if (body.command !== slashCommand) {
+						await ack();
+						return;
+					}
 
-				if (!body.text?.trim()) {
-					await ack({ text: `Usage: ${slashCommand} [your message]` });
-					return;
-				}
+					if (!body.text?.trim()) {
+						await ack({ text: `Usage: ${slashCommand} [your message]` });
+						return;
+					}
 
-				// Acknowledge immediately (Slack requires <3s response)
-				await ack({ text: "🤔 Thinking..." });
+					if (!isAllowed(body.channel_id)) {
+						await ack({ text: "⛔ This command is not available in this channel." });
+						return;
+					}
 
-				if (!isAllowed(body.channel_id)) return;
+					// Acknowledge immediately (Slack requires <3s response)
+					await ack({ text: "🤔 Thinking..." });
 
-				onMessage({
-					adapter: "slack",
-					sender: body.channel_id,
-					text: body.text.trim(),
-					metadata: {
-						channelId: body.channel_id,
-						channelName: body.channel_name,
-						userId: body.user_id,
-						userName: body.user_name,
-						eventType: "slash_command",
-						command: body.command,
-					},
-				});
+					onMessage({
+						adapter: "slack",
+						sender: body.channel_id,
+						text: body.text.trim(),
+						metadata: {
+							channelId: body.channel_id,
+							channelName: body.channel_name,
+							userId: body.user_id,
+							userName: body.user_name,
+							eventType: "slash_command",
+							command: body.command,
+						},
+					});
+				} catch { /* prevent unhandled rejection from destabilizing Socket Mode */ }
 			});
 
 			// ── Interactive payloads (future: button clicks, modals) ──

@@ -76,15 +76,17 @@ export function getChannelSetting(cwd: string, keyPath: string): unknown {
 	const globalCh = global?.[SETTINGS_KEY] ?? {};
 	const projectCh = project?.[SETTINGS_KEY] ?? {};
 
-	// Project overrides global
-	const merged = { ...globalCh, ...projectCh };
-
-	// Walk dotted path
-	const parts = keyPath.split(".");
-	let current: any = merged;
-	for (const part of parts) {
-		if (current == null || typeof current !== "object") return undefined;
-		current = current[part];
+	// Walk the dotted path independently in each scope to avoid
+	// shallow-merge dropping sibling keys from nested objects.
+	function walk(obj: any): unknown {
+		let current: any = obj;
+		for (const part of keyPath.split(".")) {
+			if (current == null || typeof current !== "object") return undefined;
+			current = current[part];
+		}
+		return current;
 	}
-	return current;
+
+	// Project overrides global at the leaf level
+	return walk(projectCh) ?? walk(globalCh);
 }

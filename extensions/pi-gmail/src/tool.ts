@@ -1,28 +1,71 @@
 /**
- * pi-gmail — LLM tool registration (read operations).
+ * pi-gmail — LLM tool registration.
  *
- * Actions:
+ * Read actions:
  *   - inbox: List recent inbox messages
  *   - unread: List unread messages
  *   - search: Search with Gmail query syntax
  *   - read: Read a specific message by ID
  *   - thread: Read a full thread by ID
  *   - labels: List all labels
+ *
+ * Write actions:
+ *   - compose: Draft a new email (returns preview, does NOT send)
+ *   - reply: Draft a reply to a message (returns preview, does NOT send)
+ *   - send: Send a previously composed draft (requires draft_id from compose/reply)
+ *
+ * Safety:
+ *   - compose/reply only create drafts — they don't send
+ *   - send requires an explicit draft_id from a prior compose/reply
+ *   - readOnly mode disables all write actions entirely
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { GmailClient } from "./client.ts";
-import type { GmailMessage, GmailThread } from "./types.ts";
+import type { GmailMessage, GmailThread, GmailConfig } from "./types.ts";
 
 // ── Types ───────────────────────────────────────────────────────
 
 interface GmailToolParams {
-	action: "inbox" | "unread" | "search" | "read" | "thread" | "labels";
+	action: "inbox" | "unread" | "search" | "read" | "thread" | "labels" | "compose" | "reply" | "send";
 	query?: string;
 	id?: string;
 	maxResults?: number;
+	to?: string;
+	subject?: string;
+	body?: string;
+	cc?: string;
+	bcc?: string;
+	draft_id?: string;
+}
+
+// ── Draft store (in-memory, per session) ────────────────────────
+
+interface Draft {
+	id: string;
+	to: string;
+	subject: string;
+	body: string;
+	cc?: string;
+	bcc?: string;
+	threadId?: string;
+	inReplyTo?: string;
+	createdAt: number;
+}
+
+const drafts = new Map<string, Draft>();
+let draftCounter = 0;
+
+function createDraft(data: Omit<Draft, "id" | "createdAt">): Draft {
+	const draft: Draft = {
+		...data,
+		id: `draft-${++draftCounter}`,
+		createdAt: Date.now(),
+	};
+	drafts.set(draft.id, draft);
+	return draft;
 }
 
 // ── Tool registration ───────────────────────────────────────────
@@ -30,21 +73,19 @@ interface GmailToolParams {
 export function registerGmailTool(
 	pi: ExtensionAPI,
 	getClient: () => GmailClient | null,
+	getConfig: () => GmailConfig,
 ): void {
 	pi.registerTool({
 		name: "gmail",
 		label: "Gmail",
 		description:
-			"Read and search Gmail. Actions: " +
-			"inbox (recent inbox messages), " +
-			"unread (unread messages), " +
-			"search (Gmail query — from:, subject:, label:, is:, has:, before:, after:), " +
-			"read (message by ID), " +
-			"thread (full thread by ID), " +
-			"labels (list all labels).",
+			"Read, search, compose, and send Gmail. " +
+			"Read: inbox, unread, search (Gmail query), read (message by ID), thread, labels. " +
+			"Write: compose (create draft), reply (draft reply), send (send a draft by draft_id). " +
+			"Compose and reply only create drafts — use send with the returned draft_id to actually send.",
 		parameters: Type.Object({
 			action: StringEnum(
-				["inbox", "unread", "search", "read", "thread", "labels"] as const,
+				["inbox", "unread", "search", "read", "thread", "labels", "compose", "reply", "send"] as const,
 				{ description: "Action to perform" },
 			) as any,
 			query: Type.Optional(
@@ -54,7 +95,7 @@ export function registerGmailTool(
 				}),
 			),
 			id: Type.Optional(
-				Type.String({ description: "Message or thread ID (for read/thread actions)" }),
+				Type.String({ description: "Message or thread ID (for read/thread/reply actions)" }),
 			),
 			maxResults: Type.Optional(
 				Type.Number({
@@ -62,6 +103,24 @@ export function registerGmailTool(
 					minimum: 1,
 					maximum: 50,
 				}),
+			),
+			to: Type.Optional(
+				Type.String({ description: "Recipient email (for compose)" }),
+			),
+			subject: Type.Optional(
+				Type.String({ description: "Email subject (for compose)" }),
+			),
+			body: Type.Optional(
+				Type.String({ description: "Email body text (for compose/reply)" }),
+			),
+			cc: Type.Optional(
+				Type.String({ description: "CC recipients (for compose)" }),
+			),
+			bcc: Type.Optional(
+				Type.String({ description: "BCC recipients (for compose)" }),
+			),
+			draft_id: Type.Optional(
+				Type.String({ description: "Draft ID from compose/reply to send (for send action)" }),
 			),
 		}) as any,
 
@@ -151,6 +210,80 @@ export function registerGmailTool(
 						}
 
 						return textResult(lines.join("\n"));
+					}
+
+					case "compose": {
+						const config = getConfig();
+						if (config.readOnly) {
+							return textResult("Gmail is in read-only mode. Write operations are disabled.");
+						}
+						if (!params.to || !params.subject || !params.body) {
+							return textResult("Missing required parameters: to, subject, body");
+						}
+						const draft = createDraft({
+							to: params.to,
+							subject: params.subject,
+							body: params.body,
+							cc: params.cc,
+							bcc: params.bcc,
+						});
+						return textResult(formatDraftPreview(draft, "New Email Draft"));
+					}
+
+					case "reply": {
+						const config = getConfig();
+						if (config.readOnly) {
+							return textResult("Gmail is in read-only mode. Write operations are disabled.");
+						}
+						if (!params.id || !params.body) {
+							return textResult("Missing required parameters: id (message to reply to), body");
+						}
+						// Fetch the original message for reply metadata
+						const original = await client.getMessage(params.id);
+						const replySubject = original.subject.startsWith("Re: ")
+							? original.subject
+							: `Re: ${original.subject}`;
+
+						// Extract Message-ID header for In-Reply-To
+						const draft = createDraft({
+							to: original.from,
+							subject: replySubject,
+							body: params.body,
+							threadId: original.threadId,
+							inReplyTo: original.id,
+						});
+						return textResult(formatDraftPreview(draft, `Reply to: ${original.from}`));
+					}
+
+					case "send": {
+						const config = getConfig();
+						if (config.readOnly) {
+							return textResult("Gmail is in read-only mode. Write operations are disabled.");
+						}
+						if (!params.draft_id) {
+							return textResult("Missing required parameter: draft_id. Use compose or reply first to create a draft.");
+						}
+						const draft = drafts.get(params.draft_id);
+						if (!draft) {
+							return textResult(`Draft not found: ${params.draft_id}. Available drafts: ${[...drafts.keys()].join(", ") || "none"}`);
+						}
+						const result = await client.sendMessage({
+							to: draft.to,
+							subject: draft.subject,
+							body: draft.body,
+							cc: draft.cc,
+							bcc: draft.bcc,
+							threadId: draft.threadId,
+							inReplyTo: draft.inReplyTo,
+						});
+						drafts.delete(params.draft_id);
+						return textResult(
+							`✅ Email sent successfully!\n\n` +
+							`- **To:** ${draft.to}\n` +
+							`- **Subject:** ${draft.subject}\n` +
+							`- **Message ID:** \`${result.id}\`\n` +
+							`- **Thread ID:** \`${result.threadId}\``,
+						);
 					}
 
 					default:
@@ -252,6 +385,28 @@ function formatThread(thread: GmailThread) {
 	}
 
 	return textResult(lines.join("\n"));
+}
+
+function formatDraftPreview(draft: Draft, title: string): string {
+	const lines = [
+		`## 📝 ${title}`,
+		"",
+		`| Field | Value |`,
+		`|-------|-------|`,
+		`| To | ${draft.to} |`,
+		`| Subject | ${draft.subject} |`,
+	];
+	if (draft.cc) lines.push(`| CC | ${draft.cc} |`);
+	if (draft.bcc) lines.push(`| BCC | ${draft.bcc} |`);
+	if (draft.threadId) lines.push(`| Thread | \`${draft.threadId}\` |`);
+	lines.push(`| Draft ID | \`${draft.id}\` |`);
+	lines.push("", "### Body", "", draft.body);
+	lines.push(
+		"",
+		"---",
+		`⚠️ **This is a draft. To send, use: gmail send with draft_id="${draft.id}"**`,
+	);
+	return lines.join("\n");
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

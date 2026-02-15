@@ -111,11 +111,21 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			ctx.ui.notify(preview, "info");
 
 			// ── Step 4: Merge the PR ────────────────────────────
-			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
+			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`, "--delete-branch"];
 			const mergeResult = await gh(mergeArgs, cwd);
 
 			if (!mergeResult.ok) {
 				ctx.ui.notify(`❌ Merge failed: ${mergeResult.stderr || mergeResult.stdout}`, "error");
+				return;
+			}
+
+			// Verify the merge actually happened — gh pr merge can exit 0 without merging
+			const verifyData = await ghJson<any>(
+				["pr", "view", String(prNumber), "--json", "state"],
+				cwd,
+			);
+			if (verifyData?.state !== "MERGED") {
+				ctx.ui.notify(`❌ PR #${prNumber} was not merged (state: ${verifyData?.state ?? "unknown"}). The merge may require approvals or CI checks to pass.`, "error");
 				return;
 			}
 

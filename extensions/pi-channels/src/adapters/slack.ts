@@ -84,7 +84,9 @@ interface SlackCommandPayload {
 
 // ── Factory ─────────────────────────────────────────────────────
 
-export function createSlackAdapter(config: AdapterConfig, cwd?: string): ChannelAdapter {
+export type SlackAdapterLogger = (event: string, data: Record<string, unknown>, level?: string) => void;
+
+export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: SlackAdapterLogger): ChannelAdapter {
 	// Tokens live in settings under pi-channels.slack (not in the adapter config block)
 	const appToken = (cwd ? getChannelSetting(cwd, "slack.appToken") as string : null)
 		?? config.appToken as string;
@@ -232,7 +234,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							eventType: "message",
 						}),
 					});
-				} catch (err) { console.error("[pi-channels:slack] message handler error:", err); }
+				} catch (err) { log?.("slack-handler-error", { handler: "message", error: String(err) }, "error"); }
 			});
 
 			// ── App mention events ──────────────────────────
@@ -254,7 +256,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							eventType: "app_mention",
 						}),
 					});
-				} catch (err) { console.error("[pi-channels:slack] app_mention handler error:", err); }
+				} catch (err) { log?.("slack-handler-error", { handler: "app_mention", error: String(err) }, "error"); }
 			});
 
 			// ── Slash commands ───────────────────────────────
@@ -291,7 +293,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 							command: body.command,
 						},
 					});
-				} catch (err) { console.error("[pi-channels:slack] slash_commands handler error:", err); }
+				} catch (err) { log?.("slack-handler-error", { handler: "slash_commands", error: String(err) }, "error"); }
 			});
 
 			// ── Interactive payloads (future: button clicks, modals) ──
@@ -299,7 +301,7 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string): Channel
 				try {
 					await ack();
 					// TODO: handle interactive payloads (block actions, modals)
-				} catch (err) { console.error("[pi-channels:slack] interactive handler error:", err); }
+				} catch (err) { log?.("slack-handler-error", { handler: "interactive", error: String(err) }, "error"); }
 			});
 
 			await socketClient.start();

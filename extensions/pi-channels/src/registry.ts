@@ -9,7 +9,9 @@ import { createSlackAdapter } from "./adapters/slack.ts";
 
 // ── Built-in adapter factories ──────────────────────────────────
 
-type AdapterFactory = (config: AdapterConfig, cwd?: string) => ChannelAdapter;
+export type AdapterLogger = (event: string, data: Record<string, unknown>, level?: string) => void;
+
+type AdapterFactory = (config: AdapterConfig, cwd?: string, log?: AdapterLogger) => ChannelAdapter;
 
 const builtinFactories: Record<string, AdapterFactory> = {
 	telegram: createTelegramAdapter,
@@ -24,12 +26,20 @@ export class ChannelRegistry {
 	private routes = new Map<string, { adapter: string; recipient: string }>();
 	private errors: Array<{ adapter: string; error: string }> = [];
 	private onIncoming: OnIncomingMessage = () => {};
+	private log?: AdapterLogger;
 
 	/**
 	 * Set the callback for incoming messages (called by the extension entry).
 	 */
 	setOnIncoming(cb: OnIncomingMessage): void {
 		this.onIncoming = cb;
+	}
+
+	/**
+	 * Set the logger for adapter error reporting.
+	 */
+	setLogger(log: AdapterLogger): void {
+		this.log = log;
 	}
 
 	/**
@@ -67,7 +77,7 @@ export class ChannelRegistry {
 				continue;
 			}
 			try {
-				this.adapters.set(name, factory(adapterConfig, cwd));
+				this.adapters.set(name, factory(adapterConfig, cwd, this.log));
 			} catch (err: any) {
 				this.errors.push({ adapter: name, error: err.message });
 			}

@@ -87,6 +87,8 @@ export function getChannelSetting(cwd: string, keyPath: string): unknown {
 		return current;
 	}
 
-	// Project overrides global at the leaf level
-	return walk(projectCh) ?? walk(globalCh);
+	// Project overrides global at the leaf level.
+	// Use explicit undefined check so null can be used to unset a global default.
+	const projectValue = walk(projectCh);
+	return projectValue !== undefined ? projectValue : walk(globalCh);
 }

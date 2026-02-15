@@ -45,6 +45,7 @@ import { createLogger } from "./logger.ts";
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	const registry = new ChannelRegistry();
+	registry.setLogger(log);
 	let bridge: ChatBridge | null = null;
 
 	// ── Flag: --chat-bridge ───────────────────────────────────

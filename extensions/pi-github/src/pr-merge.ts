@@ -230,7 +230,7 @@ async function cleanupBranches(
 			} else if (localDelete.stderr.includes("not found")) {
 				// Branch doesn't exist locally — fine
 			} else {
-				errors.push(`Failed to delete local branch: ${localDelete.stderr}`);
+				errors.push(`Could not delete local branch \`${headBranch}\` (branch is still safe): ${localDelete.stderr}`);
 			}
 		}
 	}
@@ -239,7 +239,7 @@ async function cleanupBranches(
 	await gitExec(["fetch", "--prune"], cwd, 30_000);
 
 	if (errors.length > 0) {
-		ctx.ui.notify(`⚠️ Cleanup issues:\n${errors.map(e => `  - ${e}`).join("\n")}`, "warning");
+		ctx.ui.notify(`⚠️ Branch cleanup incomplete (no data was lost):\n${errors.map(e => `  - ${e}`).join("\n")}`, "warning");
 		log("pr-merge-cleanup-errors", { prNumber, errors });
 	}
 }

@@ -184,6 +184,13 @@ export class GmailAuth {
 		const http = await import("node:http");
 
 		return new Promise((resolve, reject) => {
+			let timer: ReturnType<typeof setTimeout> | null = null;
+
+			function cleanup(server: ReturnType<typeof http.createServer>) {
+				if (timer) { clearTimeout(timer); timer = null; }
+				server.close();
+			}
+
 			const server = http.createServer(async (req, res) => {
 				const url = new URL(req.url ?? "/", LOOPBACK_REDIRECT);
 				const code = url.searchParams.get("code");
@@ -191,8 +198,8 @@ export class GmailAuth {
 
 				if (error) {
 					res.writeHead(200, { "Content-Type": "text/html" });
-					res.end(`<h1>Authorization failed</h1><p>${error}</p><p>You can close this tab.</p>`);
-					server.close();
+					res.end(`<h1>Authorization failed</h1><p>${escapeHtml(error)}</p><p>You can close this tab.</p>`);
+					cleanup(server);
 					reject(new Error(`OAuth denied: ${error}`));
 					return;
 				}
@@ -203,15 +210,17 @@ export class GmailAuth {
 					return;
 				}
 
-				res.writeHead(200, { "Content-Type": "text/html" });
-				res.end("<h1>✅ Authorization successful!</h1><p>You can close this tab and return to the terminal.</p>");
-
+				// Exchange code BEFORE sending success response
 				try {
 					const tokens = await this.exchangeAuthCode(code, LOOPBACK_REDIRECT);
-					server.close();
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end("<h1>✅ Authorization successful!</h1><p>You can close this tab and return to the terminal.</p>");
+					cleanup(server);
 					resolve(tokens);
-				} catch (err) {
-					server.close();
+				} catch (err: any) {
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end(`<h1>❌ Token exchange failed</h1><p>${escapeHtml(err.message ?? "Unknown error")}</p><p>Check the terminal for details.</p>`);
+					cleanup(server);
 					reject(err);
 				}
 			});
@@ -221,11 +230,13 @@ export class GmailAuth {
 			});
 
 			server.on("error", (err) => {
+				if (timer) { clearTimeout(timer); timer = null; }
 				reject(new Error(`Failed to start local auth server: ${err.message}`));
 			});
 
 			// Auto-close after 5 minutes
-			setTimeout(() => {
+			timer = setTimeout(() => {
+				timer = null;
 				server.close();
 				reject(new Error("OAuth authorization timed out (5 minutes)"));
 			}, 5 * 60 * 1000);
@@ -310,4 +321,14 @@ function resolveEnvValue(value: string | undefined): string | undefined {
 		return process.env[envVar] ?? undefined;
 	}
 	return value;
+}
+
+/** Escape HTML special characters to prevent XSS. */
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;");
 }

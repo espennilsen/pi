@@ -15,8 +15,20 @@
  *   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { createGmailAuthFromEnv, type GmailAuth } from "./auth.ts";
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+/** Save refresh token to a file with restrictive permissions (0600). */
+function saveRefreshToken(token: string): string {
+	const tokenPath = path.join(getAgentDir(), ".gmail-token");
+	fs.writeFileSync(tokenPath, token, { mode: 0o600 });
+	return tokenPath;
+}
 
 // ── Shared state ────────────────────────────────────────────────
 
@@ -109,13 +121,12 @@ export default function (pi: ExtensionAPI) {
 				);
 				try {
 					const tokens = await auth.authorizeWithLocalServer();
+					const tokenPath = saveRefreshToken(tokens.refreshToken);
 					const masked = tokens.refreshToken.slice(0, 10) + "…" + tokens.refreshToken.slice(-4);
 					ctx.ui.notify(
-						`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nSet GOOGLE_REFRESH_TOKEN in your environment. The full token has been printed to stdout.`,
+						`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nFull token saved to: ${tokenPath}\nSet GOOGLE_REFRESH_TOKEN in your environment.`,
 						"info",
 					);
-					// Print full token to stdout (not to ui.notify which may be logged)
-					process.stdout.write(`\nGOOGLE_REFRESH_TOKEN=${tokens.refreshToken}\n\n`);
 				} catch (err: any) {
 					ctx.ui.notify(`❌ OAuth flow failed: ${err.message}`, "warning");
 				}
@@ -125,12 +136,12 @@ export default function (pi: ExtensionAPI) {
 			// Manual code exchange (fallback)
 			try {
 				const tokens = await auth.exchangeAuthCode(code);
+				const tokenPath = saveRefreshToken(tokens.refreshToken);
 				const masked = tokens.refreshToken.slice(0, 10) + "…" + tokens.refreshToken.slice(-4);
 				ctx.ui.notify(
-					`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nSet GOOGLE_REFRESH_TOKEN in your environment. The full token has been printed to stdout.`,
+					`✅ Authentication successful!\n\nRefresh token (masked): ${masked}\n\nFull token saved to: ${tokenPath}\nSet GOOGLE_REFRESH_TOKEN in your environment.`,
 					"info",
 				);
-				process.stdout.write(`\nGOOGLE_REFRESH_TOKEN=${tokens.refreshToken}\n\n`);
 			} catch (err: any) {
 				ctx.ui.notify(`❌ Code exchange failed: ${err.message}`, "warning");
 			}

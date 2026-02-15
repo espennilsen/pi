@@ -35,20 +35,21 @@ export function resolveEnv(value: string | undefined): string {
 
 /**
  * Open a URL in the default browser, cross-platform.
+ * Uses execFile with argument array to prevent shell injection.
  */
 export function openUrl(url: string): void {
-	const { exec } = require("node:child_process") as typeof import("node:child_process");
+	const { execFile } = require("node:child_process") as typeof import("node:child_process");
 
 	switch (process.platform) {
 		case "darwin":
-			exec(`open "${url}"`);
+			execFile("open", [url]);
 			break;
 		case "win32":
-			exec(`start "" "${url}"`);
+			execFile("cmd", ["/c", "start", "", url]);
 			break;
 		default:
 			// Linux and other Unix-like
-			exec(`xdg-open "${url}"`);
+			execFile("xdg-open", [url]);
 			break;
 	}
 }

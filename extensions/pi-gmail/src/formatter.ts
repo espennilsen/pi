@@ -272,6 +272,29 @@ function formatSize(bytes: number): string {
 
 // ── RFC 2822 message builder ────────────────────────────────────
 
+/**
+ * RFC 2047 encode a header value if it contains non-ASCII characters.
+ * Uses UTF-8 base64 encoding: =?UTF-8?B?<base64>?=
+ */
+function rfc2047Encode(value: string): string {
+	// eslint-disable-next-line no-control-regex
+	if (/^[\x00-\x7F]*$/.test(value)) return value;
+	const encoded = Buffer.from(value, "utf-8").toString("base64");
+	return `=?UTF-8?B?${encoded}?=`;
+}
+
+/**
+ * RFC 2047 encode an address header, encoding only display names.
+ * "Éspen <e@x.com>, 日本語 <j@x.com>" → "=?UTF-8?B?...?= <e@x.com>, =?UTF-8?B?...?= <j@x.com>"
+ */
+function rfc2047EncodeAddress(header: string): string {
+	return header.replace(/([^,<]*)<([^>]+)>/g, (_match, name: string, email: string) => {
+		const trimmed = name.trim().replace(/^"|"$/g, "");
+		if (!trimmed) return `<${email}>`;
+		return `${rfc2047Encode(trimmed)} <${email}>`;
+	});
+}
+
 export function buildRawMessage(opts: {
 	to: string;
 	from?: string;
@@ -284,11 +307,11 @@ export function buildRawMessage(opts: {
 	threadId?: string;
 }): string {
 	const lines: string[] = [];
-	if (opts.from) lines.push(`From: ${opts.from}`);
-	lines.push(`To: ${opts.to}`);
-	if (opts.cc) lines.push(`Cc: ${opts.cc}`);
-	if (opts.bcc) lines.push(`Bcc: ${opts.bcc}`);
-	lines.push(`Subject: ${opts.subject}`);
+	if (opts.from) lines.push(`From: ${rfc2047EncodeAddress(opts.from)}`);
+	lines.push(`To: ${rfc2047EncodeAddress(opts.to)}`);
+	if (opts.cc) lines.push(`Cc: ${rfc2047EncodeAddress(opts.cc)}`);
+	if (opts.bcc) lines.push(`Bcc: ${rfc2047EncodeAddress(opts.bcc)}`);
+	lines.push(`Subject: ${rfc2047Encode(opts.subject)}`);
 	lines.push("MIME-Version: 1.0");
 	lines.push("Content-Type: text/plain; charset=utf-8");
 	if (opts.inReplyTo) lines.push(`In-Reply-To: ${opts.inReplyTo}`);

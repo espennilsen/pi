@@ -21,7 +21,7 @@ import {
 	buildRawMessage,
 } from "./formatter.ts";
 import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
-import type { GmailSettings, GmailMessage } from "./types.ts";
+import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -314,20 +314,26 @@ export function registerGmailTool(
 					const drafts = await client.listDrafts(settings, agentDir, maxResults);
 					if (drafts.length === 0) return text("No drafts.");
 
-					// Fetch full drafts for display
-					const lines: string[] = [];
-					for (const d of drafts) {
-						const full = await client.getDraft(settings, agentDir, d.id);
+					// Fetch full drafts in parallel (batches of 10)
+					const fullDrafts = await fetchDrafts(settings, agentDir, drafts.map((d) => d.id));
+					const lines = fullDrafts.map((full) => {
 						const headers = full.message?.payload?.headers ?? [];
 						const to = headers.find((h) => h.name.toLowerCase() === "to")?.value ?? "";
 						const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value ?? "(no subject)";
-						lines.push(`- **${subject}** → ${to} (draft ID: ${d.id})`);
-					}
+						return `- **${subject}** → ${to} (draft ID: ${full.id})`;
+					});
 					return text(`**Drafts (${drafts.length}):**\n\n${lines.join("\n")}`);
 				}
 
 				case "delete_draft": {
 					if (!params.draft_id) return text("Missing required field: draft_id");
+
+					const confirmed = await ctx.ui.confirm(
+						"Delete draft?",
+						`Permanently delete draft ${params.draft_id}?`,
+					);
+					if (!confirmed) return text("❌ Delete cancelled by user.");
+
 					await client.deleteDraft(settings, agentDir, params.draft_id);
 					return text(`✓ Draft ${params.draft_id} deleted.`);
 				}
@@ -423,14 +429,22 @@ export function registerGmailTool(
 					if (!savePath) {
 						// Try to get filename from the message
 						const msg = await client.getMessage(settings, agentDir, params.id);
-						const filename = findAttachmentFilename(msg, params.attachment_id) ?? `attachment-${params.attachment_id}`;
-						savePath = path.join(ctx.cwd, filename);
+						const rawFilename = findAttachmentFilename(msg, params.attachment_id) ?? `attachment-${params.attachment_id}`;
+						// Sanitize: strip path separators and ".." segments from email-sourced filename
+						const sanitized = rawFilename.replace(/\.\./g, "_").replace(/[/\\]/g, "_");
+						savePath = path.join(ctx.cwd, sanitized);
 					}
 
 					// Resolve path
 					savePath = savePath.replace(/^@/, "");
 					if (!path.isAbsolute(savePath)) {
 						savePath = path.resolve(ctx.cwd, savePath);
+					}
+
+					// Prevent path traversal — resolved path must stay within cwd
+					const resolvedCwd = path.resolve(ctx.cwd);
+					if (!savePath.startsWith(resolvedCwd + path.sep) && savePath !== resolvedCwd) {
+						return text(`❌ Path traversal blocked: resolved path "${savePath}" is outside working directory.`);
 					}
 
 					fs.mkdirSync(path.dirname(savePath), { recursive: true });
@@ -461,6 +475,25 @@ async function fetchMessages(
 		const batch = ids.slice(i, i + batchSize);
 		const fetched = await Promise.all(
 			batch.map((id) => client.getMessage(settings, agentDir, id, "metadata")),
+		);
+		results.push(...fetched);
+	}
+
+	return results;
+}
+
+async function fetchDrafts(
+	settings: GmailSettings,
+	agentDir: string,
+	ids: string[],
+): Promise<GmailDraft[]> {
+	const results: GmailDraft[] = [];
+	const batchSize = 10;
+
+	for (let i = 0; i < ids.length; i += batchSize) {
+		const batch = ids.slice(i, i + batchSize);
+		const fetched = await Promise.all(
+			batch.map((id) => client.getDraft(settings, agentDir, id)),
 		);
 		results.push(...fetched);
 	}

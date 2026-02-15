@@ -187,7 +187,7 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo): string 
 	lines.push("1. Present each thread above to the user as a numbered list with a brief summary of the feedback and your assessment (agree/disagree/needs discussion).");
 	lines.push("2. If any feedback is ambiguous, subjective, or you disagree with it, flag it and ask the user what they want to do.");
 	lines.push("3. Wait for the user to confirm which threads to fix before making any code changes.");
-	lines.push("4. After fixing, commit the changes, resolve the threads on GitHub, and post a summary comment.");
+	lines.push("4. After fixing, commit the changes, then run `/gh-pr-fix <thread-numbers>` with the numbers of the threads you fixed (e.g. `/gh-pr-fix 1 2 3`) to push, resolve those threads on GitHub, and post a summary comment. Only include threads that were actually addressed.");
 
 	return lines.join("\n");
 }
@@ -222,7 +222,7 @@ async function resolveAndSummarize(
 	cwd: string,
 	ctx: any,
 	log: LogFn,
-): Promise<void> {
+): Promise<boolean> {
 	// Verify we're still on the PR branch before pushing
 	const currentBranch = await getCurrentBranch(cwd);
 	if (currentBranch !== prInfo.headRefName) {
@@ -230,7 +230,8 @@ async function resolveAndSummarize(
 			`❌ Current branch \`${currentBranch}\` does not match PR branch \`${prInfo.headRefName}\`.`,
 			"error",
 		);
-		return;
+		log("pr-fix-resolve", { prNumber: prInfo.number, resolved: 0, total: threads.length, errors: 1, branchMismatch: true });
+		return false;
 	}
 
 	ctx.ui.notify(`Resolving ${threads.length} thread${threads.length !== 1 ? "s" : ""} on PR #${prInfo.number}…`, "info");
@@ -242,12 +243,12 @@ async function resolveAndSummarize(
 
 	const errors: string[] = [];
 
-	// Push first — abort if it fails
+	// Push first — abort if it fails (caller retains state for retry)
 	const pushResult = await gitExec(["push", "origin", "HEAD"], cwd, 30_000);
 	if (!pushResult.ok) {
 		ctx.ui.notify(`❌ git push failed — threads not resolved.\n${pushResult.stderr}`, "error");
 		log("pr-fix-resolve", { prNumber: prInfo.number, resolved: 0, total: threads.length, errors: 1, pushFailed: true });
-		return;
+		return false;
 	}
 
 	// Reply to and resolve each thread
@@ -297,6 +298,7 @@ async function resolveAndSummarize(
 
 	ctx.ui.notify(lines.join("\n"), errors.length > 0 ? "warning" : "info");
 	log("pr-fix-resolve", { prNumber: prInfo.number, resolved, total: threads.length, errors: errors.length });
+	return true;
 }
 
 // ── Register the command ────────────────────────────────────────
@@ -305,10 +307,39 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
 	registerDualCommand(pi, "gh-pr-fix", "github-pr-fix", {
-		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, validates with user, fixes, resolves on GitHub.",
+		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. After fixing, run again with thread numbers to resolve: /gh-pr-fix 1 2 3",
 		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
-			const argStr = args.replace(/^#/, "");
+			const argStr = args.replace(/^#/, "").trim();
+
+			// ── Resolve phase: active session + thread numbers ──
+			if (activePrFix) {
+				const { prInfo, threads } = activePrFix;
+
+				// Parse optional thread numbers (1-indexed) to filter which threads to resolve
+				let threadsToResolve = threads;
+				const argParts = argStr.split(/\s+/).filter(Boolean);
+				if (argParts.length > 0) {
+					const indices = argParts.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+					if (indices.length > 0) {
+						threadsToResolve = indices
+							.filter(i => i >= 1 && i <= threads.length)
+							.map(i => threads[i - 1]);
+						if (threadsToResolve.length === 0) {
+							ctx.ui.notify(`❌ No valid thread numbers. Valid range: 1–${threads.length}.`, "error");
+							return;
+						}
+					}
+				}
+
+				const ok = await resolveAndSummarize(prInfo, threadsToResolve, activePrFix.cwd, ctx, log);
+				if (ok) {
+					activePrFix = null;
+				}
+				return;
+			}
+
+			// ── Fetch phase: no active session ──────────────────
 
 			// ── Step 1: Find PR ─────────────────────────────────
 			let prNumber: number | null = null;
@@ -427,21 +458,6 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 		},
 	});
 
-	// ── gh-pr-resolve tool (called by agent after fixing) ───────
-
-	registerDualCommand(pi, "gh-pr-resolve", "github-pr-resolve", {
-		description: "Resolve review threads on GitHub after fixing. Called by agent after /gh-pr-fix.",
-		handler: async (_args: string, ctx: any) => {
-			if (!activePrFix) {
-				ctx.ui.notify("❌ No active PR fix session. Run /gh-pr-fix first.", "error");
-				return;
-			}
-
-			const { prInfo, threads, cwd } = activePrFix;
-			activePrFix = null;
-			await resolveAndSummarize(prInfo, threads, cwd, ctx, log);
-		},
-	});
 }
 
 // ── State ───────────────────────────────────────────────────────

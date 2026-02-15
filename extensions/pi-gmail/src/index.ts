@@ -17,13 +17,19 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createGmailAuthFromEnv, type GmailAuth } from "./auth.ts";
+import { GmailClient } from "./client.ts";
 
 // ── Shared state ────────────────────────────────────────────────
 
 let auth: GmailAuth | null = null;
+let client: GmailClient | null = null;
 
 export function getAuth(): GmailAuth | null {
 	return auth;
+}
+
+export function getClient(): GmailClient | null {
+	return client;
 }
 
 // ── Extension entry ─────────────────────────────────────────────
@@ -50,7 +56,11 @@ export default function (pi: ExtensionAPI) {
 		if (!validation.ok) {
 			ctx.ui.notify(`pi-gmail: Auth validation failed: ${validation.error}`, "warning");
 			auth = null;
+			return;
 		}
+
+		// Initialize API client
+		client = new GmailClient(auth);
 	});
 
 	// ── Setup command ─────────────────────────────────────────

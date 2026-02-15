@@ -1,0 +1,385 @@
+/**
+ * pi-gmail — Lightweight Gmail REST API client.
+ *
+ * No heavy SDK — just fetch() against the Gmail API v1.
+ * Handles pagination, message parsing, body decoding, and rate limiting.
+ */
+
+import type { GmailAuth } from "./auth.ts";
+import type {
+	GmailMessage,
+	GmailMessageRef,
+	GmailAttachment,
+	GmailThread,
+	GmailLabel,
+	GmailListResult,
+	GmailThreadListResult,
+} from "./types.ts";
+
+// ── Constants ───────────────────────────────────────────────────
+
+const API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
+
+/** Max results per page (Gmail API max is 500, but 50 is practical) */
+const DEFAULT_MAX_RESULTS = 25;
+
+/** Rate limit: minimum ms between requests */
+const MIN_REQUEST_INTERVAL_MS = 100;
+
+// ── Client ──────────────────────────────────────────────────────
+
+export class GmailClient {
+	private auth: GmailAuth;
+	private lastRequestTime = 0;
+
+	constructor(auth: GmailAuth) {
+		this.auth = auth;
+	}
+
+	// ── Messages ──────────────────────────────────────────────
+
+	/**
+	 * List messages matching a Gmail search query.
+	 * Returns full message objects (not just refs).
+	 */
+	async listMessages(options?: {
+		query?: string;
+		maxResults?: number;
+		pageToken?: string;
+		labelIds?: string[];
+	}): Promise<GmailListResult> {
+		const params = new URLSearchParams();
+		if (options?.query) params.set("q", options.query);
+		params.set("maxResults", String(options?.maxResults ?? DEFAULT_MAX_RESULTS));
+		if (options?.pageToken) params.set("pageToken", options.pageToken);
+		if (options?.labelIds) {
+			for (const id of options.labelIds) params.append("labelIds", id);
+		}
+
+		const data = await this.request<{
+			messages?: GmailMessageRef[];
+			nextPageToken?: string;
+			resultSizeEstimate?: number;
+		}>(`/messages?${params.toString()}`);
+
+		const refs = data.messages ?? [];
+		const messages = await Promise.all(refs.map((ref) => this.getMessage(ref.id)));
+
+		return {
+			messages,
+			nextPageToken: data.nextPageToken,
+			resultSizeEstimate: data.resultSizeEstimate ?? 0,
+		};
+	}
+
+	/**
+	 * Get a single message by ID with full content.
+	 */
+	async getMessage(id: string): Promise<GmailMessage> {
+		const data = await this.request<RawMessage>(`/messages/${id}?format=full`);
+		return parseMessage(data);
+	}
+
+	/**
+	 * Search messages with Gmail query syntax.
+	 * Convenience wrapper around listMessages.
+	 *
+	 * Examples:
+	 *   search("from:john@example.com")
+	 *   search("subject:invoice after:2024/01/01")
+	 *   search("is:unread label:inbox")
+	 *   search("has:attachment filename:pdf")
+	 */
+	async search(
+		query: string,
+		maxResults: number = DEFAULT_MAX_RESULTS,
+	): Promise<GmailListResult> {
+		return this.listMessages({ query, maxResults });
+	}
+
+	// ── Threads ───────────────────────────────────────────────
+
+	/**
+	 * List threads matching a query.
+	 */
+	async listThreads(options?: {
+		query?: string;
+		maxResults?: number;
+		pageToken?: string;
+		labelIds?: string[];
+	}): Promise<GmailThreadListResult> {
+		const params = new URLSearchParams();
+		if (options?.query) params.set("q", options.query);
+		params.set("maxResults", String(options?.maxResults ?? DEFAULT_MAX_RESULTS));
+		if (options?.pageToken) params.set("pageToken", options.pageToken);
+		if (options?.labelIds) {
+			for (const id of options.labelIds) params.append("labelIds", id);
+		}
+
+		const data = await this.request<{
+			threads?: { id: string; snippet: string }[];
+			nextPageToken?: string;
+			resultSizeEstimate?: number;
+		}>(`/threads?${params.toString()}`);
+
+		const threadRefs = data.threads ?? [];
+		const threads = await Promise.all(threadRefs.map((ref) => this.getThread(ref.id)));
+
+		return {
+			threads,
+			nextPageToken: data.nextPageToken,
+			resultSizeEstimate: data.resultSizeEstimate ?? 0,
+		};
+	}
+
+	/**
+	 * Get a full thread with all messages.
+	 */
+	async getThread(id: string): Promise<GmailThread> {
+		const data = await this.request<{
+			id: string;
+			snippet: string;
+			messages: RawMessage[];
+		}>(`/threads/${id}?format=full`);
+
+		const messages = data.messages.map(parseMessage);
+		return {
+			id: data.id,
+			snippet: data.snippet,
+			messages,
+			subject: messages[0]?.subject ?? "(no subject)",
+			messageCount: messages.length,
+		};
+	}
+
+	// ── Labels ────────────────────────────────────────────────
+
+	/**
+	 * List all labels.
+	 */
+	async listLabels(): Promise<GmailLabel[]> {
+		const data = await this.request<{ labels: RawLabel[] }>("/labels");
+		return data.labels.map((l) => ({
+			id: l.id,
+			name: l.name,
+			type: l.type?.toLowerCase() === "system" ? "system" as const : "user" as const,
+			messagesUnread: l.messagesUnread,
+			messagesTotal: l.messagesTotal,
+		}));
+	}
+
+	/**
+	 * Get a single label by ID.
+	 */
+	async getLabel(id: string): Promise<GmailLabel> {
+		const data = await this.request<RawLabel>(`/labels/${id}`);
+		return {
+			id: data.id,
+			name: data.name,
+			type: data.type?.toLowerCase() === "system" ? "system" : "user",
+			messagesUnread: data.messagesUnread,
+			messagesTotal: data.messagesTotal,
+		};
+	}
+
+	/**
+	 * Modify labels on a message (add/remove).
+	 */
+	async modifyMessageLabels(
+		messageId: string,
+		addLabelIds?: string[],
+		removeLabelIds?: string[],
+	): Promise<void> {
+		await this.request(`/messages/${messageId}/modify`, {
+			method: "POST",
+			body: JSON.stringify({ addLabelIds, removeLabelIds }),
+		});
+	}
+
+	// ── Send ──────────────────────────────────────────────────
+
+	/**
+	 * Send a new email.
+	 */
+	async sendMessage(options: {
+		to: string;
+		subject: string;
+		body: string;
+		cc?: string;
+		bcc?: string;
+		replyTo?: string;
+		/** Thread ID for reply-in-thread */
+		threadId?: string;
+		/** Message-ID header to set In-Reply-To for replies */
+		inReplyTo?: string;
+	}): Promise<{ id: string; threadId: string }> {
+		const headers = [
+			`To: ${options.to}`,
+			`Subject: ${options.subject}`,
+			"Content-Type: text/plain; charset=utf-8",
+			`Date: ${new Date().toUTCString()}`,
+		];
+		if (options.cc) headers.push(`Cc: ${options.cc}`);
+		if (options.bcc) headers.push(`Bcc: ${options.bcc}`);
+		if (options.replyTo) headers.push(`Reply-To: ${options.replyTo}`);
+		if (options.inReplyTo) {
+			headers.push(`In-Reply-To: ${options.inReplyTo}`);
+			headers.push(`References: ${options.inReplyTo}`);
+		}
+
+		const raw = headers.join("\r\n") + "\r\n\r\n" + options.body;
+		const encoded = base64UrlEncode(raw);
+
+		const requestBody: Record<string, unknown> = { raw: encoded };
+		if (options.threadId) requestBody.threadId = options.threadId;
+
+		const data = await this.request<{ id: string; threadId: string }>("/messages/send", {
+			method: "POST",
+			body: JSON.stringify(requestBody),
+		});
+
+		return { id: data.id, threadId: data.threadId };
+	}
+
+	// ── Internal ──────────────────────────────────────────────
+
+	private async request<T>(path: string, init?: RequestInit): Promise<T> {
+		// Simple rate limiting
+		const now = Date.now();
+		const elapsed = now - this.lastRequestTime;
+		if (elapsed < MIN_REQUEST_INTERVAL_MS) {
+			await sleep(MIN_REQUEST_INTERVAL_MS - elapsed);
+		}
+		this.lastRequestTime = Date.now();
+
+		const headers = await this.auth.getHeaders();
+		const url = `${API_BASE}${path}`;
+		const res = await fetch(url, {
+			...init,
+			headers: { ...headers, ...(init?.headers as Record<string, string>) },
+		});
+
+		if (!res.ok) {
+			const errBody = await res.text();
+			throw new Error(`Gmail API error (${res.status} ${res.statusText}): ${errBody}`);
+		}
+
+		return (await res.json()) as T;
+	}
+}
+
+// ── Raw Gmail API types ─────────────────────────────────────────
+
+interface RawMessage {
+	id: string;
+	threadId: string;
+	labelIds?: string[];
+	snippet: string;
+	sizeEstimate: number;
+	payload: {
+		mimeType: string;
+		headers: { name: string; value: string }[];
+		body?: { data?: string; size: number; attachmentId?: string };
+		parts?: RawPart[];
+	};
+}
+
+interface RawPart {
+	mimeType: string;
+	filename?: string;
+	headers?: { name: string; value: string }[];
+	body?: { data?: string; size: number; attachmentId?: string };
+	parts?: RawPart[];
+}
+
+interface RawLabel {
+	id: string;
+	name: string;
+	type?: string;
+	messagesUnread?: number;
+	messagesTotal?: number;
+}
+
+// ── Message parsing ─────────────────────────────────────────────
+
+function parseMessage(raw: RawMessage): GmailMessage {
+	const headers = raw.payload.headers ?? [];
+	const getHeader = (name: string): string =>
+		headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+	const attachments: GmailAttachment[] = [];
+	const { text, html } = extractBodies(raw.payload, attachments);
+
+	return {
+		id: raw.id,
+		threadId: raw.threadId,
+		labelIds: raw.labelIds ?? [],
+		snippet: raw.snippet,
+		from: getHeader("From"),
+		to: getHeader("To"),
+		subject: getHeader("Subject"),
+		date: getHeader("Date"),
+		body: text,
+		htmlBody: html || undefined,
+		attachments,
+		unread: (raw.labelIds ?? []).includes("UNREAD"),
+		sizeEstimate: raw.sizeEstimate,
+	};
+}
+
+function extractBodies(
+	part: { mimeType: string; body?: { data?: string; size: number; attachmentId?: string }; parts?: RawPart[]; filename?: string },
+	attachments: GmailAttachment[],
+): { text: string; html: string } {
+	let text = "";
+	let html = "";
+
+	// Check for attachment
+	if (part.filename && part.body?.attachmentId) {
+		attachments.push({
+			attachmentId: part.body.attachmentId,
+			filename: part.filename,
+			mimeType: part.mimeType,
+			size: part.body.size,
+		});
+		return { text, html };
+	}
+
+	// Single part with body data
+	if (part.body?.data) {
+		const decoded = base64UrlDecode(part.body.data);
+		if (part.mimeType === "text/plain") text = decoded;
+		else if (part.mimeType === "text/html") html = decoded;
+	}
+
+	// Multipart — recurse into parts
+	if (part.parts) {
+		for (const sub of part.parts) {
+			const result = extractBodies(sub, attachments);
+			if (result.text) text = text || result.text;
+			if (result.html) html = html || result.html;
+		}
+	}
+
+	return { text, html };
+}
+
+// ── Base64url helpers ───────────────────────────────────────────
+
+function base64UrlDecode(data: string): string {
+	// Gmail uses URL-safe base64 (replace - with +, _ with /)
+	const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+	return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+function base64UrlEncode(data: string): string {
+	return Buffer.from(data, "utf-8")
+		.toString("base64")
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}

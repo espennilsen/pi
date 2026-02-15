@@ -239,15 +239,15 @@ export class GmailClient {
 		inReplyTo?: string;
 	}): Promise<{ id: string; threadId: string }> {
 		const headers = [
-			`To: ${options.to}`,
+			`To: ${sanitizeHeader(options.to)}`,
 			`Subject: ${encodeHeaderValue(options.subject)}`,
 			"Content-Type: text/plain; charset=utf-8",
 			`Date: ${new Date().toUTCString()}`,
 		];
-		if (options.from) headers.unshift(`From: ${options.from}`);
-		if (options.cc) headers.push(`Cc: ${options.cc}`);
-		if (options.bcc) headers.push(`Bcc: ${options.bcc}`);
-		if (options.replyTo) headers.push(`Reply-To: ${options.replyTo}`);
+		if (options.from) headers.unshift(`From: ${sanitizeHeader(options.from)}`);
+		if (options.cc) headers.push(`Cc: ${sanitizeHeader(options.cc)}`);
+		if (options.bcc) headers.push(`Bcc: ${sanitizeHeader(options.bcc)}`);
+		if (options.replyTo) headers.push(`Reply-To: ${sanitizeHeader(options.replyTo)}`);
 		if (options.inReplyTo) {
 			headers.push(`In-Reply-To: ${options.inReplyTo}`);
 			headers.push(`References: ${options.inReplyTo}`);
@@ -431,10 +431,19 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Strip \r and \n from header values to prevent header injection attacks.
+ */
+function sanitizeHeader(value: string): string {
+	return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/**
  * RFC 2047 encode a header value if it contains non-ASCII characters.
  * Uses =?UTF-8?B?...?= (Base64 encoded-word) syntax.
+ * Also sanitizes against header injection.
  */
 function encodeHeaderValue(value: string): string {
+	value = sanitizeHeader(value);
 	// Check if value contains non-ASCII characters
 	if (/^[\x20-\x7E]*$/.test(value)) {
 		return value; // Pure ASCII, no encoding needed

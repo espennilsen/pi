@@ -42,7 +42,7 @@ interface GmailToolParams {
 	label_id?: string;
 }
 
-// ── Draft store (in-memory, per session) ────────────────────────
+// ── Draft store (in-memory, per process lifetime) ───────────────
 
 interface Draft {
 	id: string;

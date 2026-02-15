@@ -2,19 +2,27 @@
   "name": "pi-channels",
   "version": "0.1.0",
   "description": "Two-way channel extension for pi — route messages between agents and Telegram, webhooks, and custom adapters",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "license": "MIT",
   "author": "Espen Nilsen",
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "@slack/socket-mode": "^2.0.5",
+    "@slack/web-api": "^7.14.1"
   }
 }

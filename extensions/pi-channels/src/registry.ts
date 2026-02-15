@@ -5,6 +5,7 @@
 import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelConfig, AdapterDirection, OnIncomingMessage, IncomingMessage } from "./types.ts";
 import { createTelegramAdapter } from "./adapters/telegram.ts";
 import { createWebhookAdapter } from "./adapters/webhook.ts";
+import { createSlackAdapter } from "./adapters/slack.ts";
 
 // ── Built-in adapter factories ──────────────────────────────────
 
@@ -13,6 +14,7 @@ type AdapterFactory = (config: AdapterConfig) => ChannelAdapter;
 const builtinFactories: Record<string, AdapterFactory> = {
 	telegram: createTelegramAdapter,
 	webhook: createWebhookAdapter,
+	slack: createSlackAdapter,
 };
 
 // ── Registry ────────────────────────────────────────────────────

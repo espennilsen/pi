@@ -156,7 +156,8 @@ export class RpcAgent {
 		this.proc.on("close", (code) => {
 			this.state_ = "dead";
 			if (this.promptReject) {
-				this.promptReject(new Error(`RPC agent ${this.id} exited with code ${code}`));
+				const stderrSuffix = this.stderr_.trim() ? `\n${this.stderr_.trim()}` : "";
+				this.promptReject(new Error(`RPC agent ${this.id} exited with code ${code}${stderrSuffix}`));
 				this.promptResolve = null;
 				this.promptReject = null;
 			}
@@ -205,12 +206,13 @@ export class RpcAgent {
 
 			// Timeout
 			if (timeoutMs > 0) {
+				let graceTimer: ReturnType<typeof setTimeout> | null = null;
 				const timer = setTimeout(() => {
 					if (this.state_ === "streaming") {
 						// Abort the current operation
 						this.proc!.stdin!.write(JSON.stringify({ type: "abort" }) + "\n");
 						// Give it a moment to abort gracefully
-						setTimeout(() => {
+						graceTimer = setTimeout(() => {
 							if (this.promptReject) {
 								this.promptReject(new Error(`Prompt timed out after ${timeoutMs}ms`));
 								this.promptResolve = null;
@@ -222,15 +224,17 @@ export class RpcAgent {
 				}, timeoutMs);
 				timer.unref();
 
-				// Clear timeout when prompt completes
+				// Clear timeouts when prompt completes
 				const origResolve = this.promptResolve;
 				this.promptResolve = (result) => {
 					clearTimeout(timer);
+					if (graceTimer) clearTimeout(graceTimer);
 					origResolve(result);
 				};
 				const origReject = this.promptReject;
 				this.promptReject = (err) => {
 					clearTimeout(timer);
+					if (graceTimer) clearTimeout(graceTimer);
 					origReject(err);
 				};
 			}
@@ -316,6 +320,7 @@ export class RpcAgent {
 			this.usage_.cacheRead += this.currentUsage.cacheRead;
 			this.usage_.cacheWrite += this.currentUsage.cacheWrite;
 			this.usage_.cost += this.currentUsage.cost;
+			this.usage_.contextTokens += this.currentUsage.contextTokens;
 			this.usage_.turns += this.currentUsage.turns;
 			if (this.currentModel) this.model_ = this.currentModel;
 

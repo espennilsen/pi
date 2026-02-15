@@ -290,6 +290,7 @@ export class AgentPool {
 			t.cacheRead += node.usage.cacheRead;
 			t.cacheWrite += node.usage.cacheWrite;
 			t.cost += node.usage.cost;
+			t.contextTokens += node.usage.contextTokens;
 			t.turns += node.usage.turns;
 		}
 		return t;

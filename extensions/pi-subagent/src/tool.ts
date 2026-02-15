@@ -1012,8 +1012,8 @@ async function handlePoolAction(
 
 		case "kill-all": {
 			if (!activePool) return text("No active pool.");
-			await activePool.killAll();
-			return text("✓ All pool agents killed.");
+			await disposePool();
+			return text("✓ All pool agents killed and pool disposed.");
 		}
 
 		default:

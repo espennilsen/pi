@@ -218,8 +218,5 @@ export interface SubagentSettings {
 	maxPoolSize: number;
 	/** Max tree depth for orchestrator mode (root = 0) */
 	maxDepth: number;
-	/** Timeout for a single send_message call (ms) */
-	sendTimeoutMs: number;
-	/** Idle timeout — kill agents inactive for this long (ms, 0 = disabled) */
-	idleTimeoutMs: number;
+
 }

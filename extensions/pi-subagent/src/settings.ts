@@ -53,7 +53,6 @@ export function resolveSettings(cwd: string): SubagentSettings {
 		blockedExtensions,
 		maxPoolSize: (merged.maxPoolSize as number) ?? 20,
 		maxDepth: (merged.maxDepth as number) ?? 4,
-		sendTimeoutMs: (merged.sendTimeoutMs as number) ?? 120_000,
-		idleTimeoutMs: (merged.idleTimeoutMs as number) ?? 0,
+
 	};
 }

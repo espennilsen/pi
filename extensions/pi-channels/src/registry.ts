@@ -9,7 +9,7 @@ import { createSlackAdapter } from "./adapters/slack.ts";
 
 // ── Built-in adapter factories ──────────────────────────────────
 
-type AdapterFactory = (config: AdapterConfig) => ChannelAdapter;
+type AdapterFactory = (config: AdapterConfig, cwd?: string) => ChannelAdapter;
 
 const builtinFactories: Record<string, AdapterFactory> = {
 	telegram: createTelegramAdapter,
@@ -34,8 +34,9 @@ export class ChannelRegistry {
 
 	/**
 	 * Load adapters + routes from config. Custom adapters (registered via events) are preserved.
+	 * @param cwd — working directory, passed to adapter factories for settings resolution.
 	 */
-	loadConfig(config: ChannelConfig): void {
+	loadConfig(config: ChannelConfig, cwd?: string): void {
 		this.errors = [];
 
 		// Stop existing adapters
@@ -66,7 +67,7 @@ export class ChannelRegistry {
 				continue;
 			}
 			try {
-				this.adapters.set(name, factory(adapterConfig));
+				this.adapters.set(name, factory(adapterConfig, cwd));
 			} catch (err: any) {
 				this.errors.push({ adapter: name, error: err.message });
 			}

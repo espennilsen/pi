@@ -14,18 +14,26 @@
  *   - Channel allowlisting (optional)
  *
  * Requires:
- *   - App-level token (xapp-...) for Socket Mode connection
- *   - Bot token (xoxb-...) for Web API calls
+ *   - App-level token (xapp-...) for Socket Mode — in settings under pi-channels.slack.appToken
+ *   - Bot token (xoxb-...) for Web API — in settings under pi-channels.slack.botToken
  *   - Socket Mode enabled in app settings
  *
- * Config (in settings.json under pi-channels.adapters.slack):
+ * Config in ~/.pi/agent/settings.json:
  * {
- *   "type": "slack",
- *   "appToken": "env:SLACK_APP_TOKEN",
- *   "botToken": "env:SLACK_BOT_TOKEN",
- *   "allowedChannelIds": ["C0123456789"],
- *   "respondToMentionsOnly": true,
- *   "slashCommand": "/aivena"
+ *   "pi-channels": {
+ *     "adapters": {
+ *       "slack": {
+ *         "type": "slack",
+ *         "allowedChannelIds": ["C0123456789"],
+ *         "respondToMentionsOnly": true,
+ *         "slashCommand": "/aivena"
+ *       }
+ *     },
+ *     "slack": {
+ *       "appToken": "xapp-1-...",
+ *       "botToken": "xoxb-..."
+ *     }
+ *   }
  * }
  */
 
@@ -37,19 +45,9 @@ import type {
 	AdapterConfig,
 	OnIncomingMessage,
 } from "../types.ts";
+import { getChannelSetting } from "../config.ts";
 
 const MAX_LENGTH = 3000; // Slack block text limit; actual API limit is 4000 but leave margin
-
-// ── Config resolution ───────────────────────────────────────────
-
-function resolveSecret(value: unknown): string {
-	if (typeof value !== "string") return "";
-	if (value.startsWith("env:")) {
-		const envVar = value.slice(4);
-		return process.env[envVar] ?? "";
-	}
-	return value;
-}
 
 // ── Slack event types (subset) ──────────────────────────────────
 
@@ -86,15 +84,19 @@ interface SlackCommandPayload {
 
 // ── Factory ─────────────────────────────────────────────────────
 
-export function createSlackAdapter(config: AdapterConfig): ChannelAdapter {
-	const appToken = resolveSecret(config.appToken);
-	const botToken = resolveSecret(config.botToken);
+export function createSlackAdapter(config: AdapterConfig, cwd?: string): ChannelAdapter {
+	// Tokens live in settings under pi-channels.slack (not in the adapter config block)
+	const appToken = (cwd ? getChannelSetting(cwd, "slack.appToken") as string : null)
+		?? config.appToken as string;
+	const botToken = (cwd ? getChannelSetting(cwd, "slack.botToken") as string : null)
+		?? config.botToken as string;
+
 	const allowedChannelIds = config.allowedChannelIds as string[] | undefined;
 	const respondToMentionsOnly = config.respondToMentionsOnly === true;
 	const slashCommand = (config.slashCommand as string) ?? "/aivena";
 
-	if (!appToken) throw new Error("Slack adapter requires appToken (xapp-...)");
-	if (!botToken) throw new Error("Slack adapter requires botToken (xoxb-...)");
+	if (!appToken) throw new Error("Slack adapter requires appToken (xapp-...) in settings under pi-channels.slack.appToken");
+	if (!botToken) throw new Error("Slack adapter requires botToken (xoxb-...) in settings under pi-channels.slack.botToken");
 
 	let socketClient: SocketModeClient | null = null;
 	const webClient = new WebClient(botToken);

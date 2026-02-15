@@ -16,8 +16,7 @@
  *       "timeoutMs": 600000,
  *       "model": null,
  *       "maxPoolSize": 20,
- *       "maxDepth": 4,
- *       "sendTimeoutMs": 120000
+ *       "maxDepth": 4
  *     }
  *   }
  *

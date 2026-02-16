@@ -161,8 +161,8 @@ export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cachedSettings: FullGmailSettings | null = null;
 
-	const getSettingsCached = (cwd?: string): GmailSettings => {
-		if (!cachedSettings) cachedSettings = getSettings(cwd ?? ".");
+	const getSettingsCached = (): GmailSettings => {
+		if (!cachedSettings) throw new Error("Gmail not initialized. Waiting for session_start.");
 		return cachedSettings;
 	};
 

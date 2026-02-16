@@ -285,10 +285,13 @@ function rfc2047Encode(value: string): string {
 
 /**
  * RFC 2047 encode an address header, encoding only display names.
+ * Handles quoted display names: "Foo <Bar>" <user@x.com>
  * "Éspen <e@x.com>, 日本語 <j@x.com>" → "=?UTF-8?B?...?= <e@x.com>, =?UTF-8?B?...?= <j@x.com>"
  */
 function rfc2047EncodeAddress(header: string): string {
-	return header.replace(/([^,<]*)<([^>]+)>/g, (_match, name: string, email: string) => {
+	// Match: optional quoted or unquoted display name, then <email>
+	// Quoted: "anything" <email>  |  Unquoted: non-<, chars <email>
+	return header.replace(/("(?:[^"\\]|\\.)*"|[^,<]*)<([^>]+)>/g, (_match, name: string, email: string) => {
 		const trimmed = name.trim().replace(/^"|"$/g, "");
 		if (!trimmed) return `<${email}>`;
 		return `${rfc2047Encode(trimmed)} <${email}>`;

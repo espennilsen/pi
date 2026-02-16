@@ -435,13 +435,11 @@ export function registerGmailTool(
 						savePath = path.join(ctx.cwd, sanitized);
 					}
 
-					// Resolve path
+					// Resolve and normalize path (handles ".." segments in both relative and absolute paths)
 					savePath = savePath.replace(/^@/, "");
-					if (!path.isAbsolute(savePath)) {
-						savePath = path.resolve(ctx.cwd, savePath);
-					}
+					savePath = path.resolve(ctx.cwd, savePath);
 
-					// Prevent path traversal — resolved path must stay within cwd
+					// Prevent path traversal — normalized path must stay within cwd
 					const resolvedCwd = path.resolve(ctx.cwd);
 					if (!savePath.startsWith(resolvedCwd + path.sep) && savePath !== resolvedCwd) {
 						return text(`❌ Path traversal blocked: resolved path "${savePath}" is outside working directory.`);

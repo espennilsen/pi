@@ -90,6 +90,7 @@ function startNotifications(
 	agentDir: string,
 	log: ReturnType<typeof createLogger>,
 ): void {
+	if (notificationTimer !== null) return; // already polling
 	const notif = settings.notifications;
 	if (!notif?.enabled) return;
 
@@ -104,10 +105,9 @@ function startNotifications(
 		try {
 			if (!isAuthenticated(agentDir)) return;
 
-			// Search for new messages since last check
-			const afterDate = new Date(lastCheckTimestamp);
-			const afterStr = `${afterDate.getFullYear()}/${afterDate.getMonth() + 1}/${afterDate.getDate()}`;
-			const fullQuery = `${query} after:${afterStr}`;
+			// Search for new messages since last check (epoch seconds for precise filtering)
+			const afterEpoch = Math.floor(lastCheckTimestamp / 1000);
+			const fullQuery = `${query} after:${afterEpoch}`;
 
 			const list = await client.listMessages(settings, agentDir, fullQuery, 10);
 			if (list.messages && list.messages.length > 0) {
@@ -161,8 +161,8 @@ export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cachedSettings: FullGmailSettings | null = null;
 
-	const getSettingsCached = (): GmailSettings => {
-		if (!cachedSettings) cachedSettings = getSettings(".");
+	const getSettingsCached = (cwd?: string): GmailSettings => {
+		if (!cachedSettings) cachedSettings = getSettings(cwd ?? ".");
 		return cachedSettings;
 	};
 

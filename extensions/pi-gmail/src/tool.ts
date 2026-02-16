@@ -53,7 +53,7 @@ function text(s: string) {
 
 export function registerGmailTool(
 	pi: ExtensionAPI,
-	getSettings: (cwd?: string) => GmailSettings,
+	getSettings: () => GmailSettings,
 ): void {
 	pi.registerTool({
 		name: "gmail",
@@ -130,7 +130,7 @@ export function registerGmailTool(
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const agentDir = getAgentDir();
-			const settings = getSettings(ctx.cwd);
+			const settings = getSettings();
 
 			if (!isAuthenticated(agentDir)) {
 				return text("❌ Not authenticated. Run `/gmail-auth` to connect your Gmail account.");

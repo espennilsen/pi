@@ -65,7 +65,7 @@ function getSettings(cwd: string): FullGmailSettings {
 
 // ── Notification polling ────────────────────────────────────────
 
-let notificationTimer: ReturnType<typeof setInterval> | null = null;
+let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCheckTimestamp: number = Date.now();
 
 // Track notified message IDs to prevent re-notification (capped at 500)

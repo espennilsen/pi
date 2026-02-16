@@ -115,25 +115,6 @@ export async function modifyMessage(
 	});
 }
 
-export async function trashMessage(
-	settings: GmailSettings,
-	agentDir: string,
-	id: string,
-): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/trash`, {
-		method: "POST",
-	});
-}
-
-export async function untrashMessage(
-	settings: GmailSettings,
-	agentDir: string,
-	id: string,
-): Promise<GmailMessage> {
-	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/untrash`, {
-		method: "POST",
-	});
-}
 
 // ── Send ────────────────────────────────────────────────────────
 

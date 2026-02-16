@@ -99,7 +99,8 @@ function startNotifications(
 
 	log("notifications", { status: "starting", intervalMs, query, channel });
 
-	notificationTimer = setInterval(async () => {
+	// Self-scheduling setTimeout pattern to avoid overlapping polls
+	async function poll() {
 		try {
 			if (!isAuthenticated(agentDir)) return;
 
@@ -137,12 +138,19 @@ function startNotifications(
 		} catch (err: any) {
 			log("notification-error", { error: err.message }, "ERROR");
 		}
-	}, intervalMs);
+
+		// Schedule next poll only after current one completes
+		if (notificationTimer !== null) {
+			notificationTimer = setTimeout(poll, intervalMs);
+		}
+	}
+
+	notificationTimer = setTimeout(poll, intervalMs);
 }
 
 function stopNotifications(): void {
 	if (notificationTimer) {
-		clearInterval(notificationTimer);
+		clearTimeout(notificationTimer);
 		notificationTimer = null;
 	}
 }

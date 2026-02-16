@@ -19,6 +19,7 @@ import {
 	formatMessageList,
 	formatSearchResult,
 	buildRawMessage,
+	formatSize,
 } from "./formatter.ts";
 import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
 import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
@@ -243,13 +244,13 @@ export function registerGmailTool(
 
 					const email = getAuthenticatedEmail(agentDir);
 					const replyTo = params.reply_all
-						? [from, to].filter((a) => a && !a.includes(email ?? "")).join(", ") || from
+						? filterAddresses([from, to].join(", "), email ?? "")  || from
 						: from;
 
 					const raw = buildRawMessage({
 						from: email ?? undefined,
 						to: replyTo,
-						cc: params.reply_all ? getHeader("Cc") : undefined,
+						cc: params.reply_all ? filterAddresses(getHeader("Cc"), email ?? "") || undefined : undefined,
 						subject: subject.startsWith("Re:") ? subject : `Re: ${subject}`,
 						body: params.body,
 						inReplyTo: messageId,
@@ -364,9 +365,7 @@ export function registerGmailTool(
 					);
 					if (!confirmed) return text("❌ Trash cancelled.");
 
-					for (const msgId of msgIds) {
-						await client.trashMessage(settings, agentDir, msgId);
-					}
+					await client.batchModifyMessages(settings, agentDir, msgIds, ["TRASH"], ["INBOX"]);
 					return text(`✓ Trashed ${msgIds.length} message(s).`);
 				}
 
@@ -436,6 +435,7 @@ export function registerGmailTool(
 					}
 
 					// Resolve and normalize path (handles ".." segments in both relative and absolute paths)
+					// Strip leading "@" — pi tool convention where "@" is a cwd-relative prefix
 					savePath = savePath.replace(/^@/, "");
 					savePath = path.resolve(ctx.cwd, savePath);
 
@@ -448,7 +448,7 @@ export function registerGmailTool(
 					fs.mkdirSync(path.dirname(savePath), { recursive: true });
 					fs.writeFileSync(savePath, data);
 
-					return text(`✓ Attachment saved to: ${savePath} (${formatAttachmentSize(data.length)})`);
+					return text(`✓ Attachment saved to: ${savePath} (${formatSize(data.length)})`);
 				}
 
 				default:
@@ -499,6 +499,25 @@ async function fetchDrafts(
 	return results;
 }
 
+/**
+ * Parse a comma-separated address header into individual addresses,
+ * filter out the user's own email, and recombine.
+ */
+function filterAddresses(header: string, userEmail: string): string {
+	if (!header || !userEmail) return header;
+	// Extract email from "Name <email>" or plain "email" format
+	const extractEmail = (addr: string): string => {
+		const match = addr.match(/<([^>]+)>/);
+		return (match ? match[1]! : addr).trim().toLowerCase();
+	};
+	const myEmail = userEmail.toLowerCase();
+	return header
+		.split(",")
+		.map((a) => a.trim())
+		.filter((a) => a && extractEmail(a) !== myEmail)
+		.join(", ");
+}
+
 function findAttachmentFilename(msg: GmailMessage, attachmentId: string): string | null {
 	function search(part: any): string | null {
 		if (part.body?.attachmentId === attachmentId && part.filename) {
@@ -515,9 +534,4 @@ function findAttachmentFilename(msg: GmailMessage, attachmentId: string): string
 	return msg.payload ? search(msg.payload) : null;
 }
 
-function formatAttachmentSize(bytes: number): string {
-	if (bytes === 0) return "0B";
-	const units = ["B", "KB", "MB", "GB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(1024));
-	return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)}${units[i]}`;
-}
+

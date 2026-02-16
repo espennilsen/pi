@@ -53,7 +53,7 @@ function text(s: string) {
 
 export function registerGmailTool(
 	pi: ExtensionAPI,
-	getSettings: () => GmailSettings,
+	getSettings: (cwd?: string) => GmailSettings,
 ): void {
 	pi.registerTool({
 		name: "gmail",
@@ -130,7 +130,7 @@ export function registerGmailTool(
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const agentDir = getAgentDir();
-			const settings = getSettings();
+			const settings = getSettings(ctx.cwd);
 
 			if (!isAuthenticated(agentDir)) {
 				return text("❌ Not authenticated. Run `/gmail-auth` to connect your Gmail account.");
@@ -500,21 +500,46 @@ async function fetchDrafts(
 }
 
 /**
- * Parse a comma-separated address header into individual addresses,
- * filter out the user's own email, and recombine.
+ * Split an RFC 5322 address list on commas, respecting quoted strings.
+ * e.g. `"Doe, John" <john@x.com>, other@x.com` → [`"Doe, John" <john@x.com>`, `other@x.com`]
+ */
+function splitAddresses(header: string): string[] {
+	const addresses: string[] = [];
+	let current = "";
+	let inQuotes = false;
+
+	for (let i = 0; i < header.length; i++) {
+		const ch = header[i]!;
+		if (ch === '"' && (i === 0 || header[i - 1] !== "\\")) {
+			inQuotes = !inQuotes;
+		}
+		if (ch === "," && !inQuotes) {
+			const trimmed = current.trim();
+			if (trimmed) addresses.push(trimmed);
+			current = "";
+		} else {
+			current += ch;
+		}
+	}
+	const trimmed = current.trim();
+	if (trimmed) addresses.push(trimmed);
+
+	return addresses;
+}
+
+/**
+ * Parse an address list, filter out the user's own email, and recombine.
+ * Handles RFC 5322 quoted display names with commas.
  */
 function filterAddresses(header: string, userEmail: string): string {
 	if (!header || !userEmail) return header;
-	// Extract email from "Name <email>" or plain "email" format
 	const extractEmail = (addr: string): string => {
 		const match = addr.match(/<([^>]+)>/);
 		return (match ? match[1]! : addr).trim().toLowerCase();
 	};
 	const myEmail = userEmail.toLowerCase();
-	return header
-		.split(",")
-		.map((a) => a.trim())
-		.filter((a) => a && extractEmail(a) !== myEmail)
+	return splitAddresses(header)
+		.filter((a) => extractEmail(a) !== myEmail)
 		.join(", ");
 }
 

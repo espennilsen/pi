@@ -213,6 +213,12 @@ async function refreshAccessToken(
 
 	if (!resp.ok) {
 		const err = await resp.text();
+		// On 4xx errors (revoked token, invalid grant), clear stale tokens
+		// to break the retry loop and guide the user to re-authenticate
+		if (resp.status >= 400 && resp.status < 500) {
+			clearTokens(agentDir);
+			throw new Error(`Gmail refresh token revoked or invalid (${resp.status}). Run /gmail-auth to reconnect.`);
+		}
 		throw new Error(`Token refresh failed: ${resp.status} ${err}`);
 	}
 

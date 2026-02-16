@@ -17,6 +17,7 @@ import {
 	clearTokens,
 	verifyOAuthState,
 } from "./auth.ts";
+import * as crypto from "node:crypto";
 import { escapeHtml } from "./utils.ts";
 
 // ── HTTP helpers ────────────────────────────────────────────────
@@ -56,9 +57,26 @@ function getRedirectUri(): string {
 	return `http://localhost:${serverPort}/gmail/callback`;
 }
 
+// ── CSRF token for logout form ──────────────────────────────────
+
+let logoutCsrfToken: string | null = null;
+
+function generateLogoutCsrf(): string {
+	logoutCsrfToken = crypto.randomBytes(32).toString("hex");
+	return logoutCsrfToken;
+}
+
+function verifyLogoutCsrf(token: string | null): boolean {
+	if (!token || !logoutCsrfToken) return false;
+	const tokenBuf = Buffer.from(token);
+	const expectedBuf = Buffer.from(logoutCsrfToken);
+	if (tokenBuf.length !== expectedBuf.length) return false;
+	return crypto.timingSafeEqual(tokenBuf, expectedBuf);
+}
+
 // ── HTML pages ──────────────────────────────────────────────────
 
-function authStatusPage(authenticated: boolean, email: string | null): string {
+function authStatusPage(authenticated: boolean, email: string | null, csrfToken: string): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -87,6 +105,7 @@ ${
 		</div>
 		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a></p>
 		<form method="POST" action="/gmail/logout" style="display:inline">
+			<input type="hidden" name="_csrf" value="${csrfToken}" />
 			<button type="submit" class="btn btn-danger" style="border:none;cursor:pointer;font-size:inherit">Disconnect</button>
 		</form>`
 		: `<div class="status disconnected">
@@ -185,7 +204,8 @@ export function mountGmailRoutes(
 			if (req.method === "GET" && p === "/") {
 				const authed = isAuthenticated(agentDir);
 				const email = getAuthenticatedEmail(agentDir);
-				html(res, authStatusPage(authed, email));
+				const csrf = generateLogoutCsrf();
+				html(res, authStatusPage(authed, email, csrf));
 				return;
 			}
 
@@ -232,8 +252,22 @@ export function mountGmailRoutes(
 				return;
 			}
 
-			// Logout (POST only to prevent CSRF via GET)
+			// Logout (POST with CSRF token validation)
 			if (req.method === "POST" && p === "/logout") {
+				// Parse URL-encoded form body to extract CSRF token
+				const body = await new Promise<string>((resolve) => {
+					let data = "";
+					req.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+					req.on("end", () => resolve(data));
+				});
+				const params = new URLSearchParams(body);
+				const csrfToken = params.get("_csrf");
+
+				if (!verifyLogoutCsrf(csrfToken)) {
+					html(res, errorPage("Invalid CSRF token. Please go back and try again."), 403);
+					return;
+				}
+
 				clearTokens(agentDir);
 				res.writeHead(302, { Location: "/gmail" });
 				res.end();

@@ -97,6 +97,18 @@ export async function listLabels(
 	return data.labels ?? [];
 }
 
+// ── Trash ────────────────────────────────────────────────────────
+
+export async function trashMessage(
+	settings: GmailSettings,
+	agentDir: string,
+	id: string,
+): Promise<GmailMessage> {
+	return gmailFetch(settings, agentDir, `/messages/${encodeURIComponent(id)}/trash`, {
+		method: "POST",
+	});
+}
+
 // ── Modify messages ─────────────────────────────────────────────
 
 export async function modifyMessage(

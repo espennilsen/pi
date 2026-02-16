@@ -365,7 +365,13 @@ export function registerGmailTool(
 					);
 					if (!confirmed) return text("❌ Trash cancelled.");
 
-					await client.batchModifyMessages(settings, agentDir, msgIds, ["TRASH"], ["INBOX"]);
+					if (msgIds.length === 1) {
+						// Use dedicated trash endpoint for proper trash lifecycle (30-day auto-delete)
+						await client.trashMessage(settings, agentDir, msgIds[0]!);
+					} else {
+						// Batch operation for multiple messages
+						await client.batchModifyMessages(settings, agentDir, msgIds, ["TRASH"], ["INBOX"]);
+					}
 					return text(`✓ Trashed ${msgIds.length} message(s).`);
 				}
 
@@ -435,8 +441,8 @@ export function registerGmailTool(
 					}
 
 					// Resolve and normalize path (handles ".." segments in both relative and absolute paths)
-					// Strip leading "@" — pi tool convention where "@" is a cwd-relative prefix
-					savePath = savePath.replace(/^@/, "");
+					// Strip leading "@" or "@/" — pi tool convention where "@" is a cwd-relative prefix
+					savePath = savePath.replace(/^@\/?/, "");
 					savePath = path.resolve(ctx.cwd, savePath);
 
 					// Prevent path traversal — normalized path must stay within cwd

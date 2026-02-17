@@ -263,9 +263,6 @@ function formatOutput(
 	legendItems.push(
 		`${color(GRAY, HEX_EMPTY)} Free space: ${formatTokens(freeTokens)} (${formatPercent(freeTokens / contextWindow)})`,
 	);
-	legendItems.push(
-		`${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens`,
-	);
 
 	const categoryAnnotations: string[] = Array(BAR_ROWS).fill("");
 	categoryAnnotations[0] = `   ${color(WHITE, modelName)} · ${formatTokens(usedTokens)}/${formatTokens(contextWindow)} tokens`;
@@ -273,6 +270,7 @@ function formatOutput(
 	for (let i = 0; i < legendItems.length; i++) {
 		categoryAnnotations[i + 2] = `   ${legendItems[i]}`;
 	}
+	categoryAnnotations[BAR_ROWS - 1] = `   ${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens`;
 
 	for (let r = 0; r < BAR_ROWS; r++) {
 		lines.push(`${categoryBar[r]}${categoryAnnotations[r]}`);

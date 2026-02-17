@@ -1,36 +1,37 @@
 {
-	"name": "@e9n/pi-web-dashboard",
-	"version": "0.1.0",
-	"description": "Live agent dashboard with SSE streaming and prompt submission for pi",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"devDependencies": {
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"src",
-		"package.json",
-		"README.md",
-		"dashboard.html"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-web-dashboard"
-	}
+  "name": "@e9n/pi-web-dashboard",
+  "version": "0.1.0",
+  "description": "Live agent dashboard with SSE streaming and prompt submission for pi",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "dashboard.html",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-web-dashboard"
+  }
 }

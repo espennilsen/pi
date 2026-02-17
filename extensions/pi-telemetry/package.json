@@ -1,35 +1,36 @@
 {
-	"name": "@e9n/pi-telemetry",
-	"private": true,
-	"license": "MIT",
-	"version": "1.0.0",
-	"type": "module",
-	"scripts": {
-		"clean": "echo 'nothing to clean'",
-		"build": "echo 'nothing to build'",
-		"check": "echo 'nothing to check'"
-	},
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"keywords": [
-		"pi-package"
-	],
-	"description": "Local telemetry and event tracking extension for pi",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"files": [
-		"src",
-		"package.json",
-		"README.md"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-telemetry"
-	}
+  "name": "@e9n/pi-telemetry",
+  "private": true,
+  "license": "MIT",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "echo 'nothing to check'"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "keywords": [
+    "pi-package"
+  ],
+  "description": "Local telemetry and event tracking extension for pi",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-telemetry"
+  }
 }

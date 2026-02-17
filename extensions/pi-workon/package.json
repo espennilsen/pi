@@ -1,41 +1,42 @@
 {
-	"name": "@e9n/pi-workon",
-	"version": "0.1.0",
-	"description": "Project context switching and initialization for pi — switch projects, detect stacks, scaffold AGENTS.md",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		],
-		"skills": [
-			"./skills"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-ai": "*",
-		"@mariozechner/pi-coding-agent": "*",
-		"@sinclair/typebox": "*"
-	},
-	"devDependencies": {
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"src",
-		"package.json",
-		"README.md",
-		"skills"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-workon"
-	}
+  "name": "@e9n/pi-workon",
+  "version": "0.1.0",
+  "description": "Project context switching and initialization for pi — switch projects, detect stacks, scaffold AGENTS.md",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "skills",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-workon"
+  }
 }

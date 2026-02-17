@@ -1,36 +1,37 @@
 {
-	"name": "@e9n/pi-webnav",
-	"version": "0.1.0",
-	"description": "Unified navigation shell for pi-webserver — wraps all mounts in a shared nav layout with iframe routing",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"devDependencies": {
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"src",
-		"package.json",
-		"README.md",
-		"nav.html"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-webnav"
-	}
+  "name": "@e9n/pi-webnav",
+  "version": "0.1.0",
+  "description": "Unified navigation shell for pi-webserver — wraps all mounts in a shared nav layout with iframe routing",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "nav.html",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-webnav"
+  }
 }

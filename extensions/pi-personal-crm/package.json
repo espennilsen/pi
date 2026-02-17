@@ -1,44 +1,45 @@
 {
-	"name": "@e9n/pi-personal-crm",
-	"version": "0.2.0",
-	"description": "Personal CRM extension for pi coding agents",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"test": "node --import tsx/esm test-db.ts"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-ai": "*",
-		"@mariozechner/pi-coding-agent": "*",
-		"@sinclair/typebox": "*"
-	},
-	"dependencies": {
-		"better-sqlite3": "^12.6.2"
-	},
-	"devDependencies": {
-		"@types/better-sqlite3": "^7.6.12",
-		"tsx": "^4.21.0",
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"src",
-		"package.json",
-		"README.md",
-		"crm.html"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-personal-crm"
-	}
+  "name": "@e9n/pi-personal-crm",
+  "version": "0.2.0",
+  "description": "Personal CRM extension for pi coding agents",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx/esm test-db.ts"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "crm.html",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-personal-crm"
+  }
 }

@@ -74,6 +74,7 @@ function getSettings(cwd: string): FullGmailSettings {
 
 let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCheckTimestamp: number = Date.now();
+let pollGeneration = 0;
 
 // Track notified message IDs to prevent re-notification (capped at 500)
 const MAX_SEEN_IDS = 500;
@@ -104,11 +105,15 @@ function startNotifications(
 	const intervalMs = (notif.intervalMinutes ?? 5) * 60 * 1000;
 	const query = notif.query ?? "is:unread";
 	const channel = notif.channel ?? "default";
+	const generation = ++pollGeneration;
 
 	log("notifications", { status: "starting", intervalMs, query, channel });
 
 	// Self-scheduling setTimeout pattern to avoid overlapping polls
 	async function poll() {
+		// Quiesce if stop was called or a new generation started
+		if (notificationTimer === null || generation !== pollGeneration) return;
+
 		try {
 			if (!isAuthenticated(agentDir)) return;
 
@@ -146,8 +151,8 @@ function startNotifications(
 			log("notification-error", { error: err.message }, "ERROR");
 		}
 
-		// Schedule next poll only after current one completes
-		if (notificationTimer !== null) {
+		// Schedule next poll only if still active and same generation
+		if (notificationTimer !== null && generation === pollGeneration) {
 			notificationTimer = setTimeout(poll, intervalMs);
 		}
 	}
@@ -212,6 +217,10 @@ export default function (pi: ExtensionAPI) {
 		if (cachedSettings) {
 			mountGmailRoutes(pi.events, cachedSettings, getAgentDir());
 		}
+	});
+
+	pi.events.on("gmail:disconnected", () => {
+		stopNotifications();
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -284,7 +293,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (!confirmed) return;
 
-			clearTokens(agentDir);
+			await clearTokens(agentDir);
 			stopNotifications();
 			ctx.ui.setStatus("gmail", "Gmail: not connected");
 			ctx.ui.notify(`Gmail disconnected (${email}).`, "info");

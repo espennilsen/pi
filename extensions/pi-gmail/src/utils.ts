@@ -2,6 +2,8 @@
  * Shared utilities for pi-gmail.
  */
 
+import { execFile } from "node:child_process";
+
 // ── HTML escaping ───────────────────────────────────────────────
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -38,8 +40,6 @@ export function resolveEnv(value: string | undefined): string {
  * Uses execFile with argument array to prevent shell injection.
  */
 export function openUrl(url: string): void {
-	const { execFile } = require("node:child_process") as typeof import("node:child_process");
-
 	switch (process.platform) {
 		case "darwin":
 			execFile("open", [url]);

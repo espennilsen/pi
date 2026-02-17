@@ -86,7 +86,20 @@ export function saveTokens(agentDir: string, tokens: OAuthTokens): void {
 	cachedTokens = tokens;
 }
 
-export function clearTokens(agentDir: string): void {
+export async function clearTokens(agentDir: string): Promise<void> {
+	// Revoke refresh token at Google before deleting locally
+	const tokens = loadTokens(agentDir);
+	if (tokens?.refresh_token) {
+		try {
+			await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tokens.refresh_token)}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			});
+		} catch {
+			// Best-effort — continue with local cleanup
+		}
+	}
+
 	const tokensPath = getTokensPath(agentDir);
 	try {
 		fs.unlinkSync(tokensPath);
@@ -216,7 +229,7 @@ async function refreshAccessToken(
 		// On 4xx errors (revoked token, invalid grant), clear stale tokens
 		// to break the retry loop and guide the user to re-authenticate
 		if (resp.status >= 400 && resp.status < 500) {
-			clearTokens(agentDir);
+			await clearTokens(agentDir);
 			throw new Error(`Gmail refresh token revoked or invalid (${resp.status}). Run /gmail-auth to reconnect.`);
 		}
 		throw new Error(`Token refresh failed: ${resp.status} ${err}`);

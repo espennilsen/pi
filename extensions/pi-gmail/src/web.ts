@@ -280,7 +280,8 @@ export function mountGmailRoutes(
 					return;
 				}
 
-				clearTokens(agentDir);
+				await clearTokens(agentDir);
+				bus.emit("gmail:disconnected", {});
 				res.writeHead(302, { Location: "/gmail" });
 				res.end();
 				return;

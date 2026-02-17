@@ -6,8 +6,7 @@
  *   - /gh-issues       — List open issues
  *   - /gh-status       — Repo status summary
  *   - /gh-notifications — GitHub notifications
- *   - /gh-pr-create    — Create PR for current branch
- *   - /gh-pr-open      — Open PR in browser
+ *   - /gh-pr-create    — Create PR with LLM-generated summary
  *   - /gh-pr-review    — Show PR review feedback
  *   - /gh-pr-fix       — Fix PR review feedback (validates with user, fixes, resolves)
  *   - /gh-pr-merge     — Merge PR, delete remote/local branch, pull base

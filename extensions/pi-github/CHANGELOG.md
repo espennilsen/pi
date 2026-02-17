@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.1.1] - 2026-02-17
 
-### Added
+### Changed
 
-- `/gh-pr-open` / `/github-pr-open` — open PR in browser (auto-detects from current branch or accepts PR number/repo ref)
+- `/gh-pr-create` now gathers commits and diff, has the LLM draft a PR title and description, asks the user for input, and only creates the PR after confirmation. Replaces the previous `--fill` shortcut.
 
 ## [0.1.0] - 2026-02-17 (7839f93)
 

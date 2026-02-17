@@ -117,18 +117,20 @@ async function findPrsWithFeedback(
 	const allPrs = await ghJson<any[]>(["pr", "list", "-R", slug, "--state", "open", "--json", "number,title,headRefName", "--limit", "20"]);
 	if (!allPrs || allPrs.length === 0) return [];
 
-	const results: { number: number; title: string; headRefName: string; threadCount: number }[] = [];
-	for (const pr of allPrs) {
-		const threads = await getUnresolvedThreads(owner, repo, pr.number, cwd);
-		if (threads.length > 0) {
-			results.push({
-				number: pr.number,
-				title: pr.title,
-				headRefName: pr.headRefName,
-				threadCount: threads.length,
-			});
-		}
-	}
+	const results = (await Promise.all(
+		allPrs.map(async (pr) => {
+			const threads = await getUnresolvedThreads(owner, repo, pr.number, cwd);
+			if (threads.length > 0) {
+				return {
+					number: pr.number as number,
+					title: pr.title as string,
+					headRefName: pr.headRefName as string,
+					threadCount: threads.length,
+				};
+			}
+			return null;
+		}),
+	)).filter((r): r is NonNullable<typeof r> => r !== null);
 
 	return results;
 }
@@ -231,7 +233,12 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 		description: "Fix PR review feedback. Usage: /gh-pr-fix [number | owner/repo#N | repo#N | PR-URL]",
 		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
-			const { ref } = extractRepoRef(args);
+			const { ref, remaining } = extractRepoRef(args);
+
+			// Warn if input was provided but couldn't be parsed as a repo/PR ref
+			if (args.trim() && !ref.owner && !ref.repo && ref.prNumber === null) {
+				ctx.ui.notify(`⚠️ Could not parse "${args.trim()}" as a PR reference. Falling back to auto-detection.`, "warn");
+			}
 
 			// ── Step 1: Resolve repo ────────────────────────────
 			const resolved = await resolveRepo(ref, cwd);
@@ -308,7 +315,22 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			};
 
 			// ── Step 5: Ensure we're on the PR branch ───────────
-			const localPath = await resolveLocalClone(repo, owner) ?? cwd;
+			let localPath = await resolveLocalClone(repo, owner);
+			if (!localPath) {
+				// Verify cwd is actually the target repo before falling back
+				const cwdRepo = await ghJson<{ owner: { login: string }; name: string }>(
+					["repo", "view", "--json", "owner,name"],
+					cwd,
+				);
+				if (cwdRepo && (cwdRepo.owner.login !== owner || cwdRepo.name !== repo)) {
+					ctx.ui.notify(
+						`❌ No local clone found for ${repoSlug} and current directory is a different repo (${cwdRepo.owner.login}/${cwdRepo.name}). Clone ${repoSlug} or cd into it first.`,
+						"error",
+					);
+					return;
+				}
+				localPath = cwd;
+			}
 			const prBranch = prData.headRefName;
 			const currentBranch = await getCurrentBranch(localPath);
 

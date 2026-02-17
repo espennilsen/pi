@@ -9,4 +9,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Initial release.
+- First published release (v0.1.x was internal/unpublished).

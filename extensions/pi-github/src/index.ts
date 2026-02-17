@@ -25,6 +25,7 @@ import { createLogger } from "./logger.ts";
 import { setDefaultOwner } from "./repo-ref.ts";
 
 function loadSettings(cwd: string): void {
+	setDefaultOwner(null);
 	try {
 		const sm = SettingsManager.create(cwd, getAgentDir());
 		const global = sm.getGlobalSettings() as Record<string, any>;

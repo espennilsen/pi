@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, getCurrentBranch, getRepoSlug } from "./gh.ts";
+import { gh, ghJson, getCurrentBranch } from "./gh.ts";
 import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";
 
 type LogFn = (event: string, data: unknown, level?: string) => void;
@@ -139,11 +139,14 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				return;
 			}
 			const rFlag = repoFlag(resolved.owner, resolved.repo);
-			const branch = await getCurrentBranch(sessionCwd);
+
+			// Only show local branch when targeting the cwd repo (not a remote repo)
+			const isLocalRepo = rFlag.length === 0;
+			const branch = isLocalRepo ? await getCurrentBranch(sessionCwd) : null;
 
 			const lines: string[] = [];
 			lines.push(`**Repo:** ${resolved.slug}`);
-			lines.push(`**Branch:** ${branch ?? "unknown"}`);
+			if (branch) lines.push(`**Branch:** ${branch}`);
 			lines.push("");
 
 			// Open PRs count
@@ -168,8 +171,8 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			const issues = await ghJson<any[]>(["issue", "list", ...rFlag, "--json", "number", "--limit", "100"]);
 			lines.push(`**Open Issues:** ${issues?.length ?? "?"}`);
 
-			// Current branch PR
-			if (branch && branch !== "main" && branch !== "master") {
+			// Current branch PR (only for local repos)
+			if (isLocalRepo && branch && branch !== "main" && branch !== "master") {
 				const branchPr = await ghJson<any[]>(["pr", "list", ...rFlag, "--head", branch, "--json", "number,title,state,reviewDecision,url"]);
 				if (branchPr && branchPr.length > 0) {
 					const pr = branchPr[0];
@@ -180,8 +183,8 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				}
 			}
 
-			// CI status
-			if (branch) {
+			// CI status (branch-scoped for local, repo-wide for remote)
+			if (isLocalRepo && branch) {
 				const ci = await gh(["run", "list", ...rFlag, "--branch", branch, "--limit", "1", "--json", "status,conclusion,name,url"]);
 				if (ci.ok) {
 					try {

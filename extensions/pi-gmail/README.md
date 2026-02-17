@@ -29,8 +29,7 @@ Add to `~/.pi/agent/settings.json`:
 {
   "pi-gmail": {
     "clientId": "your-client-id.apps.googleusercontent.com",
-    "clientSecret": "your-client-secret",
-    "userEmail": "you@gmail.com"
+    "clientSecret": "your-client-secret"
   }
 }
 ```
@@ -47,7 +46,6 @@ Run `/gmail-auth` in pi to start the OAuth flow — opens a browser for Google s
 |-----|------|---------|-------------|
 | `clientId` | string | — | Google OAuth client ID (required) |
 | `clientSecret` | string | — | Google OAuth client secret (required) |
-| `userEmail` | string | — | Your Gmail address (used for reply filtering) |
 | `notifications.enabled` | boolean | `false` | Enable background polling for new mail |
 | `notifications.intervalMinutes` | number | `5` | Polling interval in minutes |
 | `notifications.query` | string | `"is:unread"` | Gmail search query for notifications |

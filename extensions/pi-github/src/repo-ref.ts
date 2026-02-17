@@ -12,8 +12,8 @@
 
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { ghJson, gitExec, getCurrentBranch } from "./gh.ts";
+import { join } from "node:path";
+import { ghJson, gitExec } from "./gh.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -135,13 +135,27 @@ export function extractRepoRef(args: string): { ref: RepoRef; remaining: string 
 
 	for (const part of parts) {
 		const parsed = parseRepoRef(part.replace(/^#/, ""));
-		if (parsed.owner || parsed.repo || parsed.prNumber !== null) {
+		// Only consume tokens that contain explicit repo indicators (/, #, URL, or are pure numbers)
+		// Don't consume plain names as repos when mixed with other args
+		const isExplicitRef = part.includes("/") || part.includes("#") || part.includes("github.com") || /^\d+$/.test(part);
+		if (isExplicitRef && (parsed.owner || parsed.repo || parsed.prNumber !== null)) {
 			// Merge into ref (later parts override earlier)
 			if (parsed.owner) ref.owner = parsed.owner;
 			if (parsed.repo) ref.repo = parsed.repo;
 			if (parsed.prNumber !== null) ref.prNumber = parsed.prNumber;
 		} else {
 			remaining.push(part);
+		}
+	}
+
+	// If no explicit ref was found and there's exactly one arg that looks like a repo name, use it
+	if (!ref.owner && !ref.repo && ref.prNumber === null && parts.length === 1) {
+		const parsed = parseRepoRef(parts[0].replace(/^#/, ""));
+		if (parsed.owner || parsed.repo) {
+			ref.owner = parsed.owner;
+			ref.repo = parsed.repo;
+			ref.prNumber = parsed.prNumber;
+			return { ref, remaining: "" };
 		}
 	}
 

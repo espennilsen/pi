@@ -57,9 +57,16 @@ function getSettings(cwd: string): FullGmailSettings {
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, any>;
 	const project = sm.getProjectSettings() as Record<string, any>;
+	const globalSettings = global?.["pi-gmail"] ?? {};
+	const projectSettings = project?.["pi-gmail"] ?? {};
 	return {
-		...global?.["pi-gmail"],
-		...project?.["pi-gmail"],
+		...globalSettings,
+		...projectSettings,
+		// Deep merge nested notifications so project keys don't clobber global defaults
+		notifications: {
+			...globalSettings?.notifications,
+			...projectSettings?.notifications,
+		},
 	};
 }
 

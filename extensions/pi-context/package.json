@@ -1,0 +1,33 @@
+{
+  "name": "@e9n/pi-context",
+  "version": "0.1.0",
+  "description": "Context window usage command for pi — visual breakdown of token usage by category",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "type": "module",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-context"
+  }
+}

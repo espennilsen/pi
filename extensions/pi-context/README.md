@@ -51,6 +51,11 @@ Tools (12)
 | ⛶ | Gray | Free space |
 | ⛝ | Red | Autocompact buffer |
 
+## Notes
+
+- **Autocompact buffer** is based on pi's `compaction.reserveTokens` setting (default: 16,384 tokens). The value is read from your settings if configured, otherwise the default is used. See [pi compaction docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/compaction.md) for details.
+- **Category estimates** are approximate — token counts use a chars/4 heuristic and may not exactly match the API-reported usage.
+
 ## Install
 
 ```bash

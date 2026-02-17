@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, estimateTokens } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, estimateTokens, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
 
@@ -105,17 +105,39 @@ function collectMessageTokens(ctx: ExtensionCommandContext): number {
 	for (const entry of branch) {
 		if (entry.type === "message") {
 			total += estimateTokens(entry.message);
+		} else if (entry.type === "custom_message") {
+			const content = entry.content;
+			if (typeof content === "string") {
+				total += estimateStringTokens(content);
+			} else if (Array.isArray(content)) {
+				for (const part of content) {
+					if (part.type === "text") {
+						total += estimateStringTokens(part.text);
+					}
+				}
+			}
+		} else if (entry.type === "compaction") {
+			total += estimateStringTokens(entry.summary);
+		} else if (entry.type === "branch_summary") {
+			total += estimateStringTokens(entry.summary);
 		}
 	}
 	return total;
 }
 
 function collectBreakdown(pi: ExtensionAPI, ctx: ExtensionCommandContext): CategoryBreakdown {
-	const systemPrompt = estimateStringTokens(ctx.getSystemPrompt());
+	const fullSystemPrompt = estimateStringTokens(ctx.getSystemPrompt());
 	const tools = collectToolTokens(pi);
 	const agents = collectAgentTokens();
 	const skills = collectSkillTokens(pi);
 	const messages = collectMessageTokens(ctx);
+
+	// The system prompt includes injected tool/skill/agent blocks.
+	// Subtract those to get the core system prompt tokens and avoid double-counting.
+	const toolsTotal = tools.reduce((s, t) => s + t.tokens, 0);
+	const agentsTotal = agents.reduce((s, a) => s + a.tokens, 0);
+	const skillsTotal = skills.reduce((s, sk) => s + sk.tokens, 0);
+	const systemPrompt = Math.max(fullSystemPrompt - toolsTotal - agentsTotal - skillsTotal, 0);
 
 	return { systemPrompt, tools, agents, skills, messages };
 }
@@ -170,7 +192,6 @@ function buildUsageBar(
 function buildCategoryBar(
 	contextWindow: number,
 	categories: CategoryInfo[],
-	freeTokens: number,
 	autocompactTokens: number,
 ): string[] {
 	const chars: string[] = [];
@@ -211,8 +232,9 @@ function formatOutput(
 	const model = ctx.model;
 	const modelName = model ? model.id : "unknown";
 
-	// Autocompact buffer — ~16.5% reserved for compaction headroom
-	const autocompactTokens = Math.round(contextWindow * 0.165);
+	// Autocompact buffer — reserveTokens from settings (default 16384)
+	const settings = SettingsManager.create(ctx.cwd, getAgentDir());
+	const autocompactTokens = settings.getCompactionReserveTokens();
 	const freeTokens = Math.max(contextWindow - usedTokens - autocompactTokens, 0);
 
 	const toolsTotal = breakdown.tools.reduce((s, t) => s + t.tokens, 0);
@@ -234,7 +256,7 @@ function formatOutput(
 
 	// ── Bars ────────────────────────────────────────────────
 	const usageBar = buildUsageBar(contextWindow, usedTokens, autocompactTokens);
-	const categoryBar = buildCategoryBar(contextWindow, categories, freeTokens, autocompactTokens);
+	const categoryBar = buildCategoryBar(contextWindow, categories, autocompactTokens);
 
 	const lines: string[] = [];
 	lines.push(`${BOLD}Context Usage${RESET}`);
@@ -310,8 +332,13 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (usage.tokens == null) {
+				ctx.ui.notify("Context usage is being recalculated (e.g. after compaction) — try again after the next response.", "info");
+				return;
+			}
+
 			const contextWindow = usage.contextWindow;
-			const usedTokens = usage.tokens ?? 0;
+			const usedTokens = usage.tokens;
 
 			const breakdown = collectBreakdown(pi, ctx);
 			const output = formatOutput(pi, ctx, breakdown, usedTokens, contextWindow);

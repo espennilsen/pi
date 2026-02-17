@@ -15,7 +15,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
+		"@mariozechner/pi-coding-agent": "*",
+		"@mariozechner/pi-ai": "*",
+		"@sinclair/typebox": "*"
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.95.3"

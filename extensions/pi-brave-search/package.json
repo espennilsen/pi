@@ -9,7 +9,6 @@
 		"typescript": "^5.9.3"
 	},
 	"peerDependencies": {
-		"@mariozechner/pi-ai": "*",
 		"@mariozechner/pi-coding-agent": "*",
 		"@sinclair/typebox": "*"
 	},

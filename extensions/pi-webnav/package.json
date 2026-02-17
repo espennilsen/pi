@@ -17,7 +17,6 @@
 	"author": "Espen Nilsen <hi@e9n.dev>",
 	"license": "MIT",
 	"peerDependencies": {
-		"@mariozechner/pi-ai": "*",
 		"@mariozechner/pi-coding-agent": "*"
 	},
 	"devDependencies": {

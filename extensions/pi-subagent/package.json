@@ -22,7 +22,9 @@
 	"peerDependencies": {
 		"@mariozechner/pi-ai": "*",
 		"@mariozechner/pi-coding-agent": "*",
-		"@sinclair/typebox": "*"
+		"@sinclair/typebox": "*",
+		"@mariozechner/pi-agent-core": "*",
+		"@mariozechner/pi-tui": "*"
 	},
 	"devDependencies": {
 		"typescript": "^5.9.3"

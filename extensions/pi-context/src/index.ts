@@ -264,7 +264,7 @@ function formatOutput(
 		`${color(GRAY, HEX_EMPTY)} Free space: ${formatTokens(freeTokens)} (${formatPercent(freeTokens / contextWindow)})`,
 	);
 	legendItems.push(
-		`${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens (${formatPercent(autocompactTokens / contextWindow)})`,
+		`${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens`,
 	);
 
 	const categoryAnnotations: string[] = Array(BAR_ROWS).fill("");

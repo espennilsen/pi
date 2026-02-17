@@ -1,0 +1,16 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
+
+## [0.1.0] - 2026-02-17
+
+### Added
+
+- `/context` command with visual hexagon bar for context window usage.
+- Category breakdown: system prompt, tools, custom agents, skills, messages.
+- Per-item token detail lists for tools, agents, and skills.
+- Color-coded output (blue, cyan, magenta, yellow, green, gray, red).
+- Autocompact buffer visualization.

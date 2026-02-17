@@ -259,6 +259,7 @@ export function mountGmailRoutes(
 				const body = await new Promise<string>((resolve, reject) => {
 					let data = "";
 					req.on("data", (chunk: Buffer) => {
+						if (tooLarge) return;
 						data += chunk.toString();
 						if (data.length > 4096) { tooLarge = true; resolve(""); }
 					});

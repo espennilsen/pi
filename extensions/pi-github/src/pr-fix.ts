@@ -189,17 +189,36 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
 	registerDualCommand(pi, "gh-pr-fix", "github-pr-fix", {
-		description: "Fix PR review feedback: /gh-pr-fix [pr-number]. Fetches unresolved threads, presents them for review, and provides thread IDs for resolution after fixing.",
+		description: "Fix PR review feedback: /gh-pr-fix [pr-number] [/path/to/repo]. Fetches unresolved threads, presents them for review, and provides thread IDs for resolution after fixing.",
 		handler: async (args: string, ctx: any) => {
-			const cwd = getCwd();
 			const argStr = args.replace(/^#/, "").trim();
 
-			// ── Step 1: Find PR ─────────────────────────────────
+			// Parse args: optional PR number and optional repo path
 			let prNumber: number | null = null;
+			let cwd = getCwd();
+			const parts = argStr.split(/\s+/).filter(Boolean);
 
-			if (argStr && !isNaN(parseInt(argStr, 10))) {
-				prNumber = parseInt(argStr, 10);
-			} else {
+			for (const part of parts) {
+				if (/^\d+$/.test(part)) {
+					prNumber = parseInt(part, 10);
+				} else {
+					// Treat as a filesystem path to a repo
+					const path = await import("node:path");
+					const { existsSync } = await import("node:fs");
+					const resolved = part.startsWith("/") ? part : path.resolve(getCwd(), part);
+					if (existsSync(resolved)) {
+						const isGit = await gitExec(["rev-parse", "--is-inside-work-tree"], resolved);
+						if (isGit.ok) {
+							cwd = resolved;
+							ctx.ui.notify(`Using repo at ${cwd}`, "info");
+						}
+					}
+				}
+			}
+
+			// ── Step 1: Find PR ─────────────────────────────────
+
+			if (!prNumber) {
 				const branch = await getCurrentBranch(cwd);
 				if (!branch) {
 					ctx.ui.notify("❌ Not in a git repo.", "error");
@@ -244,9 +263,28 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			// ── Step 3: Fetch unresolved threads ────────────────
 			ctx.ui.notify(`Fetching review feedback for PR #${prNumber}…`, "info");
 
-			const threads = await getUnresolvedThreads(repoInfo.owner, repoInfo.repo, prNumber, cwd);
+			let threads = await getUnresolvedThreads(repoInfo.owner, repoInfo.repo, prNumber!, cwd);
+
+			// If no threads on current PR and user didn't specify a PR number,
+			// scan other open PRs for unresolved feedback
+			if (threads.length === 0 && !(argStr && !isNaN(parseInt(argStr, 10)))) {
+				const allPrs = await ghJson<any[]>(["pr", "list", "--state", "open", "--json", "number,title,headRefName", "--limit", "20"], cwd);
+				if (allPrs && allPrs.length > 0) {
+					for (const pr of allPrs) {
+						if (pr.number === prNumber) continue;
+						const otherThreads = await getUnresolvedThreads(repoInfo.owner, repoInfo.repo, pr.number, cwd);
+						if (otherThreads.length > 0) {
+							ctx.ui.notify(`PR #${prNumber} is clean — found ${otherThreads.length} unresolved thread(s) on PR #${pr.number} (${pr.title}).`, "info");
+							prNumber = pr.number;
+							threads = otherThreads;
+							break;
+						}
+					}
+				}
+			}
+
 			if (threads.length === 0) {
-				ctx.ui.notify(`✅ PR #${prNumber} has no unresolved review threads!`, "info");
+				ctx.ui.notify(`✅ No open PRs have unresolved review threads!`, "info");
 				return;
 			}
 
@@ -258,7 +296,7 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			}
 
 			const prInfo: PrInfo = {
-				number: prNumber,
+				number: prNumber!,
 				title: prData.title ?? `PR #${prNumber}`,
 				headRefName: prData.headRefName ?? "unknown",
 				url: prData.url ?? "",

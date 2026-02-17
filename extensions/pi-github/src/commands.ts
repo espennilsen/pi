@@ -309,6 +309,45 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 		},
 	});
 
+	// ── /gh-pr-open · /github-pr-open ─────────────────────────
+
+	registerDualCommand(pi, "gh-pr-open", "github-pr-open", {
+		description: "Open PR in browser: /gh-pr-open [pr-number | owner/repo#N | PR-URL]",
+		handler: async (args, ctx) => {
+			const { ref } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+
+			let prNum = ref.prNumber;
+
+			if (!prNum) {
+				const branch = await getCurrentBranch(sessionCwd);
+				if (!branch) {
+					ctx.ui.notify("❌ Not in a git repo. Specify a PR number or owner/repo#N.", "error");
+					return;
+				}
+				const branchPrs = await ghJson<any[]>(["pr", "list", ...rFlag, "--head", branch, "--json", "number,title"]);
+				if (!branchPrs || branchPrs.length === 0) {
+					ctx.ui.notify(`No PR found for branch \`${branch}\` on ${resolved.slug}.`, "info");
+					return;
+				}
+				prNum = branchPrs[0].number;
+			}
+
+			const result = await gh(["pr", "view", String(prNum), ...rFlag, "--web"], sessionCwd);
+			if (result.ok) {
+				ctx.ui.notify(`🔗 Opened PR #${prNum} on ${resolved.slug} in browser.`, "info");
+				log("pr-open", { repo: resolved.slug, prNum });
+			} else {
+				ctx.ui.notify(`❌ Failed to open PR #${prNum}: ${result.stderr || result.stdout}`, "error");
+			}
+		},
+	});
+
 	// ── /gh-pr-review · /github-pr-review ─────────────────────
 
 	registerDualCommand(pi, "gh-pr-review", "github-pr-review", {

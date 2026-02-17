@@ -1,12 +1,18 @@
 {
-  "name": "pi-memory",
+  "name": "@e9n/pi-memory",
   "version": "0.1.0",
   "description": "Persistent memory system for pi — long-term facts, daily logs, and search",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -20,5 +26,17 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "skills",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-memory"
   }
 }

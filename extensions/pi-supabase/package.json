@@ -1,5 +1,5 @@
 {
-  "name": "pi-supabase",
+  "name": "@e9n/pi-supabase",
   "version": "0.1.0",
   "description": "Supabase integration for pi — read-only queries, table subscriptions, and pi-channels notifications",
   "type": "module",
@@ -15,12 +15,27 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@sinclair/typebox": "*"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-supabase"
   }
 }

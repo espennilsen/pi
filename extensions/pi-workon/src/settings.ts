@@ -6,7 +6,19 @@
  *   2. .pi/settings.json (project, overrides global)
  *
  * Example settings.json:
- *   { "pi-workon": { "devDir": "~/Dev" } }
+ *   {
+ *     "pi-workon": {
+ *       "devDirs": ["~/Dev", "~/Work"],
+ *       "aliases": {
+ *         "bg": "battleground.no",
+ *         "blog": "e9n.dev",
+ *         "infra": "/opt/infrastructure",
+ *         "dots": "~/.dotfiles"
+ *       }
+ *     }
+ *   }
+ *
+ * Legacy "devDir" (string) is still supported and merged into devDirs.
  */
 
 import * as fs from "node:fs";
@@ -16,8 +28,12 @@ import * as os from "node:os";
 const SETTINGS_KEY = "pi-workon";
 
 export interface WorkonSettings {
-	/** Base directory to scan for projects. Default: ~/Dev */
+	/** Directories to scan for projects. Default: ["~/Dev"] */
+	devDirs: string[];
+	/** Primary dev directory (first in list). */
 	devDir: string;
+	/** Project aliases: name → directory name or absolute path */
+	aliases: Record<string, string>;
 }
 
 function readJsonSafe(filePath: string): Record<string, unknown> {
@@ -28,8 +44,9 @@ function readJsonSafe(filePath: string): Record<string, unknown> {
 	}
 }
 
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
 	if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+	if (p === "~") return os.homedir();
 	return p;
 }
 
@@ -46,10 +63,39 @@ export function resolveSettings(cwd: string): WorkonSettings {
 
 	const merged = { ...(globalRaw ?? {}), ...(projectRaw ?? {}) };
 
-	let devDir = (merged.devDir as string) ?? "";
-	if (devDir) devDir = expandHome(devDir);
+	// Resolve devDirs — support both "devDir" (string) and "devDirs" (array)
+	const dirs: string[] = [];
+	if (Array.isArray(merged.devDirs)) {
+		for (const d of merged.devDirs) {
+			if (typeof d === "string") dirs.push(expandHome(d));
+		}
+	}
+	if (typeof merged.devDir === "string" && merged.devDir) {
+		const expanded = expandHome(merged.devDir);
+		if (!dirs.includes(expanded)) dirs.unshift(expanded);
+	}
+	if (dirs.length === 0) {
+		dirs.push(path.join(os.homedir(), "Dev"));
+	}
+
+	// Resolve aliases — merge global + project (project overrides)
+	const aliases: Record<string, string> = {};
+	const globalAliases = (globalRaw as any)?.aliases;
+	const projectAliases = (projectRaw as any)?.aliases;
+	if (globalAliases && typeof globalAliases === "object") {
+		for (const [k, v] of Object.entries(globalAliases)) {
+			if (typeof v === "string") aliases[k.toLowerCase()] = v;
+		}
+	}
+	if (projectAliases && typeof projectAliases === "object") {
+		for (const [k, v] of Object.entries(projectAliases)) {
+			if (typeof v === "string") aliases[k.toLowerCase()] = v;
+		}
+	}
 
 	return {
-		devDir: devDir || path.join(os.homedir(), "Dev"),
+		devDirs: dirs,
+		devDir: dirs[0],
+		aliases,
 	};
 }

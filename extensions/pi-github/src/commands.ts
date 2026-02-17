@@ -3,11 +3,14 @@
  *
  * All commands are registered as /gh-* (short) and /github-* (long).
  * Commands use the gh CLI for all GitHub interactions.
+ * All commands accept optional repo ref: owner/repo, repo (with default owner),
+ * or GitHub URL — in addition to their normal arguments.
  */
 
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, getCurrentBranch, getRepoSlug } from "./gh.ts";
+import { gh, ghJson, getCurrentBranch } from "./gh.ts";
+import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";
 
 type LogFn = (event: string, data: unknown, level?: string) => void;
 
@@ -49,23 +52,28 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 	// ── /gh-prs · /github-prs ─────────────────────────────────
 
 	registerDualCommand(pi, "gh-prs", "github-prs", {
-		description: "List open pull requests: /gh-prs [author|review-requested|all]",
+		description: "List open pull requests: /gh-prs [author|review-requested|all] [owner/repo]",
 		completions: ["", "mine", "review-requested", "all"],
 		handler: async (args, ctx) => {
-			const filter = args || "";
-			const ghArgs = ["pr", "list", "--json", "number,title,author,headRefName,createdAt,reviewDecision,isDraft,url", "--limit", "25"];
+			const { ref, remaining: filter } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+
+			const ghArgs = ["pr", "list", ...rFlag, "--json", "number,title,author,headRefName,createdAt,reviewDecision,isDraft,url", "--limit", "25"];
 
 			if (filter === "mine") {
 				ghArgs.push("--author", "@me");
 			} else if (filter === "review-requested") {
 				ghArgs.push("--search", "review-requested:@me");
-			} else if (filter !== "all") {
-				// Default: show all open
 			}
 
-			const prs = await ghJson<any[]>(ghArgs, sessionCwd);
+			const prs = await ghJson<any[]>(ghArgs);
 			if (!prs || prs.length === 0) {
-				ctx.ui.notify("No open pull requests found.", "info");
+				ctx.ui.notify(`No open pull requests on ${resolved.slug}.`, "info");
 				return;
 			}
 
@@ -75,19 +83,26 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				return `#${pr.number}${draft}${review} ${pr.title} (${pr.headRefName}) — ${pr.author?.login ?? "?"}`;
 			});
 
-			ctx.ui.notify(`**Open PRs** (${prs.length})\n${lines.join("\n")}`, "info");
-			log("prs", { count: prs.length, filter });
+			ctx.ui.notify(`**Open PRs on ${resolved.slug}** (${prs.length})\n${lines.join("\n")}`, "info");
+			log("prs", { repo: resolved.slug, count: prs.length, filter });
 		},
 	});
 
 	// ── /gh-issues · /github-issues ───────────────────────────
 
 	registerDualCommand(pi, "gh-issues", "github-issues", {
-		description: "List open issues: /gh-issues [mine|label:bug|all]",
+		description: "List open issues: /gh-issues [mine|label:bug|all] [owner/repo]",
 		completions: ["", "mine", "all"],
 		handler: async (args, ctx) => {
-			const filter = args || "";
-			const ghArgs = ["issue", "list", "--json", "number,title,author,labels,createdAt,assignees,url", "--limit", "25"];
+			const { ref, remaining: filter } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+
+			const ghArgs = ["issue", "list", ...rFlag, "--json", "number,title,author,labels,createdAt,assignees,url", "--limit", "25"];
 
 			if (filter === "mine") {
 				ghArgs.push("--assignee", "@me");
@@ -95,9 +110,9 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				ghArgs.push("--label", filter.slice(6));
 			}
 
-			const issues = await ghJson<any[]>(ghArgs, sessionCwd);
+			const issues = await ghJson<any[]>(ghArgs);
 			if (!issues || issues.length === 0) {
-				ctx.ui.notify("No open issues found.", "info");
+				ctx.ui.notify(`No open issues on ${resolved.slug}.`, "info");
 				return;
 			}
 
@@ -107,30 +122,39 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				return `#${i.number}${labelStr} ${i.title} — ${i.author?.login ?? "?"}`;
 			});
 
-			ctx.ui.notify(`**Open Issues** (${issues.length})\n${lines.join("\n")}`, "info");
-			log("issues", { count: issues.length, filter });
+			ctx.ui.notify(`**Open Issues on ${resolved.slug}** (${issues.length})\n${lines.join("\n")}`, "info");
+			log("issues", { repo: resolved.slug, count: issues.length, filter });
 		},
 	});
 
 	// ── /gh-status · /github-status ───────────────────────────
 
 	registerDualCommand(pi, "gh-status", "github-status", {
-		description: "Show repo status: PRs, issues, CI, branch",
-		handler: async (_args, ctx) => {
-			const slug = await getRepoSlug(sessionCwd);
-			const branch = await getCurrentBranch(sessionCwd);
+		description: "Show repo status: PRs, issues, CI, branch: /gh-status [owner/repo]",
+		handler: async (args, ctx) => {
+			const { ref } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+
+			// Only show local branch when targeting the cwd repo (not a remote repo)
+			const isLocalRepo = rFlag.length === 0;
+			const branch = isLocalRepo ? await getCurrentBranch(sessionCwd) : null;
 
 			const lines: string[] = [];
-			lines.push(`**Repo:** ${slug ?? "unknown"}`);
-			lines.push(`**Branch:** ${branch ?? "unknown"}`);
+			lines.push(`**Repo:** ${resolved.slug}`);
+			if (branch) lines.push(`**Branch:** ${branch}`);
 			lines.push("");
 
 			// Open PRs count
-			const prs = await ghJson<any[]>(["pr", "list", "--json", "number", "--limit", "100"], sessionCwd);
+			const prs = await ghJson<any[]>(["pr", "list", ...rFlag, "--json", "number", "--limit", "100"]);
 			lines.push(`**Open PRs:** ${prs?.length ?? "?"}`);
 
 			// My PRs needing attention
-			const myPrs = await ghJson<any[]>(["pr", "list", "--author", "@me", "--json", "number,title,reviewDecision"], sessionCwd);
+			const myPrs = await ghJson<any[]>(["pr", "list", ...rFlag, "--author", "@me", "--json", "number,title,reviewDecision"]);
 			if (myPrs && myPrs.length > 0) {
 				const needsWork = myPrs.filter((p: any) => p.reviewDecision === "CHANGES_REQUESTED");
 				const approved = myPrs.filter((p: any) => p.reviewDecision === "APPROVED");
@@ -138,18 +162,18 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			}
 
 			// Review requests
-			const reviewReqs = await ghJson<any[]>(["pr", "list", "--search", "review-requested:@me", "--json", "number"], sessionCwd);
+			const reviewReqs = await ghJson<any[]>(["pr", "list", ...rFlag, "--search", "review-requested:@me", "--json", "number"]);
 			if (reviewReqs && reviewReqs.length > 0) {
 				lines.push(`  Review requested: ${reviewReqs.length}`);
 			}
 
 			// Open issues count
-			const issues = await ghJson<any[]>(["issue", "list", "--json", "number", "--limit", "100"], sessionCwd);
+			const issues = await ghJson<any[]>(["issue", "list", ...rFlag, "--json", "number", "--limit", "100"]);
 			lines.push(`**Open Issues:** ${issues?.length ?? "?"}`);
 
-			// Current branch PR
-			if (branch && branch !== "main" && branch !== "master") {
-				const branchPr = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number,title,state,reviewDecision,url"], sessionCwd);
+			// Current branch PR (only for local repos)
+			if (isLocalRepo && branch && branch !== "main" && branch !== "master") {
+				const branchPr = await ghJson<any[]>(["pr", "list", ...rFlag, "--head", branch, "--json", "number,title,state,reviewDecision,url"]);
 				if (branchPr && branchPr.length > 0) {
 					const pr = branchPr[0];
 					const review = pr.reviewDecision === "APPROVED" ? "✅" : pr.reviewDecision === "CHANGES_REQUESTED" ? "🔴" : "⏳";
@@ -159,9 +183,9 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				}
 			}
 
-			// CI status
-			if (branch) {
-				const ci = await gh(["run", "list", "--branch", branch, "--limit", "1", "--json", "status,conclusion,name,url"], sessionCwd);
+			// CI status (branch-scoped for local repos only)
+			if (isLocalRepo && branch) {
+				const ci = await gh(["run", "list", ...rFlag, "--branch", branch, "--limit", "1", "--json", "status,conclusion,name,url"]);
 				if (ci.ok) {
 					try {
 						const runs = JSON.parse(ci.stdout);
@@ -175,7 +199,7 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			}
 
 			ctx.ui.notify(lines.join("\n"), "info");
-			log("status", { slug, branch });
+			log("status", { repo: resolved.slug, branch });
 		},
 	});
 
@@ -186,11 +210,8 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 		completions: ["", "all"],
 		handler: async (args, ctx) => {
 			const ghArgs = ["api", "/notifications", "--jq", ".[] | {id: .id, reason: .reason, title: .subject.title, type: .subject.type, repo: .repository.full_name, updated: .updated_at}"];
-			if (args !== "all") {
-				// Only unread (default)
-			}
 
-			const result = await gh(ghArgs, sessionCwd);
+			const result = await gh(ghArgs);
 			if (!result.ok || !result.stdout) {
 				ctx.ui.notify("No unread notifications.", "info");
 				return;
@@ -257,16 +278,24 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 	// ── /gh-actions · /github-actions ─────────────────────────
 
 	registerDualCommand(pi, "gh-actions", "github-actions", {
-		description: "List recent workflow runs: /gh-actions [branch]",
+		description: "List recent workflow runs: /gh-actions [branch] [owner/repo]",
 		handler: async (args, ctx) => {
-			const ghArgs = ["run", "list", "--limit", "10", "--json", "status,conclusion,name,headBranch,createdAt,url,event"];
-			if (args) {
-				ghArgs.push("--branch", args);
+			const { ref, remaining } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+
+			const ghArgs = ["run", "list", ...rFlag, "--limit", "10", "--json", "status,conclusion,name,headBranch,createdAt,url,event"];
+			if (remaining) {
+				ghArgs.push("--branch", remaining);
 			}
 
-			const runs = await ghJson<any[]>(ghArgs, sessionCwd);
+			const runs = await ghJson<any[]>(ghArgs);
 			if (!runs || runs.length === 0) {
-				ctx.ui.notify("No recent workflow runs.", "info");
+				ctx.ui.notify(`No recent workflow runs on ${resolved.slug}.`, "info");
 				return;
 			}
 
@@ -275,43 +304,48 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				return `${icon} ${r.name} (${r.headBranch}) — ${r.conclusion ?? r.status}`;
 			});
 
-			ctx.ui.notify(`**Workflow Runs** (${runs.length})\n${lines.join("\n")}`, "info");
-			log("actions", { count: runs.length });
+			ctx.ui.notify(`**Workflow Runs on ${resolved.slug}** (${runs.length})\n${lines.join("\n")}`, "info");
+			log("actions", { repo: resolved.slug, count: runs.length });
 		},
 	});
 
 	// ── /gh-pr-review · /github-pr-review ─────────────────────
 
 	registerDualCommand(pi, "gh-pr-review", "github-pr-review", {
-		description: "Show PR review feedback for current branch: /gh-pr-review [pr-number]",
+		description: "Show PR review feedback: /gh-pr-review [pr-number | owner/repo#N | PR-URL]",
 		handler: async (args, ctx) => {
-			const prNumber = args ? parseInt(args, 10) : null;
-			let prNum: number;
+			const { ref } = extractRepoRef(args);
+			const resolved = await resolveRepo(ref, sessionCwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
 
-			if (prNumber && !isNaN(prNumber)) {
-				prNum = prNumber;
-			} else {
+			let prNum = ref.prNumber;
+
+			if (!prNum) {
 				const branch = await getCurrentBranch(sessionCwd);
 				if (!branch) {
-					ctx.ui.notify("❌ Not in a git repo.", "error");
+					ctx.ui.notify("❌ Not in a git repo. Specify a PR number or owner/repo#N.", "error");
 					return;
 				}
-				const branchPrs = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number"], sessionCwd);
+				const branchPrs = await ghJson<any[]>(["pr", "list", ...rFlag, "--head", branch, "--json", "number"]);
 				if (!branchPrs || branchPrs.length === 0) {
-					ctx.ui.notify(`No PR found for branch ${branch}.`, "info");
+					ctx.ui.notify(`No PR found for branch \`${branch}\` on ${resolved.slug}.`, "info");
 					return;
 				}
 				prNum = branchPrs[0].number;
 			}
 
-			const reviews = await ghJson<any>(["pr", "view", String(prNum), "--json", "reviews,reviewRequests,title,state,reviewDecision"], sessionCwd);
+			const reviews = await ghJson<any>(["pr", "view", String(prNum), ...rFlag, "--json", "reviews,reviewRequests,title,state,reviewDecision"]);
 			if (!reviews) {
-				ctx.ui.notify(`❌ Could not fetch PR #${prNum}`, "error");
+				ctx.ui.notify(`❌ Could not fetch PR #${prNum} on ${resolved.slug}`, "error");
 				return;
 			}
 
 			const lines: string[] = [];
-			lines.push(`**PR #${prNum}: ${reviews.title}**`);
+			lines.push(`**PR #${prNum}: ${reviews.title}** (${resolved.slug})`);
 			lines.push(`State: ${reviews.state} · Review: ${reviews.reviewDecision ?? "pending"}`);
 			lines.push("");
 
@@ -326,7 +360,7 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			}
 
 			ctx.ui.notify(lines.join("\n"), "info");
-			log("pr-review", { prNum });
+			log("pr-review", { repo: resolved.slug, prNum });
 		},
 	});
 }

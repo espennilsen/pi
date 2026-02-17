@@ -17,10 +17,27 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { registerCommands, setSessionCwd } from "./commands.ts";
-import { registerPrFixCommand, resetPrFixState } from "./pr-fix.ts";
+import { registerPrFixCommand } from "./pr-fix.ts";
 import { registerPrMergeCommand } from "./pr-merge.ts";
 import { createLogger } from "./logger.ts";
+import { setDefaultOwner } from "./repo-ref.ts";
+
+function loadSettings(cwd: string): void {
+	setDefaultOwner(null);
+	try {
+		const sm = SettingsManager.create(cwd, getAgentDir());
+		const global = sm.getGlobalSettings() as Record<string, any>;
+		const project = sm.getProjectSettings() as Record<string, any>;
+		const cfg = { ...global?.["pi-github"], ...project?.["pi-github"] };
+		if (cfg?.defaultOwner && typeof cfg.defaultOwner === "string") {
+			setDefaultOwner(cfg.defaultOwner);
+		}
+	} catch {
+		// No settings — that's fine
+	}
+}
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -37,21 +54,18 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
+		loadSettings(ctx.cwd);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
-		resetPrFixState();
+		loadSettings(ctx.cwd);
 	});
 
 	pi.on("session_fork", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
-		resetPrFixState();
-	});
-
-	pi.on("session_shutdown", async () => {
-		resetPrFixState();
+		loadSettings(ctx.cwd);
 	});
 }

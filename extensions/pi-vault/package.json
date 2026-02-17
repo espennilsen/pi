@@ -1,27 +1,38 @@
 {
-  "name": "pi-vault",
-  "version": "0.1.0",
-  "description": "Obsidian vault tool and health dashboard for pi",
-  "type": "module",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/espennilsen/pi-vault.git"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "author": "Espen Nilsen <hi@e9n.dev>",
-  "license": "MIT",
-  "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+	"name": "@e9n/pi-vault",
+	"version": "0.1.0",
+	"description": "Obsidian vault extension for pi — read, write, search notes and health dashboard",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-vault"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"license": "MIT",
+	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3"
+	},
+	"files": [
+		"CHANGELOG.md",
+		"README.md",
+		"package.json",
+		"src"
+	]
 }

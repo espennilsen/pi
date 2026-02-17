@@ -1,79 +1,59 @@
-# pi-telemetry
+# @e9n/pi-telemetry
 
-Local-only telemetry extension for [pi](https://github.com/badlogic/pi-mono). Records lightweight, privacy-safe events (no prompts, completions, or file contents) to per-day JSONL files under `~/.pi/agent/telemetry/`.
+Local-only telemetry extension for [pi](https://github.com/badlogic/pi-mono) — records lightweight, privacy-safe events to per-day JSONL files. No prompts, completions, or file contents are ever written.
 
-## Installation
+## Features
 
-```bash
-pi install github.com/espennilsen/pi-telemetry
-```
+- **Event recording** — session, model call, tool call, and config change events
+- **Privacy-safe** — only numeric/enum/hashed fields; no user content
+- **Per-day JSONL files** — written to `~/.pi/agent/telemetry/`
+- **`/telemetry` command** — toggle mode and level at runtime
 
-Or try it without installing:
-
-```bash
-pi -e git:github.com/espennilsen/pi-telemetry
-```
-
-## Configuration
+## Settings
 
 Add to `~/.pi/agent/settings.json`:
 
-```jsonc
+```json
 {
   "telemetry": {
-    "mode": "on",       // "on" (default) | "off"
-    "level": "INFO"     // "NONE" | "DEBUG" | "INFO" (default) | "WARN" | "ERROR" | "CRITICAL"
+    "mode": "on",
+    "level": "INFO"
   }
 }
 ```
 
-Or toggle at runtime with the `/telemetry` command:
-
-```
-/telemetry              → show current mode & level
-/telemetry on           → enable telemetry
-/telemetry off          → disable telemetry
-/telemetry on WARN      → enable, only WARN and above
-```
+| Setting | Values | Default | Description |
+|---------|--------|---------|-------------|
+| `mode` | `"on"`, `"off"` | `"on"` | Enable or disable telemetry |
+| `level` | `NONE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` | `"INFO"` | Minimum level to record |
 
 ## Events
 
-All events contain only numeric, enum, or ID fields. **No prompts, completions, file contents, or raw commands are ever recorded.**
+| Event | Level | Fields |
+|-------|-------|--------|
+| `session_start` | INFO | `agentVersion`, `cwdHash` |
+| `session_end` | INFO | `reason`, `durationMs` |
+| `model_call` | INFO/WARN | `provider`, `modelId`, `turnIndex`, `error` |
+| `tool_call` | INFO/ERROR | `toolName`, `durationMs`, `error` |
+| `config_change` | INFO | `provider`, `modelId`, `source` |
 
-| Event            | Level    | Fields                                         |
-|------------------|----------|-------------------------------------------------|
-| `session_start`  | INFO     | `agentVersion`, `cwdHash`                      |
-| `session_end`    | INFO     | `reason`, `durationMs`                         |
-| `model_call`     | INFO/WARN| `provider`, `modelId`, `turnIndex`, `error`    |
-| `tool_call`      | INFO/ERROR| `toolName`, `durationMs`, `error`             |
-| `config_change`  | INFO     | `provider`, `modelId`, `source`                |
+Events are written as JSONL to `~/.pi/agent/telemetry/YYYY-MM-DD.jsonl`.
 
-## Output
+## Commands
 
-Events are written as JSONL (one JSON object per line) to daily files:
+| Command | Description |
+|---------|-------------|
+| `/telemetry` | Show current mode and level |
+| `/telemetry on` | Enable telemetry |
+| `/telemetry off` | Disable telemetry |
+| `/telemetry on WARN` | Enable, recording WARN and above only |
 
-```
-~/.pi/agent/telemetry/
-├── 2026-02-10.jsonl
-├── 2026-02-11.jsonl
-└── ...
-```
+## Install
 
-Example line:
-
-```json
-{"type":"session_start","level":"INFO","agentVersion":"0.52.9","cwdHash":"c3d247157174","ts":"2026-02-11T12:43:48.440Z","sessionId":"5255544ed0a2"}
+```bash
+pi install npm:@e9n/pi-telemetry
 ```
 
-## Project Structure
+## License
 
-```
-pi-telemetry/
-├── package.json        # pi extension manifest
-├── README.md
-└── src/
-    ├── index.ts        # Extension entry point (event subscriptions + /telemetry command)
-    ├── types.ts        # TelemetryEvent union, mode/level types
-    ├── config.ts       # TelemetryConfig, defaults, shouldLog() filter
-    └── writer.ts       # JSONL writer (per-day files under ~/.pi/agent/telemetry/)
-```
+MIT

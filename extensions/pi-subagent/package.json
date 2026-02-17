@@ -1,12 +1,18 @@
 {
-  "name": "pi-subagent",
+  "name": "@e9n/pi-subagent",
   "version": "0.1.0",
   "description": "Parallel task delegation for pi — spawn isolated subagents for single, parallel, and chain execution",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -16,9 +22,23 @@
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@sinclair/typebox": "*",
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-tui": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "skills",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-subagent"
   }
 }

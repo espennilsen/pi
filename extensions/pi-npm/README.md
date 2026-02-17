@@ -1,37 +1,53 @@
-# pi-npm
+# @e9n/pi-npm
 
-NPM workflow extension for [pi](https://github.com/nichochar/pi-coding-agent). Gives the agent a single `npm` tool with common package management commands including publish.
+NPM workflow extension for [pi](https://github.com/mariozechner/pi-coding-agent). Gives the agent a single `npm` tool covering the full package management lifecycle.
 
-## Actions
+## Features
 
-| Action      | Description                        | Example `args`             |
-| ----------- | ---------------------------------- | -------------------------- |
-| `init`      | Create a new `package.json`        | `-y`                       |
-| `install`   | Install dependencies               | `express`, `--save-dev ts` |
-| `uninstall` | Remove a package                   | `lodash`                   |
-| `update`    | Update packages                    | `react`                    |
-| `outdated`  | List outdated packages             |                            |
-| `run`       | Run a package.json script          | `dev`, `lint`              |
-| `test`      | Run tests (`npm test`)             |                            |
-| `build`     | Run the `build` script             |                            |
-| `publish`   | Publish to npm registry            | `--tag beta`               |
-| `pack`      | Create a tarball                   |                            |
-| `version`   | Bump version                       | `patch`, `minor`, `major`  |
-| `info`      | Show package info                  | `react versions`           |
-| `list`      | List installed packages            | `--depth=0`                |
-| `audit`     | Security audit                     | `--fix`                    |
-| `link`      | Symlink a local package            | `../my-lib`                |
+- **15 actions** — everything from `init` to `publish` in one tool
+- **Safe dry-run** — `dry_run: true` adds `--dry-run` to publish/pack/version
+- **Custom working directory** — target any subdirectory with the `path` parameter
+- **Truncated output** — long outputs are capped at 8 000 chars to keep context clean
 
-## Parameters
+## Tool: `npm`
 
-- **action** (required) — one of the actions above
-- **args** — additional CLI arguments
-- **path** — working directory (defaults to project root)
-- **dry_run** — if `true`, adds `--dry-run` to publish/pack/version
+Run common npm commands. The `action` field maps to the npm CLI; `args` passes through extra flags or package names.
+
+### Actions
+
+| Action | npm command | Example `args` |
+|--------|-------------|----------------|
+| `init` | `npm init` | `-y` |
+| `install` | `npm install` | `express`, `--save-dev tsx` |
+| `uninstall` | `npm uninstall` | `lodash` |
+| `update` | `npm update` | `react` |
+| `outdated` | `npm outdated` | |
+| `run` | `npm run` | `dev`, `lint` |
+| `test` | `npm test` | |
+| `build` | `npm run build` | |
+| `publish` | `npm publish` | `--tag beta` |
+| `pack` | `npm pack` | |
+| `version` | `npm version` | `patch`, `minor`, `major` |
+| `info` | `npm info` | `react versions` |
+| `list` | `npm list` | `--depth=0` |
+| `audit` | `npm audit` | `--fix` |
+| `link` | `npm link` | `../my-lib` |
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `action` | string | npm action to perform (required) |
+| `args` | string | Additional CLI arguments (package names, script names, flags) |
+| `path` | string | Working directory — defaults to current project root |
+| `dry_run` | boolean | Appends `--dry-run` to `publish`, `pack`, or `version` |
 
 ## Install
 
 ```bash
-pi install .    # from this directory
-pi -e .         # load without installing
+pi install npm:@e9n/pi-npm
 ```
+
+## License
+
+MIT

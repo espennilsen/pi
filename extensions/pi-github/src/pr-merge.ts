@@ -13,6 +13,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { gh, ghJson, gitExec, getCurrentBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
+import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";
 
 type LogFn = (event: string, data: unknown, level?: string) => void;
 
@@ -35,38 +36,45 @@ interface PrMergeInfo {
 export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () => string): void {
 
 	registerDualCommand(pi, "gh-pr-merge", "github-pr-merge", {
-		description: "Merge a PR, delete remote branch, pull main, clean up local branch: /gh-pr-merge [pr-number] [--merge|--rebase|--squash]",
+		description: "Merge a PR: /gh-pr-merge [number | owner/repo#N | PR-URL] [--merge|--rebase|--squash]",
 		handler: async (args: string, ctx: any) => {
 			const cwd = getCwd();
-			const parts = args.split(/\s+/).filter(Boolean);
 
-			// Parse args: optional PR number and optional merge strategy
-			let prNumber: number | null = null;
+			// Separate strategy flags from the rest
+			const parts = args.split(/\s+/).filter(Boolean);
 			let strategy: "squash" | "merge" | "rebase" = "squash";
+			const nonFlags: string[] = [];
 
 			for (const part of parts) {
 				if (part === "--merge") strategy = "merge";
 				else if (part === "--rebase") strategy = "rebase";
 				else if (part === "--squash") strategy = "squash";
-				else if (!isNaN(parseInt(part.replace(/^#/, ""), 10))) {
-					prNumber = parseInt(part.replace(/^#/, ""), 10);
-				}
+				else nonFlags.push(part);
 			}
+
+			const { ref } = extractRepoRef(nonFlags.join(" "));
+			const resolved = await resolveRepo(ref, cwd);
+			if (!resolved) {
+				ctx.ui.notify("❌ Could not determine repo. Specify owner/repo or run from a git repo.", "error");
+				return;
+			}
+			const rFlag = repoFlag(resolved.owner, resolved.repo);
+			let prNumber = ref.prNumber;
 
 			// ── Step 1: Find the PR ─────────────────────────────
 			if (!prNumber) {
 				const branch = await getCurrentBranch(cwd);
 				if (!branch) {
-					ctx.ui.notify("❌ Not in a git repo.", "error");
+					ctx.ui.notify("❌ Not in a git repo. Specify a PR: /gh-pr-merge owner/repo#N", "error");
 					return;
 				}
 				if (branch === "main" || branch === "master") {
-					ctx.ui.notify("❌ On main/master — specify a PR number: `/gh-pr-merge 14`", "error");
+					ctx.ui.notify(`❌ On main/master — specify a PR: \`/gh-pr-merge ${resolved.slug}#N\``, "error");
 					return;
 				}
-				const prs = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number"], cwd);
+				const prs = await ghJson<any[]>(["pr", "list", ...rFlag, "--head", branch, "--json", "number"]);
 				if (!prs || prs.length === 0) {
-					ctx.ui.notify(`❌ No open PR found for branch \`${branch}\`.`, "error");
+					ctx.ui.notify(`❌ No open PR found for branch \`${branch}\` on ${resolved.slug}.`, "error");
 					return;
 				}
 				prNumber = prs[0].number;
@@ -74,8 +82,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 
 			// ── Step 2: Get PR details ──────────────────────────
 			const prData = await ghJson<any>(
-				["pr", "view", String(prNumber), "--json", "number,title,headRefName,baseRefName,url,commits,additions,deletions,changedFiles,body,state,files"],
-				cwd,
+				["pr", "view", String(prNumber), ...rFlag, "--json", "number,title,headRefName,baseRefName,url,commits,additions,deletions,changedFiles,body,state,files"],
 			);
 
 			if (!prData) {
@@ -118,7 +125,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 			ctx.ui.notify(preview, "info");
 
 			// ── Step 4: Merge the PR ────────────────────────────
-			const mergeArgs = ["pr", "merge", String(prNumber), `--${strategy}`];
+			const mergeArgs = ["pr", "merge", String(prNumber), ...rFlag, `--${strategy}`];
 			const mergeResult = await gh(mergeArgs, cwd);
 
 			if (!mergeResult.ok) {
@@ -128,8 +135,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 
 			// Verify the merge actually happened — gh pr merge can exit 0 without merging
 			const verifyData = await ghJson<any>(
-				["pr", "view", String(prNumber), "--json", "state"],
-				cwd,
+				["pr", "view", String(prNumber), ...rFlag, "--json", "state"],
 			);
 			if (verifyData === null) {
 				ctx.ui.notify(`⚠️ Could not verify merge state for PR #${prNumber} — the API call failed. The merge may have succeeded; check GitHub manually.`, "warning");
@@ -146,7 +152,7 @@ export function registerPrMergeCommand(pi: ExtensionAPI, log: LogFn, getCwd: () 
 
 			// ── Step 5: Post summary comment on PR ──────────────
 			const comment = buildMergeComment(prInfo, strategy);
-			const commentResult = await gh(["pr", "comment", String(prNumber), "--body", comment], cwd);
+			const commentResult = await gh(["pr", "comment", String(prNumber), ...rFlag, "--body", comment]);
 			if (commentResult.ok) {
 				ctx.ui.notify("💬 Posted merge summary comment on PR.", "info");
 			} else {

@@ -1,23 +1,14 @@
-# pi-td
+# @e9n/pi-td
 
-td task management extension for pi. Optionally serves a web dashboard via [`pi-webserver`](https://github.com/espennilsen/pi-webserver).
+Task management extension for [pi](https://github.com/badlogic/pi-mono) — structured `td` tool with mandatory workflow enforcement and an optional web dashboard.
 
 ## Features
 
-- `/tasks` web UI (board, table, tree) — toggle with `webui` setting
-- `/api/td/*` endpoints for td CRUD, review flows, activity logs
-- Cross-project view (configurable root in `settings.json`)
-
-## Requirements
-
-- `td` CLI in `$PATH`
-- `pi-webserver` extension installed and running (`/web`) — only needed if `webui` is enabled
-
-## Install
-
-```bash
-pi install git@github.com:espennilsen/pi-td.git
-```
+- **`td` tool** — full task lifecycle: create, start, log, handoff, review, approve/reject, close, block/unblock
+- **Workflow enforcement** — system prompt injection ensures every code change has a task and a feature branch
+- **Web dashboard** at `/tasks` — board, table, and tree views (requires [pi-webserver](../pi-webserver))
+- **Cross-project view** — scan multiple repos under a root directory
+- **REST API** at `/api/td/*` — CRUD, review flows, and activity logs
 
 ## Settings
 
@@ -33,35 +24,62 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 }
 ```
 
-- `webui`: enable/disable the web dashboard (default: `true`)
-- `crossProjectRoot`: root directory to scan for `.todos/issues.db`
-- `crossProjectDepth`: how many directory levels below the root to scan (default: `1`)
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `webui` | `boolean` | `true` | Enable the web dashboard |
+| `crossProjectRoot` | `string` | — | Root directory to scan for `.todos/` databases |
+| `crossProjectDepth` | `number` | `1` | Subdirectory scan depth |
 
-Legacy `tdWebui` settings key is still supported for backwards compatibility.
+## Tool: `td`
 
-## Usage
+### Query actions
 
-Start the shared server (if webui enabled):
+| Action | Required params | Description |
+|--------|----------------|-------------|
+| `status` | — | Current session and task summary |
+| `list` | — | List open issues (filterable by type/priority/status) |
+| `show` | `id` | Show full issue detail |
+| `ready` | — | Issues ready to start |
+| `next` | — | Best next issue to work on |
+| `reviewable` | — | Issues awaiting review |
+
+### Lifecycle actions
+
+| Action | Required params | Description |
+|--------|----------------|-------------|
+| `create` | `title` | Create a task (`type`, `priority`, `description`, `labels`, `parent`, `minor`) |
+| `start` | `id` | Mark in-progress |
+| `log` | `message` | Add a progress log entry (`log_type`: progress/blocker/decision/hypothesis/tried/result) |
+| `handoff` | `id` | Record handoff (`done`, `remaining`, `decisions`, `uncertain`) |
+| `review` | `id` | Submit for review |
+| `approve` | `id` | Approve and close |
+| `reject` | `id`, `reason` | Reject with reason |
+| `close` | `id` | Close task |
+
+### Other actions
+
+| Action | Required params | Description |
+|--------|----------------|-------------|
+| `block` | `id` | Mark as blocked |
+| `unblock` | `id` | Remove blocked status |
+| `reopen` | `id` | Reopen a closed issue |
+| `comment` | `id`, `message` | Add a comment |
+
+## Web UI
+
+Enable `webui: true` in settings, start the web server with `/web`, then open `http://localhost:4100/tasks`.
+
+## Requirements
+
+- `td` CLI in `$PATH`
+- [`pi-webserver`](../pi-webserver) extension (only needed for web UI)
+
+## Install
 
 ```bash
-/web
+pi install npm:@e9n/pi-td
 ```
 
-Open the dashboard:
+## License
 
-```
-http://localhost:4100/tasks
-```
-
-API endpoints are mounted under `/api/td` and inherit `pi-webserver` API token auth.
-
-## Development
-
-```bash
-npm install
-npm run typecheck
-```
-
-## Notes
-
-- The UI HTML is bundled at `src/tasks.html` with inline CSS/JS.
+MIT

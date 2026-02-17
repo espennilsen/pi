@@ -1,38 +1,33 @@
-# pi-kysely
+# @e9n/pi-kysely
 
-Shared Kysely extension for pi with **table-level RBAC** between extensions.
+Shared Kysely database registry for [pi](https://github.com/mariozechner/pi-mono). Provides a single managed database connection (SQLite, PostgreSQL, or MySQL) that other extensions access via the event bus, with table-level RBAC and a built-in migration system.
 
-By default, pi-kysely creates a shared SQLite database at `$PI_CODING_AGENT_DIR/db/kysely.db` (defaults to `~/.pi/agent/db/kysely.db`, or `<project>/.pi/db/kysely.db` when configured in project settings) and only exposes table operations (no DB lifecycle API to consumers).
+## Features
 
-## Install
+- **Shared database** — one connection pool for all extensions in a session
+- **Multi-driver** — SQLite (default), PostgreSQL, and MySQL
+- **Table-level RBAC** — extensions own prefixed tables and grant selective access to others
+- **Migration system** — generate SQL diffs and apply versioned migrations with checksum integrity
+- **Event bus API** — extensions interact via `kysely:*` events (no direct import needed)
+- **`/kysely` command** — inspect registered databases and applied migrations at runtime
 
-```bash
-pi install git@github.com:espennilsen/pi-kysely.git
-```
+## Setup / Settings
 
-Database drivers are bundled as dependencies (`better-sqlite3`, `pg`, `mysql2`).
-If you need a custom version, install it in your project and use npm overrides as needed.
+Add to `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (project):
 
-## Settings (`settings.json`)
-
-Global: `$PI_CODING_AGENT_DIR/settings.json` (defaults to `~/.pi/agent/settings.json`)  
-Project: `.pi/settings.json` (overrides global)
-
-`sqlitePath` is resolved relative to the settings file directory (global -> `$PI_CODING_AGENT_DIR` (defaults to `~/.pi/agent`), project -> `.pi`). Absolute paths and `~` are supported.
-
+**SQLite (default)**
 ```json
 {
   "kysely": {
-    "databaseName": "default",
     "driver": "sqlite",
     "sqlitePath": "db/kysely.db",
+    "databaseName": "default",
     "autoCreateDefault": true
   }
 }
 ```
 
-Postgres/MySQL default via URL:
-
+**PostgreSQL**
 ```json
 {
   "kysely": {
@@ -42,6 +37,7 @@ Postgres/MySQL default via URL:
 }
 ```
 
+**MySQL**
 ```json
 {
   "kysely": {
@@ -51,190 +47,76 @@ Postgres/MySQL default via URL:
 }
 ```
 
-URL env fallbacks:
-- Postgres: `DATABASE_URL` or `PGDATABASE_URL`
-- MySQL: `DATABASE_URL` or `MYSQL_URL`
+| Key | Default | Description |
+|-----|---------|-------------|
+| `driver` | `"sqlite"` | Database driver: `sqlite`, `postgres`, or `mysql`. |
+| `sqlitePath` | `"db/kysely.db"` | SQLite file path (relative to agent dir or `.pi/`). Supports `~`. |
+| `databaseName` | `"default"` | Name for the default registered database. |
+| `databaseUrl` | — | Connection URL for postgres/mysql. Falls back to `DATABASE_URL` env var. |
+| `autoCreateDefault` | `true` | Auto-create the default database on session start. |
 
-## RBAC model
+`sqlitePath` is resolved relative to the settings file's directory (`~/.pi/agent` for global, `.pi/` for project). Absolute paths and `~` are supported.
 
-- Each extension owns tables prefixed with `"<extensionId>__"`
-- Example: extension `notes` owns `notes__items`
-- Owners can grant table rights to other extensions
-- Allowed operations: `select`, `insert`, `update`, `delete`
-- No DB-level operations are exposed to other extensions via package exports
+## Event Bus API
 
-## Use from another extension
+Other extensions communicate with pi-kysely entirely via events. No direct imports required.
 
-```ts
-import { createExtensionTableClient } from "pi-kysely";
+### Schema & Queries
 
-const db = createExtensionTableClient("notes");
+| Event | Description |
+|-------|-------------|
+| `kysely:schema:register` | Apply DDL via Kysely schema builder (create tables, indexes) |
+| `kysely:query` | Execute a parameterised raw SQL query |
 
-// your own table name helper
-const notesTable = db.ownTable("items"); // "notes__items"
+### Migrations
 
-// CRUD on own table
-await db.insert({
-  table: notesTable,
-  values: { id: 1, title: "Hello" },
-});
+| Event | Description |
+|-------|-------------|
+| `kysely:migration:generate` | Diff desired schema vs live DB and return migration SQL |
+| `kysely:migration:apply` | Apply stored migration files (skips already-applied by name + checksum) |
+| `kysely:migration:status` | List applied migrations, optionally filtered by actor |
 
-const rows = await db.select({ table: notesTable });
+### RBAC
 
-// grant read access to another extension
-// can only grant on your own table namespace
-db.grant("search", notesTable, ["select"]);
-```
+| Event | Description |
+|-------|-------------|
+| `kysely:grant` | Grant table operations to another extension |
+| `kysely:revoke` | Revoke previously granted access |
+| `kysely:grants` | List current grants |
 
-## Migrations
+### Lifecycle
 
-pi-kysely provides a migration system so extensions can distribute portable schema changes. Two flows:
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `kysely:ready` | emitted | Database is initialised and ready; payload contains registered databases and default driver |
+| `kysely:info` | listened | Probe whether pi-kysely is available; reply callback receives the ready payload |
+| `kysely:ack` | emitted | Write confirmation when a `requestId` is included in the payload |
 
-### Development: Generate a migration
+### RBAC model
 
-The extension declares its desired schema. pi-kysely diffs against the live DB, applies changes, and returns the migration SQL. The extension stores it in its repo.
-
-```ts
-pi.events.emit("kysely:migration:generate", {
-  actor: "pi-calendar",
-  tables: {
-    calendar_events: {
-      columns: {
-        id:         { type: "integer", primaryKey: true, autoIncrement: true },
-        title:      { type: "text", notNull: true },
-        start_time: { type: "text", notNull: true },
-        end_time:   { type: "text", notNull: true },
-      },
-      indexes: [
-        { columns: ["start_time"], name: "idx_cal_events_start" },
-      ],
-    },
-  },
-  migrationName: "initial",
-  reply: (result) => {
-    if (result.statements.length === 0) return; // no changes
-    // result.name  = "0001_initial"
-    // result.sql   = "create table ... ;\ncreate index ...;"
-    // Write result.sql to your migrations/ directory
-    fs.writeFileSync(`migrations/${result.name}.sql`, result.sql);
-  },
-});
-```
-
-Supports `dropTables` and `dropColumns` for destructive changes:
-
-```ts
-pi.events.emit("kysely:migration:generate", {
-  actor: "pi-calendar",
-  tables: { /* current desired schema */ },
-  dropTables: ["old_unused_table"],
-  dropColumns: { calendar_events: ["legacy_field"] },
-  migrationName: "drop_legacy",
-  reply: (result) => { /* save to file */ },
-});
-```
-
-### Runtime: Apply stored migrations
-
-On startup, the extension reads its migration files and sends them to pi-kysely. Already-applied migrations are skipped (tracked by name + checksum in `_kysely_migrations` table).
-
-```ts
-import { readdirSync, readFileSync } from "node:fs";
-
-const migrationDir = new URL("../migrations", import.meta.url).pathname;
-const files = readdirSync(migrationDir).filter(f => f.endsWith(".sql")).sort();
-
-const migrations = files.map(f => ({
-  name: f.replace(/\.sql$/, ""),
-  sql: readFileSync(`${migrationDir}/${f}`, "utf-8"),
-}));
-
-pi.events.emit("kysely:migration:apply", {
-  actor: "pi-calendar",
-  migrations,
-  reply: (result) => {
-    if (!result.ok) throw new Error(result.errors.join("; "));
-    // result.applied  = ["0001_initial", "0002_add_color"]
-    // result.skipped  = [] (already applied)
-  },
-});
-```
-
-### Check migration status
-
-```ts
-pi.events.emit("kysely:migration:status", {
-  actor: "pi-calendar", // optional — omit for all actors
-  reply: (records) => {
-    // [{ id, actor, name, checksum, applied_at }]
-  },
-});
-```
+Each extension owns tables prefixed with `<extensionId>__` (e.g. `notes__items`). Owners can grant `select`, `insert`, `update`, or `delete` on their tables to other extensions. RBAC is an in-process cooperative guard — not an OS-level sandbox.
 
 ### Migration integrity
 
-Each migration is checksummed (SHA-256, first 16 hex chars). If a migration file is modified after being applied, `apply` reports a checksum mismatch error. Migrations are applied in sorted name order and stop on first error to prevent out-of-order execution.
+Migrations are identified by actor + name and checksummed (SHA-256, first 16 hex chars). Modifying a migration file after it has been applied causes a checksum mismatch error. Migrations are applied in sorted name order and stop on first error.
 
-## Event bus API
+## Commands
 
-- `kysely:ready` (emitted on session start)
-- `kysely:migration:generate`
-- `kysely:migration:apply`
-- `kysely:migration:status`
-- `kysely:grant`
-- `kysely:revoke`
-- `kysely:grants`
-- `kysely:table:select`
-- `kysely:table:insert`
-- `kysely:table:update`
-- `kysely:table:delete`
-- `kysely:ack` (emitted when payload includes `requestId`)
+| Command | Description |
+|---------|-------------|
+| `/kysely` or `/kysely status` | List registered databases (name, driver, label) |
+| `/kysely close <name>` | Unregister and destroy one database connection |
+| `/kysely close-all` | Unregister and destroy all database connections |
+| `/kysely migrations [actor]` | List applied migrations, optionally filtered by actor |
 
-### Ack pattern for write confirmation
-
-Use `ack` callback (or `kysely:ack` with `requestId`) to confirm writes completed:
-
-```ts
-const requestId = crypto.randomUUID();
-
-pi.events.emit("kysely:table:insert", {
-  actor: "notes",
-  requestId,
-  input: {
-    table: "notes__items",
-    values: { id: 1, title: "hello" }
-  },
-  ack: (ack) => {
-    if (!ack.ok) throw new Error(ack.error);
-    // confirmed written
-    console.log("insert ack", ack.result);
-  }
-});
-```
-
-If you prefer event-based ack:
-
-```ts
-pi.events.on("kysely:ack", (ack) => {
-  if (ack.requestId !== requestId) return;
-  if (!ack.ok) throw new Error(ack.error);
-});
-```
-
-## Command
-
-- `/kysely` or `/kysely status`: list registered DB connections
-- `/kysely close <name>`: close one DB connection
-- `/kysely close-all`: close all DB connections
-- `/kysely migrations [actor]`: list applied migrations (optionally filtered by actor)
-
-## Security note
-
-RBAC here is an in-process policy guard for cooperative extensions. Since extensions run in one runtime with full code execution, this is not an OS-level sandbox.
-
-## Development
+## Install
 
 ```bash
-npm install
-npm run typecheck
+pi install npm:@e9n/pi-kysely
 ```
+
+Database drivers (`better-sqlite3`, `pg`, `mysql2`) are bundled as dependencies.
+
+## License
+
+MIT

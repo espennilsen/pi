@@ -90,6 +90,7 @@ Key extensions:
 - **One task per branch** — don't mix unrelated work
 - **Always create a PR** — push the branch and `gh pr create` before handoff. No orphan branches.
 - **PR review fixes go on the PR branch** — checkout the existing PR branch, commit, and push. Don't create a new branch.
+- **Never merge without confirmation** — after resolving merge conflicts or pushing fixes, always wait for explicit user confirmation before merging a PR.
 - **No exceptions** — if you forgot to create a task, stop and create one now before continuing
 
 ## Other Conventions

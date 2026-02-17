@@ -255,15 +255,22 @@ export function mountGmailRoutes(
 			// Logout (POST with CSRF token validation)
 			if (req.method === "POST" && p === "/logout") {
 				// Parse URL-encoded form body to extract CSRF token (capped at 4KB)
+				let tooLarge = false;
 				const body = await new Promise<string>((resolve, reject) => {
 					let data = "";
 					req.on("data", (chunk: Buffer) => {
 						data += chunk.toString();
-						if (data.length > 4096) { req.destroy(); reject(new Error("Body too large")); }
+						if (data.length > 4096) { tooLarge = true; resolve(""); }
 					});
 					req.on("end", () => resolve(data));
 					req.on("error", reject);
 				}).catch(() => "");
+
+				if (tooLarge) {
+					html(res, errorPage("Request body too large."), 413);
+					return;
+				}
+
 				const params = new URLSearchParams(body);
 				const csrfToken = params.get("_csrf");
 

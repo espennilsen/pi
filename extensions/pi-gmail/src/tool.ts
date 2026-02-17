@@ -366,10 +366,23 @@ export function registerGmailTool(
 					if (!confirmed) return text("❌ Trash cancelled.");
 
 					// Use dedicated trash endpoint for proper trash lifecycle (30-day auto-delete)
+					const failed: string[] = [];
+					let trashed = 0;
 					for (const msgId of msgIds) {
-						await client.trashMessage(settings, agentDir, msgId);
+						try {
+							await client.trashMessage(settings, agentDir, msgId);
+							trashed++;
+						} catch (err: any) {
+							failed.push(`${msgId}: ${err.message ?? "unknown error"}`);
+						}
 					}
-					return text(`✓ Trashed ${msgIds.length} message(s).`);
+					if (failed.length === 0) {
+						return text(`✓ Trashed ${trashed} message(s).`);
+					}
+					if (trashed === 0) {
+						return text(`❌ Failed to trash all ${msgIds.length} message(s).\n${failed.join("\n")}`);
+					}
+					return text(`⚠ Trashed ${trashed}/${msgIds.length} message(s). ${failed.length} failed:\n${failed.join("\n")}`);
 				}
 
 				case "label": {

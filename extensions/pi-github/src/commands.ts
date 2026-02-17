@@ -183,7 +183,7 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				}
 			}
 
-			// CI status (branch-scoped for local, repo-wide for remote)
+			// CI status (branch-scoped for local repos only)
 			if (isLocalRepo && branch) {
 				const ci = await gh(["run", "list", ...rFlag, "--branch", branch, "--limit", "1", "--json", "status,conclusion,name,url"]);
 				if (ci.ok) {

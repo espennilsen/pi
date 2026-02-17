@@ -322,7 +322,14 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 					["repo", "view", "--json", "owner,name"],
 					cwd,
 				);
-				if (cwdRepo && (cwdRepo.owner.login !== owner || cwdRepo.name !== repo)) {
+				if (!cwdRepo) {
+					ctx.ui.notify(
+						`❌ No local clone found for ${repoSlug} and current directory is not a git repository. Clone ${repoSlug} or cd into it first.`,
+						"error",
+					);
+					return;
+				}
+				if (cwdRepo.owner.login !== owner || cwdRepo.name !== repo) {
 					ctx.ui.notify(
 						`❌ No local clone found for ${repoSlug} and current directory is a different repo (${cwdRepo.owner.login}/${cwdRepo.name}). Clone ${repoSlug} or cd into it first.`,
 						"error",

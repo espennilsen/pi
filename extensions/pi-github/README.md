@@ -1,69 +1,45 @@
-# pi-github
+# @e9n/pi-github
 
-GitHub integration for pi via the `gh` CLI. Provides `/gh-*` and `/github-*` commands for PR management, issue tracking, CI status, and automated review feedback resolution.
+GitHub integration for [pi](https://github.com/espennilsen/pi) via the `gh` CLI — PR management, issue tracking, CI status, and automated review resolution.
+
+## Features
+
+- List and manage PRs, issues, and notifications
+- Create and merge PRs from the current branch
+- Automated PR review fix flow: fetch unresolved threads → fix → resolve on GitHub
+- All commands available as both `/gh-*` and `/github-*` variants
+
+## Requirements
+
+- [`gh` CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
+- Git repository with a GitHub remote
 
 ## Commands
-
-All commands are available as both `/gh-*` (short) and `/github-*` (long) variants.
 
 | Command | Description |
 |---------|-------------|
 | `/gh-prs [mine\|review-requested\|all]` | List open pull requests |
 | `/gh-issues [mine\|label:name\|all]` | List open issues |
-| `/gh-status` | Repo status: PRs, issues, CI, current branch PR |
+| `/gh-status` | Repo status: open PRs, issues, CI, current branch PR |
 | `/gh-notifications [all]` | Show unread GitHub notifications |
-| `/gh-pr-create [title]` | Create PR for current branch (pushes first) |
+| `/gh-pr-create [title]` | Create a PR for the current branch (pushes first) |
 | `/gh-pr-review [pr-number]` | Show PR review feedback and decision |
-| `/gh-pr-fix [pr-number]` | Fetch unresolved review threads, checkout PR branch, send to agent |
-| `/gh-pr-resolve` | Resolve threads on GitHub, push, post summary comment |
+| `/gh-pr-fix [pr-number]` | Fetch unresolved review threads and send to agent for fixing; run again with thread numbers to push, resolve, and post summary |
+| `/gh-pr-merge [pr-number]` | Merge a PR, delete remote branch, pull base, clean up local branch |
 | `/gh-actions [branch]` | List recent workflow runs |
 
-## PR Fix Workflow
+### PR fix workflow
 
-The `/gh-pr-fix` → `/gh-pr-resolve` flow automates PR review feedback resolution:
+1. **`/gh-pr-fix [pr-number]`** — fetches unresolved review threads, checks out the PR branch, and sends a structured prompt to the agent
+2. Agent reads the feedback, fixes the code, and commits
+3. **`/gh-pr-fix 1 2 3`** (with thread numbers) — pushes, resolves the listed threads on GitHub via GraphQL, and posts a summary comment
 
-1. **`/gh-pr-fix [pr-number]`** — Fetches unresolved review threads via GraphQL
-   - Auto-detects PR from current branch, or accepts a PR number (with or without `#` prefix)
-   - On `main`/`master`, finds the most recent PR with changes requested
-   - Checks for dirty working tree before switching branches
-   - Safely checks out the PR branch (fetches + creates tracking branch if needed)
-   - Formats all threads with file paths, line numbers, and reviewer comments
-   - Sends structured prompt to the agent for fixing
-
-2. **Fix & commit** — Agent reads the feedback, fixes the code, and commits
-
-3. **`/gh-pr-resolve`** — After the agent commits:
-   - Verifies current branch matches the PR branch
-   - Pushes with `git push origin HEAD` (works without upstream tracking)
-   - Resolves each review thread on GitHub via GraphQL mutation
-   - Posts a summary comment listing resolved threads and fix commit SHA
-
-### Example
-
-```
-/gh-pr-fix 5        # fetches unresolved threads from PR #5, checks out branch
-# ... agent fixes the code, commits ...
-/gh-pr-resolve      # pushes, resolves threads, posts summary
-```
-
-## Architecture
-
-| File | Purpose |
-|------|---------|
-| `index.ts` | Extension lifecycle — session cwd tracking, command registration |
-| `commands.ts` | All `/gh-*` commands: prs, issues, status, notifications, pr-create, actions, pr-review |
-| `pr-fix.ts` | `/gh-pr-fix` and `/gh-pr-resolve` — thread fetching, branch checkout, resolution, summary comments |
-| `gh.ts` | `gh` CLI wrapper — exec, JSON parsing, GraphQL helper, git helpers |
-| `logger.ts` | Structured logging via pi-logger event bus |
-
-## Requirements
-
-- `gh` CLI installed and authenticated (`gh auth login`)
-- Git repository with GitHub remote
-
-## Development
+## Install
 
 ```bash
-npm install
-npm run typecheck
+pi install npm:@e9n/pi-github
 ```
+
+## License
+
+MIT

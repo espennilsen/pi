@@ -1,145 +1,89 @@
-# pi-personal-crm
+# @e9n/pi-personal-crm
 
-Personal CRM extension for [pi](https://github.com/badlogic/pi-mono) coding agents.
+Personal CRM extension for [pi](https://github.com/mariozechner/pi-coding-agent). Manage contacts, companies, interactions, and reminders — all from the terminal or a web dashboard.
 
 ## Features
 
-- 👤 Contacts with custom fields, companies, relationships
-- 💬 Interaction timeline (calls, meetings, notes, emails, gifts, messages)
-- 🏢 Companies with member contacts
-- 🏷️ Groups with membership management
-- 🔔 Reminders (birthdays, anniversaries, custom)
-- 📅 Upcoming page — birthdays, anniversaries, and reminders at a glance
-- 🔍 Fuzzy search with typo tolerance across contacts and companies
-- 📊 CSV import/export with duplicate detection
-- 🔌 Extension fields — third-party extensions can attach read-only data to contacts
-- 🌐 Web UI with 6 pages: Contacts, Companies, Groups, Interactions, Reminders, Upcoming
-- 🤖 16 tool actions for the agent
+- **Contacts** — full profiles with emails, phones, custom fields, and company association
+- **Companies** — organization records with member contacts
+- **Interactions** — timeline of calls, meetings, emails, notes, gifts, and messages
+- **Relationships** — link contacts to each other with labeled relationships
+- **Groups** — tag contacts into named groups
+- **Reminders** — birthdays, anniversaries, and custom reminders with upcoming view
+- **Fuzzy search** — typo-tolerant search across contacts and companies
+- **Extension fields** — third-party extensions can attach read-only data to contacts/companies
+- **CSV import/export** — bulk import with duplicate detection
+- **Web dashboard** — 6-page UI (Contacts, Companies, Groups, Interactions, Reminders, Upcoming)
 
-## Installation
+## Setup
 
-```bash
-pi install git@github.com:espennilsen/pi-personal-crm.git
+Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
+
+```json
+{
+  "pi-personal-crm": {
+    "dbPath": "db/crm.db"
+  }
+}
 ```
 
-Data is stored in `~/.pi/agent/db/crm.db`.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `dbPath` | `"db/crm.db"` | SQLite file path (relative to agent dir, or absolute) |
+| `useKysely` | `false` | Use shared pi-kysely DB instead of local SQLite |
 
-## Usage
+## Tool: `crm`
 
-The CRM tool is automatically available after installation. The agent can:
+Manages all CRM entities. Pass `action` plus the relevant fields.
 
-- Search contacts and companies
-- Add, update, and delete contacts
-- Log interactions (calls, meetings, emails, notes, gifts, messages)
-- Set reminders (birthdays, anniversaries, custom)
-- Manage relationships between contacts
-- Organize contacts into groups
-- Import/export contacts as CSV
+### Actions
 
-### Commands
+| Group | Actions |
+|-------|---------|
+| **Contacts** | `search`, `contact`, `add_contact`, `update_contact`, `delete_contact` |
+| **Interactions** | `log_interaction` |
+| **Reminders** | `add_reminder`, `upcoming` |
+| **Relationships** | `add_relationship` |
+| **Companies** | `list_companies`, `add_company` |
+| **Groups** | `list_groups`, `add_to_group`, `remove_from_group` |
+| **Import/Export** | `export_csv`, `import_csv` |
+
+### Key Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `action` | string | Action to perform (required) |
+| `query` | string | Search query (for `search`) |
+| `contact_id` | number | Contact ID (for `contact`, `update_contact`, `log_interaction`, `add_reminder`) |
+| `name` | string | Contact name — alternative to `contact_id` for `contact` action |
+| `first_name` / `last_name` | string | Contact name fields |
+| `email` / `phone` | string | Primary email / phone |
+| `company_name` | string | Company association |
+| `interaction_type` | string | `call`, `meeting`, `email`, `note`, `gift`, `message` |
+| `summary` | string | Interaction summary (required for `log_interaction`) |
+| `reminder_type` | string | `birthday`, `anniversary`, `custom` |
+| `reminder_date` | string | ISO date for the reminder |
+
+## Commands
 
 | Command | Description |
-|---|---|
+|---------|-------------|
 | `/crm-web [port]` | Start standalone web UI (default port 4100) |
-| `/crm-web stop` | Stop the standalone web server |
-| `/crm-web status` | Show whether the CRM is running standalone and/or via pi-webserver |
+| `/crm-web stop` | Stop the standalone server |
+| `/crm-web status` | Show whether CRM is running standalone or via pi-webserver |
 | `/crm-export` | Export all contacts to `crm-contacts.csv` |
-| `/crm-import path/to/file.csv` | Import contacts from a CSV file |
+| `/crm-import <path>` | Import contacts from a CSV file |
 
-### pi-webserver integration
+## Web UI
 
-If [pi-webserver](https://github.com/espennilsen/pi-webserver) is installed, the CRM auto-mounts at `/crm` on the shared web server — no extra setup needed. Use `/web` to start the shared server, then visit `http://localhost:4100/crm/`. The standalone `/crm-web` command still works independently.
+The dashboard (`crm.html`) auto-mounts at `/crm` when [pi-webserver](https://github.com/espennilsen/pi) is installed. Use `/crm-web` to start a standalone server on port 4100.
 
-### Tool Actions
-
-The `crm` tool supports 16 actions:
-
-`search`, `contact`, `add_contact`, `update_contact`, `delete_contact`, `log_interaction`, `add_reminder`, `upcoming`, `add_relationship`, `list_companies`, `add_company`, `list_groups`, `add_to_group`, `remove_from_group`, `export_csv`, `import_csv`
-
-See [TOOL_EXAMPLES.md](./TOOL_EXAMPLES.md) for detailed examples.
-
-### Web UI Pages
-
-| Page | Description |
-|---|---|
-| **Contacts** | List/detail split view, edit contacts, log interactions, manage groups |
-| **Companies** | Browse companies, see member contacts, add/edit/delete |
-| **Groups** | Create groups, manage membership |
-| **Interactions** | Full interaction timeline across all contacts, filterable by type |
-| **Reminders** | All reminders with upcoming/overdue indicators |
-| **Upcoming** | Birthdays, anniversaries, and reminders grouped by urgency (Today, This Week, Later) |
-
-## Extension Fields
-
-Third-party extensions (e.g. a LinkedIn scraper, Clearbit enrichment) can attach read-only fields to **contacts** and **companies**. Fields are displayed in the web UI but not editable there.
-
-```typescript
-import { crmApi } from "pi-personal-crm/src/db.ts";
-
-// ── Contact fields ──
-crmApi.setExtensionField({
-  contact_id: 42,
-  source: "linkedin",
-  field_name: "headline",
-  field_value: "Senior Engineer at Acme",
-  label: "Headline",
-  field_type: "text",          // "text" | "url" | "date" | "number" | "json"
-});
-
-crmApi.getExtensionFields(42);
-crmApi.getExtensionFieldsBySource(42, "linkedin");
-crmApi.deleteExtensionFields(42, "linkedin");
-
-// ── Company fields ──
-crmApi.setCompanyExtensionField({
-  company_id: 5,
-  source: "clearbit",
-  field_name: "employee_count",
-  field_value: "250",
-  label: "Employees",
-  field_type: "number",
-});
-
-crmApi.getCompanyExtensionFields(5);
-crmApi.getCompanyExtensionFieldsBySource(5, "clearbit");
-crmApi.deleteCompanyExtensionFields(5, "clearbit");
-```
-
-REST API:
-- `GET|PUT|DELETE /api/crm/contacts/:id/extension-fields[?source=...]`
-- `GET|PUT|DELETE /api/crm/companies/:id/extension-fields[?source=...]`
-
-PUT body: `{ source, field_name, field_value, label?, field_type? }`
-
-## Extending the CRM
-
-Other pi extensions can import from this package:
-
-```typescript
-import { crmApi } from "pi-personal-crm/src/db.ts";
-import { crmRegistry } from "pi-personal-crm/src/registry.ts";
-
-const contacts = crmApi.getContacts();
-
-crmRegistry.on("contact.created", async (contact) => {
-  // Custom logic
-});
-```
-
-## Development
+## Install
 
 ```bash
-npm install
-npm test          # Run DB smoke tests
-npm run typecheck # TypeScript type checking
-```
-
-Test locally with pi:
-
-```bash
-pi -e ./
+pi install npm:@e9n/pi-personal-crm
 ```
 
 ## License
 
-[MIT](./LICENSE)
+MIT

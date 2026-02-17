@@ -1,12 +1,13 @@
-# pi-supabase
+# @e9n/pi-supabase
 
-Read-only Supabase integration for pi. Query tables, describe schemas, call RPC functions, and get realtime change notifications via pi-channels.
+Supabase integration for [pi](https://github.com/badlogic/pi-mono) — query tables, describe schemas, call RPC functions, and stream realtime change notifications.
 
 ## Features
 
-- **`supabase` tool** — query, describe, tables, count, rpc, status
-- **Realtime subscriptions** — subscribe to table changes, forwarded as pi-channels notifications
-- **Query logging** — optional persistent audit log via pi-kysely
+- **`supabase` tool** — query, describe, count, rpc, and status actions with filter support
+- **Realtime subscriptions** — subscribe to table change events, forwarded as [pi-channels](../pi-channels) notifications
+- **Dual key support** — anon key or service role key, switchable per project
+- **Optional query audit log** — persistent log via [pi-kysely](../pi-kysely)
 
 ## Settings
 
@@ -21,12 +22,12 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
     "useServiceRole": false,
     "useKysely": false,
     "notifications": {
-      "enabled": true,
+      "enabled": false,
       "route": "ops",
       "tables": ["users", "orders"]
     },
     "rpc": {
-      "allowList": ["get_dashboard_stats", "search_products"]
+      "allowList": ["get_dashboard_stats"]
     }
   }
 }
@@ -35,39 +36,34 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `url` | `string` | — | Supabase project URL (required) |
-| `anonKey` | `string` | — | Supabase anon/public key (required unless using service role) |
-| `serviceRoleKey` | `string` | — | Supabase service role key (optional, elevated access) |
+| `anonKey` | `string` | — | Supabase anon/public key |
+| `serviceRoleKey` | `string` | — | Service role key for elevated access |
 | `useServiceRole` | `boolean` | `false` | Use service role key instead of anon key |
-| `useKysely` | `boolean` | `false` | Use pi-kysely shared DB for query audit log |
+| `useKysely` | `boolean` | `false` | Log queries via pi-kysely |
 | `notifications.enabled` | `boolean` | `false` | Enable realtime table change notifications |
 | `notifications.route` | `string` | `"ops"` | pi-channels route for notifications |
-| `notifications.tables` | `string[]` | `[]` | Tables to subscribe to for realtime changes |
-| `rpc.allowList` | `string[]` | `[]` | Explicit list of RPC functions that can be called (empty = all blocked) |
+| `notifications.tables` | `string[]` | `[]` | Tables to subscribe to |
+| `rpc.allowList` | `string[]` | `[]` | Allowed RPC function names (empty = all blocked) |
 
-## Tool Actions
+## Tool: `supabase`
 
 | Action | Description |
 |--------|-------------|
-| `query` | Select rows with filters, ordering, pagination |
-| `describe` | Show table columns and types |
+| `query` | Select rows with filters, ordering, and pagination |
+| `describe` | Show column names and types for a table |
 | `tables` | List all tables in the public schema |
 | `count` | Count rows matching optional filters |
-| `rpc` | Call a Postgres function (read-only) |
-| `status` | Show connection status |
+| `rpc` | Call a Postgres function (must be on allow-list) |
+| `status` | Show connection status and current config |
 
-### Filter Operators
+**Filter operators:** `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`
 
-`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`
-
-## Requirements
-
-- Supabase project with API access enabled
-- `pi-channels` extension (optional, for realtime notifications)
-- `pi-kysely` extension (optional, for query audit log)
-
-## Development
+## Install
 
 ```bash
-npm install
-npm run typecheck
+pi install npm:@e9n/pi-supabase
 ```
+
+## License
+
+MIT

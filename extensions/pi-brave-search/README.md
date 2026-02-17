@@ -2,6 +2,14 @@
 
 Web search extension for [pi](https://github.com/mariozechner/pi-coding-agent) — search the web via the [Brave Search API](https://brave.com/search/api/).
 
+## Features
+
+- **Web search** — query the Brave Search API and get ranked results with titles, URLs, and descriptions
+- **Configurable results** — set default count (1–20) and override per call
+- **Freshness filter** — limit results by time range (day, week, month, year, or custom date range)
+- **Regional control** — filter by country and language
+- **Safe search** — configurable filtering level (off / moderate / strict)
+
 ## Setup
 
 1. Get a Brave Search API key from [brave.com/search/api](https://brave.com/search/api/)

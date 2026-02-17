@@ -1,46 +1,46 @@
 {
-  "name": "@e9n/pi-projects",
-  "version": "0.1.0",
-  "description": "Project tracking dashboard extension for pi — auto-discovers git repos with status",
-  "type": "module",
-  "keywords": [
-    "pi-package"
-  ],
-  "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ],
-    "skills": [
-      "./skills"
-    ]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "author": "Espen Nilsen <hi@e9n.dev>",
-  "license": "MIT",
-  "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.6.2"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "typescript": "^5.9.3"
-  },
-  "files": [
-    "CHANGELOG.md",
-    "README.md",
-    "package.json",
-    "skills",
-    "src"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/espennilsen/pi.git",
-    "directory": "extensions/pi-projects"
-  }
+	"name": "@e9n/pi-projects",
+	"version": "0.1.0",
+	"description": "Project tracking extension for pi — auto-discovers git repos with health status dashboard",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"license": "MIT",
+	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"dependencies": {
+		"better-sqlite3": "^12.6.2"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.12",
+		"typescript": "^5.9.3"
+	},
+	"files": [
+		"CHANGELOG.md",
+		"README.md",
+		"package.json",
+		"skills",
+		"src"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-projects"
+	}
 }

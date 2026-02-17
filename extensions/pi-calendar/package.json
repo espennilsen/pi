@@ -1,42 +1,42 @@
 {
-  "name": "@e9n/pi-calendar",
-  "version": "0.1.0",
-  "description": "Calendar tool, web dashboard, and reminders for pi",
-  "type": "module",
-  "keywords": [
-    "pi-package"
-  ],
-  "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ]
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/espennilsen/pi.git",
-    "directory": "extensions/pi-calendar"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "author": "Espen Nilsen <hi@e9n.dev>",
-  "license": "MIT",
-  "dependencies": {
-    "better-sqlite3": "^11.10.0"
-  },
-  "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "typescript": "^5.9.3"
-  },
-  "files": [
-    "CHANGELOG.md",
-    "README.md",
-    "package.json",
-    "src"
-  ]
+	"name": "@e9n/pi-calendar",
+	"version": "0.1.0",
+	"description": "Calendar extension for pi — events, reminders, recurrence, and web dashboard",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-calendar"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"license": "MIT",
+	"dependencies": {
+		"better-sqlite3": "^11.10.0"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.12",
+		"typescript": "^5.9.3"
+	},
+	"files": [
+		"CHANGELOG.md",
+		"README.md",
+		"package.json",
+		"src"
+	]
 }

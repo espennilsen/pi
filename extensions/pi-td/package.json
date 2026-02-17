@@ -1,42 +1,42 @@
 {
-  "name": "@e9n/pi-td",
-  "version": "0.2.0",
-  "description": "td task management extension for pi — optional web dashboard via pi-webserver",
-  "type": "module",
-  "keywords": [
-    "pi-package"
-  ],
-  "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
-    "@sinclair/typebox": "*"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.10.0"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "typescript": "^5.9.3"
-  },
-  "license": "MIT",
-  "author": "Espen Nilsen <hi@e9n.dev>",
-  "files": [
-    "CHANGELOG.md",
-    "README.md",
-    "package.json",
-    "src"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/espennilsen/pi.git",
-    "directory": "extensions/pi-td"
-  }
+	"name": "@e9n/pi-td",
+	"version": "0.2.0",
+	"description": "Task management extension for pi — issues, sessions, handoffs, and web dashboard",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "*",
+		"@mariozechner/pi-ai": "*",
+		"@sinclair/typebox": "*"
+	},
+	"dependencies": {
+		"better-sqlite3": "^11.10.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.12",
+		"typescript": "^5.9.3"
+	},
+	"license": "MIT",
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"files": [
+		"CHANGELOG.md",
+		"README.md",
+		"package.json",
+		"src"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-td"
+	}
 }

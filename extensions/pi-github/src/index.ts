@@ -48,13 +48,4 @@ export default function (pi: ExtensionAPI) {
 		cwd = ctx.cwd;
 		setSessionCwd(ctx.cwd);
 	});
-
-	// ── Cross-extension: follow workon project switches ───────
-
-	pi.events.on("workon:switch", (raw: unknown) => {
-		const data = raw as { path: string; name: string };
-		cwd = data.path;
-		setSessionCwd(data.path);
-		log("workon-switch", { path: data.path, name: data.name });
-	});
 }

@@ -1,23 +1,37 @@
 {
-  "name": "pi-logger",
-  "version": "0.1.0",
-  "description": "Event bus logger for pi — writes structured JSONL logs from bus events",
-  "type": "module",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "author": "Espen Nilsen <hi@e9n.dev>",
-  "license": "MIT",
-  "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+	"name": "@e9n/pi-logger",
+	"version": "0.1.0",
+	"description": "Event bus logger for pi — writes structured JSONL logs from bus events",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"license": "MIT",
+	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3"
+	},
+	"files": [
+		"src",
+		"package.json",
+		"README.md"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-logger"
+	}
 }

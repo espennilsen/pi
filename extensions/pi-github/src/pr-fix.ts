@@ -81,9 +81,10 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
 async function getUnresolvedThreads(owner: string, repo: string, prNumber: number, cwd: string): Promise<ReviewThread[]> {
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
+	const MAX_PAGES = 50;
 
-	// Paginate through all review threads (100 per page)
-	while (true) {
+	// Paginate through all review threads (100 per page, max 50 pages = 5000 threads)
+	for (let page = 0; page < MAX_PAGES; page++) {
 		const variables: Record<string, any> = { owner, repo, prNumber };
 		if (cursor) variables.cursor = cursor;
 

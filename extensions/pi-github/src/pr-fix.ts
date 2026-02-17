@@ -166,12 +166,17 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo): string 
 	}
 	lines.push("```");
 	lines.push("");
-	lines.push("**To resolve threads after pushing, run for each addressed thread:**");
+	lines.push("**After pushing, for each addressed thread:**");
+	lines.push("1. Reply to the thread with a short summary of the fix:");
+	lines.push("```bash");
+	lines.push(`gh api graphql -f query='mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "THREAD_ID", body: "Fixed — <brief description of what was done>"}) { comment { id } } }'`);
+	lines.push("```");
+	lines.push("2. Then resolve the thread:");
 	lines.push("```bash");
 	lines.push(`gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'`);
 	lines.push("```");
 	lines.push("");
-	lines.push(`**To post a summary comment:** \`gh pr comment ${prInfo.number} --body '...'\``);
+	lines.push(`**Finally, post a summary comment on the PR:** \`gh pr comment ${prInfo.number} --body '...'\``);
 
 	return lines.join("\n");
 }

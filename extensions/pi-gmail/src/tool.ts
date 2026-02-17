@@ -365,12 +365,9 @@ export function registerGmailTool(
 					);
 					if (!confirmed) return text("❌ Trash cancelled.");
 
-					if (msgIds.length === 1) {
-						// Use dedicated trash endpoint for proper trash lifecycle (30-day auto-delete)
-						await client.trashMessage(settings, agentDir, msgIds[0]!);
-					} else {
-						// Batch operation for multiple messages
-						await client.batchModifyMessages(settings, agentDir, msgIds, ["TRASH"], ["INBOX"]);
+					// Use dedicated trash endpoint for proper trash lifecycle (30-day auto-delete)
+					for (const msgId of msgIds) {
+						await client.trashMessage(settings, agentDir, msgId);
 					}
 					return text(`✓ Trashed ${msgIds.length} message(s).`);
 				}

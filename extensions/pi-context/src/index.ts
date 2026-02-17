@@ -221,9 +221,21 @@ function formatOutput(
 	const agentsTotal = breakdown.agents.reduce((s, a) => s + a.tokens, 0);
 	const skillsTotal = breakdown.skills.reduce((s, s2) => s + s2.tokens, 0);
 
+	// Compute system prompt tokens as the remainder so all categories
+	// sum exactly to usedTokens. The heuristic estimates for individual
+	// categories (tools, agents, skills, messages) are reliable since we
+	// have their actual content, but the system prompt is hard to estimate
+	// independently — it contains injected blocks that overlap with other
+	// categories. Using the remainder avoids double-counting mismatches
+	// and guarantees the numbers always add up.
+	const systemPromptTokens = Math.max(
+		usedTokens - toolsTotal - agentsTotal - skillsTotal - breakdown.messages,
+		0,
+	);
+
 	// Build category list with colors
 	const categories: CategoryInfo[] = [
-		{ label: "System prompt", tokens: breakdown.systemPrompt, hex: HEX_FILLED, colorCode: BLUE },
+		{ label: "System prompt", tokens: systemPromptTokens, hex: HEX_FILLED, colorCode: BLUE },
 		{ label: "Tools", tokens: toolsTotal, hex: HEX_FILLED, colorCode: CYAN },
 	];
 	if (agentsTotal > 0) {

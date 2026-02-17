@@ -44,14 +44,18 @@ interface PrInfo {
 // ── GraphQL Queries ─────────────────────────────────────────────
 
 const REVIEW_THREADS_QUERY = `
-query($owner: String!, $repo: String!, $prNumber: Int!) {
+query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $prNumber) {
       number
       title
       headRefName
       url
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           id
           isResolved
@@ -75,30 +79,42 @@ query($owner: String!, $repo: String!, $prNumber: Int!) {
 // ── Helpers ─────────────────────────────────────────────────────
 
 async function getUnresolvedThreads(owner: string, repo: string, prNumber: number, cwd: string): Promise<ReviewThread[]> {
-	const data = await ghGraphql<any>(REVIEW_THREADS_QUERY, { owner, repo, prNumber }, cwd);
-	if (!data?.data?.repository?.pullRequest?.reviewThreads?.nodes) return [];
-
 	const threads: ReviewThread[] = [];
-	for (const node of data.data.repository.pullRequest.reviewThreads.nodes) {
-		if (node.isResolved) continue;
+	let cursor: string | null = null;
 
-		const comments = (node.comments?.nodes ?? []).map((c: any) => ({
-			author: c.author?.login ?? "unknown",
-			body: c.body,
-			createdAt: c.createdAt,
-		}));
+	// Paginate through all review threads (100 per page)
+	while (true) {
+		const variables: Record<string, any> = { owner, repo, prNumber };
+		if (cursor) variables.cursor = cursor;
 
-		if (comments.length === 0) continue;
+		const data = await ghGraphql<any>(REVIEW_THREADS_QUERY, variables, cwd);
+		const reviewThreads = data?.data?.repository?.pullRequest?.reviewThreads;
+		if (!reviewThreads?.nodes) break;
 
-		threads.push({
-			id: node.id,
-			isResolved: false,
-			path: node.path ?? "",
-			line: node.line,
-			body: comments[0].body,
-			author: comments[0].author,
-			comments,
-		});
+		for (const node of reviewThreads.nodes) {
+			if (node.isResolved) continue;
+
+			const comments = (node.comments?.nodes ?? []).map((c: any) => ({
+				author: c.author?.login ?? "unknown",
+				body: c.body,
+				createdAt: c.createdAt,
+			}));
+
+			if (comments.length === 0) continue;
+
+			threads.push({
+				id: node.id,
+				isResolved: false,
+				path: node.path ?? "",
+				line: node.line,
+				body: comments[0].body,
+				author: comments[0].author,
+				comments,
+			});
+		}
+
+		if (!reviewThreads.pageInfo?.hasNextPage) break;
+		cursor = reviewThreads.pageInfo.endCursor;
 	}
 
 	return threads;

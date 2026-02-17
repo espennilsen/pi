@@ -150,8 +150,8 @@ const HEX_EMPTY = "⛶";
 const HEX_COMPACT = "⛝";
 
 const BAR_WIDTH = 10;
-const BAR_ROWS = 2;
-const TOTAL_CELLS = BAR_WIDTH * BAR_ROWS;
+const BAR_ROWS = 10;
+const TOTAL_CELLS = BAR_WIDTH * BAR_ROWS; // 100 cells = 1% each
 
 function formatTokens(tokens: number): string {
 	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
@@ -163,24 +163,8 @@ function formatPercent(fraction: number): string {
 	return `${(fraction * 100).toFixed(1)}%`;
 }
 
-/** Build the overall usage bar — filled vs empty. */
-function buildUsageBar(
-	contextWindow: number,
-	usedTokens: number,
-	autocompactTokens: number,
-): string[] {
-	const usedCells = Math.round((Math.min(usedTokens / contextWindow, 1)) * TOTAL_CELLS);
-	const compactCells = Math.round((Math.min(autocompactTokens / contextWindow, 1)) * TOTAL_CELLS);
-	const freeCells = Math.max(TOTAL_CELLS - usedCells - compactCells, 0);
-
-	const chars: string[] = [];
-	for (let i = 0; i < usedCells; i++) chars.push(color(GREEN, HEX_FILLED));
-	for (let i = 0; i < freeCells; i++) chars.push(color(GRAY, HEX_EMPTY));
-	for (let i = 0; i < compactCells; i++) chars.push(color(RED, HEX_COMPACT));
-
-	while (chars.length < TOTAL_CELLS) chars.push(color(GRAY, HEX_EMPTY));
-	chars.length = TOTAL_CELLS;
-
+/** Split a flat array of styled chars into 10×10 grid rows. */
+function gridRows(chars: string[]): string[] {
 	const rows: string[] = [];
 	for (let r = 0; r < BAR_ROWS; r++) {
 		rows.push(chars.slice(r * BAR_WIDTH, (r + 1) * BAR_WIDTH).join(" "));
@@ -204,7 +188,7 @@ function buildCategoryBar(
 		for (let i = 0; i < cells; i++) chars.push(color(cat.colorCode, cat.hex));
 	}
 
-	// Free space
+	// Free space in the middle, autocompact at the end
 	const compactCells = Math.round((autocompactTokens / contextWindow) * TOTAL_CELLS);
 	const freeCells = Math.max(TOTAL_CELLS - chars.length - compactCells, 0);
 	for (let i = 0; i < freeCells; i++) chars.push(color(GRAY, HEX_EMPTY));
@@ -213,11 +197,7 @@ function buildCategoryBar(
 	while (chars.length < TOTAL_CELLS) chars.push(color(GRAY, HEX_EMPTY));
 	chars.length = TOTAL_CELLS;
 
-	const rows: string[] = [];
-	for (let r = 0; r < BAR_ROWS; r++) {
-		rows.push(chars.slice(r * BAR_WIDTH, (r + 1) * BAR_WIDTH).join(" "));
-	}
-	return rows;
+	return gridRows(chars);
 }
 
 // ── Main formatter ──────────────────────────────────────────────
@@ -241,9 +221,21 @@ function formatOutput(
 	const agentsTotal = breakdown.agents.reduce((s, a) => s + a.tokens, 0);
 	const skillsTotal = breakdown.skills.reduce((s, s2) => s + s2.tokens, 0);
 
+	// Compute system prompt tokens as the remainder so all categories
+	// sum exactly to usedTokens. The heuristic estimates for individual
+	// categories (tools, agents, skills, messages) are reliable since we
+	// have their actual content, but the system prompt is hard to estimate
+	// independently — it contains injected blocks that overlap with other
+	// categories. Using the remainder avoids double-counting mismatches
+	// and guarantees the numbers always add up.
+	const systemPromptTokens = Math.max(
+		usedTokens - toolsTotal - agentsTotal - skillsTotal - breakdown.messages,
+		0,
+	);
+
 	// Build category list with colors
 	const categories: CategoryInfo[] = [
-		{ label: "System prompt", tokens: breakdown.systemPrompt, hex: HEX_FILLED, colorCode: BLUE },
+		{ label: "System prompt", tokens: systemPromptTokens, hex: HEX_FILLED, colorCode: BLUE },
 		{ label: "Tools", tokens: toolsTotal, hex: HEX_FILLED, colorCode: CYAN },
 	];
 	if (agentsTotal > 0) {
@@ -254,38 +246,35 @@ function formatOutput(
 	}
 	categories.push({ label: "Messages", tokens: breakdown.messages, hex: HEX_HALF, colorCode: GREEN });
 
-	// ── Bars ────────────────────────────────────────────────
-	const usageBar = buildUsageBar(contextWindow, usedTokens, autocompactTokens);
+	// ── Bar ─────────────────────────────────────────────────
 	const categoryBar = buildCategoryBar(contextWindow, categories, autocompactTokens);
 
 	const lines: string[] = [];
 	lines.push(`${BOLD}Context Usage${RESET}`);
 	lines.push("");
 
-	// Overall bar + summary
-	lines.push(
-		`${usageBar[0]}   ${color(WHITE, modelName)} · ${formatTokens(usedTokens)}/${formatTokens(contextWindow)} tokens (${formatPercent(usedTokens / contextWindow)})`,
-	);
-	lines.push(usageBar[1]);
-
-	// Category bar + legend
-	lines.push(`${categoryBar[0]}   ${DIM}Estimated usage by category${RESET}`);
-	lines.push(categoryBar[1]);
-
-	// Right-aligned legend lines
-	const pad = " ".repeat(BAR_WIDTH * 2 - 1) + "   ";
-
+	// Build right-side annotations for category bar rows
+	const legendItems: string[] = [];
 	for (const cat of categories) {
-		lines.push(
-			`${pad}${color(cat.colorCode, cat.hex)} ${cat.label}: ${formatTokens(cat.tokens)} tokens (${formatPercent(cat.tokens / contextWindow)})`,
+		legendItems.push(
+			`${color(cat.colorCode, cat.hex)} ${cat.label}: ${formatTokens(cat.tokens)} tokens (${formatPercent(cat.tokens / contextWindow)})`,
 		);
 	}
-	lines.push(
-		`${pad}${color(GRAY, HEX_EMPTY)} Free space: ${formatTokens(freeTokens)} (${formatPercent(freeTokens / contextWindow)})`,
+	legendItems.push(
+		`${color(GRAY, HEX_EMPTY)} Free space: ${formatTokens(freeTokens)} (${formatPercent(freeTokens / contextWindow)})`,
 	);
-	lines.push(
-		`${pad}${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens (${formatPercent(autocompactTokens / contextWindow)})`,
-	);
+
+	const categoryAnnotations: string[] = Array(BAR_ROWS).fill("");
+	categoryAnnotations[0] = `   ${color(WHITE, modelName)} · ${formatTokens(usedTokens)}/${formatTokens(contextWindow)} tokens`;
+	categoryAnnotations[1] = `   Estimated usage: ${formatPercent(usedTokens / contextWindow)}`;
+	for (let i = 0; i < legendItems.length; i++) {
+		categoryAnnotations[i + 2] = `   ${legendItems[i]}`;
+	}
+	categoryAnnotations[BAR_ROWS - 1] = `   ${color(RED, HEX_COMPACT)} Autocompact buffer: ${formatTokens(autocompactTokens)} tokens`;
+
+	for (let r = 0; r < BAR_ROWS; r++) {
+		lines.push(`${categoryBar[r]}${categoryAnnotations[r]}`);
+	}
 
 	// ── Tool detail list ────────────────────────────────────
 	if (breakdown.tools.length > 0) {
@@ -338,9 +327,20 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const contextWindow = usage.contextWindow;
-			const usedTokens = usage.tokens;
-
 			const breakdown = collectBreakdown(pi, ctx);
+
+			// The API-reported token count may be 0 before the first response.
+			// Fall back to the sum of estimated category tokens so the header
+			// stays consistent with the per-category percentages shown below.
+			const apiTokens = usage.tokens;
+			const estimatedTotal =
+				breakdown.systemPrompt +
+				breakdown.tools.reduce((s, t) => s + t.tokens, 0) +
+				breakdown.agents.reduce((s, a) => s + a.tokens, 0) +
+				breakdown.skills.reduce((s, sk) => s + sk.tokens, 0) +
+				breakdown.messages;
+			const usedTokens = apiTokens > 0 ? apiTokens : estimatedTotal;
+
 			const output = formatOutput(pi, ctx, breakdown, usedTokens, contextWindow);
 
 			ctx.ui.notify(output, "info");

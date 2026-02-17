@@ -356,9 +356,10 @@ export function registerWorkonTool(
 				return text(msg);
 			}
 
-			const context = await buildProjectContext(
-				resolution.resolved.path,
-			);
+			const projectPath = resolution.resolved.path;
+			pi.events.emit("workon:switch", { path: projectPath, name: resolution.resolved.name });
+
+			const context = await buildProjectContext(projectPath);
 			return text(context);
 		},
 	});

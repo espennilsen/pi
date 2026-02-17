@@ -33,5 +33,6 @@
     "type": "git",
     "url": "git+https://github.com/espennilsen/pi.git",
     "directory": "extensions/pi-dotenv"
-  }
+  },
+  "private": true
 }

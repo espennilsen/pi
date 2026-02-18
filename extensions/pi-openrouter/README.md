@@ -1,20 +1,18 @@
-# pi-openrouter
+# @e9n/pi-openrouter
 
-OpenRouter provider extension for [pi](https://github.com/badlogic/pi-mono). Adds OAuth PKCE authentication and dynamic model discovery from OpenRouter's full model catalog.
+OpenRouter provider for [pi](https://github.com/espennilsen/pi) — access 338+ models via a unified API with OAuth PKCE authentication.
 
-## Setup
+## Features
 
-Load the extension:
-
-```bash
-pi -e extensions/pi-openrouter
-```
-
-Or add to your pi config for persistent loading.
+- OAuth PKCE authentication via `/login openrouter`
+- Dynamic model discovery from OpenRouter API
+- Local model caching for offline use
+- Glob-pattern filtering to customize which models appear
+- Merges with built-in OpenRouter provider
 
 ## Authentication
 
-### Option 1: OAuth PKCE (recommended)
+### OAuth (recommended)
 
 ```
 /login openrouter
@@ -22,48 +20,39 @@ Or add to your pi config for persistent loading.
 
 Opens your browser for one-click authentication. The API key is stored permanently in `~/.pi/agent/auth.json`.
 
-### Option 2: Environment variable
+### Environment variable
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 ```
 
-## Usage
-
-After authentication, OpenRouter models appear in `/model`. The extension fetches the latest model catalog from the API on each session start.
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/openrouter` | Show status, registered models count, active patterns |
-| `/openrouter models [search]` | List registered models, optionally filter by search term |
-| `/openrouter refresh` | Fetch latest models from OpenRouter API |
-
 ## Model Filtering
 
-By default, **all 338+ OpenRouter models** are registered. To filter, override in `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (per-project):
+By default, all 338+ OpenRouter models are registered. To filter, add to `~/.pi/agent/settings.json`:
 
 ```json
 {
   "pi-openrouter": {
-    "models": [
-      "anthropic/*",
-      "openai/gpt-5*",
-      "google/gemini-*",
-      "deepseek/*",
-      "meta-llama/llama-4*"
-    ]
+    "models": ["anthropic/*", "openai/gpt-5*", "google/gemini-*"]
   }
 }
 ```
 
-After changing settings, run `/openrouter refresh` or restart the session.
+Patterns use glob syntax (`*` matches any characters).
 
-## How It Works
+## Commands
 
-1. **Init** — Loads cached model list from disk, filters by settings, registers provider with OAuth
-2. **Session start** — Fetches fresh model catalog from OpenRouter API, updates cache, re-registers
-3. **`/openrouter refresh`** — Manual refresh for immediate updates
+| Command | Description |
+|---------|-------------|
+| `/openrouter` | Show status and model count |
+| `/openrouter refresh` | Fetch latest models from API |
 
-The model cache is stored at `~/.pi/agent/cache/openrouter-models.json`.
+## Install
+
+```bash
+pi install npm:@e9n/pi-openrouter
+```
+
+## License
+
+MIT

@@ -55,21 +55,14 @@ export default function (pi: ExtensionAPI) {
 
 	// ── /openrouter command ──────────────────────────────────────────────────
 	pi.registerCommand("openrouter", {
-		description: "Manage OpenRouter: /openrouter [models|refresh]",
+		description: "Manage OpenRouter: /openrouter [refresh]",
 		getArgumentCompletions: (prefix: string) =>
-			[
-				{ value: "models", label: "List registered models" },
-				{ value: "refresh", label: "Fetch latest models from API" },
-			].filter((i) => i.value.startsWith(prefix)),
+			[{ value: "refresh", label: "Fetch latest models from API" }].filter((i) => i.value.startsWith(prefix)),
 		handler: async (args, ctx) => {
-			const cmd = args?.trim().split(/\s+/) ?? [];
-			const action = cmd[0]?.toLowerCase();
+			const cmd = args?.trim().toLowerCase();
 
-			if (action === "refresh") {
+			if (cmd === "refresh") {
 				await handleRefresh(ctx);
-			} else if (action === "models") {
-				const search = cmd.slice(1).join(" ").toLowerCase();
-				handleListModels(ctx, search);
 			} else {
 				handleStatus(ctx);
 			}
@@ -106,44 +99,6 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	function handleListModels(
-		ctx: { ui: { notify: (msg: string, type?: "info" | "error" | "warning") => void } },
-		search: string,
-	) {
-		const cached = loadCache();
-		const filtered = filterModels(cached, settings.models);
-
-		let display = filtered;
-		if (search) {
-			display = display.filter(
-				(m) => m.id.toLowerCase().includes(search) || m.name.toLowerCase().includes(search),
-			);
-		}
-
-		if (display.length === 0) {
-			ctx.ui.notify(
-				search ? `No models matching "${search}"` : "No models registered. Run /openrouter refresh",
-				"info",
-			);
-			return;
-		}
-
-		const lines = display
-			.sort((a, b) => a.id.localeCompare(b.id))
-			.map((m) => {
-				const pricing = m.pricing;
-				const inp = (parseFloat(pricing.prompt ?? "0") * 1_000_000).toFixed(2);
-				const out = (parseFloat(pricing.completion ?? "0") * 1_000_000).toFixed(2);
-				const ctx = m.context_length?.toLocaleString() ?? "?";
-				return `  ${m.id} — $${inp}/$${out} per M tokens, ${ctx} ctx`;
-			});
-
-		ctx.ui.notify(
-			`OpenRouter models (${display.length}/${cached.length} total):\n${lines.join("\n")}`,
-			"info",
-		);
-	}
-
 	function handleStatus(ctx: { ui: { notify: (msg: string, type?: "info" | "error" | "warning") => void } }) {
 		const cached = loadCache();
 		const filtered = filterModels(cached, settings.models);
@@ -151,14 +106,8 @@ export default function (pi: ExtensionAPI) {
 		const lines = [
 			`Models: ${filtered.length} registered (${cached.length} cached)`,
 			`Patterns: ${settings.models.join(", ")}`,
-			`Provider: ${PROVIDER_NAME}`,
 			"",
-			"Commands:",
-			"  /openrouter models [search]  — List registered models",
-			"  /openrouter refresh          — Fetch latest from API",
-			"",
-			"Settings (in settings.json):",
-			'  "pi-openrouter": { "models": ["anthropic/*", "openai/gpt-5*", ...] }',
+			"Run /openrouter refresh to fetch latest models",
 		];
 
 		ctx.ui.notify(lines.join("\n"), "info");

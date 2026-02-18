@@ -49,7 +49,7 @@ export function loadCache(): OpenRouterModel[] {
 	try {
 		const data = fs.readFileSync(getCachePath(), "utf-8");
 		const parsed = JSON.parse(data) as { models: OpenRouterModel[]; timestamp: number };
-		return parsed.models;
+		return Array.isArray(parsed.models) ? parsed.models : [];
 	} catch {
 		return [];
 	}
@@ -71,6 +71,7 @@ const MODELS_URL = "https://openrouter.ai/api/v1/models";
 export async function fetchModels(): Promise<OpenRouterModel[]> {
 	const response = await fetch(MODELS_URL, {
 		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(10_000),
 	});
 
 	if (!response.ok) {
@@ -84,7 +85,7 @@ export async function fetchModels(): Promise<OpenRouterModel[]> {
 // ─── Filter ──────────────────────────────────────────────────────────────────
 
 function patternToRegex(pattern: string): RegExp {
-	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
 	return new RegExp(`^${escaped}$`);
 }
 
@@ -94,6 +95,11 @@ export function filterModels(models: OpenRouterModel[], patterns: string[]): Ope
 }
 
 // ─── Map ─────────────────────────────────────────────────────────────────────
+
+function safeFloat(s?: string): number {
+	const n = parseFloat(s ?? "0");
+	return isFinite(n) ? n : 0;
+}
 
 export function toProviderModel(m: OpenRouterModel): ProviderModelConfig {
 	const pricing = m.pricing;
@@ -107,10 +113,10 @@ export function toProviderModel(m: OpenRouterModel): ProviderModelConfig {
 		reasoning: hasReasoning,
 		input: hasImage ? ["text", "image"] : ["text"],
 		cost: {
-			input: parseFloat(pricing.prompt ?? "0") * 1_000_000,
-			output: parseFloat(pricing.completion ?? "0") * 1_000_000,
-			cacheRead: parseFloat(pricing.input_cache_read ?? "0") * 1_000_000,
-			cacheWrite: parseFloat(pricing.input_cache_write ?? "0") * 1_000_000,
+			input: safeFloat(pricing.prompt) * 1_000_000,
+			output: safeFloat(pricing.completion) * 1_000_000,
+			cacheRead: safeFloat(pricing.input_cache_read) * 1_000_000,
+			cacheWrite: safeFloat(pricing.input_cache_write) * 1_000_000,
 		},
 		contextWindow: m.context_length ?? 128000,
 		maxTokens: m.top_provider?.max_completion_tokens ?? 16384,

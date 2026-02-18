@@ -3,7 +3,7 @@ import { login, refreshToken, getApiKey } from "./oauth.ts";
 import { loadCache, saveCache, fetchModels, filterModels, toProviderModel } from "./models.ts";
 import { resolveSettings, type OpenRouterSettings } from "./settings.ts";
 
-const PROVIDER_NAME = "openrouter";
+const PROVIDER_NAME = "openrouter-oauth";
 const BASE_URL = "https://openrouter.ai/api/v1";
 
 export default function (pi: ExtensionAPI) {

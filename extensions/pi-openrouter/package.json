@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "OpenRouter provider with OAuth PKCE and dynamic model filtering",
   "type": "module",
+  "license": "MIT",
+  "author": "Espen Nilsen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/espennilsen/pi",
+    "directory": "extensions/pi-openrouter"
+  },
+  "keywords": ["pi", "openrouter", "llm", "ai", "oauth", "provider"],
   "pi": {
     "extensions": ["./src/index.ts"]
   },

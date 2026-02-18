@@ -4,18 +4,17 @@ OpenRouter provider for [pi](https://github.com/espennilsen/pi) — access 338+ 
 
 ## Features
 
-- OAuth PKCE authentication via `/login openrouter`
+- OAuth PKCE authentication via `/login openrouter-oauth`
 - Dynamic model discovery from OpenRouter API
 - Local model caching for offline use
 - Glob-pattern filtering to customize which models appear
-- Merges with built-in OpenRouter provider
 
 ## Authentication
 
 ### OAuth (recommended)
 
 ```
-/login openrouter
+/login openrouter-oauth
 ```
 
 Opens your browser for one-click authentication. The API key is stored permanently in `~/.pi/agent/auth.json`.

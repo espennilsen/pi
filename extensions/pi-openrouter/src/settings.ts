@@ -23,11 +23,17 @@ export function resolveSettings(cwd: string): OpenRouterSettings {
 		const globalCfg = (global?.[SETTINGS_KEY] ?? {}) as Partial<OpenRouterSettings>;
 		const projectCfg = (project?.[SETTINGS_KEY] ?? {}) as Partial<OpenRouterSettings>;
 
-		return {
+		const merged = {
 			...DEFAULTS,
 			...globalCfg,
 			...projectCfg,
 		};
+
+		if (!Array.isArray(merged.models)) {
+			merged.models = DEFAULTS.models;
+		}
+
+		return merged;
 	} catch {
 		return { ...DEFAULTS };
 	}

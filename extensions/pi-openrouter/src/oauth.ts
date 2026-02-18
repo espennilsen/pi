@@ -34,7 +34,14 @@ export async function login(callbacks: OAuthLoginCallbacks): Promise<OAuthCreden
 		message: "Paste the callback URL from your browser:",
 	});
 
-	const code = new URL(callbackUrl).searchParams.get("code");
+	let parsed: URL;
+	try {
+		parsed = new URL(callbackUrl);
+	} catch {
+		throw new Error("Invalid callback URL — paste the full URL from your browser's address bar");
+	}
+
+	const code = parsed.searchParams.get("code");
 	if (!code) {
 		throw new Error("No authorization code found in callback URL");
 	}
@@ -47,6 +54,7 @@ export async function login(callbacks: OAuthLoginCallbacks): Promise<OAuthCreden
 			code_verifier: verifier,
 			code_challenge_method: "S256",
 		}),
+		signal: AbortSignal.timeout(30_000),
 	});
 
 	if (!response.ok) {
@@ -54,11 +62,18 @@ export async function login(callbacks: OAuthLoginCallbacks): Promise<OAuthCreden
 		throw new Error(`OpenRouter key exchange failed (${response.status}): ${text}`);
 	}
 
-	const data = (await response.json()) as { key: string };
+	let data: { key: string };
+	try {
+		data = (await response.json()) as { key: string };
+	} catch {
+		throw new Error("OpenRouter returned invalid JSON during key exchange");
+	}
+
 	if (!data.key) {
 		throw new Error("OpenRouter returned empty API key");
 	}
 
+	// Permanent key — OpenRouter PKCE returns a non-expiring API key
 	return {
 		refresh: "",
 		access: data.key,

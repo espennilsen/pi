@@ -35,7 +35,7 @@ Key: `pi-openrouter` in `settings.json`
 
 ## Provider Config
 
-- **Provider name:** `openrouter`
+- **Provider name:** `openrouter-oauth`
 - **API:** `openai-completions` (OpenAI Chat Completions compatible)
 - **Base URL:** `https://openrouter.ai/api/v1`
 - **Auth header:** `Authorization: Bearer <key>`

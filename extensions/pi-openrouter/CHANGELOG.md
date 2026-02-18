@@ -10,8 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Initial release
-- OpenRouter provider with OAuth PKCE authentication via `/login openrouter`
+- OpenRouter provider with OAuth PKCE authentication via `/login openrouter-oauth`
 - Dynamic model discovery from OpenRouter API with local caching
 - Glob-pattern model filtering via `pi-openrouter.models` setting (default: all models)
 - `/openrouter refresh` command to fetch latest models from API
-- Merges with built-in openrouter provider for seamless authentication

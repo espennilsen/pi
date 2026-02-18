@@ -5,14 +5,7 @@ export interface OpenRouterSettings {
 	models: string[];
 }
 
-export const DEFAULT_PATTERNS: string[] = [
-	"openai/gpt-5.2*",
-	"anthropic/claude-opus-4.6",
-	"anthropic/claude-sonnet-4.6",
-	"google/gemini-3*",
-	"minimax/minimax-m2.5",
-	"moonshotai/kimi-k2.5",
-];
+export const DEFAULT_PATTERNS: string[] = ["*"];
 
 const SETTINGS_KEY = "pi-openrouter";
 

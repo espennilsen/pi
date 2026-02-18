@@ -42,18 +42,7 @@ After authentication, OpenRouter models appear in `/model`. The extension fetche
 
 ## Model Filtering
 
-By default, a curated set of frontier models is registered:
-
-- `openai/gpt-5.2*`
-- `anthropic/claude-opus-4.6`
-- `anthropic/claude-sonnet-4.6`
-- `google/gemini-3*`
-- `minimax/minimax-m2.5`
-- `moonshotai/kimi-k2.5`
-
-### Custom patterns
-
-Override in `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (per-project):
+By default, **all 338+ OpenRouter models** are registered. To filter, override in `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (per-project):
 
 ```json
 {
@@ -68,8 +57,6 @@ Override in `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (per-pro
   }
 }
 ```
-
-Patterns use glob syntax where `*` matches any characters. Use `["*"]` to register all available models.
 
 After changing settings, run `/openrouter refresh` or restart the session.
 

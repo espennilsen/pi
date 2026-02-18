@@ -253,7 +253,7 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			const base = args.trim() || "main";
 
 			// Check if a PR already exists for this branch
-			const existing = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number,url"]);
+			const existing = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number,url"], sessionCwd);
 			if (existing && existing.length > 0) {
 				ctx.ui.notify(`❌ PR already exists for branch \`${branch}\`: ${existing[0].url}`, "error");
 				return;
@@ -271,6 +271,8 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 			}
 
 			// Gather context: commits and diff summary
+			ctx.ui.notify(`📝 Gathering diff for \`${branch}\` → \`${base}\`…`, "info");
+
 			const commitsResult = await new Promise<{ ok: boolean; stdout: string }>((resolve) => {
 				execFile("git", ["log", `${base}..${branch}`, "--pretty=format:%h %s", "--reverse"], { cwd: sessionCwd, timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
 					resolve({ ok: !err, stdout: stdout?.trim() ?? "" });
@@ -332,7 +334,6 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				"**Before creating the PR, present your draft title and description to the user and ask if they have any input or changes.** Only run the `gh pr create` command after they confirm.",
 			].join("\n");
 
-			ctx.ui.notify(`📝 Gathering diff for \`${branch}\` → \`${base}\`…`, "info");
 			sendUserMessage(prompt, { deliverAs: "followUp" });
 			log("pr-create", { branch, base });
 		},

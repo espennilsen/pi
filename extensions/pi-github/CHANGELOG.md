@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - `/gh-pr-create` now gathers commits and diff, has the LLM draft a PR title and description, asks the user for input, and only creates the PR after confirmation. Replaces the previous `--fill` shortcut.
 
+### Removed
+
+- `/gh-pr-open` / `/github-pr-open` — removed before first publish.
+
 ## [0.1.0] - 2026-02-17 (7839f93)
 
 ### Added

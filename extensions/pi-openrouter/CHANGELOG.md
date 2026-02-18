@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- OpenRouter provider with OAuth PKCE authentication via `/login openrouter`
+- OpenRouter provider with OAuth PKCE authentication via `/login openrouter-oauth`
 - Dynamic model discovery from OpenRouter API with local caching
 - Glob-pattern model filtering via `pi-openrouter.models` setting
 - Curated default model list (GPT-5.2, Claude Opus/Sonnet 4.6, Gemini 3, Minimax M2.5, Kimi K2.5)

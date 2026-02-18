@@ -3,6 +3,7 @@ import { login, refreshToken, getApiKey } from "./oauth.ts";
 import { loadCache, saveCache, fetchModels, filterModels, toProviderModel } from "./models.ts";
 import { resolveSettings, type OpenRouterSettings } from "./settings.ts";
 
+const PROVIDER_NAME = "openrouter-oauth";
 const BASE_URL = "https://openrouter.ai/api/v1";
 
 export default function (pi: ExtensionAPI) {
@@ -13,14 +14,14 @@ export default function (pi: ExtensionAPI) {
 	const filtered = filterModels(cached, settings.models);
 	const models = filtered.map(toProviderModel);
 
-	pi.registerProvider("openrouter", {
+	pi.registerProvider(PROVIDER_NAME, {
 		baseUrl: BASE_URL,
 		apiKey: "OPENROUTER_API_KEY",
 		api: "openai-completions",
 		authHeader: true,
 		models,
 		oauth: {
-			name: "OpenRouter",
+			name: "OpenRouter OAuth",
 			login,
 			refreshToken,
 			getApiKey,
@@ -36,14 +37,14 @@ export default function (pi: ExtensionAPI) {
 			saveCache(fresh);
 			const filtered = filterModels(fresh, settings.models);
 
-			pi.registerProvider("openrouter", {
+			pi.registerProvider(PROVIDER_NAME, {
 				baseUrl: BASE_URL,
 				apiKey: "OPENROUTER_API_KEY",
 				api: "openai-completions",
 				authHeader: true,
 				models: filtered.map(toProviderModel),
 				oauth: {
-					name: "OpenRouter",
+					name: "OpenRouter OAuth",
 					login,
 					refreshToken,
 					getApiKey,
@@ -87,14 +88,14 @@ export default function (pi: ExtensionAPI) {
 			const filtered = filterModels(fresh, settings.models);
 			const mapped = filtered.map(toProviderModel);
 
-			pi.registerProvider("openrouter", {
+			pi.registerProvider(PROVIDER_NAME, {
 				baseUrl: BASE_URL,
 				apiKey: "OPENROUTER_API_KEY",
 				api: "openai-completions",
 				authHeader: true,
 				models: mapped,
 				oauth: {
-					name: "OpenRouter",
+					name: "OpenRouter OAuth",
 					login,
 					refreshToken,
 					getApiKey,
@@ -153,6 +154,7 @@ export default function (pi: ExtensionAPI) {
 		const lines = [
 			`Models: ${filtered.length} registered (${cached.length} cached)`,
 			`Patterns: ${settings.models.join(", ")}`,
+			`Provider: ${PROVIDER_NAME}`,
 			"",
 			"Commands:",
 			"  /openrouter models [search]  — List registered models",

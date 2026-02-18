@@ -17,7 +17,7 @@ Or add to your pi config for persistent loading.
 ### Option 1: OAuth PKCE (recommended)
 
 ```
-/login openrouter
+/login openrouter-oauth
 ```
 
 Opens your browser for one-click authentication. The API key is stored permanently in `~/.pi/agent/auth.json`.

@@ -20,6 +20,8 @@ OpenRouter provider for [pi](https://github.com/espennilsen/pi) — access 338+ 
 
 Opens your browser for one-click authentication. The API key is stored permanently in `~/.pi/agent/auth.json`.
 
+> Note: The key will appear in your OpenRouter API keys list as "OAuth: $YOUR_SITE_NAME" (derived from your callback URL).
+
 ### Environment variable
 
 ```bash

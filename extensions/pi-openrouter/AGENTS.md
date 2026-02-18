@@ -31,7 +31,7 @@ Key: `pi-openrouter` in `settings.json`
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `models` | `string[]` | curated list | Glob patterns for model IDs to include |
+| `models` | `string[]` | `["*"]` | Glob patterns for model IDs to include |
 
 ## Provider Config
 
@@ -39,4 +39,4 @@ Key: `pi-openrouter` in `settings.json`
 - **API:** `openai-completions` (OpenAI Chat Completions compatible)
 - **Base URL:** `https://openrouter.ai/api/v1`
 - **Auth header:** `Authorization: Bearer <key>`
-- **Env fallback:** `OPENROUTER_API_KEY`
+- **Auth storage:** `~/.pi/agent/auth.json` under key `openrouter-oauth`

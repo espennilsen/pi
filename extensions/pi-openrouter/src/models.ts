@@ -102,7 +102,7 @@ function safeFloat(s?: string): number {
 }
 
 export function toProviderModel(m: OpenRouterModel): ProviderModelConfig {
-	const pricing = m.pricing;
+	const pricing = m.pricing ?? {};
 	const inputModalities = m.architecture?.input_modalities ?? ["text"];
 	const hasImage = inputModalities.includes("image");
 	const hasReasoning = m.supported_parameters?.includes("include_reasoning") ?? false;

@@ -3,7 +3,7 @@ import { login, refreshToken, getApiKey } from "./oauth.ts";
 import { loadCache, saveCache, fetchModels, filterModels, toProviderModel } from "./models.ts";
 import { resolveSettings, type OpenRouterSettings } from "./settings.ts";
 
-const PROVIDER_NAME = "openrouter-oauth";
+const PROVIDER_NAME = "openrouter";
 const BASE_URL = "https://openrouter.ai/api/v1";
 
 export default function (pi: ExtensionAPI) {
@@ -16,7 +16,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerProvider(PROVIDER_NAME, {
 		baseUrl: BASE_URL,
-		apiKey: "OPENROUTER_API_KEY",
 		api: "openai-completions",
 		authHeader: true,
 		models,
@@ -39,7 +38,6 @@ export default function (pi: ExtensionAPI) {
 
 			pi.registerProvider(PROVIDER_NAME, {
 				baseUrl: BASE_URL,
-				apiKey: "OPENROUTER_API_KEY",
 				api: "openai-completions",
 				authHeader: true,
 				models: filtered.map(toProviderModel),
@@ -90,7 +88,6 @@ export default function (pi: ExtensionAPI) {
 
 			pi.registerProvider(PROVIDER_NAME, {
 				baseUrl: BASE_URL,
-				apiKey: "OPENROUTER_API_KEY",
 				api: "openai-completions",
 				authHeader: true,
 				models: mapped,

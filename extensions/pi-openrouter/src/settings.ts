@@ -1,7 +1,7 @@
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 export interface OpenRouterSettings {
-	/** Glob patterns for model IDs to include. Default: curated frontier models. */
+	/** Glob patterns for model IDs to include. Default: ["*"] (all models). */
 	models: string[];
 }
 

@@ -21,10 +21,16 @@ Opens your browser for one-click authentication. The API key is stored permanent
 
 > Note: The key will appear in your OpenRouter API keys list as "OAuth: $YOUR_SITE_NAME" (derived from your callback URL).
 
-### Environment variable
+### API key (manual)
 
-```bash
-export OPENROUTER_API_KEY=sk-or-...
+If you have an OpenRouter API key, add it to `~/.pi/agent/auth.json`:
+
+```json
+{
+  "openrouter-oauth": {
+    "access": "sk-or-..."
+  }
+}
 ```
 
 ## Model Filtering

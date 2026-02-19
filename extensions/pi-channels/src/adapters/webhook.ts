@@ -53,11 +53,16 @@ export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 				});
 			}
 
-			const res = await fetch(message.recipient, {
+			const request: RequestInit = {
 				method,
 				headers: { ...extraHeaders, "Content-Type": contentType },
-				body,
-			});
+			};
+			const normalizedMethod = method.toUpperCase();
+			if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") {
+				request.body = body;
+			}
+
+			const res = await fetch(message.recipient, request);
 
 			if (!res.ok) {
 				const err = await res.text().catch(() => "unknown error");

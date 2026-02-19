@@ -49,6 +49,9 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 | `slack` | bidirectional | `botToken`, `appToken` |
 | `webhook` | outgoing | `method`, `contentType`, `payloadMode`, `headers` |
 
+> Webhook migration note: custom `Content-Type` should be set via `contentType`.
+> If both `contentType` and `headers["Content-Type"]` are provided, `contentType` wins.
+
 ### Bridge settings
 
 | Key | Default | Description |

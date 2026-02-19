@@ -21,15 +21,27 @@ export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 		direction: "outgoing" as const,
 
 		async send(message: ChannelMessage): Promise<void> {
-			const res = await fetch(message.recipient, {
-				method,
-				headers: { "Content-Type": "application/json", ...extraHeaders },
-				body: JSON.stringify({
+			// Check for custom JSON payload in metadata
+			const customJson = message.metadata?.["json"];
+			
+			let body: string;
+			if (customJson !== undefined) {
+				// Use custom JSON directly
+				body = JSON.stringify(customJson);
+			} else {
+				// Default payload structure
+				body = JSON.stringify({
 					text: message.text,
 					source: message.source,
 					metadata: message.metadata,
 					timestamp: new Date().toISOString(),
-				}),
+				});
+			}
+
+			const res = await fetch(message.recipient, {
+				method,
+				headers: { "Content-Type": "application/json", ...extraHeaders },
+				body,
 			});
 
 			if (!res.ok) {

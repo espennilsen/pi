@@ -13,6 +13,7 @@ interface ChannelToolParams {
 	recipient?: string;
 	text?: string;
 	source?: string;
+	json?: string;
 }
 
 export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry): void {
@@ -34,10 +35,13 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 				Type.String({ description: "Recipient — chat ID, webhook URL, etc. (required for send unless using a route)" }),
 			),
 			text: Type.Optional(
-				Type.String({ description: "Message text (required for send)" }),
+				Type.String({ description: "Message text (required for send unless using json)" }),
 			),
 			source: Type.Optional(
 				Type.String({ description: "Source label (optional)" }),
+			),
+			json: Type.Optional(
+				Type.String({ description: "Custom JSON payload to send (optional, replaces text + default structure)" }),
 			),
 		}) as any,
 
@@ -61,15 +65,16 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					break;
 				}
 				case "send": {
-					if (!params.adapter || !params.text) {
-						result = "Missing required fields: adapter and text.";
+					if (!params.adapter || (!params.text && !params.json)) {
+						result = "Missing required fields: adapter and (text or json).";
 						break;
 					}
 					const r = await registry.send({
 						adapter: params.adapter,
 						recipient: params.recipient ?? "",
-						text: params.text,
+						text: params.text ?? "",
 						source: params.source,
+						metadata: params.json ? { json: JSON.parse(params.json) } : undefined,
 					});
 					result = r.ok
 						? `✓ Sent via "${params.adapter}"${params.recipient ? ` to ${params.recipient}` : ""}`

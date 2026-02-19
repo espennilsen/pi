@@ -14,6 +14,9 @@ interface ChannelToolParams {
 	text?: string;
 	source?: string;
 	json?: string;
+	payloadMode?: "envelope" | "raw";
+	method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+	contentType?: string;
 }
 
 export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry): void {
@@ -35,13 +38,28 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 				Type.String({ description: "Recipient — chat ID, webhook URL, etc. (required for send unless using a route)" }),
 			),
 			text: Type.Optional(
-				Type.String({ description: "Message text (required for send unless using json)" }),
+				Type.String({ description: "Message text (required for send unless using json payload)" }),
 			),
 			source: Type.Optional(
 				Type.String({ description: "Source label (optional)" }),
 			),
 			json: Type.Optional(
-				Type.String({ description: "Custom JSON payload to send (optional, replaces text + default structure)" }),
+				Type.String({ description: "Custom JSON payload string (optional, sends raw JSON body when provided)" }),
+			),
+			payloadMode: Type.Optional(
+				StringEnum(
+					["envelope", "raw"] as const,
+					{ description: "Webhook payload mode (default: envelope, auto-switches to raw when json is provided)" },
+				) as any,
+			),
+			method: Type.Optional(
+				StringEnum(
+					["GET", "POST", "PUT", "PATCH", "DELETE"] as const,
+					{ description: "HTTP method override for webhook raw mode" },
+				) as any,
+			),
+			contentType: Type.Optional(
+				Type.String({ description: "Content-Type header override for webhook raw mode" }),
 			),
 		}) as any,
 
@@ -65,16 +83,50 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					break;
 				}
 				case "send": {
-					if (!params.adapter || (!params.text && !params.json)) {
-						result = "Missing required fields: adapter and (text or json).";
+					if (!params.adapter) {
+						result = "Missing required field: adapter.";
 						break;
 					}
+
+					const payloadMode = params.payloadMode ?? (params.json ? "raw" : "envelope");
+
+					if (payloadMode === "raw" && !params.json) {
+						result = "Raw payload mode requires json.";
+						break;
+					}
+					if (payloadMode === "envelope" && !params.text) {
+						result = "Envelope payload mode requires text.";
+						break;
+					}
+					if (payloadMode === "envelope" && params.json) {
+						result = "json is only supported in raw payload mode.";
+						break;
+					}
+					if (payloadMode !== "raw" && (params.method || params.contentType)) {
+						result = "method/contentType overrides are only supported in raw payload mode.";
+						break;
+					}
+
+					let parsedJson: unknown;
+					if (payloadMode === "raw" && params.json) {
+						try {
+							parsedJson = JSON.parse(params.json);
+						} catch (err: any) {
+							result = `Invalid JSON: ${err.message ?? "Malformed JSON payload."}`;
+							break;
+						}
+					}
+
 					const r = await registry.send({
 						adapter: params.adapter,
 						recipient: params.recipient ?? "",
-						text: params.text ?? "",
+						text: params.text,
 						source: params.source,
-						metadata: params.json ? { json: JSON.parse(params.json) } : undefined,
+						payloadMode,
+						rawBody: parsedJson,
+						webhook: payloadMode === "raw"
+							? { method: params.method, contentType: params.contentType }
+							: undefined,
 					});
 					result = r.ok
 						? `✓ Sent via "${params.adapter}"${params.recipient ? ` to ${params.recipient}` : ""}`

@@ -155,6 +155,9 @@ export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: Sl
 		},
 
 		async send(message: ChannelMessage): Promise<void> {
+			if (!message.text) {
+				throw new Error("Slack adapter requires text");
+			}
 			const prefix = message.source ? `*[${message.source}]*\n` : "";
 			const full = prefix + message.text;
 			const threadTs = message.metadata?.threadTs as string | undefined;

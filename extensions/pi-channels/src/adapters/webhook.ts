@@ -1,37 +1,52 @@
 /**
  * pi-channels — Built-in webhook adapter.
  *
- * POSTs message as JSON. The recipient field is the webhook URL.
+ * Sends HTTP requests where recipient is the webhook URL.
+ * Supports two payload modes:
+ *   - envelope (default): { text, source, metadata, timestamp }
+ *   - raw: send rawBody as-is (string) or JSON-serialized (non-string)
  *
  * Config:
  * {
  *   "type": "webhook",
  *   "method": "POST",
+ *   "contentType": "application/json",
+ *   "payloadMode": "envelope",
  *   "headers": { "Authorization": "Bearer ..." }
  * }
  */
 
-import type { ChannelAdapter, ChannelMessage, AdapterConfig } from "../types.ts";
+import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelPayloadMode } from "../types.ts";
 
 export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
-	const method = (config.method as string) ?? "POST";
+	const defaultMethod = (config.method as string) ?? "POST";
+	const defaultContentType = (config.contentType as string) ?? "application/json";
 	const extraHeaders = (config.headers as Record<string, string>) ?? {};
+	const defaultPayloadMode: ChannelPayloadMode = config.payloadMode === "raw" ? "raw" : "envelope";
 
 	return {
 		direction: "outgoing" as const,
 
 		async send(message: ChannelMessage): Promise<void> {
-			// Check for custom JSON payload in metadata
-			const customJson = message.metadata?.["json"];
-			
+			const payloadMode = message.payloadMode ?? defaultPayloadMode;
+			const method = payloadMode === "raw"
+				? (message.webhook?.method ?? defaultMethod)
+				: defaultMethod;
+			const contentType = payloadMode === "raw"
+				? (message.webhook?.contentType ?? defaultContentType)
+				: defaultContentType;
+
 			let body: string;
-			if (customJson !== undefined) {
-				// Use custom JSON directly
-				body = JSON.stringify(customJson);
+			if (payloadMode === "raw") {
+				if (message.rawBody === undefined) {
+					throw new Error("Webhook raw payload mode requires rawBody");
+				}
+				body = typeof message.rawBody === "string"
+					? message.rawBody
+					: JSON.stringify(message.rawBody);
 			} else {
-				// Default payload structure
 				body = JSON.stringify({
-					text: message.text,
+					text: message.text ?? "",
 					source: message.source,
 					metadata: message.metadata,
 					timestamp: new Date().toISOString(),
@@ -40,7 +55,7 @@ export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 
 			const res = await fetch(message.recipient, {
 				method,
-				headers: { "Content-Type": "application/json", ...extraHeaders },
+				headers: { ...extraHeaders, "Content-Type": contentType },
 				body,
 			});
 

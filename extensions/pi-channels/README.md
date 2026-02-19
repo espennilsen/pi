@@ -47,7 +47,7 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 |------|-----------|------------|
 | `telegram` | bidirectional | `botToken`, `polling`, `parseMode`, `allowedChatIds`, `transcription` |
 | `slack` | bidirectional | `botToken`, `appToken` |
-| `webhook` | outgoing | `method`, `headers` |
+| `webhook` | outgoing | `method`, `contentType`, `payloadMode`, `headers` |
 
 ### Bridge settings
 
@@ -66,9 +66,15 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 
 | Action | Required params | Description |
 |--------|----------------|-------------|
-| `send` | `adapter`, `text` | Send a message via an adapter name or route alias |
+| `send` | `adapter`, (`text` or `json`) | Send a message via an adapter name or route alias |
 | `list` | — | Show configured adapters and routes |
 | `test` | `adapter` | Send a test ping |
+
+For webhook sends, `notify` supports:
+- `payloadMode`: `"envelope"` (default) or `"raw"`
+- `json`: raw request body (required when `payloadMode` is `"raw"`; auto-enables raw mode if provided)
+- `method`: HTTP method override for raw mode
+- `contentType`: `Content-Type` override for raw mode
 
 ## Commands
 

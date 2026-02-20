@@ -15,7 +15,7 @@ interface ChannelToolParams {
 	source?: string;
 	json?: string;
 	payloadMode?: "envelope" | "raw";
-	method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+	method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
 	contentType?: string;
 }
 
@@ -54,7 +54,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 			),
 			method: Type.Optional(
 				StringEnum(
-					["GET", "POST", "PUT", "PATCH", "DELETE"] as const,
+					["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] as const,
 					{ description: "HTTP method override for webhook raw mode" },
 				) as any,
 			),
@@ -89,11 +89,10 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					}
 
 					const payloadMode = params.payloadMode ?? (params.json ? "raw" : "envelope");
+					const normalizedMethod = params.method?.toUpperCase();
+					const methodDisallowsBody = normalizedMethod === "GET" || normalizedMethod === "HEAD";
+					const methodAllowsBody = normalizedMethod !== undefined && !methodDisallowsBody;
 
-					if (payloadMode === "raw" && !params.json) {
-						result = "Raw payload mode requires json.";
-						break;
-					}
 					if (payloadMode === "envelope" && !params.text) {
 						result = "Envelope payload mode requires text.";
 						break;
@@ -104,6 +103,14 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					}
 					if (payloadMode !== "raw" && (params.method || params.contentType)) {
 						result = "method/contentType overrides are only supported in raw payload mode.";
+						break;
+					}
+					if (payloadMode === "raw" && methodAllowsBody && !params.json) {
+						result = `Raw payload mode requires json for ${normalizedMethod} requests.`;
+						break;
+					}
+					if (payloadMode === "raw" && methodDisallowsBody && params.json) {
+						result = `${normalizedMethod} requests cannot include json body in raw mode.`;
 						break;
 					}
 

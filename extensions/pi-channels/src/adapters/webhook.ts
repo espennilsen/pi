@@ -35,16 +35,22 @@ export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 			const contentType = payloadMode === "raw"
 				? (message.webhook?.contentType ?? defaultContentType)
 				: defaultContentType;
+			const normalizedMethod = method.toUpperCase();
+			const canHaveBody = normalizedMethod !== "GET" && normalizedMethod !== "HEAD";
 
-			let body: string;
+			let body: string | undefined;
 			if (payloadMode === "raw") {
-				if (message.rawBody === undefined) {
-					throw new Error("Webhook raw payload mode requires rawBody");
+				if (canHaveBody) {
+					if (message.rawBody === undefined) {
+						throw new Error(`Webhook raw payload mode requires rawBody for ${normalizedMethod} requests`);
+					}
+					body = typeof message.rawBody === "string"
+						? message.rawBody
+						: JSON.stringify(message.rawBody);
+				} else if (message.rawBody !== undefined) {
+					throw new Error(`Webhook ${normalizedMethod} requests cannot include a body; omit json/rawBody or use POST/PUT/PATCH/DELETE`);
 				}
-				body = typeof message.rawBody === "string"
-					? message.rawBody
-					: JSON.stringify(message.rawBody);
-			} else {
+			} else if (canHaveBody) {
 				body = JSON.stringify({
 					text: message.text ?? "",
 					source: message.source,
@@ -53,12 +59,20 @@ export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
 				});
 			}
 
-			const request: RequestInit = {
-				method,
-				headers: { ...extraHeaders, "Content-Type": contentType },
-			};
-			const normalizedMethod = method.toUpperCase();
-			if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") {
+			const headers: Record<string, string> = {};
+			for (const [key, value] of Object.entries(extraHeaders)) {
+				if (key.toLowerCase() === "content-type") continue;
+				headers[key] = value;
+			}
+			if (body !== undefined) {
+				headers["Content-Type"] = contentType;
+			}
+
+			const request: RequestInit = { method };
+			if (Object.keys(headers).length > 0) {
+				request.headers = headers;
+			}
+			if (body !== undefined) {
 				request.body = body;
 			}
 

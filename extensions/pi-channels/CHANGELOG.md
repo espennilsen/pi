@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Remove metadata side-channel payload switching (`metadata["json"]`) in favor of typed fields
 - Allow raw JSON sends without injecting empty `text` into outgoing messages
 - Omit request body for webhook `GET`/`HEAD` requests to avoid undici runtime errors
+- Omit `Content-Type` for bodyless `GET`/`HEAD` webhook requests
+- Prevent silent raw payload drops by rejecting `GET`/`HEAD` requests that include `json/rawBody`
+- Add `HEAD` method support to the `notify` tool
 - Document `contentType` precedence over `headers["Content-Type"]` for webhook config
 
 ## [0.1.0] - 2026-02-17 (7839f93)

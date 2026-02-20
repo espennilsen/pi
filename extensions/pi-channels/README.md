@@ -75,9 +75,10 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 
 For webhook sends, `notify` supports:
 - `payloadMode`: `"envelope"` (default) or `"raw"`
-- `json`: raw request body (required when `payloadMode` is `"raw"`; auto-enables raw mode if provided)
-- `method`: HTTP method override for raw mode
-- `contentType`: `Content-Type` override for raw mode
+- `json`: raw request body (auto-enables raw mode if provided; required for body-carrying raw methods)
+- `method`: HTTP method override for raw mode (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`)
+- `contentType`: `Content-Type` override for raw mode (applies only when a request body is sent)
+- `GET`/`HEAD` raw requests are bodyless (do not provide `json`)
 
 ## Commands
 

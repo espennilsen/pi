@@ -1,0 +1,80 @@
+/**
+ * pi-model-router — Classification cache.
+ *
+ * In-memory LRU cache keyed by a hash of the prompt's first 500 chars.
+ * Avoids repeated classifier calls for identical or near-identical prompts.
+ */
+
+import * as crypto from "node:crypto";
+import type { Tier, CacheSettings } from "./settings.ts";
+
+// ── Types ───────────────────────────────────────────────────────
+
+interface CacheEntry {
+	tier: Tier;
+	timestamp: number;
+}
+
+// ── Cache ───────────────────────────────────────────────────────
+
+export class ClassificationCache {
+	private entries = new Map<string, CacheEntry>();
+	private ttlMs: number;
+	private maxEntries: number;
+	private enabled: boolean;
+
+	constructor(settings: CacheSettings) {
+		this.enabled = settings.enabled;
+		this.ttlMs = settings.ttlHours * 60 * 60 * 1000;
+		this.maxEntries = settings.maxEntries;
+	}
+
+	/**
+	 * Generate cache key from prompt text.
+	 * Uses first 500 chars, normalized whitespace, hashed with SHA-256.
+	 */
+	private key(prompt: string): string {
+		const normalized = prompt.slice(0, 500).replace(/\s+/g, " ").trim().toLowerCase();
+		return crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+	}
+
+	/**
+	 * Look up a cached classification.
+	 * Returns null on miss or expired entry.
+	 */
+	get(prompt: string): Tier | null {
+		if (!this.enabled) return null;
+
+		const k = this.key(prompt);
+		const entry = this.entries.get(k);
+		if (!entry) return null;
+
+		if (Date.now() - entry.timestamp > this.ttlMs) {
+			this.entries.delete(k);
+			return null;
+		}
+
+		return entry.tier;
+	}
+
+	/**
+	 * Store a classification result.
+	 * Evicts oldest entry if at capacity.
+	 */
+	set(prompt: string, tier: Tier): void {
+		if (!this.enabled) return;
+
+		// LRU eviction
+		if (this.entries.size >= this.maxEntries) {
+			const oldestKey = this.entries.keys().next().value;
+			if (oldestKey) this.entries.delete(oldestKey);
+		}
+
+		this.entries.set(this.key(prompt), { tier, timestamp: Date.now() });
+	}
+
+	/** Number of cached entries. */
+	get size(): number {
+		return this.entries.size;
+	}
+}

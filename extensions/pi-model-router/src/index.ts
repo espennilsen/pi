@@ -22,10 +22,13 @@ import { matchOverride } from "./rules.ts";
 import { ClassificationCache } from "./cache.ts";
 import { classify } from "./classifier.ts";
 import { resolveModel } from "./resolver.ts";
-import { createLogger } from "./logger.ts";
+
+const CH = "pi-model-router";
 
 export default function (pi: ExtensionAPI) {
-	const log = createLogger(pi);
+	const log = (event: string, data: unknown, level: string = "INFO") =>
+		pi.events.emit("log", { channel: CH, event, data, level });
+
 	let settings: RouterSettings;
 	let cache: ClassificationCache;
 

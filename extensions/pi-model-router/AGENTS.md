@@ -20,9 +20,10 @@ src/
 ├── cache.ts        # In-memory classification cache with TTL and LRU eviction
 ├── rules.ts        # Static override matching (regex patterns on prompts)
 ├── resolver.ts     # Maps tier → Model object via modelRegistry
-├── settings.ts     # Settings loader (global + project merge)
-└── logger.ts       # Extension logger
+└── settings.ts     # Settings loader (global + project merge)
 ```
+
+Logging uses pi-logger via `pi.events.emit("log", { channel: "pi-model-router", ... })` — no custom logger needed.
 
 ## How It Works
 

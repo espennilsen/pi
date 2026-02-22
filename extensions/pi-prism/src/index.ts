@@ -1,0 +1,122 @@
+/**
+ * pi-prism — Configurable widget sidebar overlay for pi.
+ *
+ * Right-anchored overlay (34% width) with a stack of user-chosen widgets.
+ * Auto-opens on session start; toggle with /prism or Ctrl+Shift+P.
+ *
+ * Configure via .pi/settings.json:
+ *   { "pi-prism": { "widgets": ["active-task", "today-calendar", "git-status", ...] } }
+ *
+ * Available widgets:
+ *   active-task, task-queue, git-status, today-calendar, week-calendar,
+ *   recent-ops, system-health, accounts, budget-bars, recent-txns,
+ *   reminders, recent-contacts, session-stats, clock
+ */
+
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { OverlayHandle, TUI } from "@mariozechner/pi-tui";
+import { Key } from "@mariozechner/pi-tui";
+import { resolveSettings, type PrismSettings } from "./settings.ts";
+import { WidgetSidebar } from "./sidebar.ts";
+import { WIDGET_FACTORIES, DEFAULT_WIDGETS, type Widget } from "./widgets/index.ts";
+
+const ACTOR = "pi-prism";
+
+export default function (pi: ExtensionAPI) {
+	// ── DB access grant ──────────────────────────────────────
+
+	pi.events.emit("kysely:grant", {
+		owner: "*",
+		grantee: ACTOR,
+		table: "*",
+		operations: ["select"],
+	});
+
+	let overlayHandle: OverlayHandle | null = null;
+	let isOpen = false;
+
+	// ── Build widgets from settings ──────────────────────────
+
+	function buildWidgets(settings: PrismSettings): Widget[] {
+		const ids = settings.widgets.length > 0
+			? settings.widgets.filter((id) => id in WIDGET_FACTORIES)
+			: DEFAULT_WIDGETS;
+
+		const widgets: Widget[] = [];
+		for (const id of ids) {
+			const factory = WIDGET_FACTORIES[id];
+			if (factory) widgets.push(factory());
+		}
+		return widgets;
+	}
+
+	// ── Toggle sidebar ───────────────────────────────────────
+
+	async function toggle(ctx: { hasUI: boolean; ui: any }) {
+		if (!ctx.hasUI) return;
+
+		// Toggle if already exists
+		if (overlayHandle && isOpen) {
+			overlayHandle.setHidden(true);
+			isOpen = false;
+			return;
+		}
+		if (overlayHandle && !isOpen) {
+			overlayHandle.setHidden(false);
+			isOpen = true;
+			return;
+		}
+
+		const cwd = process.cwd();
+		const settings = resolveSettings(cwd);
+		const widgets = buildWidgets(settings);
+
+		if (widgets.length === 0) return;
+
+		ctx.ui.custom(
+			(tui: TUI, theme: any, _kb: unknown, done: (v: undefined) => void) => {
+				return new WidgetSidebar(tui, theme, pi, cwd, widgets, () => {
+					isOpen = false;
+					done(undefined);
+					overlayHandle = null;
+				});
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "right-center" as const,
+					width: "34%",
+					minWidth: 28,
+					maxHeight: "95%",
+					margin: { right: 1, top: 1, bottom: 1 },
+					visible: (termWidth: number) => termWidth >= 90,
+				},
+				onHandle: (handle: OverlayHandle) => {
+					overlayHandle = handle;
+					isOpen = true;
+				},
+			},
+		);
+	}
+
+	// ── Auto-launch on session start ─────────────────────────
+
+	pi.on("session_start", async (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		const settings = resolveSettings(process.cwd());
+		if (!settings.autoOpen) return;
+		setTimeout(() => toggle(ctx), 800);
+	});
+
+	// ── Command & shortcut ───────────────────────────────────
+
+	pi.registerCommand("prism", {
+		description: "Toggle Prism widget sidebar",
+		handler: async (_args, ctx) => toggle(ctx),
+	});
+
+	pi.registerShortcut(Key.ctrlShift("p"), {
+		description: "Toggle Prism sidebar",
+		handler: async (ctx) => toggle(ctx),
+	});
+}

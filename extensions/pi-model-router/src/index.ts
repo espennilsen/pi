@@ -97,12 +97,30 @@ export default function (pi: ExtensionAPI) {
 					"info",
 				);
 			}
+
+			log("suggested", {
+				tier,
+				source,
+				model: model.id,
+				thinking: target.thinking,
+				latencyMs,
+			});
+
+			pi.events.emit("model-router:suggested", {
+				tier,
+				source,
+				model: model.id,
+				thinking: target.thinking,
+				latencyMs,
+			});
+
 			return; // Don't auto-switch in suggest mode
 		}
 
 		// ── Switch model ────────────────────────────────────
 		const switched = await pi.setModel(model);
-		if (switched && target.thinking) {
+		if (switched) {
+			// Always apply thinking level when switching — includes "off" to explicitly reset
 			pi.setThinkingLevel(target.thinking);
 		}
 

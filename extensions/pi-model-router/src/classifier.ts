@@ -11,6 +11,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ClassifierSettings, Tier } from "./settings.ts";
+import { findModel } from "./match.ts";
 
 // ── Classifier prompt ───────────────────────────────────────────
 
@@ -21,44 +22,6 @@ Return ONLY a JSON object with no other text: {"tier":"simple"|"medium"|"complex
 simple = status checks, health pings, lookups, data retrieval, short answers, listing items, yes/no questions
 medium = analysis, code review, moderate coding, summarization, planning, debugging, refactoring
 complex = long-form writing, blog posts, multi-step reasoning, architecture design, creative work, research`;
-
-// ── Model resolution ────────────────────────────────────────────
-
-/**
- * Resolve classifier model from the registry by pattern.
- * Tries exact ID match, then partial ID, then partial name.
- */
-function findClassifierModel(
-	pattern: string,
-	modelRegistry: ModelRegistry,
-): Model<Api> | undefined {
-	const allModels = modelRegistry.getAll();
-	const p = pattern.toLowerCase();
-
-	// Handle "provider/model" format
-	if (pattern.includes("/")) {
-		const [provider, modelId] = pattern.split("/", 2);
-		return modelRegistry.find(provider, modelId);
-	}
-
-	// Exact ID
-	const exact = allModels.find((m) => m.id.toLowerCase() === p);
-	if (exact) return exact;
-
-	// Partial ID (prefer shorter = alias over dated)
-	const idMatches = allModels
-		.filter((m) => m.id.toLowerCase().includes(p))
-		.sort((a, b) => a.id.length - b.id.length);
-	if (idMatches.length > 0) return idMatches[0];
-
-	// Partial name
-	const nameMatches = allModels
-		.filter((m) => m.name.toLowerCase().includes(p))
-		.sort((a, b) => a.name.length - b.name.length);
-	if (nameMatches.length > 0) return nameMatches[0];
-
-	return undefined;
-}
 
 // ── API call helpers ────────────────────────────────────────────
 
@@ -148,17 +111,21 @@ async function callAnthropic(
 	}
 }
 
+const GOOGLE_DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
 async function callGoogle(
 	model: Model<Api>,
 	apiKey: string,
 	taskText: string,
 	timeoutMs: number,
 ): Promise<string | null> {
+	const base = (model.baseUrl ?? GOOGLE_DEFAULT_BASE).replace(/\/+$/, "");
+
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent`;
+		const url = `${base}/models/${model.id}:generateContent`;
 
 		const response = await fetch(url, {
 			method: "POST",
@@ -195,7 +162,7 @@ export async function classify(
 	modelRegistry: ModelRegistry,
 ): Promise<Tier | null> {
 	// Resolve model from registry
-	const model = findClassifierModel(settings.model, modelRegistry);
+	const model = findModel(settings.model, modelRegistry);
 	if (!model) return null;
 
 	// Get API key from registry

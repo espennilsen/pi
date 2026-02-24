@@ -148,7 +148,8 @@ Classifications are cached in memory to avoid repeated classifier calls for iden
 
 | Event | Direction | Description |
 |-------|-----------|-------------|
-| `model-router:routed` | Emitted | After model switch — includes tier, model, cached flag, latency |
+| `model-router:routed` | Emitted | After model switch — includes `tier`, `source`, `model`, `thinking`, `switched`, `latencyMs`, `cached` |
+| `model-router:suggested` | Emitted | In suggest mode — includes `tier`, `source`, `model`, `thinking`, `latencyMs` |
 
 ## License
 

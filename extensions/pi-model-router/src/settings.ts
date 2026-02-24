@@ -91,6 +91,11 @@ function validateTier(value: unknown, fallback: Tier): Tier {
 	return fallback;
 }
 
+function validatePositiveNumber(value: unknown, fallback: number): number {
+	if (typeof value === "number" && value > 0 && Number.isFinite(value)) return value;
+	return fallback;
+}
+
 function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 	if (!Array.isArray(rules)) return [];
 	const compiled: CompiledOverrideRule[] = [];
@@ -121,7 +126,7 @@ export function resolveSettings(cwd: string): RouterSettings {
 		return {
 			classifier: {
 				model: cfg.classifier?.model ?? DEFAULTS.classifier.model,
-				timeoutMs: cfg.classifier?.timeoutMs ?? DEFAULTS.classifier.timeoutMs,
+				timeoutMs: validatePositiveNumber(cfg.classifier?.timeoutMs, DEFAULTS.classifier.timeoutMs),
 			},
 			tiers: {
 				simple: {
@@ -140,8 +145,8 @@ export function resolveSettings(cwd: string): RouterSettings {
 			overrides: compileOverrides(cfg.overrides),
 			cache: {
 				enabled: cfg.cache?.enabled ?? DEFAULTS.cache.enabled,
-				ttlHours: cfg.cache?.ttlHours ?? DEFAULTS.cache.ttlHours,
-				maxEntries: cfg.cache?.maxEntries ?? DEFAULTS.cache.maxEntries,
+				ttlHours: validatePositiveNumber(cfg.cache?.ttlHours, DEFAULTS.cache.ttlHours),
+				maxEntries: validatePositiveNumber(cfg.cache?.maxEntries, DEFAULTS.cache.maxEntries),
 			},
 			default: validateTier(cfg.default, DEFAULTS.default),
 			interactive: validateInteractive(cfg.interactive, DEFAULTS.interactive),

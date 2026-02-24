@@ -24,7 +24,7 @@ export class ClassificationCache {
 	private enabled: boolean;
 
 	constructor(settings: CacheSettings) {
-		this.enabled = settings.enabled;
+		this.enabled = settings.enabled && settings.maxEntries > 0;
 		this.ttlMs = settings.ttlHours * 60 * 60 * 1000;
 		this.maxEntries = settings.maxEntries;
 	}

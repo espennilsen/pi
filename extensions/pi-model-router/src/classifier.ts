@@ -23,6 +23,11 @@ simple = status checks, health pings, lookups, data retrieval, short answers, li
 medium = analysis, code review, moderate coding, summarization, planning, debugging, refactoring
 complex = long-form writing, blog posts, multi-step reasoning, architecture design, creative work, research`;
 
+// ── Default base URLs ───────────────────────────────────────────
+
+const OPENAI_DEFAULT_BASE = "https://api.openai.com/v1";
+const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1";
+
 // ── API call helpers ────────────────────────────────────────────
 
 async function callOpenAICompatible(
@@ -31,14 +36,13 @@ async function callOpenAICompatible(
 	taskText: string,
 	timeoutMs: number,
 ): Promise<string | null> {
-	if (!model.baseUrl) return null;
+	const base = (model.baseUrl ?? OPENAI_DEFAULT_BASE).replace(/\/+$/, "");
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		// OpenAI-compatible endpoint: baseUrl + /chat/completions
-		const url = model.baseUrl.replace(/\/+$/, "") + "/chat/completions";
+		const url = base + "/chat/completions";
 
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
@@ -75,13 +79,13 @@ async function callAnthropic(
 	taskText: string,
 	timeoutMs: number,
 ): Promise<string | null> {
-	if (!model.baseUrl) return null;
+	const base = (model.baseUrl ?? ANTHROPIC_DEFAULT_BASE).replace(/\/+$/, "");
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const url = model.baseUrl.replace(/\/+$/, "") + "/messages";
+		const url = base + "/messages";
 
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",

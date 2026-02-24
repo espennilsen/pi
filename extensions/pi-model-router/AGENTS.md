@@ -86,7 +86,8 @@ Logging uses pi-logger via `pi.events.emit("log", { channel: "pi-model-router", 
 
 ## Events
 
-- Emits: `model-router:routed` (after model switch — includes tier, model, cached flag, latency)
+- Emits: `model-router:routed` (after model switch — includes `tier`, `source`, `model`, `thinking`, `switched`, `latencyMs`, `cached`)
+- Emits: `model-router:suggested` (in suggest mode — includes `tier`, `source`, `model`, `thinking`, `latencyMs`)
 - Listens: `before_agent_start` (pi lifecycle event)
 
 ## Integration

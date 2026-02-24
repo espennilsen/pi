@@ -119,10 +119,10 @@ export default function (pi: ExtensionAPI) {
 
 		// ── Switch model ────────────────────────────────────
 		const switched = await pi.setModel(model);
-		if (switched) {
-			// Always apply thinking level when switching — includes "off" to explicitly reset
-			pi.setThinkingLevel(target.thinking);
-		}
+
+		// Always apply thinking level — even if model didn't change, the tier's
+		// thinking level may differ from the current one (e.g. same model, different tier)
+		pi.setThinkingLevel(target.thinking);
 
 		log("routed", {
 			tier,

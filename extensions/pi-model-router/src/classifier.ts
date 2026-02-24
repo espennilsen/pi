@@ -203,7 +203,7 @@ export async function classify(
 				break;
 			case "google-vertex":
 				// Vertex AI uses a different endpoint and auth scheme — not yet supported.
-				// Falls through to return null → default tier.
+				log?.("classifier-unsupported", { api: "google-vertex", model: model.id }, "WARN");
 				return null;
 			default:
 				// OpenAI-compatible covers: openai-completions, openai-responses,
@@ -231,8 +231,8 @@ export async function classify(
 		}
 
 		return null;
-	} catch {
-		// Network error, timeout, parse error — all fall back to null
+	} catch (err) {
+		log?.("classify-error", { model: settings.model, error: String(err) }, "WARN");
 		return null;
 	}
 }

@@ -18,8 +18,7 @@
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
-    "@sinclair/typebox": "*"
+    "@mariozechner/pi-ai": "*"
   },
   "files": [
     "CHANGELOG.md",

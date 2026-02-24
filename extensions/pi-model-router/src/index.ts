@@ -93,7 +93,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		settings = resolveSettings(ctx.cwd);
+		const result = resolveSettings(ctx.cwd);
+		settings = result.settings;
+		if (result.configError) {
+			log("config-error", { error: result.configError }, "WARN");
+		}
+
 		cache = new ClassificationCache(settings.cache);
 
 		const classifierModel = findModel(settings.classifier.model, ctx.modelRegistry);

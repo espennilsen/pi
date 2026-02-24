@@ -122,7 +122,12 @@ function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 
 // ── Loader ──────────────────────────────────────────────────────
 
-export function resolveSettings(cwd: string): RouterSettings {
+export interface ResolveResult {
+	settings: RouterSettings;
+	configError?: string;
+}
+
+export function resolveSettings(cwd: string): ResolveResult {
 	try {
 		const agentDir = getAgentDir();
 		const sm = SettingsManager.create(cwd, agentDir);
@@ -133,7 +138,7 @@ export function resolveSettings(cwd: string): RouterSettings {
 			...(project?.["pi-model-router"] ?? {}),
 		};
 
-		return {
+		return { settings: {
 			classifier: {
 				model: validateModelString(cfg.classifier?.model, DEFAULTS.classifier.model),
 				timeoutMs: validatePositiveNumber(cfg.classifier?.timeoutMs, DEFAULTS.classifier.timeoutMs),
@@ -160,8 +165,8 @@ export function resolveSettings(cwd: string): RouterSettings {
 			},
 			default: validateTier(cfg.default, DEFAULTS.default),
 			interactive: validateInteractive(cfg.interactive, DEFAULTS.interactive),
-		};
-	} catch {
-		return structuredClone(DEFAULTS);
+		} };
+	} catch (err) {
+		return { settings: structuredClone(DEFAULTS), configError: String(err) };
 	}
 }

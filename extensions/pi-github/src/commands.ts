@@ -48,6 +48,7 @@ export function setSessionCwd(cwd: string): void {
 // ── Register all commands ───────────────────────────────────────
 
 export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
+	const sendUserMessage = pi.sendUserMessage.bind(pi);
 
 	// ── /gh-prs · /github-prs ─────────────────────────────────
 
@@ -241,11 +242,20 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 	// ── /gh-pr-create · /github-pr-create ─────────────────────
 
 	registerDualCommand(pi, "gh-pr-create", "github-pr-create", {
-		description: "Create a PR for the current branch: /gh-pr-create [title]",
+		description: "Create a PR for the current branch with an LLM-generated summary: /gh-pr-create [base-branch]",
 		handler: async (args, ctx) => {
 			const branch = await getCurrentBranch(sessionCwd);
 			if (!branch || branch === "main" || branch === "master") {
 				ctx.ui.notify("❌ Cannot create PR from main/master branch.", "error");
+				return;
+			}
+
+			const base = args.trim() || "main";
+
+			// Check if a PR already exists for this branch
+			const existing = await ghJson<any[]>(["pr", "list", "--head", branch, "--json", "number,url"], sessionCwd);
+			if (existing && existing.length > 0) {
+				ctx.ui.notify(`❌ PR already exists for branch \`${branch}\`: ${existing[0].url}`, "error");
 				return;
 			}
 
@@ -260,18 +270,72 @@ export function registerCommands(pi: ExtensionAPI, log: LogFn): void {
 				return;
 			}
 
-			const ghArgs = ["pr", "create", "--fill"];
-			if (args) {
-				ghArgs.push("--title", args);
+			// Gather context: commits and diff summary
+			ctx.ui.notify(`📝 Gathering diff for \`${branch}\` → \`${base}\`…`, "info");
+
+			const commitsResult = await new Promise<{ ok: boolean; stdout: string }>((resolve) => {
+				execFile("git", ["log", `${base}..${branch}`, "--pretty=format:%h %s", "--reverse"], { cwd: sessionCwd, timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+					resolve({ ok: !err, stdout: stdout?.trim() ?? "" });
+				});
+			});
+
+			const diffStatResult = await new Promise<{ ok: boolean; stdout: string }>((resolve) => {
+				execFile("git", ["diff", `${base}...${branch}`, "--stat"], { cwd: sessionCwd, timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+					resolve({ ok: !err, stdout: stdout?.trim() ?? "" });
+				});
+			});
+
+			const diffResult = await new Promise<{ ok: boolean; stdout: string }>((resolve) => {
+				execFile("git", ["diff", `${base}...${branch}`], { cwd: sessionCwd, timeout: 15_000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
+					resolve({ ok: !err, stdout: stdout?.trim() ?? "" });
+				});
+			});
+
+			// Truncate diff if too large
+			const maxDiffLen = 50_000;
+			let diff = diffResult.ok ? diffResult.stdout : "";
+			if (diff.length > maxDiffLen) {
+				diff = diff.slice(0, maxDiffLen) + "\n\n… (diff truncated)";
 			}
 
-			const result = await gh(ghArgs, sessionCwd);
-			if (result.ok) {
-				ctx.ui.notify(`✅ PR created: ${result.stdout}`, "info");
-				log("pr-create", { branch, url: result.stdout });
-			} else {
-				ctx.ui.notify(`❌ Failed to create PR: ${result.stderr || result.stdout}`, "error");
-			}
+			const prompt = [
+				`Create a GitHub pull request for branch \`${branch}\` → \`${base}\`.`,
+				"",
+				"## Commits",
+				"```",
+				commitsResult.ok ? commitsResult.stdout : "(no commits found)",
+				"```",
+				"",
+				"## Diff stat",
+				"```",
+				diffStatResult.ok ? diffStatResult.stdout : "(unavailable)",
+				"```",
+				"",
+				"## Diff",
+				"```diff",
+				diff || "(empty diff)",
+				"```",
+				"",
+				"## Instructions",
+				"",
+				"Based on the commits and diff above, write a clear PR title and description.",
+				"Then create the PR by running:",
+				"```bash",
+				`gh pr create --base ${base} --title "YOUR TITLE" --body "YOUR DESCRIPTION"`,
+				"```",
+				"",
+				"Guidelines for the PR description:",
+				"- Start with a concise summary of what the PR does and why",
+				"- List key changes as bullet points",
+				"- Keep it factual — don't pad with filler",
+				"- Use markdown formatting",
+				"- If there are breaking changes, call them out explicitly",
+				"",
+				"**Before creating the PR, present your draft title and description to the user and ask if they have any input or changes.** Only run the `gh pr create` command after they confirm.",
+			].join("\n");
+
+			sendUserMessage(prompt, { deliverAs: "followUp" });
+			log("pr-create", { branch, base });
 		},
 	});
 

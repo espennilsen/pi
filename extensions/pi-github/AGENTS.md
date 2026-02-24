@@ -42,7 +42,7 @@ None — this extension registers no LLM tools.
 - `/gh-issues` / `/github-issues` — List open issues (filters: `mine`, `label:<name>`, `all`)
 - `/gh-status` / `/github-status` — Repo overview: PR/issue counts, review status, CI, current branch PR
 - `/gh-notifications` / `/github-notifications` — Unread GitHub notifications
-- `/gh-pr-create` / `/github-pr-create` — Push current branch and open a PR (`gh pr create --fill`)
+- `/gh-pr-create` / `/github-pr-create` — Push branch, gather diff, have LLM draft title+description, confirm with user, then create PR
 - `/gh-pr-review` / `/github-pr-review` — Show review feedback for current branch's PR (or specified number)
 - `/gh-pr-fix` / `/github-pr-fix` — Fetch unresolved review threads and launch agentic fix+commit+push loop
 - `/gh-pr-merge` / `/github-pr-merge` — Merge PR, delete branches, pull base (`--merge|--rebase|--squash`)

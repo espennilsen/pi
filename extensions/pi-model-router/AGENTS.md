@@ -84,6 +84,13 @@ Logging uses pi-logger via `pi.events.emit("log", { channel: "pi-model-router", 
 - `default` — Fallback tier when classification fails (default: `"medium"`)
 - `interactive` — TUI behavior: `"off"` (default), `"suggest"` (notify only), `"auto"` (full switch)
 
+## Commands
+
+- `/model-router` — toggle on/off
+- `/model-router on|off` — explicit enable/disable
+- `/model-router status` — show state, mode, tiers, cache size
+- `/model-router suggest|auto` — switch interactive mode at runtime
+
 ## Events
 
 - Emits: `model-router:routed` (after model switch — includes `tier`, `source`, `model`, `thinking`, `switched`, `latencyMs`, `cached`)

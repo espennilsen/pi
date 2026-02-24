@@ -144,6 +144,17 @@ Classifications are cached in memory to avoid repeated classifier calls for iden
 - **TTL**: 7 days (configurable)
 - **Eviction**: LRU when `maxEntries` exceeded
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/model-router` | Toggle routing on/off |
+| `/model-router on` | Enable routing |
+| `/model-router off` | Disable routing |
+| `/model-router status` | Show current state, mode, tiers, cache size |
+| `/model-router suggest` | Switch to suggest mode (notify only) |
+| `/model-router auto` | Switch to auto mode (full model switch) |
+
 ## Events
 
 | Event | Direction | Description |

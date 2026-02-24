@@ -17,7 +17,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { resolveSettings, type RouterSettings, type Tier } from "./settings.ts";
+import { resolveSettings, type InteractiveMode, type RouterSettings, type Tier } from "./settings.ts";
 import { matchOverride } from "./rules.ts";
 import { ClassificationCache } from "./cache.ts";
 import { classify } from "./classifier.ts";
@@ -31,6 +31,65 @@ export default function (pi: ExtensionAPI) {
 
 	let settings: RouterSettings;
 	let cache: ClassificationCache;
+	let enabled = true;
+
+	// ── /model-router command ───────────────────────────────
+	pi.registerCommand("model-router", {
+		description: "Control model router — toggle on/off, check status, set mode",
+		getArgumentCompletions: (prefix) => {
+			const subcommands = [
+				{ value: "on", label: "on — enable routing" },
+				{ value: "off", label: "off — disable routing" },
+				{ value: "status", label: "status — show current state" },
+				{ value: "suggest", label: "suggest — switch to suggest mode" },
+				{ value: "auto", label: "auto — switch to auto mode" },
+			];
+			const filtered = subcommands.filter((s) => s.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
+		handler: async (args, ctx) => {
+			const sub = args.trim().toLowerCase();
+
+			if (sub === "off") {
+				enabled = false;
+				ctx.ui.notify("🔌 Model router disabled", "info");
+			} else if (sub === "on") {
+				enabled = true;
+				ctx.ui.notify("⚡ Model router enabled", "info");
+			} else if (sub === "suggest" || sub === "auto") {
+				if (!settings) {
+					ctx.ui.notify("Model router not initialized", "warning");
+					return;
+				}
+				enabled = true;
+				settings.interactive = sub as InteractiveMode;
+				ctx.ui.notify(`⚡ Model router: interactive mode → ${sub}`, "info");
+			} else if (sub === "status") {
+				if (!settings) {
+					ctx.ui.notify("Model router not initialized", "warning");
+					return;
+				}
+				const tiers = Object.entries(settings.tiers)
+					.map(([k, v]) => `  ${k}: ${v.model} (thinking: ${v.thinking})`)
+					.join("\n");
+				ctx.ui.notify(
+					[
+						`Model router: ${enabled ? "✅ enabled" : "❌ disabled"}`,
+						`Mode: ${settings.interactive}`,
+						`Default tier: ${settings.default}`,
+						`Classifier: ${settings.classifier.model}`,
+						`Cache: ${cache.size} entries`,
+						`Tiers:\n${tiers}`,
+					].join("\n"),
+					"info",
+				);
+			} else {
+				// No arg or unknown — toggle
+				enabled = !enabled;
+				ctx.ui.notify(enabled ? "⚡ Model router enabled" : "🔌 Model router disabled", "info");
+			}
+		},
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		settings = resolveSettings(ctx.cwd);
@@ -39,7 +98,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (!settings) return;
+		if (!settings || !enabled) return;
 
 		// ── Mode check ──────────────────────────────────────
 		const isInteractive = ctx.hasUI;

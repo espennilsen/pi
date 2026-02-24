@@ -112,7 +112,7 @@ function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 	for (const rule of rules) {
 		if (typeof rule?.match !== "string" || !VALID_TIERS.has(rule?.tier)) continue;
 		try {
-			compiled.push({ regex: new RegExp(rule.match), tier: rule.tier as Tier });
+			compiled.push({ regex: new RegExp(rule.match, "i"), tier: rule.tier as Tier });
 		} catch {
 			// Invalid regex — skip
 		}

@@ -12,10 +12,8 @@ import type { CompiledOverrideRule, Tier } from "./settings.ts";
  * Rules are evaluated in order — first match wins.
  */
 export function matchOverride(rules: CompiledOverrideRule[], prompt: string): Tier | null {
-	const normalized = prompt.toLowerCase();
-
 	for (const rule of rules) {
-		if (rule.regex.test(normalized)) {
+		if (rule.regex.test(prompt)) {
 			return rule.tier;
 		}
 	}

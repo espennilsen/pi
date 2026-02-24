@@ -162,23 +162,23 @@ export default function (pi: ExtensionAPI) {
 					`💡 Model router: "${tier}" task — consider ${model.name} (currently ${currentModel.name})`,
 					"info",
 				);
+
+				log("suggested", {
+					tier,
+					source,
+					model: model.id,
+					thinking: target.thinking,
+					latencyMs,
+				});
+
+				pi.events.emit("model-router:suggested", {
+					tier,
+					source,
+					model: model.id,
+					thinking: target.thinking,
+					latencyMs,
+				});
 			}
-
-			log("suggested", {
-				tier,
-				source,
-				model: model.id,
-				thinking: target.thinking,
-				latencyMs,
-			});
-
-			pi.events.emit("model-router:suggested", {
-				tier,
-				source,
-				model: model.id,
-				thinking: target.thinking,
-				latencyMs,
-			});
 
 			return; // Don't auto-switch in suggest mode
 		}

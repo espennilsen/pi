@@ -105,8 +105,8 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 						result = "method/contentType overrides are only supported in raw payload mode.";
 						break;
 					}
-					if (payloadMode === "raw" && methodAllowsBody && !params.json) {
-						result = `Raw payload mode requires json for ${normalizedMethod} requests.`;
+					if (payloadMode === "raw" && !methodDisallowsBody && !params.json) {
+						result = `Raw payload mode requires json${normalizedMethod ? ` for ${normalizedMethod}` : ""} requests.`;
 						break;
 					}
 					if (payloadMode === "raw" && methodDisallowsBody && params.json) {

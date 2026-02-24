@@ -62,7 +62,7 @@ export default function (pi: ExtensionAPI) {
 
 		// ── 3. LLM classifier ──────────────────────────────
 		if (!tier) {
-			tier = await classify(prompt, settings.classifier, ctx.modelRegistry);
+			tier = await classify(prompt, settings.classifier, ctx.modelRegistry, log);
 			source = "classifier";
 
 			if (tier) {

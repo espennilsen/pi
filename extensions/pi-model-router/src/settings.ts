@@ -96,6 +96,11 @@ function validatePositiveNumber(value: unknown, fallback: number): number {
 	return fallback;
 }
 
+function validateModelString(value: unknown, fallback: string): string {
+	if (typeof value === "string" && value.length > 0) return value;
+	return fallback;
+}
+
 function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 	if (!Array.isArray(rules)) return [];
 	const compiled: CompiledOverrideRule[] = [];
@@ -125,20 +130,20 @@ export function resolveSettings(cwd: string): RouterSettings {
 
 		return {
 			classifier: {
-				model: cfg.classifier?.model ?? DEFAULTS.classifier.model,
+				model: validateModelString(cfg.classifier?.model, DEFAULTS.classifier.model),
 				timeoutMs: validatePositiveNumber(cfg.classifier?.timeoutMs, DEFAULTS.classifier.timeoutMs),
 			},
 			tiers: {
 				simple: {
-					model: cfg.tiers?.simple?.model ?? DEFAULTS.tiers.simple.model,
+					model: validateModelString(cfg.tiers?.simple?.model, DEFAULTS.tiers.simple.model),
 					thinking: validateThinking(cfg.tiers?.simple?.thinking, DEFAULTS.tiers.simple.thinking),
 				},
 				medium: {
-					model: cfg.tiers?.medium?.model ?? DEFAULTS.tiers.medium.model,
+					model: validateModelString(cfg.tiers?.medium?.model, DEFAULTS.tiers.medium.model),
 					thinking: validateThinking(cfg.tiers?.medium?.thinking, DEFAULTS.tiers.medium.thinking),
 				},
 				complex: {
-					model: cfg.tiers?.complex?.model ?? DEFAULTS.tiers.complex.model,
+					model: validateModelString(cfg.tiers?.complex?.model, DEFAULTS.tiers.complex.model),
 					thinking: validateThinking(cfg.tiers?.complex?.thinking, DEFAULTS.tiers.complex.thinking),
 				},
 			},

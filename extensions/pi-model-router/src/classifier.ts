@@ -30,11 +30,14 @@ const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1";
 
 // ── API call helpers ────────────────────────────────────────────
 
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
 async function callOpenAICompatible(
 	model: Model<Api>,
 	apiKey: string,
 	taskText: string,
 	timeoutMs: number,
+	log?: LogFn,
 ): Promise<string | null> {
 	const base = (model.baseUrl ?? OPENAI_DEFAULT_BASE).replace(/\/+$/, "");
 
@@ -65,7 +68,10 @@ async function callOpenAICompatible(
 			signal: controller.signal,
 		});
 
-		if (!response.ok) return null;
+		if (!response.ok) {
+			log?.("classify-http-error", { status: response.status, model: model.id, api: "openai-compatible" }, "WARN");
+			return null;
+		}
 		const data = (await response.json()) as any;
 		return data?.choices?.[0]?.message?.content?.trim() ?? null;
 	} finally {
@@ -78,6 +84,7 @@ async function callAnthropic(
 	apiKey: string,
 	taskText: string,
 	timeoutMs: number,
+	log?: LogFn,
 ): Promise<string | null> {
 	const base = (model.baseUrl ?? ANTHROPIC_DEFAULT_BASE).replace(/\/+$/, "");
 
@@ -107,7 +114,10 @@ async function callAnthropic(
 			signal: controller.signal,
 		});
 
-		if (!response.ok) return null;
+		if (!response.ok) {
+			log?.("classify-http-error", { status: response.status, model: model.id, api: "anthropic" }, "WARN");
+			return null;
+		}
 		const data = (await response.json()) as any;
 		return data?.content?.[0]?.text?.trim() ?? null;
 	} finally {
@@ -122,6 +132,7 @@ async function callGoogle(
 	apiKey: string,
 	taskText: string,
 	timeoutMs: number,
+	log?: LogFn,
 ): Promise<string | null> {
 	const base = (model.baseUrl ?? GOOGLE_DEFAULT_BASE).replace(/\/+$/, "");
 
@@ -146,7 +157,10 @@ async function callGoogle(
 			signal: controller.signal,
 		});
 
-		if (!response.ok) return null;
+		if (!response.ok) {
+			log?.("classify-http-error", { status: response.status, model: model.id, api: "google" }, "WARN");
+			return null;
+		}
 		const data = (await response.json()) as any;
 		return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
 	} finally {
@@ -164,6 +178,7 @@ export async function classify(
 	prompt: string,
 	settings: ClassifierSettings,
 	modelRegistry: ModelRegistry,
+	log?: LogFn,
 ): Promise<Tier | null> {
 	// Resolve model from registry
 	const model = findModel(settings.model, modelRegistry);
@@ -181,10 +196,10 @@ export async function classify(
 		// Route to the right API format based on model.api
 		switch (model.api) {
 			case "anthropic-messages":
-				content = await callAnthropic(model, apiKey, taskText, settings.timeoutMs);
+				content = await callAnthropic(model, apiKey, taskText, settings.timeoutMs, log);
 				break;
 			case "google-generative-ai":
-				content = await callGoogle(model, apiKey, taskText, settings.timeoutMs);
+				content = await callGoogle(model, apiKey, taskText, settings.timeoutMs, log);
 				break;
 			case "google-vertex":
 				// Vertex AI uses a different endpoint and auth scheme — not yet supported.
@@ -193,7 +208,7 @@ export async function classify(
 			default:
 				// OpenAI-compatible covers: openai-completions, openai-responses,
 				// minimax, groq, openrouter, xai, cerebras, mistral, etc.
-				content = await callOpenAICompatible(model, apiKey, taskText, settings.timeoutMs);
+				content = await callOpenAICompatible(model, apiKey, taskText, settings.timeoutMs, log);
 				break;
 		}
 

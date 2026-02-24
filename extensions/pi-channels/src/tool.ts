@@ -91,7 +91,6 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 					const payloadMode = params.payloadMode ?? (params.json ? "raw" : "envelope");
 					const normalizedMethod = params.method?.toUpperCase();
 					const methodDisallowsBody = normalizedMethod === "GET" || normalizedMethod === "HEAD";
-					const methodAllowsBody = normalizedMethod !== undefined && !methodDisallowsBody;
 
 					if (payloadMode === "envelope" && !params.text) {
 						result = "Envelope payload mode requires text.";
@@ -106,7 +105,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 						break;
 					}
 					if (payloadMode === "raw" && !methodDisallowsBody && !params.json) {
-						result = `Raw payload mode requires json${normalizedMethod ? ` for ${normalizedMethod}` : ""} requests.`;
+						result = `Raw payload mode requires json${normalizedMethod ? ` for ${normalizedMethod} requests` : ""}.`;
 						break;
 					}
 					if (payloadMode === "raw" && methodDisallowsBody && params.json) {

@@ -28,6 +28,11 @@ export interface OverrideRule {
 	tier: Tier;
 }
 
+export interface CompiledOverrideRule {
+	regex: RegExp;
+	tier: Tier;
+}
+
 export interface CacheSettings {
 	enabled: boolean;
 	ttlHours: number;
@@ -37,7 +42,7 @@ export interface CacheSettings {
 export interface RouterSettings {
 	classifier: ClassifierSettings;
 	tiers: Record<Tier, TierTarget>;
-	overrides: OverrideRule[];
+	overrides: CompiledOverrideRule[];
 	cache: CacheSettings;
 	default: Tier;
 	interactive: InteractiveMode;
@@ -68,10 +73,36 @@ const DEFAULTS: RouterSettings = {
 // ── Validation ──────────────────────────────────────────────────
 
 const VALID_THINKING: Set<string> = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const VALID_INTERACTIVE: Set<string> = new Set(["off", "suggest", "auto"]);
+const VALID_TIERS: Set<string> = new Set(["simple", "medium", "complex"]);
 
 function validateThinking(value: unknown, fallback: ThinkingLevel): ThinkingLevel {
 	if (typeof value === "string" && VALID_THINKING.has(value)) return value as ThinkingLevel;
 	return fallback;
+}
+
+function validateInteractive(value: unknown, fallback: InteractiveMode): InteractiveMode {
+	if (typeof value === "string" && VALID_INTERACTIVE.has(value)) return value as InteractiveMode;
+	return fallback;
+}
+
+function validateTier(value: unknown, fallback: Tier): Tier {
+	if (typeof value === "string" && VALID_TIERS.has(value)) return value as Tier;
+	return fallback;
+}
+
+function compileOverrides(rules: unknown): CompiledOverrideRule[] {
+	if (!Array.isArray(rules)) return [];
+	const compiled: CompiledOverrideRule[] = [];
+	for (const rule of rules) {
+		if (typeof rule?.match !== "string" || !VALID_TIERS.has(rule?.tier)) continue;
+		try {
+			compiled.push({ regex: new RegExp(rule.match, "i"), tier: rule.tier as Tier });
+		} catch {
+			// Invalid regex — skip
+		}
+	}
+	return compiled;
 }
 
 // ── Loader ──────────────────────────────────────────────────────
@@ -106,16 +137,16 @@ export function resolveSettings(cwd: string): RouterSettings {
 					thinking: validateThinking(cfg.tiers?.complex?.thinking, DEFAULTS.tiers.complex.thinking),
 				},
 			},
-			overrides: Array.isArray(cfg.overrides) ? cfg.overrides : DEFAULTS.overrides,
+			overrides: compileOverrides(cfg.overrides),
 			cache: {
 				enabled: cfg.cache?.enabled ?? DEFAULTS.cache.enabled,
 				ttlHours: cfg.cache?.ttlHours ?? DEFAULTS.cache.ttlHours,
 				maxEntries: cfg.cache?.maxEntries ?? DEFAULTS.cache.maxEntries,
 			},
-			default: cfg.default ?? DEFAULTS.default,
-			interactive: cfg.interactive ?? DEFAULTS.interactive,
+			default: validateTier(cfg.default, DEFAULTS.default),
+			interactive: validateInteractive(cfg.interactive, DEFAULTS.interactive),
 		};
 	} catch {
-		return { ...DEFAULTS };
+		return structuredClone(DEFAULTS);
 	}
 }

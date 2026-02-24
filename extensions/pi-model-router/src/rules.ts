@@ -1,28 +1,22 @@
 /**
  * pi-model-router — Static override matching.
  *
- * Matches prompt text against configured regex patterns.
+ * Matches prompt text against pre-compiled regex patterns.
  * Returns the first matching tier, or null if no match.
  */
 
-import type { OverrideRule, Tier } from "./settings.ts";
+import type { CompiledOverrideRule, Tier } from "./settings.ts";
 
 /**
- * Match prompt against static override rules.
+ * Match prompt against pre-compiled override rules.
  * Rules are evaluated in order — first match wins.
  */
-export function matchOverride(rules: OverrideRule[], prompt: string): Tier | null {
+export function matchOverride(rules: CompiledOverrideRule[], prompt: string): Tier | null {
 	const normalized = prompt.toLowerCase();
 
 	for (const rule of rules) {
-		try {
-			const regex = new RegExp(rule.match, "i");
-			if (regex.test(normalized)) {
-				return rule.tier;
-			}
-		} catch {
-			// Invalid regex — skip this rule
-			continue;
+		if (rule.regex.test(normalized)) {
+			return rule.tier;
 		}
 	}
 

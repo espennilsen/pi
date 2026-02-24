@@ -68,10 +68,10 @@ async function callOpenAICompatible(
 	taskText: string,
 	timeoutMs: number,
 ): Promise<string | null> {
+	if (!model.baseUrl) return null;
+
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-	if (!model.baseUrl) return null;
 
 	try {
 		// OpenAI-compatible endpoint: baseUrl + /chat/completions
@@ -112,10 +112,10 @@ async function callAnthropic(
 	taskText: string,
 	timeoutMs: number,
 ): Promise<string | null> {
+	if (!model.baseUrl) return null;
+
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-	if (!model.baseUrl) return null;
 
 	try {
 		const url = model.baseUrl.replace(/\/+$/, "") + "/messages";
@@ -213,9 +213,12 @@ export async function classify(
 				content = await callAnthropic(model, apiKey, taskText, settings.timeoutMs);
 				break;
 			case "google-generative-ai":
-			case "google-vertex":
 				content = await callGoogle(model, apiKey, taskText, settings.timeoutMs);
 				break;
+			case "google-vertex":
+				// Vertex AI uses a different endpoint and auth scheme — not yet supported.
+				// Falls through to return null → default tier.
+				return null;
 			default:
 				// OpenAI-compatible covers: openai-completions, openai-responses,
 				// minimax, groq, openrouter, xai, cerebras, mistral, etc.

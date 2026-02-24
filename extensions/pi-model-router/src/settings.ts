@@ -16,9 +16,11 @@ export interface ClassifierSettings {
 	timeoutMs: number;
 }
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface TierTarget {
 	model: string;
-	thinking: string;
+	thinking: ThinkingLevel;
 }
 
 export interface OverrideRule {
@@ -63,6 +65,15 @@ const DEFAULTS: RouterSettings = {
 	interactive: "off",
 };
 
+// ── Validation ──────────────────────────────────────────────────
+
+const VALID_THINKING: Set<string> = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+function validateThinking(value: unknown, fallback: ThinkingLevel): ThinkingLevel {
+	if (typeof value === "string" && VALID_THINKING.has(value)) return value as ThinkingLevel;
+	return fallback;
+}
+
 // ── Loader ──────────────────────────────────────────────────────
 
 export function resolveSettings(cwd: string): RouterSettings {
@@ -82,9 +93,18 @@ export function resolveSettings(cwd: string): RouterSettings {
 				timeoutMs: cfg.classifier?.timeoutMs ?? DEFAULTS.classifier.timeoutMs,
 			},
 			tiers: {
-				simple: { ...DEFAULTS.tiers.simple, ...(cfg.tiers?.simple ?? {}) },
-				medium: { ...DEFAULTS.tiers.medium, ...(cfg.tiers?.medium ?? {}) },
-				complex: { ...DEFAULTS.tiers.complex, ...(cfg.tiers?.complex ?? {}) },
+				simple: {
+					model: cfg.tiers?.simple?.model ?? DEFAULTS.tiers.simple.model,
+					thinking: validateThinking(cfg.tiers?.simple?.thinking, DEFAULTS.tiers.simple.thinking),
+				},
+				medium: {
+					model: cfg.tiers?.medium?.model ?? DEFAULTS.tiers.medium.model,
+					thinking: validateThinking(cfg.tiers?.medium?.thinking, DEFAULTS.tiers.medium.thinking),
+				},
+				complex: {
+					model: cfg.tiers?.complex?.model ?? DEFAULTS.tiers.complex.model,
+					thinking: validateThinking(cfg.tiers?.complex?.thinking, DEFAULTS.tiers.complex.thinking),
+				},
 			},
 			overrides: Array.isArray(cfg.overrides) ? cfg.overrides : DEFAULTS.overrides,
 			cache: {

@@ -54,6 +54,10 @@ export class ClassificationCache {
 			return null;
 		}
 
+		// Re-insert to move to end of iteration order (true LRU)
+		this.entries.delete(k);
+		this.entries.set(k, entry);
+
 		return entry.tier;
 	}
 

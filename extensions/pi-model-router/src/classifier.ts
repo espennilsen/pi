@@ -71,6 +71,8 @@ async function callOpenAICompatible(
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+	if (!model.baseUrl) return null;
+
 	try {
 		// OpenAI-compatible endpoint: baseUrl + /chat/completions
 		const url = model.baseUrl.replace(/\/+$/, "") + "/chat/completions";
@@ -113,6 +115,8 @@ async function callAnthropic(
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+	if (!model.baseUrl) return null;
+
 	try {
 		const url = model.baseUrl.replace(/\/+$/, "") + "/messages";
 
@@ -154,12 +158,13 @@ async function callGoogle(
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${apiKey}`;
+		const url = `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent`;
 
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
+				"x-goog-api-key": apiKey,
 				...(model.headers ?? {}),
 			},
 			body: JSON.stringify({

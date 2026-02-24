@@ -57,7 +57,7 @@ export default function (pi: ExtensionAPI) {
 		// ── 2. Cache ────────────────────────────────────────
 		if (!tier) {
 			tier = cache.get(prompt);
-			source = "cache";
+			if (tier) source = "cache";
 		}
 
 		// ── 3. LLM classifier ──────────────────────────────
@@ -91,7 +91,7 @@ export default function (pi: ExtensionAPI) {
 		// ── Interactive suggest mode ────────────────────────
 		if (isInteractive && settings.interactive === "suggest") {
 			const currentModel = ctx.model;
-			if (currentModel && currentModel.id !== model.id) {
+			if (ctx.ui && currentModel && currentModel.id !== model.id) {
 				ctx.ui.notify(
 					`💡 Model router: "${tier}" task — consider ${model.name} (currently ${currentModel.name})`,
 					"info",
@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
 		// ── Switch model ────────────────────────────────────
 		const switched = await pi.setModel(model);
 		if (switched && target.thinking) {
-			pi.setThinkingLevel(target.thinking as any);
+			pi.setThinkingLevel(target.thinking);
 		}
 
 		log("routed", {

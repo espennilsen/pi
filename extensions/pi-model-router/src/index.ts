@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI) {
 						`Mode: ${settings.interactive}`,
 						`Default tier: ${settings.default}`,
 						`Classifier: ${settings.classifier.model}`,
-						`Cache: ${cache.size} entries`,
+						`Cache: ~${cache.size} entries`,
 						`Tiers:\n${tiers}`,
 					].join("\n"),
 					"info",
@@ -122,9 +122,9 @@ export default function (pi: ExtensionAPI) {
 		// ── 3. LLM classifier ──────────────────────────────
 		if (!tier) {
 			tier = await classify(prompt, settings.classifier, ctx.modelRegistry, log);
-			source = "classifier";
 
 			if (tier) {
+				source = "classifier";
 				cache.set(prompt, tier);
 			}
 		}
@@ -177,30 +177,34 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// ── Switch model ────────────────────────────────────
-		const switched = await pi.setModel(model);
+		try {
+			const switched = await pi.setModel(model);
 
-		// Always apply thinking level — even if model didn't change, the tier's
-		// thinking level may differ from the current one (e.g. same model, different tier)
-		pi.setThinkingLevel(target.thinking);
+			// Always apply thinking level — even if model didn't change, the tier's
+			// thinking level may differ from the current one (e.g. same model, different tier)
+			pi.setThinkingLevel(target.thinking);
 
-		log("routed", {
-			tier,
-			source,
-			model: model.id,
-			thinking: target.thinking,
-			switched,
-			latencyMs,
-			cached: source === "cache",
-		});
+			log("routed", {
+				tier,
+				source,
+				model: model.id,
+				thinking: target.thinking,
+				switched,
+				latencyMs,
+				cached: source === "cache",
+			});
 
-		pi.events.emit("model-router:routed", {
-			tier,
-			source,
-			model: model.id,
-			thinking: target.thinking,
-			switched,
-			latencyMs,
-			cached: source === "cache",
-		});
+			pi.events.emit("model-router:routed", {
+				tier,
+				source,
+				model: model.id,
+				thinking: target.thinking,
+				switched,
+				latencyMs,
+				cached: source === "cache",
+			});
+		} catch (err) {
+			log("switch-error", { tier, model: model.id, error: String(err) }, "WARN");
+		}
 	});
 }

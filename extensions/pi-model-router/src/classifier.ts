@@ -214,11 +214,16 @@ export async function classify(
 
 		if (!content) return null;
 
-		// Parse JSON response — handle both raw JSON and markdown-wrapped JSON
-		const jsonMatch = content.match(/\{[^}]*\}/);
-		if (!jsonMatch) return null;
-
-		const parsed = JSON.parse(jsonMatch[0]);
+		// Parse JSON response — try direct parse first, then regex extraction
+		// for markdown-fenced or wrapped responses
+		let parsed: any;
+		try {
+			parsed = JSON.parse(content);
+		} catch {
+			const jsonMatch = content.match(/\{[\s\S]*\}/);
+			if (!jsonMatch) return null;
+			parsed = JSON.parse(jsonMatch[0]);
+		}
 		const tier = parsed?.tier;
 
 		if (tier === "simple" || tier === "medium" || tier === "complex") {

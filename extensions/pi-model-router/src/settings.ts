@@ -101,6 +101,11 @@ function validateModelString(value: unknown, fallback: string): string {
 	return fallback;
 }
 
+function validateBoolean(value: unknown, fallback: boolean): boolean {
+	if (typeof value === "boolean") return value;
+	return fallback;
+}
+
 function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 	if (!Array.isArray(rules)) return [];
 	const compiled: CompiledOverrideRule[] = [];
@@ -149,7 +154,7 @@ export function resolveSettings(cwd: string): RouterSettings {
 			},
 			overrides: compileOverrides(cfg.overrides),
 			cache: {
-				enabled: cfg.cache?.enabled ?? DEFAULTS.cache.enabled,
+				enabled: validateBoolean(cfg.cache?.enabled, DEFAULTS.cache.enabled),
 				ttlHours: validatePositiveNumber(cfg.cache?.ttlHours, DEFAULTS.cache.ttlHours),
 				maxEntries: validatePositiveNumber(cfg.cache?.maxEntries, DEFAULTS.cache.maxEntries),
 			},

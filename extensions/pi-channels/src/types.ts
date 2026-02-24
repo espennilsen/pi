@@ -4,17 +4,32 @@
 
 // ── Channel message ─────────────────────────────────────────────
 
+export type ChannelPayloadMode = "envelope" | "raw";
+
+export interface WebhookRequestOptions {
+	/** Override HTTP method for this message (e.g. POST, PUT, PATCH). */
+	method?: string;
+	/** Override Content-Type header for this message body. */
+	contentType?: string;
+}
+
 export interface ChannelMessage {
 	/** Adapter name: "telegram", "webhook", or a custom adapter */
 	adapter: string;
 	/** Recipient — adapter-specific (chat ID, webhook URL, email address, etc.) */
 	recipient: string;
-	/** Message text to deliver */
-	text: string;
+	/** Message text to deliver (optional when using raw payload mode) */
+	text?: string;
 	/** Where this came from (e.g. "cron:daily-standup") */
 	source?: string;
 	/** Arbitrary metadata for adapter handlers */
 	metadata?: Record<string, unknown>;
+	/** Payload mode hint for adapters that support multiple body formats */
+	payloadMode?: ChannelPayloadMode;
+	/** First-class custom body payload (used by webhook adapter in raw mode) */
+	rawBody?: unknown;
+	/** Webhook transport overrides for this message */
+	webhook?: WebhookRequestOptions;
 }
 
 // ── Incoming message (from external → pi) ───────────────────────

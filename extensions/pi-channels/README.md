@@ -47,7 +47,10 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 |------|-----------|------------|
 | `telegram` | bidirectional | `botToken`, `polling`, `parseMode`, `allowedChatIds`, `transcription` |
 | `slack` | bidirectional | `botToken`, `appToken` |
-| `webhook` | outgoing | `method`, `headers` |
+| `webhook` | outgoing | `method`, `contentType`, `payloadMode`, `headers` |
+
+> Webhook migration note: custom `Content-Type` should be set via `contentType`.
+> If both `contentType` and `headers["Content-Type"]` are provided, `contentType` wins.
 
 ### Bridge settings
 
@@ -66,9 +69,16 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 
 | Action | Required params | Description |
 |--------|----------------|-------------|
-| `send` | `adapter`, `text` | Send a message via an adapter name or route alias |
+| `send` | `adapter`, (`text` or `json`) | Send a message via an adapter name or route alias |
 | `list` | — | Show configured adapters and routes |
 | `test` | `adapter` | Send a test ping |
+
+For webhook sends, `notify` supports:
+- `payloadMode`: `"envelope"` (default) or `"raw"`
+- `json`: raw request body (auto-enables raw mode if provided; required for body-carrying raw methods)
+- `method`: HTTP method override for raw mode (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`)
+- `contentType`: `Content-Type` override for raw mode (applies only when a request body is sent)
+- `GET`/`HEAD` raw requests are bodyless (do not provide `json`)
 
 ## Commands
 

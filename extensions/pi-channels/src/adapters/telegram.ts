@@ -589,6 +589,9 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 		},
 
 		async send(message: ChannelMessage): Promise<void> {
+			if (!message.text) {
+				throw new Error("Telegram adapter requires text");
+			}
 			const prefix = message.source ? `[${message.source}]\n` : "";
 			const full = prefix + message.text;
 

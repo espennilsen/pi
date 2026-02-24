@@ -22,6 +22,7 @@ import { matchOverride } from "./rules.ts";
 import { ClassificationCache } from "./cache.ts";
 import { classify } from "./classifier.ts";
 import { resolveModel } from "./resolver.ts";
+import { findModel } from "./match.ts";
 
 const CH = "pi-model-router";
 
@@ -94,11 +95,17 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		settings = resolveSettings(ctx.cwd);
 		cache = new ClassificationCache(settings.cache);
+
+		const classifierModel = findModel(settings.classifier.model, ctx.modelRegistry);
+		if (!classifierModel) {
+			log("classifier-model-not-found", { model: settings.classifier.model }, "WARN");
+		}
+
 		log("init", { interactive: settings.interactive, default: settings.default });
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (!settings || !enabled) return;
+		if (!settings || !cache || !enabled) return;
 
 		// ── Mode check ──────────────────────────────────────
 		const isInteractive = ctx.hasUI;

@@ -138,9 +138,20 @@ export function resolveSettings(cwd: string): ResolveResult {
 		const sm = SettingsManager.create(cwd, agentDir);
 		const global = sm.getGlobalSettings() as Record<string, any>;
 		const project = sm.getProjectSettings() as Record<string, any>;
+		const g = global?.["pi-model-router"] ?? {};
+		const p = project?.["pi-model-router"] ?? {};
 		const cfg = {
-			...(global?.["pi-model-router"] ?? {}),
-			...(project?.["pi-model-router"] ?? {}),
+			...g,
+			...p,
+			// Deep-merge nested objects so project keys only override
+			// the specific sub-keys they provide, not the entire object
+			classifier: { ...g.classifier, ...p.classifier },
+			tiers: {
+				simple: { ...g.tiers?.simple, ...p.tiers?.simple },
+				medium: { ...g.tiers?.medium, ...p.tiers?.medium },
+				complex: { ...g.tiers?.complex, ...p.tiers?.complex },
+			},
+			cache: { ...g.cache, ...p.cache },
 		};
 
 		const overrideResult = compileOverrides(cfg.overrides);

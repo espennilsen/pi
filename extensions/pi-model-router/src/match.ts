@@ -24,10 +24,10 @@ export function findModel(
 
 	// Handle "provider/model" format — split on first slash only
 	// to support multi-segment model IDs (e.g. "openrouter/anthropic/claude-3-haiku")
-	const slashIdx = pattern.indexOf("/");
+	const slashIdx = p.indexOf("/");
 	if (slashIdx !== -1) {
-		const provider = pattern.slice(0, slashIdx);
-		const modelId = pattern.slice(slashIdx + 1);
+		const provider = p.slice(0, slashIdx);
+		const modelId = p.slice(slashIdx + 1);
 		return modelRegistry.find(provider, modelId);
 	}
 

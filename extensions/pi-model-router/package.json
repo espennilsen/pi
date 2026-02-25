@@ -1,0 +1,34 @@
+{
+  "name": "@e9n/pi-model-router",
+  "version": "0.1.0",
+  "description": "LLM-classified model routing for pi — automatically selects the right model based on task complexity",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-model-router"
+  }
+}

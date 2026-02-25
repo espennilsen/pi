@@ -140,7 +140,8 @@ async function callGoogle(
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const url = `${base}/models/${model.id}:generateContent`;
+		const modelId = model.id.replace(/^models\//, "");
+		const url = `${base}/models/${modelId}:generateContent`;
 
 		const response = await fetch(url, {
 			method: "POST",
@@ -220,7 +221,7 @@ export async function classify(
 		try {
 			parsed = JSON.parse(content);
 		} catch {
-			const jsonMatch = content.match(/\{[\s\S]*\}/);
+			const jsonMatch = content.match(/\{[\s\S]*?\}/);
 			if (!jsonMatch) return null;
 			parsed = JSON.parse(jsonMatch[0]);
 		}

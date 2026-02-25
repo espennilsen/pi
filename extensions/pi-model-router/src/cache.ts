@@ -68,10 +68,21 @@ export class ClassificationCache {
 	set(prompt: string, tier: Tier): void {
 		if (!this.enabled) return;
 
-		// LRU eviction
+		// Evict expired entry first, fall back to LRU
 		if (this.entries.size >= this.maxEntries) {
-			const oldestKey = this.entries.keys().next().value;
-			if (oldestKey) this.entries.delete(oldestKey);
+			const now = Date.now();
+			let evicted = false;
+			for (const [k, v] of this.entries) {
+				if (now - v.timestamp > this.ttlMs) {
+					this.entries.delete(k);
+					evicted = true;
+					break;
+				}
+			}
+			if (!evicted) {
+				const oldestKey = this.entries.keys().next().value;
+				if (oldestKey) this.entries.delete(oldestKey);
+			}
 		}
 
 		this.entries.set(this.key(prompt), { tier, timestamp: Date.now() });

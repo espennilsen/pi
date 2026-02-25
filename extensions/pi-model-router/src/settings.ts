@@ -106,6 +106,9 @@ function validateBoolean(value: unknown, fallback: boolean): boolean {
 	return fallback;
 }
 
+/** Compile user-defined override rules from project settings.
+ *  Note: patterns are trusted input (same trust model as .eslintrc / tsconfig).
+ *  No ReDoS guard — project config is authored by the repo owner. */
 function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 	if (!Array.isArray(rules)) return [];
 	const compiled: CompiledOverrideRule[] = [];

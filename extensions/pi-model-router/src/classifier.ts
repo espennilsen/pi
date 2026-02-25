@@ -221,9 +221,10 @@ export async function classify(
 		try {
 			parsed = JSON.parse(content);
 		} catch {
-			const jsonMatch = content.match(/\{[\s\S]*?\}/);
-			if (!jsonMatch) return null;
-			parsed = JSON.parse(jsonMatch[0]);
+			const start = content.indexOf("{");
+			const end = content.lastIndexOf("}");
+			if (start === -1 || end <= start) return null;
+			parsed = JSON.parse(content.slice(start, end + 1));
 		}
 		const tier = parsed?.tier;
 

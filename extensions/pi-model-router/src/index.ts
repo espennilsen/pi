@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
 						`Mode: ${settings.interactive}`,
 						`Default tier: ${settings.default}`,
 						`Classifier: ${settings.classifier.model}`,
-						`Cache: ~${cache.size} entries`,
+						`Cache: ~${cache.size} entries (incl. expired)`,
 						`Tiers:\n${tiers}`,
 					].join("\n"),
 					"info",

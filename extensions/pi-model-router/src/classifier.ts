@@ -49,8 +49,8 @@ async function callOpenAICompatible(
 
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
-			Authorization: `Bearer ${apiKey}`,
 			...(model.headers ?? {}),
+			Authorization: `Bearer ${apiKey}`,
 		};
 
 		const response = await fetch(url, {
@@ -96,9 +96,9 @@ async function callAnthropic(
 
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
+			...(model.headers ?? {}),
 			"x-api-key": apiKey,
 			"anthropic-version": "2023-06-01",
-			...(model.headers ?? {}),
 		};
 
 		const response = await fetch(url, {
@@ -147,8 +147,8 @@ async function callGoogle(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"x-goog-api-key": apiKey,
 				...(model.headers ?? {}),
+				"x-goog-api-key": apiKey,
 			},
 			body: JSON.stringify({
 				systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
@@ -185,13 +185,12 @@ export async function classify(
 	const model = findModel(settings.model, modelRegistry);
 	if (!model) return null;
 
-	// Get API key from registry
-	const apiKey = await modelRegistry.getApiKey(model);
-	if (!apiKey) return null;
-
 	const taskText = prompt.slice(0, 500).replace(/\s+/g, " ").trim();
 
 	try {
+		// Get API key from registry (inside try so failures hit the catch)
+		const apiKey = await modelRegistry.getApiKey(model);
+		if (!apiKey) return null;
 		let content: string | null = null;
 
 		// Route to the right API format based on model.api

@@ -98,6 +98,9 @@ export default function (pi: ExtensionAPI) {
 		if (result.configError) {
 			log("config-error", { error: result.configError }, "WARN");
 		}
+		if (result.skippedOverrides?.length) {
+			log("invalid-overrides", { patterns: result.skippedOverrides }, "WARN");
+		}
 
 		cache = new ClassificationCache(settings.cache);
 

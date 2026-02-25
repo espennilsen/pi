@@ -109,18 +109,19 @@ function validateBoolean(value: unknown, fallback: boolean): boolean {
 /** Compile user-defined override rules from project settings.
  *  Note: patterns are trusted input (same trust model as .eslintrc / tsconfig).
  *  No ReDoS guard — project config is authored by the repo owner. */
-function compileOverrides(rules: unknown): CompiledOverrideRule[] {
-	if (!Array.isArray(rules)) return [];
+function compileOverrides(rules: unknown): { compiled: CompiledOverrideRule[]; skipped: string[] } {
+	if (!Array.isArray(rules)) return { compiled: [], skipped: [] };
 	const compiled: CompiledOverrideRule[] = [];
+	const skipped: string[] = [];
 	for (const rule of rules) {
 		if (typeof rule?.match !== "string" || !VALID_TIERS.has(rule?.tier)) continue;
 		try {
 			compiled.push({ regex: new RegExp(rule.match, "i"), tier: rule.tier as Tier });
 		} catch {
-			// Invalid regex — skip
+			skipped.push(rule.match);
 		}
 	}
-	return compiled;
+	return { compiled, skipped };
 }
 
 // ── Loader ──────────────────────────────────────────────────────
@@ -128,6 +129,7 @@ function compileOverrides(rules: unknown): CompiledOverrideRule[] {
 export interface ResolveResult {
 	settings: RouterSettings;
 	configError?: string;
+	skippedOverrides?: string[];
 }
 
 export function resolveSettings(cwd: string): ResolveResult {
@@ -141,7 +143,9 @@ export function resolveSettings(cwd: string): ResolveResult {
 			...(project?.["pi-model-router"] ?? {}),
 		};
 
-		return { settings: {
+		const overrideResult = compileOverrides(cfg.overrides);
+
+		const result: ResolveResult = { settings: {
 			classifier: {
 				model: validateModelString(cfg.classifier?.model, DEFAULTS.classifier.model),
 				timeoutMs: validatePositiveNumber(cfg.classifier?.timeoutMs, DEFAULTS.classifier.timeoutMs),
@@ -160,7 +164,7 @@ export function resolveSettings(cwd: string): ResolveResult {
 					thinking: validateThinking(cfg.tiers?.complex?.thinking, DEFAULTS.tiers.complex.thinking),
 				},
 			},
-			overrides: compileOverrides(cfg.overrides),
+			overrides: overrideResult.compiled,
 			cache: {
 				enabled: validateBoolean(cfg.cache?.enabled, DEFAULTS.cache.enabled),
 				ttlHours: validatePositiveNumber(cfg.cache?.ttlHours, DEFAULTS.cache.ttlHours),
@@ -169,6 +173,12 @@ export function resolveSettings(cwd: string): ResolveResult {
 			default: validateTier(cfg.default, DEFAULTS.default),
 			interactive: validateInteractive(cfg.interactive, DEFAULTS.interactive),
 		} };
+
+		if (overrideResult.skipped.length > 0) {
+			result.skippedOverrides = overrideResult.skipped;
+		}
+
+		return result;
 	} catch (err) {
 		return { settings: structuredClone(DEFAULTS), configError: String(err) };
 	}

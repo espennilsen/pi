@@ -103,6 +103,11 @@ export interface ChannelAdapter {
 	 * Optional — only supported by adapters that have real-time presence (e.g. Telegram).
 	 */
 	sendTyping?(recipient: string): Promise<void>;
+	/**
+	 * Sync bot commands with the platform (e.g. Telegram's /command menu).
+	 * Optional — only supported by adapters with a command menu API.
+	 */
+	syncBotCommands?(commands: Array<{ command: string; description: string }>): Promise<void>;
 }
 
 // ── Config (lives under "pi-channels" key in pi settings.json) ──

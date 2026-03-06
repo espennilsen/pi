@@ -99,6 +99,19 @@ export class ChannelRegistry {
 		}
 	}
 
+	/** Sync bot commands on all adapters that support it. */
+	async syncBotCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
+		for (const [name, adapter] of this.adapters) {
+			if (adapter.syncBotCommands) {
+				try {
+					await adapter.syncBotCommands(commands);
+				} catch (err: any) {
+					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err.message}` });
+				}
+			}
+		}
+	}
+
 	/** Stop all adapters. */
 	async stopAll(): Promise<void> {
 		for (const adapter of this.adapters.values()) {

@@ -81,6 +81,32 @@ export function gitExec(args: string[], cwd: string, timeoutMs = 15_000): Promis
 	});
 }
 
+/**
+ * Run a git command with retries on lock errors.
+ * Git operations can fail transiently when an IDE or file watcher holds
+ * .git/index.lock. Retries up to `maxRetries` times with a short sleep.
+ */
+export async function gitExecRetry(
+	args: string[],
+	cwd: string,
+	opts?: { timeoutMs?: number; maxRetries?: number; delayMs?: number },
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+	const { timeoutMs = 15_000, maxRetries = 3, delayMs = 500 } = opts ?? {};
+
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		const result = await gitExec(args, cwd, timeoutMs);
+		if (result.ok) return result;
+
+		const isLockError = result.stderr.includes("index.lock") || result.stderr.includes("Unable to create") && result.stderr.includes(".lock");
+		if (!isLockError || attempt === maxRetries) return result;
+
+		await new Promise((resolve) => setTimeout(resolve, delayMs));
+	}
+
+	// Unreachable, but satisfies TS
+	return { ok: false, stdout: "", stderr: "retry exhausted" };
+}
+
 /** Get the current git branch name. */
 export async function getCurrentBranch(cwd?: string): Promise<string | null> {
 	return new Promise((resolve) => {

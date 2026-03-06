@@ -633,6 +633,7 @@ async function fetchConfig() {
   async function fetchIssueDetail(id) {
     try {
       var resp = await fetch('/api/td/detail?id=' + encodeURIComponent(id));
+      if (!resp.ok) return null;
       return await resp.json();
     } catch(e) { return null; }
   }
@@ -714,7 +715,10 @@ async function fetchConfig() {
       }
       currentDetailProject = null;
       var detail = await fetchIssueDetail(id);
-      if (!detail) return;
+      if (!detail) {
+        renderDetail({ id: id, title: 'Issue not found', status: 'unknown', description: 'This issue no longer exists. It may have been deleted or belongs to a different project.', type: 'task', priority: 'P2' }, true);
+        return;
+      }
       renderDetail(detail, false);
     },
     closeDetail: function() {

@@ -66,35 +66,35 @@ let request = SFSpeechURLRecognitionRequest(url: fileURL)
 request.requiresOnDeviceRecognition = false
 request.shouldReportPartialResults = false
 
-let resultSemaphore = DispatchSemaphore(value: 0)
 var transcribedText: String?
 var recognitionError: Error?
-var taskStarted = false
+var done = false
 
 let task = recognizer.recognitionTask(with: request) { result, error in
-    taskStarted = true
-    
     if let error = error {
         recognitionError = error
-        resultSemaphore.signal()
+        done = true
+        CFRunLoopStop(CFRunLoopGetMain())
         return
     }
     
     if let result = result, result.isFinal {
         transcribedText = result.bestTranscription.formattedString
-        resultSemaphore.signal()
+        done = true
+        CFRunLoopStop(CFRunLoopGetMain())
     }
 }
 
-// Wait up to 60 seconds
-let timeout = resultSemaphore.wait(timeout: .now() + 60)
+// Run the main RunLoop so callbacks can be delivered, with a 60s timeout.
+// SFSpeechRecognizer dispatches results via the RunLoop — blocking with a
+// semaphore starves it and prevents callbacks from firing.
+let deadline = Date(timeIntervalSinceNow: 60)
+while !done && Date() < deadline {
+    RunLoop.current.run(mode: .default, before: min(deadline, Date(timeIntervalSinceNow: 0.5)))
+}
 
-if timeout == .timedOut {
-    if !taskStarted {
-        FileHandle.standardError.write("Recognition task never started — callback was never invoked\n".data(using: .utf8)!)
-    } else {
-        FileHandle.standardError.write("Transcription timed out after 60 seconds\n".data(using: .utf8)!)
-    }
+if !done {
+    FileHandle.standardError.write("Transcription timed out after 60 seconds\n".data(using: .utf8)!)
     task.cancel()
     exit(1)
 }

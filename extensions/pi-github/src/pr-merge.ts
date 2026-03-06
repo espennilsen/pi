@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, gitExec, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
+import { gh, ghJson, gitExec, gitExecRetry, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
 import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";
 
@@ -211,7 +211,7 @@ async function cleanupBranches(
 	if (currentBranch === baseBranch) {
 		onBaseBranch = true;
 	} else {
-		const checkout = await gitExec(["checkout", baseBranch], cwd);
+		const checkout = await gitExecRetry(["checkout", baseBranch], cwd);
 		if (checkout.ok) {
 			onBaseBranch = true;
 		} else {
@@ -228,7 +228,7 @@ async function cleanupBranches(
 	}
 
 	if (onBaseBranch) {
-		const pull = await gitExec(["pull", "--ff-only"], pullCwd, 30_000);
+		const pull = await gitExecRetry(["pull", "--ff-only"], pullCwd, { timeoutMs: 30_000 });
 		if (pull.ok) {
 			ctx.ui.notify(`⬇️ Pulled latest \`${baseBranch}\`.`, "info");
 		} else {
@@ -262,7 +262,7 @@ async function cleanupBranches(
 					log("pr-merge-local-commits", { prNumber, headBranch, baseBranch, strategy, note: "skipped local-only check (squash/rebase SHAs diverge)" });
 				}
 
-				const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
+				const localDelete = await gitExecRetry(["branch", "-D", headBranch], cwd);
 				if (localDelete.ok) {
 					ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
 				} else if (localDelete.stderr.includes("not found")) {

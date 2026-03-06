@@ -40,6 +40,7 @@ import { ChannelRegistry } from "./registry.ts";
 import { registerChannelEvents, setBridge } from "./events.ts";
 import { registerChannelTool } from "./tool.ts";
 import { ChatBridge } from "./bridge/bridge.ts";
+import { getAllCommands } from "./bridge/commands.ts";
 import { createLogger } from "./logger.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -75,6 +76,10 @@ export default function (pi: ExtensionAPI) {
 
 		// Start incoming/bidirectional adapters
 		await registry.startListening();
+
+		// Sync bot commands with platforms (e.g. Telegram /command menu)
+		const botCommands = getAllCommands().map(c => ({ command: c.name, description: c.description }));
+		await registry.syncBotCommands(botCommands);
 
 		const startErrors = registry.getErrors().filter(e => e.error.startsWith("Failed to start"));
 		for (const err of startErrors) {

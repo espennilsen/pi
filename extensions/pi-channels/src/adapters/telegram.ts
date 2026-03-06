@@ -627,6 +627,22 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 			abortController = null;
 			cleanupTempFiles();
 		},
+
+		async syncBotCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
+			try {
+				const res = await fetch(`${apiBase}/setMyCommands`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ commands }),
+				});
+				if (!res.ok) {
+					const err = await res.text().catch(() => "unknown error");
+					console.error(`[pi-channels] Failed to sync bot commands: ${res.status} ${err}`);
+				}
+			} catch (err: any) {
+				console.error(`[pi-channels] Failed to sync bot commands: ${err.message}`);
+			}
+		},
 	};
 }
 

@@ -14,7 +14,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { ghJson, ghGraphql, gitExec, getCurrentBranch } from "./gh.ts";
+import { ghJson, ghGraphql, gitExec, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
 import { extractRepoRef, resolveRepo, resolveLocalClone, repoFlag } from "./repo-ref.ts";
 
@@ -359,30 +359,50 @@ export function registerPrFixCommand(pi: ExtensionAPI, log: LogFn, getCwd: () =>
 			const currentBranch = await getCurrentBranch(localPath);
 
 			if (currentBranch !== prBranch) {
-				const status = await gitExec(["status", "--porcelain"], localPath);
-				if (status.ok && status.stdout.length > 0) {
-					ctx.ui.notify(`❌ Working tree at ${localPath} has uncommitted changes. Commit or stash before running /gh-pr-fix.`, "error");
-					return;
-				}
+				// Check if the branch is checked out in a worktree
+				const worktreePath = await findWorktreeForBranch(prBranch, localPath);
+				if (worktreePath) {
+					localPath = worktreePath;
+					ctx.ui.notify(`Branch \`${prBranch}\` is in worktree at \`${worktreePath}\`. Working there.`, "info");
+				} else {
+					const status = await gitExec(["status", "--porcelain"], localPath);
+					if (status.ok && status.stdout.length > 0) {
+						ctx.ui.notify(`❌ Working tree at ${localPath} has uncommitted changes. Commit or stash before running /gh-pr-fix.`, "error");
+						return;
+					}
 
-				ctx.ui.notify(`Switching to branch \`${prBranch}\` in ${localPath}…`, "info");
-				const checkout = await gitExec(["checkout", prBranch], localPath);
-				if (!checkout.ok) {
-					const localExists = await gitExec(["branch", "--list", prBranch], localPath);
-					if (localExists.ok && localExists.stdout.length > 0) {
-						ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${checkout.stderr}`, "error");
-						return;
+					ctx.ui.notify(`Switching to branch \`${prBranch}\` in ${localPath}…`, "info");
+					const checkout = await gitExec(["checkout", prBranch], localPath);
+					if (!checkout.ok) {
+						const localExists = await gitExec(["branch", "--list", prBranch], localPath);
+						if (localExists.ok && localExists.stdout.length > 0) {
+							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${checkout.stderr}`, "error");
+							return;
+						}
+						const fetchResult = await gitExec(["fetch", "origin", prBranch], localPath, 30_000);
+						if (!fetchResult.ok) {
+							ctx.ui.notify(`❌ Failed to fetch branch \`${prBranch}\` from origin: ${fetchResult.stderr}`, "error");
+							return;
+						}
+						const retry = await gitExec(["checkout", "-b", prBranch, `origin/${prBranch}`], localPath);
+						if (!retry.ok) {
+							ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
+							return;
+						}
 					}
-					const fetchResult = await gitExec(["fetch", "origin", prBranch], localPath, 30_000);
-					if (!fetchResult.ok) {
-						ctx.ui.notify(`❌ Failed to fetch branch \`${prBranch}\` from origin: ${fetchResult.stderr}`, "error");
-						return;
-					}
-					const retry = await gitExec(["checkout", "-b", prBranch, `origin/${prBranch}`], localPath);
-					if (!retry.ok) {
-						ctx.ui.notify(`❌ Could not checkout branch \`${prBranch}\`: ${retry.stderr}`, "error");
-						return;
-					}
+				}
+			}
+
+			// ── Step 5b: Pull latest from origin ────────────
+			const pullStatus = await gitExec(["status", "--porcelain"], localPath);
+			if (pullStatus.ok && pullStatus.stdout.length > 0) {
+				ctx.ui.notify(`⚠️ Working tree at \`${localPath}\` has uncommitted changes — skipping pull.`, "warning");
+			} else {
+				ctx.ui.notify(`Pulling latest \`${prBranch}\` from origin…`, "info");
+				const pull = await gitExec(["pull", "--ff-only", "origin", prBranch], localPath, 30_000);
+				if (!pull.ok) {
+					// Non-fatal — local might have unpushed commits, warn and continue
+					ctx.ui.notify(`⚠️ Could not fast-forward \`${prBranch}\`: ${pull.stderr}. Continuing with local state.`, "warning");
 				}
 			}
 

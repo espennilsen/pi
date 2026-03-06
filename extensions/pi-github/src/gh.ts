@@ -89,3 +89,27 @@ export async function getCurrentBranch(cwd?: string): Promise<string | null> {
 		});
 	});
 }
+
+/**
+ * Find the worktree path for a branch, if it's checked out in one.
+ * Returns the worktree path or null if the branch isn't in any worktree.
+ */
+export async function findWorktreeForBranch(branch: string, cwd: string): Promise<string | null> {
+	const result = await gitExec(["worktree", "list", "--porcelain"], cwd);
+	if (!result.ok) return null;
+
+	// Parse porcelain output: blocks separated by blank lines
+	// Each block has: worktree <path>, HEAD <sha>, branch refs/heads/<name>
+	let currentPath: string | null = null;
+	for (const line of result.stdout.split("\n")) {
+		if (line.startsWith("worktree ")) {
+			currentPath = line.slice("worktree ".length);
+		} else if (line.startsWith("branch refs/heads/")) {
+			const branchName = line.slice("branch refs/heads/".length);
+			if (branchName === branch) return currentPath;
+		} else if (line === "") {
+			currentPath = null;
+		}
+	}
+	return null;
+}

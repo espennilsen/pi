@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { gh, ghJson, gitExec, getCurrentBranch } from "./gh.ts";
+import { gh, ghJson, gitExec, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
 import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";
 
@@ -206,6 +206,7 @@ async function cleanupBranches(
 
 	// Switch to base branch and pull
 	let onBaseBranch = false;
+	let pullCwd = cwd; // where to run pull — may differ if base is in a worktree
 	const currentBranch = await getCurrentBranch(cwd);
 	if (currentBranch === baseBranch) {
 		onBaseBranch = true;
@@ -214,12 +215,20 @@ async function cleanupBranches(
 		if (checkout.ok) {
 			onBaseBranch = true;
 		} else {
-			errors.push(`Failed to checkout ${baseBranch}: ${checkout.stderr}`);
+			// Check if the base branch is checked out in a worktree
+			const worktreePath = await findWorktreeForBranch(baseBranch, cwd);
+			if (worktreePath) {
+				onBaseBranch = true;
+				pullCwd = worktreePath;
+				ctx.ui.notify(`Branch \`${baseBranch}\` is in worktree at \`${worktreePath}\`. Pulling there.`, "info");
+			} else {
+				errors.push(`Failed to checkout ${baseBranch}: ${checkout.stderr}`);
+			}
 		}
 	}
 
 	if (onBaseBranch) {
-		const pull = await gitExec(["pull", "--ff-only"], cwd, 30_000);
+		const pull = await gitExec(["pull", "--ff-only"], pullCwd, 30_000);
 		if (pull.ok) {
 			ctx.ui.notify(`⬇️ Pulled latest \`${baseBranch}\`.`, "info");
 		} else {
@@ -229,30 +238,38 @@ async function cleanupBranches(
 		// Delete local branch (if it exists and we're not on it).
 		// Use -D (force) because squash/rebase merges on GitHub don't create
 		// a local merge commit, so git branch -d thinks it's "not fully merged".
-		const nowOn = await getCurrentBranch(cwd);
-		if (nowOn !== headBranch) {
-			// Guard: warn about local-only commits before force-deleting.
-			// Only warn for true merge strategy where SHAs are preserved.
-			// Squash/rebase always diverge (different SHAs), so just log at debug level.
-			if (strategy === "merge") {
-				const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
-				if (localOnly.ok && localOnly.stdout.trim().length > 0) {
-					const localCommits = localOnly.stdout.split("\n").filter(Boolean);
-					if (localCommits.length > 0) {
-						ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\`:\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+		//
+		// If the head branch is checked out in a worktree, we can't delete it —
+		// the worktree must be removed first. Warn and skip.
+		const headWorktree = await findWorktreeForBranch(headBranch, cwd);
+		if (headWorktree) {
+			ctx.ui.notify(`⚠️ Branch \`${headBranch}\` is checked out in worktree at \`${headWorktree}\`. Remove the worktree first to delete the branch: \`git worktree remove ${headWorktree}\``, "warning");
+		} else {
+			const nowOn = await getCurrentBranch(cwd);
+			if (nowOn !== headBranch) {
+				// Guard: warn about local-only commits before force-deleting.
+				// Only warn for true merge strategy where SHAs are preserved.
+				// Squash/rebase always diverge (different SHAs), so just log at debug level.
+				if (strategy === "merge") {
+					const localOnly = await gitExec(["log", `${baseBranch}..${headBranch}`, "--oneline"], cwd);
+					if (localOnly.ok && localOnly.stdout.trim().length > 0) {
+						const localCommits = localOnly.stdout.split("\n").filter(Boolean);
+						if (localCommits.length > 0) {
+							ctx.ui.notify(`⚠️ Local branch \`${headBranch}\` has ${localCommits.length} commit(s) not in \`${baseBranch}\`:\n${localCommits.map(c => `  ${c}`).join("\n")}`, "warning");
+						}
 					}
+				} else {
+					log("pr-merge-local-commits", { prNumber, headBranch, baseBranch, strategy, note: "skipped local-only check (squash/rebase SHAs diverge)" });
 				}
-			} else {
-				log("pr-merge-local-commits", { prNumber, headBranch, baseBranch, strategy, note: "skipped local-only check (squash/rebase SHAs diverge)" });
-			}
 
-			const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
-			if (localDelete.ok) {
-				ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
-			} else if (localDelete.stderr.includes("not found")) {
-				// Branch doesn't exist locally — fine
-			} else {
-				errors.push(`Could not delete local branch \`${headBranch}\` (branch is still safe): ${localDelete.stderr}`);
+				const localDelete = await gitExec(["branch", "-D", headBranch], cwd);
+				if (localDelete.ok) {
+					ctx.ui.notify(`🗑️ Deleted local branch \`${headBranch}\`.`, "info");
+				} else if (localDelete.stderr.includes("not found")) {
+					// Branch doesn't exist locally — fine
+				} else {
+					errors.push(`Could not delete local branch \`${headBranch}\` (branch is still safe): ${localDelete.stderr}`);
+				}
 			}
 		}
 	}

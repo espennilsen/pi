@@ -97,7 +97,7 @@ export async function gitExecRetry(
 		const result = await gitExec(args, cwd, timeoutMs);
 		if (result.ok) return result;
 
-		const isLockError = result.stderr.includes("index.lock") || result.stderr.includes("Unable to create") && result.stderr.includes(".lock");
+		const isLockError = result.stderr.includes("index.lock") || (result.stderr.includes("Unable to create") && result.stderr.includes(".lock"));
 		if (!isLockError || attempt === maxRetries) return result;
 
 		await new Promise((resolve) => setTimeout(resolve, delayMs));

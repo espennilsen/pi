@@ -71,8 +71,8 @@ function validateFile(filePath: string): TranscriptionResult | null {
 
 // ── Apple Provider ──────────────────────────────────────────────
 
-const SWIFT_HELPER_SRC = path.join(import.meta.dirname, "transcribe-apple.swift");
-const SWIFT_HELPER_BIN = path.join(import.meta.dirname, "transcribe-apple");
+const SWIFT_HELPER_SRC = path.join(import.meta.dirname, "transcribe-apple-v2.swift");
+const SWIFT_HELPER_BIN = path.join(import.meta.dirname, "transcribe-apple-v2");
 
 class AppleProvider implements TranscriptionProvider {
 	private language: string | undefined;
@@ -97,12 +97,23 @@ class AppleProvider implements TranscriptionProvider {
 		const compileResult = await this.compilePromise;
 		if (!compileResult.ok) return compileResult;
 
+		// Convert to M4A if needed (SFSpeechRecognizer has poor support for Ogg Opus)
+		const converted = await this.convertToCompatibleFormat(filePath);
+		if (!converted.ok) return { ok: false, error: converted.error! };
+		const audioPath = converted.path;
+		const shouldCleanup = audioPath !== filePath;
+
 		const lang = language || this.language;
-		const args = [filePath];
+		const args = [audioPath];
 		if (lang) args.push(lang);
 
 		return new Promise((resolve) => {
 			execFile(SWIFT_HELPER_BIN, args, { timeout: 60_000 }, (err, stdout, stderr) => {
+				// Clean up converted file
+				if (shouldCleanup) {
+					try { fs.unlinkSync(audioPath); } catch {}
+				}
+
 				if (err) {
 					resolve({ ok: false, error: stderr?.trim() || err.message });
 					return;
@@ -114,6 +125,37 @@ class AppleProvider implements TranscriptionProvider {
 				}
 				resolve({ ok: true, text });
 			});
+		});
+	}
+
+	/**
+	 * Convert audio to M4A (AAC) if it's in an incompatible format.
+	 * SFSpeechRecognizer works best with M4A, WAV, MP3, AIFF.
+	 * Returns the path to use (converted or original).
+	 */
+	private convertToCompatibleFormat(filePath: string): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+		const ext = path.extname(filePath).toLowerCase();
+		const compatibleFormats = [".m4a", ".mp3", ".wav", ".aiff", ".aif"];
+
+		if (compatibleFormats.includes(ext)) {
+			return Promise.resolve({ ok: true, path: filePath });
+		}
+
+		const outputPath = filePath.replace(/\.[^.]+$/, ".m4a");
+
+		return new Promise((resolve) => {
+			execFile(
+				"ffmpeg",
+				["-i", filePath, "-vn", "-acodec", "aac", "-b:a", "128k", "-y", outputPath],
+				{ timeout: 30_000 },
+				(err, _stdout, stderr) => {
+					if (err) {
+						resolve({ ok: false, error: `Audio conversion failed (ffmpeg): ${stderr?.trim() || err.message}` });
+						return;
+					}
+					resolve({ ok: true, path: outputPath });
+				},
+			);
 		});
 	}
 

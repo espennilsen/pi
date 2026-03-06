@@ -46,14 +46,14 @@ guard recognizer.isAvailable else {
 }
 
 // Request authorization (needed even for on-device recognition)
-let semaphore = DispatchSemaphore(value: 0)
+let authSemaphore = DispatchSemaphore(value: 0)
 var authStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
 
 SFSpeechRecognizer.requestAuthorization { status in
     authStatus = status
-    semaphore.signal()
+    authSemaphore.signal()
 }
-semaphore.wait()
+authSemaphore.wait()
 
 guard authStatus == .authorized else {
     FileHandle.standardError.write("Speech recognition not authorized (status: \(authStatus.rawValue)). Grant access in System Settings > Privacy > Speech Recognition.\n".data(using: .utf8)!)
@@ -62,19 +62,24 @@ guard authStatus == .authorized else {
 
 // Perform recognition
 let request = SFSpeechURLRecognitionRequest(url: fileURL)
-request.requiresOnDeviceRecognition = true
+// Try on-device first, but don't require it (fallback to online)
+request.requiresOnDeviceRecognition = false
 request.shouldReportPartialResults = false
 
 let resultSemaphore = DispatchSemaphore(value: 0)
 var transcribedText: String?
 var recognitionError: Error?
+var taskStarted = false
 
-recognizer.recognitionTask(with: request) { result, error in
+let task = recognizer.recognitionTask(with: request) { result, error in
+    taskStarted = true
+    
     if let error = error {
         recognitionError = error
         resultSemaphore.signal()
         return
     }
+    
     if let result = result, result.isFinal {
         transcribedText = result.bestTranscription.formattedString
         resultSemaphore.signal()
@@ -83,8 +88,14 @@ recognizer.recognitionTask(with: request) { result, error in
 
 // Wait up to 60 seconds
 let timeout = resultSemaphore.wait(timeout: .now() + 60)
+
 if timeout == .timedOut {
-    FileHandle.standardError.write("Transcription timed out after 60 seconds\n".data(using: .utf8)!)
+    if !taskStarted {
+        FileHandle.standardError.write("Recognition task never started — callback was never invoked\n".data(using: .utf8)!)
+    } else {
+        FileHandle.standardError.write("Transcription timed out after 60 seconds\n".data(using: .utf8)!)
+    }
+    task.cancel()
     exit(1)
 }
 

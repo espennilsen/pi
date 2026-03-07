@@ -102,6 +102,12 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 			decisions: Type.Optional(Type.Array(Type.String(), { description: "Key decisions made" })),
 			uncertain: Type.Optional(Type.Array(Type.String(), { description: "Open questions" })),
 
+			// Update fields
+			status: Type.Optional(StringEnum(
+				["open", "in_progress", "in_review", "blocked", "closed"] as const,
+				{ description: "New status (for update action)" },
+			)),
+
 			// Reject/close/approve fields
 			reason: Type.Optional(Type.String({ description: "Reason for reject/close/block/approve" })),
 			self_close: Type.Optional(Type.Boolean({ description: "Allow closing your own implemented work (for close action)" })),
@@ -277,9 +283,11 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 					case "close": {
 						if (!params.id) return text("❌ `id` is required for close.");
 						const args = ["close", params.id];
-						if (params.reason) args.push("--reason", params.reason);
 						if (params.self_close) {
+							// --self-close-exception takes the reason directly; don't also pass --reason
 							args.push("--self-close-exception", params.reason || "Agent self-close");
+						} else if (params.reason) {
+							args.push("--reason", params.reason);
 						}
 						const result = await exec(pi, args, cwd);
 						return text(result);
@@ -296,8 +304,8 @@ export function registerTdTool(pi: ExtensionAPI, getCwd: () => string): void {
 						if (params.description) args.push("--description", params.description);
 						if (params.labels) args.push("--labels", params.labels);
 						if (params.parent) args.push("--parent", params.parent);
-						if (params.filter_status) args.push("--status", params.filter_status);
-						if (args.length === 2) return text("❌ No fields to update. Provide title, type, priority, description, labels, or parent.");
+						if (params.status) args.push("--status", params.status);
+						if (args.length === 2) return text("❌ No fields to update. Provide title, type, priority, description, labels, parent, or status.");
 						const result = await exec(pi, args, cwd);
 						return text(result);
 					}

@@ -5,6 +5,10 @@
  * which merges global (~/.pi/agent/settings.json) and project
  * (.pi/settings.json) configs automatically.
  *
+ * Environment variable overrides (highest priority, override settings.json):
+ *   - TELEGRAM_BOT_TOKEN → adapters.telegram.botToken
+ *   - WEBHOOK_SECRET     → adapters.webhook.secret
+ *
  * Example settings.json:
  * {
  *   "pi-channels": {
@@ -58,7 +62,39 @@ export function loadConfig(cwd: string): ChannelConfig {
 		} as ChannelConfig["bridge"],
 	};
 
+	// Env vars override settings.json values
+	applyEnvOverrides(merged);
+
 	return merged;
+}
+
+/**
+ * Apply environment variable overrides to the merged config.
+ *
+ * Env vars take highest priority, overriding any value from settings.json.
+ *
+ *   TELEGRAM_BOT_TOKEN → adapters.telegram.botToken
+ *   WEBHOOK_SECRET     → adapters.webhook.secret
+ *
+ * Adapter entries are auto-created with a default type if they don't already exist
+ * in settings, so you can run purely from env vars without any settings.json config.
+ */
+function applyEnvOverrides(config: ChannelConfig): void {
+	const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+	if (telegramToken) {
+		if (!config.adapters.telegram) {
+			config.adapters.telegram = { type: "telegram" };
+		}
+		config.adapters.telegram.botToken = telegramToken;
+	}
+
+	const webhookSecret = process.env.WEBHOOK_SECRET;
+	if (webhookSecret) {
+		if (!config.adapters.webhook) {
+			config.adapters.webhook = { type: "webhook" };
+		}
+		config.adapters.webhook.secret = webhookSecret;
+	}
 }
 
 /**

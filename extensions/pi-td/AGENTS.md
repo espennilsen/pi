@@ -26,18 +26,29 @@ Extension that wraps the `td` CLI as a structured LLM tool, enforces mandatory t
 
 | Group | Actions |
 |-------|---------|
-| **Query** | `status`, `list`, `show`, `ready`, `next`, `reviewable` |
+| **Query** | `status`, `list`, `show`, `ready`, `next`, `reviewable`, `search` |
 | **Lifecycle** | `create`, `start`, `log`, `handoff`, `review`, `approve`, `reject`, `close` |
+| **Modify** | `update`, `delete` |
+| **Focus** | `focus`, `unfocus` |
 | **Other** | `block`, `unblock`, `reopen`, `comment` |
 
 ### Key parameters
 
 - `id` — Required for most lifecycle/query actions (format: `td-abc123`)
-- `title`, `type` (task/bug/feature/epic/chore), `priority` (P0–P4) — for `create`
+- `title`, `type` (task/bug/feature/epic/chore), `priority` (P0–P4) — for `create` and `update`
 - `minor: true` — marks task as minor; enables self-review via `approve`
 - `done`, `remaining`, `decisions`, `uncertain` — arrays for `handoff`
 - `log_type` — progress/blocker/decision/hypothesis/tried/result for `log`
-- `show_all`, `filter_type`, `filter_priority`, `filter_status` — for `list`
+- `show_all`, `filter_type`, `filter_priority`, `filter_status`, `filter_labels`, `filter_mine`, `filter_epic` — for `list`
+- `query` — search text for `search` action or `--search` filter on `list`
+- `sort`, `limit` — result ordering and pagination for `list`/`search`
+- `self_close` — allow closing own implemented work (for `close` action)
+- `reason` — optional for `approve`, `reject`, `close`, `block`
+
+### Auto-retry behavior
+
+- `approve` and `reject` auto-create a new review session (`td session --new`) and retry when td reports "cannot approve/reject" (same session as implementer).
+- `close` supports `self_close: true` which maps to `--self-close-exception` for closing own work.
 
 ### System prompt injection
 
@@ -99,5 +110,5 @@ When `crossProjectRoot` is configured, the dashboard shows tasks from all projec
 - No direct SQLite — all task data lives in the `td` CLI's `.todos` folder. Extension only shells out to `td`.
 - `sessionCwd` is updated on `session_switch` and `session_fork` — always use `getCwd()` in tool handlers.
 - `td` stdout starting with `ERROR:` or `Warning: cannot` is treated as an error even on exit code 0.
-- Approve/reject handlers auto-create a review session (`td session --new`) if td reports "cannot approve/reject".
+- Both the tool and REST API approve/reject handlers auto-create a review session (`td session --new`) if td reports "cannot approve/reject".
 - No console.log — errors surface through tool result strings.

@@ -45,6 +45,7 @@ import type {
 	AdapterConfig,
 	OnIncomingMessage,
 } from "../types.ts";
+import type { AdapterFactoryContext } from "../registry.ts";
 import { getChannelSetting } from "../config.ts";
 
 const MAX_LENGTH = 3000; // Slack block text limit; actual API limit is 4000 but leave margin
@@ -86,7 +87,8 @@ interface SlackCommandPayload {
 
 export type SlackAdapterLogger = (event: string, data: Record<string, unknown>, level?: string) => void;
 
-export function createSlackAdapter(config: AdapterConfig, cwd?: string, log?: SlackAdapterLogger): ChannelAdapter {
+export async function createSlackAdapter(config: AdapterConfig, context: AdapterFactoryContext): Promise<ChannelAdapter> {
+	const { cwd, log } = context;
 	// Tokens live in settings under pi-channels.slack (not in the adapter config block)
 	const appToken = (cwd ? getChannelSetting(cwd, "slack.appToken") as string : null)
 		?? config.appToken as string;

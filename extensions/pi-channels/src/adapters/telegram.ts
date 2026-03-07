@@ -37,6 +37,7 @@ import type {
 	IncomingAttachment,
 	TranscriptionConfig,
 } from "../types.ts";
+import type { AdapterFactoryContext } from "../registry.ts";
 import { createTranscriptionProvider, type TranscriptionProvider } from "./transcription.ts";
 
 const MAX_LENGTH = 4096;
@@ -100,7 +101,7 @@ function isTextDocument(mimeType: string | undefined, filename: string | undefin
 	return false;
 }
 
-export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
+export async function createTelegramAdapter(config: AdapterConfig, context: AdapterFactoryContext): Promise<ChannelAdapter> {
 	const botToken = config.botToken as string;
 	const parseMode = config.parseMode as string | undefined;
 	const pollingEnabled = config.polling === true;
@@ -117,7 +118,7 @@ export function createTelegramAdapter(config: AdapterConfig): ChannelAdapter {
 	let transcriberError: string | null = null;
 	if (transcriptionConfig?.enabled) {
 		try {
-			transcriber = createTranscriptionProvider(transcriptionConfig);
+			transcriber = await createTranscriptionProvider(transcriptionConfig, context.modelRegistry);
 		} catch (err: any) {
 			transcriberError = err.message ?? "Unknown transcription config error";
 			console.error(`[pi-channels] Transcription config error: ${transcriberError}`);

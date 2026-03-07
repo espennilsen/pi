@@ -39,7 +39,11 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 }
 ```
 
-Use `"env:VAR_NAME"` to reference environment variables. Project settings override global ones.
+**Environment variables:**
+- Use `"env:PI_VAR_NAME"` to reference environment variables
+- All environment variables **must** start with `PI_` prefix for security
+- Example: `"env:PI_TELEGRAM_BOT_TOKEN"` resolves to `process.env.PI_TELEGRAM_BOT_TOKEN`
+- Project settings override global ones
 
 ### Adapter types
 
@@ -51,6 +55,38 @@ Use `"env:VAR_NAME"` to reference environment variables. Project settings overri
 
 > Webhook migration note: custom `Content-Type` should be set via `contentType`.
 > If both `contentType` and `headers["Content-Type"]` are provided, `contentType` wins.
+
+### Transcription (Voice & Audio)
+
+The Telegram adapter supports transcribing voice messages and audio files. Add to the telegram adapter config:
+
+```json
+{
+  "telegram": {
+    "type": "telegram",
+    "botToken": "env:PI_TELEGRAM_BOT_TOKEN",
+    "transcription": {
+      "enabled": true,
+      "provider": "openai"
+    }
+  }
+}
+```
+
+**Providers:**
+
+| Provider | Requirements | Notes |
+|----------|--------------|-------|
+| `apple` | macOS only | Free, offline, uses SFSpeechRecognizer. No API key needed. |
+| `openai` | OpenAI API key | **Automatically uses pi's built-in OpenAI authentication** if you've run `/login openai`. No explicit `apiKey` needed! Override with `apiKey: "env:PI_OPENAI_API_KEY"` if you want to use a separate key. |
+| `elevenlabs` | ElevenLabs API key | Requires `apiKey: "env:PI_ELEVENLABS_API_KEY"` in config. |
+
+**Transcription options:**
+- `enabled` — Enable transcription (default: `false`)
+- `provider` — `"apple"`, `"openai"`, or `"elevenlabs"` (required)
+- `apiKey` — For OpenAI: **optional** (uses pi's auth). For ElevenLabs: required as `"env:PI_*"`.
+- `model` — Model name, e.g. `"whisper-1"` (OpenAI), `"scribe_v1"` (ElevenLabs)
+- `language` — ISO 639-1 code, e.g. `"en"`, `"no"` (optional)
 
 ### Bridge settings
 

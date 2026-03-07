@@ -55,11 +55,15 @@ export interface TranscriptionConfig {
 	/**
 	 * Transcription provider:
 	 * - "apple"      — macOS SFSpeechRecognizer (free, offline, no API key)
-	 * - "openai"     — Whisper API
-	 * - "elevenlabs" — Scribe API
+	 * - "openai"     — Whisper API (uses pi's built-in auth if available, or explicit apiKey)
+	 * - "elevenlabs" — Scribe API (requires explicit apiKey)
 	 */
 	provider: "apple" | "openai" | "elevenlabs";
-	/** API key for cloud providers (supports env:VAR_NAME). Not needed for apple. */
+	/**
+	 * API key for cloud providers. Optional for OpenAI if pi has authentication configured.
+	 * Supports "env:PI_VAR_NAME" for environment variables (PI_ prefix required).
+	 * Not needed for apple provider.
+	 */
 	apiKey?: string;
 	/** Model name (e.g. "whisper-1", "scribe_v1"). Provider-specific default used if omitted. */
 	model?: string;

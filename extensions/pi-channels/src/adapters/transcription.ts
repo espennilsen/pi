@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
+import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { TranscriptionConfig } from "../types.ts";
 
 // ── Public interface ────────────────────────────────────────────
@@ -28,15 +29,22 @@ export interface TranscriptionProvider {
 	transcribe(filePath: string, language?: string): Promise<TranscriptionResult>;
 }
 
-/** Create a transcription provider from config. */
-export function createTranscriptionProvider(config: TranscriptionConfig): TranscriptionProvider {
+/**
+ * Create a transcription provider from config.
+ * If modelRegistry is provided, OpenAI provider will use pi's built-in
+ * authentication instead of requiring explicit API keys in config.
+ */
+export async function createTranscriptionProvider(
+	config: TranscriptionConfig,
+	modelRegistry?: ModelRegistry
+): Promise<TranscriptionProvider> {
 	switch (config.provider) {
 		case "apple":
 			return new AppleProvider(config);
 		case "openai":
-			return new OpenAIProvider(config);
+			return await OpenAIProvider.create(config, modelRegistry);
 		case "elevenlabs":
-			return new ElevenLabsProvider(config);
+			return await ElevenLabsProvider.create(config, modelRegistry);
 		default:
 			throw new Error(`Unknown transcription provider: ${config.provider}`);
 	}
@@ -44,13 +52,40 @@ export function createTranscriptionProvider(config: TranscriptionConfig): Transc
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-/** Resolve "env:VAR_NAME" patterns to actual environment variable values. */
-function resolveEnvValue(value: string | undefined): string | undefined {
-	if (!value) return undefined;
+/**
+ * Resolve API key from config value.
+ * Priority:
+ * 1. If no value provided and modelRegistry available → use pi's built-in auth
+ * 2. "env:PI_VAR_NAME" → environment variable (PI_ prefix required for security)
+ * 3. Plain string → literal value
+ */
+async function resolveApiKey(
+	value: string | undefined,
+	provider: string,
+	modelRegistry?: ModelRegistry
+): Promise<string | undefined> {
+	// No explicit config → try pi's built-in authentication
+	if (!value) {
+		if (modelRegistry) {
+			const key = await modelRegistry.getApiKeyForProvider(provider);
+			if (key) return key;
+		}
+		return undefined;
+	}
+
+	// "env:PI_VAR_NAME" → use environment variable with PI_ prefix requirement
 	if (value.startsWith("env:")) {
 		const envVar = value.slice(4);
+		if (!envVar.startsWith("PI_")) {
+			throw new Error(
+				`Environment variable must start with PI_ prefix (got: ${envVar}). ` +
+				`Use "env:PI_${envVar}" instead.`
+			);
+		}
 		return process.env[envVar] || undefined;
 	}
+
+	// Plain value
 	return value;
 }
 
@@ -196,12 +231,24 @@ class OpenAIProvider implements TranscriptionProvider {
 	private model: string;
 	private language: string | undefined;
 
-	constructor(config: TranscriptionConfig) {
-		const key = resolveEnvValue(config.apiKey);
-		if (!key) throw new Error("OpenAI transcription requires apiKey");
-		this.apiKey = key;
-		this.model = config.model || "whisper-1";
-		this.language = config.language;
+	private constructor(apiKey: string, model: string, language?: string) {
+		this.apiKey = apiKey;
+		this.model = model;
+		this.language = language;
+	}
+
+	static async create(
+		config: TranscriptionConfig,
+		modelRegistry?: ModelRegistry
+	): Promise<OpenAIProvider> {
+		const key = await resolveApiKey(config.apiKey, "openai", modelRegistry);
+		if (!key) {
+			throw new Error(
+				"OpenAI transcription requires API key. " +
+				"Either configure OpenAI in pi (run: /login openai) or set apiKey in transcription config."
+			);
+		}
+		return new OpenAIProvider(key, config.model || "whisper-1", config.language);
 	}
 
 	async transcribe(filePath: string, language?: string): Promise<TranscriptionResult> {
@@ -247,12 +294,24 @@ class ElevenLabsProvider implements TranscriptionProvider {
 	private model: string;
 	private language: string | undefined;
 
-	constructor(config: TranscriptionConfig) {
-		const key = resolveEnvValue(config.apiKey);
-		if (!key) throw new Error("ElevenLabs transcription requires apiKey");
-		this.apiKey = key;
-		this.model = config.model || "scribe_v1";
-		this.language = config.language;
+	private constructor(apiKey: string, model: string, language?: string) {
+		this.apiKey = apiKey;
+		this.model = model;
+		this.language = language;
+	}
+
+	static async create(
+		config: TranscriptionConfig,
+		modelRegistry?: ModelRegistry
+	): Promise<ElevenLabsProvider> {
+		const key = await resolveApiKey(config.apiKey, "elevenlabs", modelRegistry);
+		if (!key) {
+			throw new Error(
+				"ElevenLabs transcription requires API key. " +
+				"Set apiKey in config as 'env:PI_ELEVENLABS_API_KEY'."
+			);
+		}
+		return new ElevenLabsProvider(key, config.model || "scribe_v1", config.language);
 	}
 
 	async transcribe(filePath: string, language?: string): Promise<TranscriptionResult> {

@@ -65,7 +65,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		const config = loadConfig(ctx.cwd);
-		registry.loadConfig(config, ctx.cwd);
+		registry.setModelRegistry(ctx.modelRegistry);
+		await registry.loadConfig(config, ctx.cwd);
 
 		const errors = registry.getErrors();
 		for (const err of errors) {

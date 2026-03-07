@@ -67,16 +67,20 @@ export async function pollRSSSource(
 			try {
 				const parsed = parseCheckinFromRSS(item);
 
-				// Deduplicate: use checkin ID from link, or fall back to a hash
+				// Deduplicate: use checkin ID from link, or fall back to a hash.
+				// Skip items that produce no stable identity at all.
 				const checkinId = item.link ? extractCheckinId(item.link) : null;
 				const dedupKey = checkinId
 					?? hashDedupKey(item.link, item.pubDate, item.title);
 
-				if (dedupKey) {
-					const existing = await ops.getActivityEventByCheckinId(dedupKey);
-					if (existing) {
-						continue;
-					}
+				if (!dedupKey) {
+					log("skip_unidentifiable_item", { link: item.link }, "warn");
+					continue;
+				}
+
+				const existing = await ops.getActivityEventByCheckinId(dedupKey);
+				if (existing) {
+					continue;
 				}
 
 				// Normalize beer if we have a beer ID

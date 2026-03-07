@@ -44,8 +44,8 @@ export async function fetchRSS(url: string, log: LogFn): Promise<RSSFeed> {
 				title: item.title || null,
 				link: item.link || null,
 				pubDate: item.pubDate || item.isoDate || null,
-				description: item.content || item.description || null,
-				content: item.contentSnippet || item.content || null,
+				description: item.contentSnippet || item.description || null,
+				content: item.content || item.description || null,
 			})),
 		};
 	} catch (err: any) {

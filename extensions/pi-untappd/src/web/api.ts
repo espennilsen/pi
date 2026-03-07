@@ -95,6 +95,10 @@ export async function handleAPIRequest(
 			const scraper = await import("../scraper/index.ts");
 			const { venueId, slug } = scraper.parseVenueUrl(venueUrl);
 
+			if (!venueId && !slug) {
+				return sendJSON(400, { ok: false, error: "Invalid Untappd venue URL" });
+			}
+
 			// Check if venue already exists
 			if (venueId) {
 				const existing = await ops.getVenueByUntappdId(venueId);
@@ -287,14 +291,19 @@ export async function handleAPIRequest(
 		// PATCH /rss-sources/:id
 		if (pathname.match(/^\/rss-sources\/\d+$/) && method === "PATCH") {
 			const id = parseInt(pathname.split("/")[2]);
-			const body = await getBody();
 
+			const source = await ops.getRSSSourceById(id);
+			if (!source) {
+				return sendJSON(404, { ok: false, error: "RSS source not found" });
+			}
+
+			const body = await getBody();
 			if (body.enabled !== undefined) {
 				await ops.toggleRSSSource(id, body.enabled as boolean);
 			}
 
-			const source = await ops.getRSSSourceById(id);
-			return sendJSON(200, { ok: true, data: source });
+			const updated = await ops.getRSSSourceById(id);
+			return sendJSON(200, { ok: true, data: updated });
 		}
 
 		// POST /rss-sources/:id/poll

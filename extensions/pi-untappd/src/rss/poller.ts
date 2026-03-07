@@ -46,7 +46,7 @@ export async function pollRSSSources(log: LogFn): Promise<void> {
 /**
  * Poll a single RSS source.
  */
-async function pollRSSSource(
+export async function pollRSSSource(
 	source: Record<string, unknown>,
 	log: LogFn,
 ): Promise<void> {

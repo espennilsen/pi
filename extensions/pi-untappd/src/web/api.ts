@@ -34,7 +34,8 @@ export async function handleAPIRequest(
 		res.end(JSON.stringify(data));
 	};
 
-	// Parse JSON body for POST/PUT/PATCH
+	// Parse JSON body for POST/PUT/PATCH (max 1 MB)
+	const MAX_BODY = 1_048_576;
 	const getBody = (): Promise<Record<string, unknown>> => {
 		return new Promise((resolve, reject) => {
 			if (method === "GET" || method === "HEAD") {
@@ -43,8 +44,17 @@ export async function handleAPIRequest(
 			}
 
 			let body = "";
-			req.on("data", (chunk: Buffer) => (body += chunk));
+			let rejected = false;
+			req.on("data", (chunk: Buffer) => {
+				body += chunk;
+				if (body.length > MAX_BODY) {
+					rejected = true;
+					req.destroy();
+					reject(new Error("Payload too large"));
+				}
+			});
 			req.on("end", () => {
+				if (rejected) return;
 				try {
 					resolve(body ? JSON.parse(body) : {});
 				} catch {
@@ -92,14 +102,16 @@ export async function handleAPIRequest(
 				url: venueUrl,
 			});
 
-			// Create RSS source
-			const rssUrl = `https://untappd.com/rss/venue/${venueId}`;
-			await ops.createRSSSource({
-				type: "venue",
-				foreignId: id,
-				rssUrl,
-				pollIntervalMinutes: 15,
-			});
+			// Create RSS source (only if we have a numeric venue ID for the RSS URL)
+			if (venueId) {
+				const rssUrl = `https://untappd.com/rss/venue/${venueId}`;
+				await ops.createRSSSource({
+					type: "venue",
+					foreignId: id,
+					rssUrl,
+					pollIntervalMinutes: 15,
+				});
+			}
 
 			const venue = await ops.getVenueById(id);
 			return sendJSON(201, { ok: true, data: venue });
@@ -281,8 +293,8 @@ export async function handleAPIRequest(
 				return sendJSON(404, { ok: false, error: "RSS source not found" });
 			}
 
-			const { pollRSSSources } = await import("../rss/poller.ts");
-			await pollRSSSources(log);
+			const { pollRSSSource } = await import("../rss/poller.ts");
+			await pollRSSSource(source, log);
 
 			return sendJSON(200, { ok: true, data: { message: "Polling triggered" } });
 		}

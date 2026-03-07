@@ -9,6 +9,9 @@ import type { LogFn } from "../logger.ts";
 import * as url from "node:url";
 import * as ops from "../db/operations.ts";
 
+/** Escape HTML special characters in DB-derived values. */
+const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
 export async function handleUIRequest(
 	req: IncomingMessage,
 	res: ServerResponse,
@@ -127,10 +130,10 @@ export async function handleUIRequest(
 							<tbody>
 								${events.map((e) => `
 									<tr>
-										<td>${new Date(e.occurred_at as string).toLocaleString()}</td>
-										<td>${e.user_username || "-"}</td>
-										<td>${e.beer_name}</td>
-										<td>${e.event_type}</td>
+										<td>${esc(new Date(e.occurred_at as string).toLocaleString())}</td>
+										<td>${esc(e.user_username || "-")}</td>
+										<td>${esc(e.beer_name)}</td>
+										<td>${esc(e.event_type)}</td>
 									</tr>
 								`).join("")}
 							</tbody>
@@ -175,10 +178,10 @@ export async function handleUIRequest(
 							<tbody>
 								${venues.map((v) => `
 									<tr>
-										<td><a href="/untappd/venues/${v.id}">${v.name}</a></td>
-										<td>${v.city || "-"}</td>
-										<td>${v.country || "-"}</td>
-										<td>${v.last_menu_scraped_at ? new Date(v.last_menu_scraped_at as string).toLocaleString() : "Never"}</td>
+										<td><a href="/untappd/venues/${v.id}">${esc(v.name)}</a></td>
+										<td>${esc(v.city || "-")}</td>
+										<td>${esc(v.country || "-")}</td>
+										<td>${v.last_menu_scraped_at ? esc(new Date(v.last_menu_scraped_at as string).toLocaleString()) : "Never"}</td>
 										<td>
 											<a href="/untappd/venues/${v.id}" class="btn btn-secondary">View</a>
 										</td>
@@ -265,6 +268,13 @@ export async function handleUIRequest(
 				</div>
 
 				<script>
+					function showError(container, message) {
+						const p = document.createElement('p');
+						p.style.color = 'red';
+						p.textContent = 'Error: ' + message;
+						container.replaceChildren(p);
+					}
+
 					async function lookupVenue(e, form) {
 						e.preventDefault();
 						const formData = new FormData(form);
@@ -280,9 +290,11 @@ export async function handleUIRequest(
 						const div = document.getElementById('venue-result');
 
 						if (result.ok) {
-							div.innerHTML = '<pre>' + JSON.stringify(result.data, null, 2) + '</pre>';
+							const pre = document.createElement('pre');
+							pre.textContent = JSON.stringify(result.data, null, 2);
+							div.replaceChildren(pre);
 						} else {
-							div.innerHTML = '<p style="color: red;">Error: ' + result.error + '</p>';
+							showError(div, result.error);
 						}
 					}
 
@@ -301,9 +313,11 @@ export async function handleUIRequest(
 						const div = document.getElementById('user-result');
 
 						if (result.ok) {
-							div.innerHTML = '<pre>' + JSON.stringify(result.data, null, 2) + '</pre>';
+							const pre = document.createElement('pre');
+							pre.textContent = JSON.stringify(result.data, null, 2);
+							div.replaceChildren(pre);
 						} else {
-							div.innerHTML = '<p style="color: red;">Error: ' + result.error + '</p>';
+							showError(div, result.error);
 						}
 					}
 				</script>
@@ -320,6 +334,6 @@ export async function handleUIRequest(
 	} catch (err: any) {
 		log("ui_error", { path: pathname, error: err.message }, "error");
 		res.writeHead(500, { "Content-Type": "text/html" });
-		res.end(renderHTML("Error", `<h1>Error</h1><p>${err.message}</p>`));
+		res.end(renderHTML("Error", `<h1>Error</h1><p>${esc(err.message)}</p>`));
 	}
 }

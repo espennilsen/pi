@@ -26,6 +26,7 @@ src/
 ## Key Design Decisions
 
 - **Self-contained HTTP server** — Uses `node:http` directly. No dependency on pi-webserver, pi-kysely, or any other extension.
+- **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
 - **Subprocess isolation** — Each `message/send` spawns a fresh `pi --mode rpc -ne` process. No shared state, no extension leakage.
 - **In-memory task store** — Tasks expire after 1 hour, max 100. Personal agent = low volume.
 - **Settings-driven** — All config via `pi-a2a` key in settings.json. No env vars.

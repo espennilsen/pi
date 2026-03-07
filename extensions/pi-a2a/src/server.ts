@@ -25,6 +25,7 @@ export interface ServerOptions {
 }
 
 let server: http.Server | null = null;
+let currentAgentCard: AgentCard | null = null;
 
 export function startServer(opts: ServerOptions): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -33,6 +34,8 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			resolve();
 			return;
 		}
+
+		currentAgentCard = opts.agentCard;
 
 		server = http.createServer(async (req, res) => {
 			const method = req.method ?? "GET";
@@ -51,10 +54,10 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			}
 
 			try {
-				// GET /.well-known/agent.json — Agent Card
+				// GET /.well-known/agent.json — Agent Card (always serves latest)
 				if (pathname === "/.well-known/agent.json" && method === "GET") {
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify(opts.agentCard, null, 2));
+					res.end(JSON.stringify(currentAgentCard, null, 2));
 					return;
 				}
 
@@ -107,6 +110,7 @@ export function stopServer(log: LogFn): Promise<void> {
 		server.close(() => {
 			log("server_stopped");
 			server = null;
+			currentAgentCard = null;
 			resolve();
 		});
 	});
@@ -114,6 +118,22 @@ export function stopServer(log: LogFn): Promise<void> {
 
 export function isRunning(): boolean {
 	return server !== null;
+}
+
+/**
+ * Update the agent card served by the running server.
+ * Takes effect immediately — next request to /.well-known/agent.json
+ * will return the updated card.
+ */
+export function updateAgentCard(card: AgentCard): void {
+	currentAgentCard = card;
+}
+
+/**
+ * Get the current agent card, or null if server hasn't started.
+ */
+export function getAgentCard(): AgentCard | null {
+	return currentAgentCard;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

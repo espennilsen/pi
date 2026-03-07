@@ -14,13 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **BREAKING:** Environment variables referenced via `"env:VAR_NAME"` now require `PI_` prefix for security (e.g. `"env:PI_TELEGRAM_BOT_TOKEN"`)
+- **BREAKING:** `env:VAR_NAME` substitution in settings is no longer supported. Set secret values (tokens, API keys) directly in `settings.json` instead of using `"env:..."` references.
 - Adapter factories are now async to support modelRegistry API key resolution
 - Transcription providers use static `create()` factory methods instead of constructors
-
-### Security
-
-- Enforce `PI_` prefix for environment variables to prevent accidental exposure of system-wide credentials
 
 ## [0.1.1] - 2026-02-19 (7442720)
 

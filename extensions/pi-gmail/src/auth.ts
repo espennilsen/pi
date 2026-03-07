@@ -12,7 +12,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import type { OAuthTokens, GmailSettings } from "./types.ts";
-import { resolveEnv } from "./utils.ts";
+
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -112,7 +112,7 @@ export async function clearTokens(agentDir: string): Promise<void> {
 // ── OAuth flow ──────────────────────────────────────────────────
 
 export function getConsentUrl(settings: GmailSettings, redirectUri: string): string {
-	const clientId = resolveEnv(settings.clientId ?? "");
+	const clientId = settings.clientId ?? "";
 	if (!clientId) throw new Error("Gmail clientId not configured");
 
 	const state = generateOAuthState();
@@ -136,8 +136,8 @@ export async function exchangeCode(
 	redirectUri: string,
 	agentDir: string,
 ): Promise<OAuthTokens> {
-	const clientId = resolveEnv(settings.clientId ?? "");
-	const clientSecret = resolveEnv(settings.clientSecret ?? "");
+	const clientId = settings.clientId ?? "";
+	const clientSecret = settings.clientSecret ?? "";
 
 	if (!clientId || !clientSecret) {
 		throw new Error("Gmail clientId/clientSecret not configured");
@@ -206,8 +206,8 @@ async function refreshAccessToken(
 	agentDir: string,
 	tokens: OAuthTokens,
 ): Promise<string> {
-	const clientId = resolveEnv(settings.clientId ?? "");
-	const clientSecret = resolveEnv(settings.clientSecret ?? "");
+	const clientId = settings.clientId ?? "";
+	const clientSecret = settings.clientSecret ?? "";
 
 	if (!clientId || !clientSecret) {
 		throw new Error("Gmail clientId/clientSecret not configured for token refresh");

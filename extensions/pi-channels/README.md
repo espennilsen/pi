@@ -21,12 +21,12 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
     "adapters": {
       "telegram": {
         "type": "telegram",
-        "botToken": "env:TELEGRAM_BOT_TOKEN",
+        "botToken": "your-telegram-bot-token",
         "polling": true
       },
       "alerts": {
         "type": "webhook",
-        "headers": { "Authorization": "env:WEBHOOK_SECRET" }
+        "headers": { "Authorization": "Bearer your-webhook-secret" }
       }
     },
     "routes": {
@@ -39,10 +39,8 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 }
 ```
 
-**Environment variables:**
-- Use `"env:PI_VAR_NAME"` to reference environment variables
-- All environment variables **must** start with `PI_` prefix for security
-- Example: `"env:PI_TELEGRAM_BOT_TOKEN"` resolves to `process.env.PI_TELEGRAM_BOT_TOKEN`
+**Secrets:**
+- Set secret values (tokens, keys) directly in `settings.json`
 - Project settings override global ones
 
 ### Adapter types
@@ -64,7 +62,7 @@ The Telegram adapter supports transcribing voice messages and audio files. Add t
 {
   "telegram": {
     "type": "telegram",
-    "botToken": "env:PI_TELEGRAM_BOT_TOKEN",
+    "botToken": "your-telegram-bot-token",
     "transcription": {
       "enabled": true,
       "provider": "openai"
@@ -78,13 +76,13 @@ The Telegram adapter supports transcribing voice messages and audio files. Add t
 | Provider | Requirements | Notes |
 |----------|--------------|-------|
 | `apple` | macOS only | Free, offline, uses SFSpeechRecognizer. No API key needed. |
-| `openai` | OpenAI API key | **Automatically uses pi's built-in OpenAI authentication** if you've run `/login openai`. No explicit `apiKey` needed! Override with `apiKey: "env:PI_OPENAI_API_KEY"` if you want to use a separate key. |
-| `elevenlabs` | ElevenLabs API key | Requires `apiKey: "env:PI_ELEVENLABS_API_KEY"` in config. |
+| `openai` | OpenAI API key | **Automatically uses pi's built-in OpenAI authentication** if you've run `/login openai`. No explicit `apiKey` needed! Override with `apiKey` in config if you want to use a separate key. |
+| `elevenlabs` | ElevenLabs API key | Requires `apiKey` set directly in config. |
 
 **Transcription options:**
 - `enabled` — Enable transcription (default: `false`)
 - `provider` — `"apple"`, `"openai"`, or `"elevenlabs"` (required)
-- `apiKey` — For OpenAI: **optional** (uses pi's auth). For ElevenLabs: required as `"env:PI_*"`.
+- `apiKey` — For OpenAI: **optional** (uses pi's auth). For ElevenLabs: required (set directly in settings.json).
 - `model` — Model name, e.g. `"whisper-1"` (OpenAI), `"scribe_v1"` (ElevenLabs)
 - `language` — ISO 639-1 code, e.g. `"en"`, `"no"` (optional)
 

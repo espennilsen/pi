@@ -21,17 +21,6 @@ export function escapeHtml(str: string): string {
 	return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]!);
 }
 
-// ── Config value helpers ────────────────────────────────────────
-
-/**
- * Return a config value as-is (empty string if undefined).
- * Values should be set directly in settings.json.
- */
-export function resolveEnv(value: string | undefined): string {
-	if (!value) return "";
-	return value;
-}
-
 // ── Cross-platform URL opener ───────────────────────────────────
 
 /**

@@ -1,9 +1,13 @@
 /**
  * Database operations for pi-untappd.
+ *
+ * All queries use raw SQL via the event bus query() helper.
+ * No direct kysely imports — all DB access through pi-kysely events.
  */
 
-import type { Kysely } from "kysely";
-import type { UntappdDatabase } from "../schema.ts";
+import { query, now } from "./init.ts";
+
+// ── Parameter types ─────────────────────────────────────────────
 
 export interface CreateVenueParams {
 	untappdVenueId: string | null;
@@ -70,327 +74,379 @@ export interface CreateActivityEventParams {
 	occurredAt: string;
 }
 
-/**
- * Get database instance from pi-kysely.
- */
-export function getDb(): Kysely<UntappdDatabase> {
-	// This will be replaced with proper kysely registry access
-	throw new Error("Database not initialized. Ensure pi-kysely is loaded.");
-}
-
 // ── Venues ─────────────────────────────────────────────────────
 
-export async function createVenue(db: Kysely<UntappdDatabase>, params: CreateVenueParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("venues")
-		.values({
-			untappd_venue_id: params.untappdVenueId,
-			slug: params.slug,
-			name: params.name,
-			url: params.url,
-			city: params.city || null,
-			country: params.country || null,
-			created_at: now,
-			updated_at: now,
-			last_menu_scraped_at: null,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createVenue(params: CreateVenueParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_venues
+		 (untappd_venue_id, slug, name, url, city, country, created_at, updated_at, last_menu_scraped_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.untappdVenueId,
+			params.slug,
+			params.name,
+			params.url,
+			params.city || null,
+			params.country || null,
+			ts,
+			ts,
+			null,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getVenueById(db: Kysely<UntappdDatabase>, id: number) {
-	return db.selectFrom("venues").selectAll().where("id", "=", id).executeTakeFirst();
+export async function getVenueById(id: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_venues WHERE id = ?",
+		[id],
+	);
+	return rows[0];
 }
 
-export async function getVenueByUntappdId(db: Kysely<UntappdDatabase>, untappdVenueId: string) {
-	return db.selectFrom("venues").selectAll().where("untappd_venue_id", "=", untappdVenueId).executeTakeFirst();
+export async function getVenueByUntappdId(untappdVenueId: string): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_venues WHERE untappd_venue_id = ?",
+		[untappdVenueId],
+	);
+	return rows[0];
 }
 
-export async function listVenues(db: Kysely<UntappdDatabase>) {
-	return db.selectFrom("venues").selectAll().orderBy("name").execute();
+export async function listVenues(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_venues ORDER BY name",
+	);
+	return rows;
 }
 
-export async function updateVenueLastScraped(db: Kysely<UntappdDatabase>, id: number) {
-	const now = new Date().toISOString();
-	await db
-		.updateTable("venues")
-		.set({ last_menu_scraped_at: now, updated_at: now })
-		.where("id", "=", id)
-		.execute();
+export async function updateVenueLastScraped(id: number): Promise<void> {
+	const ts = now();
+	await query(
+		"UPDATE untappd_venues SET last_menu_scraped_at = ?, updated_at = ? WHERE id = ?",
+		[ts, ts, id],
+	);
 }
 
 // ── Breweries ──────────────────────────────────────────────────
 
-export async function createBrewery(db: Kysely<UntappdDatabase>, params: CreateBreweryParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("breweries")
-		.values({
-			untappd_brewery_id: params.untappdBreweryId,
-			slug: params.slug,
-			name: params.name,
-			url: params.url,
-			created_at: now,
-			updated_at: now,
-			last_scraped_at: null,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createBrewery(params: CreateBreweryParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_breweries
+		 (untappd_brewery_id, slug, name, url, created_at, updated_at, last_scraped_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.untappdBreweryId,
+			params.slug,
+			params.name,
+			params.url,
+			ts,
+			ts,
+			null,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getBreweryById(db: Kysely<UntappdDatabase>, id: number) {
-	return db.selectFrom("breweries").selectAll().where("id", "=", id).executeTakeFirst();
+export async function getBreweryById(id: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_breweries WHERE id = ?",
+		[id],
+	);
+	return rows[0];
 }
 
-export async function getBreweryBySlug(db: Kysely<UntappdDatabase>, slug: string) {
-	return db.selectFrom("breweries").selectAll().where("slug", "=", slug).executeTakeFirst();
+export async function getBreweryBySlug(slug: string): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_breweries WHERE slug = ?",
+		[slug],
+	);
+	return rows[0];
 }
 
-export async function listBreweries(db: Kysely<UntappdDatabase>) {
-	return db.selectFrom("breweries").selectAll().orderBy("name").execute();
+export async function listBreweries(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_breweries ORDER BY name",
+	);
+	return rows;
 }
 
 // ── Beers ──────────────────────────────────────────────────────
 
-export async function createBeer(db: Kysely<UntappdDatabase>, params: CreateBeerParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("beers")
-		.values({
-			untappd_beer_id: params.untappdBeerId,
-			name: params.name,
-			style: params.style || null,
-			abv: params.abv || null,
-			ibu: params.ibu || null,
-			brewery_id: params.breweryId || null,
-			url: params.url || null,
-			created_at: now,
-			updated_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createBeer(params: CreateBeerParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_beers
+		 (untappd_beer_id, name, style, abv, ibu, brewery_id, url, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.untappdBeerId,
+			params.name,
+			params.style || null,
+			params.abv ?? null,
+			params.ibu ?? null,
+			params.breweryId ?? null,
+			params.url || null,
+			ts,
+			ts,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getBeerById(db: Kysely<UntappdDatabase>, id: number) {
-	return db.selectFrom("beers").selectAll().where("id", "=", id).executeTakeFirst();
+export async function getBeerById(id: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_beers WHERE id = ?",
+		[id],
+	);
+	return rows[0];
 }
 
-export async function getBeerByUntappdId(db: Kysely<UntappdDatabase>, untappdBeerId: string) {
-	return db.selectFrom("beers").selectAll().where("untappd_beer_id", "=", untappdBeerId).executeTakeFirst();
+export async function getBeerByUntappdId(untappdBeerId: string): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_beers WHERE untappd_beer_id = ?",
+		[untappdBeerId],
+	);
+	return rows[0];
 }
 
-export async function listBeers(db: Kysely<UntappdDatabase>, limit = 100) {
-	return db.selectFrom("beers").selectAll().orderBy("name").limit(limit).execute();
+export async function listBeers(limit = 100): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_beers ORDER BY name LIMIT ?",
+		[limit],
+	);
+	return rows;
 }
 
 // ── Users ──────────────────────────────────────────────────────
 
-export async function createUser(db: Kysely<UntappdDatabase>, params: CreateUserParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("users")
-		.values({
-			username: params.username,
-			display_name: params.displayName || null,
-			rss_url: params.rssUrl,
-			url: params.url || null,
-			created_at: now,
-			updated_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createUser(params: CreateUserParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_users
+		 (username, display_name, rss_url, url, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		[
+			params.username,
+			params.displayName || null,
+			params.rssUrl,
+			params.url || null,
+			ts,
+			ts,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getUserById(db: Kysely<UntappdDatabase>, id: number) {
-	return db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirst();
+export async function getUserById(id: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_users WHERE id = ?",
+		[id],
+	);
+	return rows[0];
 }
 
-export async function getUserByUsername(db: Kysely<UntappdDatabase>, username: string) {
-	return db.selectFrom("users").selectAll().where("username", "=", username).executeTakeFirst();
+export async function getUserByUsername(username: string): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_users WHERE username = ?",
+		[username],
+	);
+	return rows[0];
 }
 
-export async function listUsers(db: Kysely<UntappdDatabase>) {
-	return db.selectFrom("users").selectAll().orderBy("username").execute();
+export async function listUsers(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_users ORDER BY username",
+	);
+	return rows;
 }
 
 // ── RSS Sources ────────────────────────────────────────────────
 
-export async function createRSSSource(db: Kysely<UntappdDatabase>, params: CreateRSSSourceParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("rss_sources")
-		.values({
-			type: params.type,
-			foreign_id: params.foreignId,
-			rss_url: params.rssUrl,
-			poll_interval_minutes: params.pollIntervalMinutes || 15,
-			last_polled_at: null,
-			enabled: params.enabled === false ? 0 : 1,
-			created_at: now,
-			updated_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createRSSSource(params: CreateRSSSourceParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_rss_sources
+		 (type, foreign_id, rss_url, poll_interval_minutes, last_polled_at, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.type,
+			params.foreignId,
+			params.rssUrl,
+			params.pollIntervalMinutes || 15,
+			null,
+			params.enabled === false ? 0 : 1,
+			ts,
+			ts,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getRSSSourceById(db: Kysely<UntappdDatabase>, id: number) {
-	return db.selectFrom("rss_sources").selectAll().where("id", "=", id).executeTakeFirst();
+export async function getRSSSourceById(id: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_rss_sources WHERE id = ?",
+		[id],
+	);
+	return rows[0];
 }
 
-export async function listRSSSources(db: Kysely<UntappdDatabase>) {
-	return db.selectFrom("rss_sources").selectAll().orderBy("id").execute();
+export async function listRSSSources(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_rss_sources ORDER BY id",
+	);
+	return rows;
 }
 
-export async function getEnabledRSSSources(db: Kysely<UntappdDatabase>) {
-	return db.selectFrom("rss_sources").selectAll().where("enabled", "=", 1).execute();
+export async function getEnabledRSSSources(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_rss_sources WHERE enabled = 1",
+	);
+	return rows;
 }
 
-export async function updateRSSSourcePolled(db: Kysely<UntappdDatabase>, id: number) {
-	const now = new Date().toISOString();
-	await db
-		.updateTable("rss_sources")
-		.set({ last_polled_at: now, updated_at: now })
-		.where("id", "=", id)
-		.execute();
+export async function updateRSSSourcePolled(id: number): Promise<void> {
+	const ts = now();
+	await query(
+		"UPDATE untappd_rss_sources SET last_polled_at = ?, updated_at = ? WHERE id = ?",
+		[ts, ts, id],
+	);
 }
 
-export async function toggleRSSSource(db: Kysely<UntappdDatabase>, id: number, enabled: boolean) {
-	const now = new Date().toISOString();
-	await db
-		.updateTable("rss_sources")
-		.set({ enabled: enabled ? 1 : 0, updated_at: now })
-		.where("id", "=", id)
-		.execute();
+export async function toggleRSSSource(id: number, enabled: boolean): Promise<void> {
+	const ts = now();
+	await query(
+		"UPDATE untappd_rss_sources SET enabled = ?, updated_at = ? WHERE id = ?",
+		[enabled ? 1 : 0, ts, id],
+	);
 }
 
 // ── Activity Events ────────────────────────────────────────────
 
-export async function createActivityEvent(db: Kysely<UntappdDatabase>, params: CreateActivityEventParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("activity_events")
-		.values({
-			rss_source_id: params.rssSourceId,
-			event_type: params.eventType,
-			untappd_checkin_id: params.untappdCheckinId || null,
-			untappd_beer_id: params.untappdBeerId || null,
-			beer_id: params.beerId || null,
-			venue_id: params.venueId || null,
-			user_id: params.userId || null,
-			user_username: params.userUsername || null,
-			beer_name: params.beerName,
-			venue_untappd_id: params.venueUntappdId || null,
-			payload_raw: params.payloadRaw,
-			occurred_at: params.occurredAt,
-			created_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createActivityEvent(params: CreateActivityEventParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_activity_events
+		 (rss_source_id, event_type, untappd_checkin_id, untappd_beer_id, beer_id,
+		  venue_id, user_id, user_username, beer_name, venue_untappd_id,
+		  payload_raw, occurred_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.rssSourceId,
+			params.eventType,
+			params.untappdCheckinId || null,
+			params.untappdBeerId || null,
+			params.beerId ?? null,
+			params.venueId ?? null,
+			params.userId ?? null,
+			params.userUsername || null,
+			params.beerName,
+			params.venueUntappdId || null,
+			params.payloadRaw,
+			params.occurredAt,
+			ts,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getActivityEventByCheckinId(db: Kysely<UntappdDatabase>, checkinId: string) {
-	return db.selectFrom("activity_events").selectAll().where("untappd_checkin_id", "=", checkinId).executeTakeFirst();
+export async function getActivityEventByCheckinId(checkinId: string): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_activity_events WHERE untappd_checkin_id = ?",
+		[checkinId],
+	);
+	return rows[0];
 }
 
-export async function listActivityEvents(db: Kysely<UntappdDatabase>, limit = 50) {
-	return db.selectFrom("activity_events").selectAll().orderBy("occurred_at", "desc").limit(limit).execute();
+export async function listActivityEvents(limit = 50): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_activity_events ORDER BY occurred_at DESC LIMIT ?",
+		[limit],
+	);
+	return rows;
 }
 
-export async function listActivityEventsBySource(db: Kysely<UntappdDatabase>, rssSourceId: number, limit = 50) {
-	return db
-		.selectFrom("activity_events")
-		.selectAll()
-		.where("rss_source_id", "=", rssSourceId)
-		.orderBy("occurred_at", "desc")
-		.limit(limit)
-		.execute();
+export async function listActivityEventsBySource(rssSourceId: number, limit = 50): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_activity_events WHERE rss_source_id = ? ORDER BY occurred_at DESC LIMIT ?",
+		[rssSourceId, limit],
+	);
+	return rows;
 }
 
 // ── Venue Menus ────────────────────────────────────────────────
 
-export async function createVenueMenu(db: Kysely<UntappdDatabase>, venueId: number, name: string, sourceTag: string | null) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("venue_menus")
-		.values({
-			venue_id: venueId,
-			name,
-			source_tag: sourceTag,
-			created_at: now,
-			updated_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createVenueMenu(venueId: number, name: string, sourceTag: string | null): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_venue_menus
+		 (venue_id, name, source_tag, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		[venueId, name, sourceTag, ts, ts],
+	);
+	return Number(insertId);
 }
 
-export async function getVenueMenusByVenueId(db: Kysely<UntappdDatabase>, venueId: number) {
-	return db.selectFrom("venue_menus").selectAll().where("venue_id", "=", venueId).execute();
+export async function getVenueMenusByVenueId(venueId: number): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_venue_menus WHERE venue_id = ?",
+		[venueId],
+	);
+	return rows;
 }
 
 // ── Menu Items ─────────────────────────────────────────────────
 
-export async function createMenuItem(db: Kysely<UntappdDatabase>, params: CreateMenuItemParams) {
-	const now = new Date().toISOString();
-	const result = await db
-		.insertInto("menu_items")
-		.values({
-			venue_menu_id: params.venueMenuId,
-			beer_id: params.beerId,
-			display_name: params.displayName,
-			price_text: params.priceText || null,
-			section_order: params.sectionOrder,
-			active_confidence: params.activeConfidence || 1.0,
-			last_seen_at: now,
-			created_at: now,
-			updated_at: now,
-		})
-		.returning("id")
-		.executeTakeFirstOrThrow();
-	
-	return result.id;
+export async function createMenuItem(params: CreateMenuItemParams): Promise<number> {
+	const ts = now();
+	const { insertId } = await query(
+		`INSERT INTO untappd_menu_items
+		 (venue_menu_id, beer_id, display_name, price_text, section_order,
+		  active_confidence, last_seen_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			params.venueMenuId,
+			params.beerId,
+			params.displayName,
+			params.priceText || null,
+			params.sectionOrder,
+			params.activeConfidence ?? 1.0,
+			ts,
+			ts,
+			ts,
+		],
+	);
+	return Number(insertId);
 }
 
-export async function getMenuItemsByMenuId(db: Kysely<UntappdDatabase>, venueMenuId: number) {
-	return db
-		.selectFrom("menu_items")
-		.selectAll()
-		.where("venue_menu_id", "=", venueMenuId)
-		.orderBy("section_order")
-		.execute();
+export async function getMenuItemsByMenuId(venueMenuId: number): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_menu_items WHERE venue_menu_id = ? ORDER BY section_order",
+		[venueMenuId],
+	);
+	return rows;
 }
 
-export async function updateMenuItemLastSeen(db: Kysely<UntappdDatabase>, id: number) {
-	const now = new Date().toISOString();
-	await db
-		.updateTable("menu_items")
-		.set({ last_seen_at: now, active_confidence: 1.0, updated_at: now })
-		.where("id", "=", id)
-		.execute();
+export async function updateMenuItemLastSeen(id: number): Promise<void> {
+	const ts = now();
+	await query(
+		"UPDATE untappd_menu_items SET last_seen_at = ?, active_confidence = 1.0, updated_at = ? WHERE id = ?",
+		[ts, ts, id],
+	);
 }
 
-export async function decayMenuItemConfidence(db: Kysely<UntappdDatabase>, id: number, decayAmount: number) {
-	const now = new Date().toISOString();
-	await db
-		.updateTable("menu_items")
-		.set((eb) => ({
-			active_confidence: eb("active_confidence", "-", decayAmount),
-			updated_at: now,
-		}))
-		.where("id", "=", id)
-		.execute();
+export async function getAllMenuItems(): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_menu_items",
+	);
+	return rows;
+}
+
+export async function updateMenuItemConfidence(id: number, newConfidence: number): Promise<void> {
+	const ts = now();
+	await query(
+		"UPDATE untappd_menu_items SET active_confidence = ?, updated_at = ? WHERE id = ?",
+		[newConfidence, ts, id],
+	);
 }

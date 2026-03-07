@@ -9,14 +9,14 @@
  *   - JSON API under /api/untappd/ for integrations
  *
  * Integration:
- *   - pi-kysely: database schema and migrations
+ *   - pi-kysely: database schema via event bus (no direct imports)
  *   - pi-webserver: web UI and JSON API routes
  *   - pi-cron: scheduled RSS polling
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
-import { registerSchema } from "./schema.ts";
+import { initDb } from "./db/init.ts";
 import { mountWebRoutes, unmountWebRoutes } from "./web/index.ts";
 import { setupCronJobs } from "./cron.ts";
 
@@ -26,9 +26,9 @@ export default function (pi: ExtensionAPI) {
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Register database schema with pi-kysely
-		await registerSchema(pi, log);
-		
+		// Initialize database schema via pi-kysely event bus
+		await initDb(pi.events);
+
 		// Mount web routes when webserver is ready
 		const mountWeb = () => {
 			mountWebRoutes(pi.events, log);
@@ -36,7 +36,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Try mounting immediately if webserver is already running
 		mountWeb();
-		
+
 		// Also mount when webserver starts
 		pi.events.on("web:ready", mountWeb);
 

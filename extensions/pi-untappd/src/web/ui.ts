@@ -1,22 +1,25 @@
 /**
  * Web UI for pi-untappd.
+ *
+ * All DB access via operations module (event bus, no direct kysely).
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LogFn } from "../logger.ts";
 import * as url from "node:url";
+import * as ops from "../db/operations.ts";
 
 export async function handleUIRequest(
 	req: IncomingMessage,
 	res: ServerResponse,
 	path: string,
-	log: LogFn
+	log: LogFn,
 ): Promise<void> {
 	const parsedUrl = url.parse(path, true);
 	const pathname = parsedUrl.pathname || "/";
-	
+
 	log("ui_request", { path: pathname });
-	
+
 	// Helper to render HTML
 	const renderHTML = (title: string, content: string) => {
 		return `
@@ -71,20 +74,19 @@ export async function handleUIRequest(
 </html>
 		`;
 	};
-	
+
 	try {
 		// Dashboard
 		if (pathname === "/" || pathname === "") {
-			const ops = await import("../db/operations.ts");
-			const db = await getDB();
-			
-			const venues = await ops.listVenues(db);
-			const users = await ops.listUsers(db);
-			const breweries = await ops.listBreweries(db);
-			const beers = await ops.listBeers(db, 10);
-			const sources = await ops.listRSSSources(db);
-			const events = await ops.listActivityEvents(db, 10);
-			
+			const venues = await ops.listVenues();
+			const users = await ops.listUsers();
+			const breweries = await ops.listBreweries();
+			const beers = await ops.listBeers(10);
+			const sources = await ops.listRSSSources();
+			const events = await ops.listActivityEvents(10);
+
+			const activeSources = sources.filter((s) => s.enabled);
+
 			const content = `
 				<h1>Untappd Monitor Dashboard</h1>
 				<div class="stats">
@@ -105,11 +107,11 @@ export async function handleUIRequest(
 						<div class="stat-label">Beers</div>
 					</div>
 					<div class="stat">
-						<div class="stat-value">${sources.filter(s => s.enabled).length}</div>
+						<div class="stat-value">${activeSources.length}</div>
 						<div class="stat-label">Active RSS Sources</div>
 					</div>
 				</div>
-				
+
 				<div class="card">
 					<h2>Recent Activity</h2>
 					${events.length > 0 ? `
@@ -123,9 +125,9 @@ export async function handleUIRequest(
 								</tr>
 							</thead>
 							<tbody>
-								${events.map(e => `
+								${events.map((e) => `
 									<tr>
-										<td>${new Date(e.occurred_at).toLocaleString()}</td>
+										<td>${new Date(e.occurred_at as string).toLocaleString()}</td>
 										<td>${e.user_username || "-"}</td>
 										<td>${e.beer_name}</td>
 										<td>${e.event_type}</td>
@@ -135,7 +137,7 @@ export async function handleUIRequest(
 						</table>
 					` : "<p>No recent activity</p>"}
 				</div>
-				
+
 				<div class="card">
 					<h2>Quick Actions</h2>
 					<a href="/untappd/venues/add" class="btn">Add Venue</a>
@@ -143,18 +145,16 @@ export async function handleUIRequest(
 					<a href="/untappd/breweries/add" class="btn">Add Brewery</a>
 				</div>
 			`;
-			
+
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(renderHTML("Dashboard", content));
 			return;
 		}
-		
+
 		// Venues list
 		if (pathname === "/venues") {
-			const ops = await import("../db/operations.ts");
-			const db = await getDB();
-			const venues = await ops.listVenues(db);
-			
+			const venues = await ops.listVenues();
+
 			const content = `
 				<h1>Venues</h1>
 				<div class="card">
@@ -173,12 +173,12 @@ export async function handleUIRequest(
 								</tr>
 							</thead>
 							<tbody>
-								${venues.map(v => `
+								${venues.map((v) => `
 									<tr>
 										<td><a href="/untappd/venues/${v.id}">${v.name}</a></td>
 										<td>${v.city || "-"}</td>
 										<td>${v.country || "-"}</td>
-										<td>${v.last_menu_scraped_at ? new Date(v.last_menu_scraped_at).toLocaleString() : "Never"}</td>
+										<td>${v.last_menu_scraped_at ? new Date(v.last_menu_scraped_at as string).toLocaleString() : "Never"}</td>
 										<td>
 											<a href="/untappd/venues/${v.id}" class="btn btn-secondary">View</a>
 										</td>
@@ -189,12 +189,12 @@ export async function handleUIRequest(
 					` : "<p>No venues yet. <a href='/untappd/venues/add'>Add your first venue</a></p>"}
 				</div>
 			`;
-			
+
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(renderHTML("Venues", content));
 			return;
 		}
-		
+
 		// Add venue form
 		if (pathname === "/venues/add") {
 			const content = `
@@ -203,27 +203,27 @@ export async function handleUIRequest(
 					<form action="/api/untappd/venues" method="POST" onsubmit="handleSubmit(event, this)">
 						<label for="url">Untappd Venue URL *</label>
 						<input type="url" id="url" name="url" placeholder="https://untappd.com/v/venue-name/123456" required>
-						
+
 						<label for="name">Custom Name (optional)</label>
 						<input type="text" id="name" name="name" placeholder="Leave empty to auto-detect">
-						
+
 						<button type="submit" class="btn">Add Venue</button>
 						<a href="/untappd/venues" class="btn btn-secondary">Cancel</a>
 					</form>
 				</div>
-				
+
 				<script>
 					async function handleSubmit(e, form) {
 						e.preventDefault();
 						const formData = new FormData(form);
 						const data = Object.fromEntries(formData);
-						
+
 						const res = await fetch('/api/untappd/venues', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify(data)
 						});
-						
+
 						if (res.ok) {
 							window.location.href = '/untappd/venues';
 						} else {
@@ -233,17 +233,17 @@ export async function handleUIRequest(
 					}
 				</script>
 			`;
-			
+
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(renderHTML("Add Venue", content));
 			return;
 		}
-		
+
 		// Tools page
 		if (pathname === "/tools") {
 			const content = `
 				<h1>Lookup Tools</h1>
-				
+
 				<div class="card">
 					<h2>Lookup Venue</h2>
 					<form onsubmit="lookupVenue(event, this)">
@@ -253,7 +253,7 @@ export async function handleUIRequest(
 					</form>
 					<div id="venue-result"></div>
 				</div>
-				
+
 				<div class="card">
 					<h2>Lookup User</h2>
 					<form onsubmit="lookupUser(event, this)">
@@ -263,43 +263,43 @@ export async function handleUIRequest(
 					</form>
 					<div id="user-result"></div>
 				</div>
-				
+
 				<script>
 					async function lookupVenue(e, form) {
 						e.preventDefault();
 						const formData = new FormData(form);
 						const data = Object.fromEntries(formData);
-						
+
 						const res = await fetch('/api/untappd/tools/lookup-venue', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify(data)
 						});
-						
+
 						const result = await res.json();
 						const div = document.getElementById('venue-result');
-						
+
 						if (result.ok) {
 							div.innerHTML = '<pre>' + JSON.stringify(result.data, null, 2) + '</pre>';
 						} else {
 							div.innerHTML = '<p style="color: red;">Error: ' + result.error + '</p>';
 						}
 					}
-					
+
 					async function lookupUser(e, form) {
 						e.preventDefault();
 						const formData = new FormData(form);
 						const data = Object.fromEntries(formData);
-						
+
 						const res = await fetch('/api/untappd/tools/lookup-user', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify(data)
 						});
-						
+
 						const result = await res.json();
 						const div = document.getElementById('user-result');
-						
+
 						if (result.ok) {
 							div.innerHTML = '<pre>' + JSON.stringify(result.data, null, 2) + '</pre>';
 						} else {
@@ -308,12 +308,12 @@ export async function handleUIRequest(
 					}
 				</script>
 			`;
-			
+
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(renderHTML("Tools", content));
 			return;
 		}
-		
+
 		// 404
 		res.writeHead(404, { "Content-Type": "text/html" });
 		res.end(renderHTML("Not Found", "<h1>404 - Page Not Found</h1>"));
@@ -322,10 +322,4 @@ export async function handleUIRequest(
 		res.writeHead(500, { "Content-Type": "text/html" });
 		res.end(renderHTML("Error", `<h1>Error</h1><p>${err.message}</p>`));
 	}
-}
-
-// Helper to get database (placeholder)
-async function getDB(): Promise<any> {
-	// This should be replaced with proper kysely registry access
-	throw new Error("Database access not implemented");
 }

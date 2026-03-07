@@ -2,7 +2,7 @@
  * Web interface and API for pi-untappd.
  */
 
-import type { EventEmitter } from "node:events";
+import type { EventBus } from "@mariozechner/pi-coding-agent";
 import type { LogFn } from "../logger.ts";
 import * as http from "node:http";
 
@@ -14,7 +14,7 @@ type RouteHandler = (
 
 let mounted = false;
 
-export function mountWebRoutes(events: EventEmitter, log: LogFn): void {
+export function mountWebRoutes(events: EventBus, log: LogFn): void {
 	if (mounted) return;
 	mounted = true;
 	
@@ -39,7 +39,7 @@ export function mountWebRoutes(events: EventEmitter, log: LogFn): void {
 	});
 }
 
-export function unmountWebRoutes(events: EventEmitter): void {
+export function unmountWebRoutes(events: EventBus): void {
 	if (!mounted) return;
 	mounted = false;
 	

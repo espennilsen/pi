@@ -7,8 +7,17 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LogFn } from "../logger.ts";
-import * as url from "node:url";
 import * as ops from "../db/operations.ts";
+
+/** Validate that an RSS URL points to untappd.com to prevent SSRF. */
+function isAllowedRSSUrl(rssUrl: string): boolean {
+	try {
+		const parsed = new URL(rssUrl);
+		return parsed.protocol === "https:" && parsed.hostname.endsWith("untappd.com");
+	} catch {
+		return false;
+	}
+}
 
 interface APIResponse {
 	ok: boolean;
@@ -23,7 +32,7 @@ export async function handleAPIRequest(
 	log: LogFn,
 ): Promise<void> {
 	const method = req.method || "GET";
-	const parsedUrl = url.parse(path, true);
+	const parsedUrl = new URL(path, "http://localhost");
 	const pathname = parsedUrl.pathname || "/";
 
 	log("api_request", { method, path: pathname });
@@ -196,6 +205,10 @@ export async function handleAPIRequest(
 
 			if (!username || !rssUrl) {
 				return sendJSON(400, { ok: false, error: "username and rssUrl are required" });
+			}
+
+			if (!isAllowedRSSUrl(rssUrl)) {
+				return sendJSON(400, { ok: false, error: "rssUrl must be an https://untappd.com/rss/ URL" });
 			}
 
 			const existing = await ops.getUserByUsername(username);

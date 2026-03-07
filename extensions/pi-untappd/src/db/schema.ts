@@ -120,7 +120,7 @@ export const SCHEMA = {
 				id: { type: "integer" as const, primaryKey: true, autoIncrement: true },
 				rss_source_id: { type: "integer" as const, notNull: true },
 				event_type: { type: "text" as const, notNull: true },
-				untappd_checkin_id: { type: "text" as const },
+				untappd_checkin_id: { type: "text" as const, unique: true },
 				untappd_beer_id: { type: "text" as const },
 				beer_id: { type: "integer" as const },
 				venue_id: { type: "integer" as const },

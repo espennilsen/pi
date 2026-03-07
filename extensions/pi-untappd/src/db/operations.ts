@@ -436,6 +436,10 @@ export async function updateMenuItemLastSeen(id: number): Promise<void> {
 	);
 }
 
+/**
+ * Fetch all menu items for decay processing.
+ * Expected scale: hundreds to low thousands (personal venue tracking).
+ */
 export async function getAllMenuItems(): Promise<Record<string, unknown>[]> {
 	const { rows } = await query(
 		"SELECT * FROM untappd_menu_items",

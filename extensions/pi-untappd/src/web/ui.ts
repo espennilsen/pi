@@ -6,7 +6,6 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LogFn } from "../logger.ts";
-import * as url from "node:url";
 import * as ops from "../db/operations.ts";
 
 /** Escape HTML special characters in DB-derived values. */
@@ -18,7 +17,7 @@ export async function handleUIRequest(
 	path: string,
 	log: LogFn,
 ): Promise<void> {
-	const parsedUrl = url.parse(path, true);
+	const parsedUrl = new URL(path, "http://localhost");
 	const pathname = parsedUrl.pathname || "/";
 
 	log("ui_request", { path: pathname });

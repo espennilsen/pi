@@ -48,7 +48,11 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 	});
 }
 
-/** Returns the detected SQL dialect. */
+/**
+ * Returns the detected SQL dialect.
+ * NOTE: Only SQLite is supported in v1. Multi-dialect scaffold kept
+ * for future use but no query in operations.ts adapts its SQL syntax.
+ */
 export function getDriver(): Driver {
 	return driver;
 }

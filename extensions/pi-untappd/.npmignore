@@ -1,0 +1,5 @@
+*.db
+*.db-*
+.DS_Store
+*.log
+tsconfig.json

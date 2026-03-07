@@ -1,0 +1,53 @@
+/**
+ * pi-untappd — Untappd venue, user, and brewery monitoring extension.
+ *
+ * Provides:
+ *   - Manual HTML scraping of venues, breweries, and users
+ *   - Automated RSS polling for check-ins and activity
+ *   - Normalized beer database with venue-specific prices
+ *   - Web UI for managing sources and viewing data
+ *   - JSON API under /api/untappd/ for integrations
+ *
+ * Integration:
+ *   - pi-kysely: database schema and migrations
+ *   - pi-webserver: web UI and JSON API routes
+ *   - pi-cron: scheduled RSS polling
+ */
+
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createLogger } from "./logger.ts";
+import { registerSchema } from "./schema.ts";
+import { mountWebRoutes, unmountWebRoutes } from "./web/index.ts";
+import { setupCronJobs } from "./cron.ts";
+
+export default function (pi: ExtensionAPI) {
+	const log = createLogger(pi);
+
+	// ── Lifecycle ─────────────────────────────────────────────
+
+	pi.on("session_start", async (_event, ctx) => {
+		// Register database schema with pi-kysely
+		await registerSchema(pi, log);
+		
+		// Mount web routes when webserver is ready
+		const mountWeb = () => {
+			mountWebRoutes(pi.events, log);
+		};
+
+		// Try mounting immediately if webserver is already running
+		mountWeb();
+		
+		// Also mount when webserver starts
+		pi.events.on("web:ready", mountWeb);
+
+		// Setup cron jobs if cron extension is available
+		setupCronJobs(pi, log);
+
+		log("ready", { cwd: ctx.cwd });
+	});
+
+	pi.on("session_shutdown", async () => {
+		unmountWebRoutes(pi.events);
+		log("shutdown", {});
+	});
+}

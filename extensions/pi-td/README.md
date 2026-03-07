@@ -37,11 +37,12 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | Action | Required params | Description |
 |--------|----------------|-------------|
 | `status` | — | Current session and task summary |
-| `list` | — | List open issues (filterable by type/priority/status) |
+| `list` | — | List open issues (filterable by type/priority/status/labels/epic) |
 | `show` | `id` | Show full issue detail |
 | `ready` | — | Issues ready to start |
 | `next` | — | Best next issue to work on |
 | `reviewable` | — | Issues awaiting review |
+| `search` | `query` | Full-text search across issues |
 
 ### Lifecycle actions
 
@@ -51,10 +52,24 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `start` | `id` | Mark in-progress |
 | `log` | `message` | Add a progress log entry (`log_type`: progress/blocker/decision/hypothesis/tried/result) |
 | `handoff` | `id` | Record handoff (`done`, `remaining`, `decisions`, `uncertain`) |
-| `review` | `id` | Submit for review |
-| `approve` | `id` | Approve and close |
-| `reject` | `id`, `reason` | Reject with reason |
-| `close` | `id` | Close task |
+| `review` | `id` | Submit for review (`minor` to allow self-review) |
+| `approve` | `id` | Approve and close (auto-creates review session if needed) |
+| `reject` | `id` | Reject with optional `reason` (auto-creates review session if needed) |
+| `close` | `id` | Close task (`self_close: true` to close own work) |
+
+### Modify actions
+
+| Action | Required params | Description |
+|--------|----------------|-------------|
+| `update` | `id` | Update task fields (`title`, `type`, `priority`, `description`, `labels`, `parent`) |
+| `delete` | `id` | Soft-delete an issue |
+
+### Focus actions
+
+| Action | Required params | Description |
+|--------|----------------|-------------|
+| `focus` | `id` | Set current working issue (without starting) |
+| `unfocus` | — | Clear focus |
 
 ### Other actions
 
@@ -65,14 +80,39 @@ Add to `~/.pi/agent/settings.json` or `.pi/settings.json`:
 | `reopen` | `id` | Reopen a closed issue |
 | `comment` | `id`, `message` | Add a comment |
 
+### List/search filters
+
+| Parameter | Description |
+|-----------|-------------|
+| `show_all` | Include closed issues |
+| `filter_type` | Filter by issue type |
+| `filter_priority` | Filter by priority |
+| `filter_status` | Filter by status |
+| `filter_labels` | Filter by labels (comma-separated) |
+| `filter_mine` | Show only issues assigned to current session |
+| `filter_epic` | Filter by parent epic ID |
+| `sort` | Sort by field (e.g. priority, created, updated) |
+| `limit` | Max number of results |
+| `query` | Search text (for `search` action, or `--search` filter for `list`) |
+
 ## Web UI
 
 Enable `webui: true` in settings, start the web server with `/web`, then open `http://localhost:4100/tasks`.
 
 ## Requirements
 
-- `td` CLI in `$PATH`
+- [`td` CLI](https://github.com/marcus/td) in `$PATH` — a local-first task management CLI for AI-assisted development workflows
 - [`pi-webserver`](../pi-webserver) extension (only needed for web UI)
+
+### Installing td
+
+```bash
+# With Go installed:
+go install github.com/marcus/td@latest
+
+# Verify:
+td --version
+```
 
 ## Install
 

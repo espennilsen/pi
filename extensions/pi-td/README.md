@@ -71,8 +71,18 @@ Enable `webui: true` in settings, start the web server with `/web`, then open `h
 
 ## Requirements
 
-- `td` CLI in `$PATH`
+- [`td` CLI](https://github.com/marcus/td) in `$PATH` — a local-first task management CLI for AI-assisted development workflows
 - [`pi-webserver`](../pi-webserver) extension (only needed for web UI)
+
+### Installing td
+
+```bash
+# With Go installed:
+go install github.com/marcus/td@latest
+
+# Verify:
+td --version
+```
 
 ## Install
 

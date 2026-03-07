@@ -5,7 +5,7 @@
  * which merges global (~/.pi/agent/settings.json) and project
  * (.pi/settings.json) configs automatically.
  *
- * Environment variable overrides (checked first, before settings.json):
+ * Environment variable overrides (highest priority, override settings.json):
  *   - TELEGRAM_BOT_TOKEN → adapters.telegram.botToken
  *   - WEBHOOK_SECRET     → adapters.webhook.secret
  *
@@ -71,7 +71,7 @@ export function loadConfig(cwd: string): ChannelConfig {
 /**
  * Apply environment variable overrides to the merged config.
  *
- * Checked before settings.json — if the env var is set, it wins.
+ * Env vars take highest priority, overriding any value from settings.json.
  *
  *   TELEGRAM_BOT_TOKEN → adapters.telegram.botToken
  *   WEBHOOK_SECRET     → adapters.webhook.secret

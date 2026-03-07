@@ -241,6 +241,281 @@ export async function handleUIRequest(
 			return;
 		}
 
+		// Venue detail
+		if (pathname.match(/^\/venues\/\d+$/)) {
+			const id = parseInt(pathname.split("/")[2]);
+			const venue = await ops.getVenueById(id);
+
+			if (!venue) {
+				res.writeHead(404, { "Content-Type": "text/html" });
+				res.end(renderHTML("Not Found", "<h1>404 — Venue not found</h1>"));
+				return;
+			}
+
+			const menus = await ops.getVenueMenusByVenueId(id);
+			const events = await ops.listActivityEventsByVenue(id, 20);
+
+			const content = `
+				<h1>${esc(venue.name)}</h1>
+				<div class="card">
+					<table>
+						<tr><th>Untappd ID</th><td>${esc(venue.untappd_venue_id || "—")}</td></tr>
+						<tr><th>Slug</th><td>${esc(venue.slug || "—")}</td></tr>
+						<tr><th>City</th><td>${esc(venue.city || "—")}</td></tr>
+						<tr><th>Country</th><td>${esc(venue.country || "—")}</td></tr>
+						<tr><th>URL</th><td><a href="${esc(venue.url)}" target="_blank">${esc(venue.url)}</a></td></tr>
+						<tr><th>Last Scraped</th><td>${venue.last_menu_scraped_at ? esc(new Date(venue.last_menu_scraped_at as string).toLocaleString()) : "Never"}</td></tr>
+					</table>
+				</div>
+
+				<div class="card">
+					<h2>Menus (${menus.length})</h2>
+					${menus.length > 0 ? menus.map((m) => `<p>${esc(m.name)} <small>(${esc(m.source_tag || "manual")})</small></p>`).join("") : "<p>No menus yet.</p>"}
+				</div>
+
+				<div class="card">
+					<h2>Recent Activity</h2>
+					${events.length > 0 ? `
+						<table>
+							<thead><tr><th>Time</th><th>User</th><th>Beer</th></tr></thead>
+							<tbody>
+								${events.map((e) => `
+									<tr>
+										<td>${esc(new Date(e.occurred_at as string).toLocaleString())}</td>
+										<td>${esc(e.user_username || "—")}</td>
+										<td>${esc(e.beer_name)}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					` : "<p>No activity yet.</p>"}
+				</div>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML(venue.name as string, content));
+			return;
+		}
+
+		// Users list
+		if (pathname === "/users") {
+			const users = await ops.listUsers();
+
+			const content = `
+				<h1>Users</h1>
+				<div class="card">
+					<a href="/untappd/users/add" class="btn">Add User</a>
+				</div>
+				<div class="card">
+					${users.length > 0 ? `
+						<table>
+							<thead><tr><th>Username</th><th>Display Name</th><th>RSS URL</th></tr></thead>
+							<tbody>
+								${users.map((u) => `
+									<tr>
+										<td>${esc(u.username)}</td>
+										<td>${esc(u.display_name || "—")}</td>
+										<td><small>${esc(u.rss_url)}</small></td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					` : "<p>No users yet. <a href='/untappd/users/add'>Add your first user</a></p>"}
+				</div>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("Users", content));
+			return;
+		}
+
+		// Add user form
+		if (pathname === "/users/add") {
+			const content = `
+				<h1>Add User</h1>
+				<div class="card">
+					<form action="/api/untappd/users" method="POST" onsubmit="handleSubmit(event, this)">
+						<label for="username">Username *</label>
+						<input type="text" id="username" name="username" placeholder="espennilsen" required>
+
+						<label for="rssUrl">RSS URL *</label>
+						<input type="url" id="rssUrl" name="rssUrl" placeholder="https://untappd.com/rss/user/espennilsen" required>
+
+						<label for="profileUrl">Profile URL (optional)</label>
+						<input type="url" id="profileUrl" name="profileUrl" placeholder="https://untappd.com/user/espennilsen">
+
+						<label for="displayName">Display Name (optional)</label>
+						<input type="text" id="displayName" name="displayName">
+
+						<button type="submit" class="btn">Add User</button>
+						<a href="/untappd/users" class="btn btn-secondary">Cancel</a>
+					</form>
+				</div>
+
+				<script>
+					async function handleSubmit(e, form) {
+						e.preventDefault();
+						const formData = new FormData(form);
+						const data = Object.fromEntries(formData);
+
+						const res = await fetch('/api/untappd/users', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(data)
+						});
+
+						if (res.ok) {
+							window.location.href = '/untappd/users';
+						} else {
+							const err = await res.json();
+							alert('Error: ' + err.error);
+						}
+					}
+				</script>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("Add User", content));
+			return;
+		}
+
+		// Breweries list
+		if (pathname === "/breweries") {
+			const breweries = await ops.listBreweries();
+
+			const content = `
+				<h1>Breweries</h1>
+				<div class="card">
+					<a href="/untappd/breweries/add" class="btn">Add Brewery</a>
+				</div>
+				<div class="card">
+					${breweries.length > 0 ? `
+						<table>
+							<thead><tr><th>Name</th><th>Slug</th><th>URL</th></tr></thead>
+							<tbody>
+								${breweries.map((b) => `
+									<tr>
+										<td>${esc(b.name)}</td>
+										<td>${esc(b.slug)}</td>
+										<td><a href="${esc(b.url)}" target="_blank">View on Untappd</a></td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					` : "<p>No breweries yet. <a href='/untappd/breweries/add'>Add your first brewery</a></p>"}
+				</div>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("Breweries", content));
+			return;
+		}
+
+		// Add brewery form
+		if (pathname === "/breweries/add") {
+			const content = `
+				<h1>Add Brewery</h1>
+				<div class="card">
+					<form action="/api/untappd/breweries" method="POST" onsubmit="handleSubmit(event, this)">
+						<label for="url">Untappd Brewery URL *</label>
+						<input type="url" id="url" name="url" placeholder="https://untappd.com/w/brewery-name/123456" required>
+
+						<label for="name">Name *</label>
+						<input type="text" id="name" name="name" placeholder="Brewery name" required>
+
+						<button type="submit" class="btn">Add Brewery</button>
+						<a href="/untappd/breweries" class="btn btn-secondary">Cancel</a>
+					</form>
+				</div>
+
+				<script>
+					async function handleSubmit(e, form) {
+						e.preventDefault();
+						const formData = new FormData(form);
+						const data = Object.fromEntries(formData);
+
+						const res = await fetch('/api/untappd/breweries', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(data)
+						});
+
+						if (res.ok) {
+							window.location.href = '/untappd/breweries';
+						} else {
+							const err = await res.json();
+							alert('Error: ' + err.error);
+						}
+					}
+				</script>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("Add Brewery", content));
+			return;
+		}
+
+		// Beers list
+		if (pathname === "/beers") {
+			const beers = await ops.listBeers(200);
+
+			const content = `
+				<h1>Beers</h1>
+				<div class="card">
+					${beers.length > 0 ? `
+						<table>
+							<thead><tr><th>Name</th><th>Style</th><th>ABV</th><th>IBU</th></tr></thead>
+							<tbody>
+								${beers.map((b) => `
+									<tr>
+										<td>${esc(b.name)}</td>
+										<td>${esc(b.style || "—")}</td>
+										<td>${b.abv != null ? esc(b.abv) + "%" : "—"}</td>
+										<td>${esc(b.ibu ?? "—")}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					` : "<p>No beers tracked yet. Beers are added automatically from RSS activity.</p>"}
+				</div>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("Beers", content));
+			return;
+		}
+
+		// RSS Sources list
+		if (pathname === "/rss-sources") {
+			const sources = await ops.listRSSSources();
+
+			const content = `
+				<h1>RSS Sources</h1>
+				<div class="card">
+					${sources.length > 0 ? `
+						<table>
+							<thead><tr><th>Type</th><th>RSS URL</th><th>Interval</th><th>Enabled</th><th>Last Polled</th></tr></thead>
+							<tbody>
+								${sources.map((s) => `
+									<tr>
+										<td>${esc(s.type)}</td>
+										<td><small>${esc(s.rss_url)}</small></td>
+										<td>${esc(s.poll_interval_minutes)}m</td>
+										<td>${s.enabled ? "✅" : "❌"}</td>
+										<td>${s.last_polled_at ? esc(new Date(s.last_polled_at as string).toLocaleString()) : "Never"}</td>
+									</tr>
+								`).join("")}
+							</tbody>
+						</table>
+					` : "<p>No RSS sources configured. Add a venue or user to create one automatically.</p>"}
+				</div>
+			`;
+
+			res.writeHead(200, { "Content-Type": "text/html" });
+			res.end(renderHTML("RSS Sources", content));
+			return;
+		}
+
 		// Tools page
 		if (pathname === "/tools") {
 			const content = `

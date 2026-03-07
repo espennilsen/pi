@@ -10,7 +10,7 @@ export const SCHEMA = {
 		untappd_venues: {
 			columns: {
 				id: { type: "integer" as const, primaryKey: true, autoIncrement: true },
-				untappd_venue_id: { type: "text" as const },
+				untappd_venue_id: { type: "text" as const, unique: true },
 				slug: { type: "text" as const },
 				name: { type: "text" as const, notNull: true },
 				url: { type: "text" as const, notNull: true },
@@ -27,7 +27,7 @@ export const SCHEMA = {
 		untappd_breweries: {
 			columns: {
 				id: { type: "integer" as const, primaryKey: true, autoIncrement: true },
-				untappd_brewery_id: { type: "text" as const },
+				untappd_brewery_id: { type: "text" as const, unique: true },
 				slug: { type: "text" as const, notNull: true },
 				name: { type: "text" as const, notNull: true },
 				url: { type: "text" as const, notNull: true },
@@ -42,7 +42,7 @@ export const SCHEMA = {
 		untappd_beers: {
 			columns: {
 				id: { type: "integer" as const, primaryKey: true, autoIncrement: true },
-				untappd_beer_id: { type: "text" as const },
+				untappd_beer_id: { type: "text" as const, unique: true },
 				name: { type: "text" as const, notNull: true },
 				style: { type: "text" as const },
 				abv: { type: "real" as const },
@@ -112,7 +112,7 @@ export const SCHEMA = {
 				updated_at: { type: "text" as const, notNull: true },
 			},
 			indexes: [
-				{ columns: ["type", "foreign_id"], name: "idx_rss_sources_type_foreign_id" },
+				{ columns: ["type", "foreign_id"], name: "idx_rss_sources_type_foreign_id", unique: true },
 			],
 		},
 		untappd_activity_events: {

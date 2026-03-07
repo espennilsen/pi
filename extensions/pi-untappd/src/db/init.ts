@@ -26,13 +26,21 @@ let driver: Driver = "sqlite";
 export async function initDb(eventBus: EventBus): Promise<void> {
 	events = eventBus;
 
-	// Detect SQL dialect from pi-kysely (falls back to sqlite)
-	events.emit("kysely:info", {
-		reply: (info: { defaultDriver?: string }) => {
-			if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
-				driver = info.defaultDriver;
-			}
-		},
+	// Detect SQL dialect from pi-kysely (falls back to sqlite).
+	// Wrapped in a Promise so driver is resolved before schema registration.
+	await new Promise<void>((resolve) => {
+		events.emit("kysely:info", {
+			reply: (info: { defaultDriver?: string }) => {
+				if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
+					driver = info.defaultDriver;
+				}
+				resolve();
+			},
+		});
+		// If pi-kysely isn't loaded, no listener fires — resolve immediately.
+		// EventEmitter.emit is synchronous, so if no listener called reply
+		// by the time emit returns, we can resolve.
+		resolve();
 	});
 
 	// Schema:register — creates tables and indexes if they don't exist.
@@ -48,15 +56,6 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 	});
 }
 
-/**
- * Returns the detected SQL dialect.
- * NOTE: Only SQLite is supported in v1. Multi-dialect scaffold kept
- * for future use but no query in operations.ts adapts its SQL syntax.
- */
-export function getDriver(): Driver {
-	return driver;
-}
-
 // ── Query helper ────────────────────────────────────────────────
 
 export interface QueryResult {
@@ -65,8 +64,10 @@ export interface QueryResult {
 	insertId?: number | bigint;
 }
 
+const QUERY_TIMEOUT_MS = 10_000;
+
 export function query(sql: string, params: unknown[] = []): Promise<QueryResult> {
-	return new Promise((resolve, reject) => {
+	const queryPromise = new Promise<QueryResult>((resolve, reject) => {
 		events.emit("kysely:query", {
 			actor: ACTOR,
 			input: { sql, params },
@@ -76,6 +77,15 @@ export function query(sql: string, params: unknown[] = []): Promise<QueryResult>
 			},
 		});
 	});
+
+	const timeout = new Promise<never>((_, reject) => {
+		setTimeout(
+			() => reject(new Error(`query() timed out after ${QUERY_TIMEOUT_MS}ms — is pi-kysely loaded? SQL: ${sql.slice(0, 80)}`)),
+			QUERY_TIMEOUT_MS,
+		);
+	});
+
+	return Promise.race([queryPromise, timeout]);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

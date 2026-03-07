@@ -13,7 +13,8 @@ import * as ops from "../db/operations.ts";
 function isAllowedRSSUrl(rssUrl: string): boolean {
 	try {
 		const parsed = new URL(rssUrl);
-		return parsed.protocol === "https:" && parsed.hostname.endsWith("untappd.com");
+		return parsed.protocol === "https:" &&
+			(parsed.hostname === "untappd.com" || parsed.hostname.endsWith(".untappd.com"));
 	} catch {
 		return false;
 	}
@@ -132,19 +133,7 @@ export async function handleAPIRequest(
 
 		// POST /venues/:id/scrape
 		if (pathname.match(/^\/venues\/\d+\/scrape$/) && method === "POST") {
-			const id = parseInt(pathname.split("/")[2]);
-
-			const venue = await ops.getVenueById(id);
-			if (!venue) {
-				return sendJSON(404, { ok: false, error: "Venue not found" });
-			}
-
-			const scraper = await import("../scraper/index.ts");
-			const scraped = await scraper.scrapeVenue(venue.url as string, log);
-
-			await ops.updateVenueLastScraped(id);
-
-			return sendJSON(200, { ok: true, data: { scraped, message: "Scraping complete (placeholder)" } });
+			return sendJSON(501, { ok: false, error: "Venue scraping is not yet implemented" });
 		}
 
 		// GET /venues/:id/menus
@@ -250,9 +239,13 @@ export async function handleAPIRequest(
 		if (pathname === "/breweries" && method === "POST") {
 			const body = await getBody();
 			const breweryUrl = body.url as string;
+			const breweryName = body.name as string;
 
 			if (!breweryUrl) {
 				return sendJSON(400, { ok: false, error: "url is required" });
+			}
+			if (!breweryName) {
+				return sendJSON(400, { ok: false, error: "name is required" });
 			}
 
 			const scraper = await import("../scraper/index.ts");
@@ -267,12 +260,10 @@ export async function handleAPIRequest(
 				return sendJSON(200, { ok: true, data: existing });
 			}
 
-			const scraped = await scraper.scrapeBrewery(breweryUrl, log);
-
 			const id = await ops.createBrewery({
 				untappdBreweryId: breweryId,
-				slug: scraped.slug,
-				name: scraped.name,
+				slug,
+				name: breweryName,
 				url: breweryUrl,
 			});
 

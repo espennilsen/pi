@@ -83,15 +83,24 @@ export async function pollRSSSource(
 					continue;
 				}
 
-				// Normalize beer if we have a beer ID
+				// Normalize beer if we have a beer ID.
+				// Uses try/catch to handle UNIQUE constraint violations from
+				// concurrent polls racing on the same new beer (TOCTOU).
 				let beerId: number | null = null;
 				if (parsed.beerId) {
 					const beer = await ops.getBeerByUntappdId(parsed.beerId);
 					if (!beer && parsed.beerName) {
-						beerId = await ops.createBeer({
-							untappdBeerId: parsed.beerId,
-							name: parsed.beerName,
-						});
+						try {
+							beerId = await ops.createBeer({
+								untappdBeerId: parsed.beerId,
+								name: parsed.beerName,
+							});
+						} catch {
+							// UNIQUE constraint violation — another poller inserted first.
+							// Look up the row they created.
+							const existing = await ops.getBeerByUntappdId(parsed.beerId);
+							beerId = existing ? (existing.id as number) : null;
+						}
 					} else if (beer) {
 						beerId = beer.id as number;
 					}

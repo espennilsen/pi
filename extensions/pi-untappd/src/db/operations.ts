@@ -367,6 +367,14 @@ export async function listActivityEvents(limit = 50): Promise<Record<string, unk
 	return rows;
 }
 
+export async function listActivityEventsByVenue(venueId: number, limit = 50): Promise<Record<string, unknown>[]> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_activity_events WHERE venue_id = ? ORDER BY occurred_at DESC LIMIT ?",
+		[venueId, limit],
+	);
+	return rows;
+}
+
 export async function listActivityEventsBySource(rssSourceId: number, limit = 50): Promise<Record<string, unknown>[]> {
 	const { rows } = await query(
 		"SELECT * FROM untappd_activity_events WHERE rss_source_id = ? ORDER BY occurred_at DESC LIMIT ?",

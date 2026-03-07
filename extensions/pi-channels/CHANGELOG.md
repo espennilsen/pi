@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- OpenAI transcription now automatically uses pi's built-in OpenAI authentication if available (no need for explicit `apiKey` in config)
+- Users who have run `/login openai` can enable transcription without additional configuration
+
+### Changed
+
+- **BREAKING:** `env:VAR_NAME` substitution in settings is no longer supported. Set secret values (tokens, API keys) directly in `settings.json` instead of using `"env:..."` references.
+- Adapter factories are now async to support modelRegistry API key resolution
+- Transcription providers use static `create()` factory methods instead of constructors
+
 ## [0.1.1] - 2026-02-19 (7442720)
 
 ### Added

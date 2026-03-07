@@ -2,6 +2,7 @@
  * pi-channels — Adapter registry + route resolution.
  */
 
+import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelConfig, AdapterDirection, OnIncomingMessage, IncomingMessage } from "./types.ts";
 import { createTelegramAdapter } from "./adapters/telegram.ts";
 import { createWebhookAdapter } from "./adapters/webhook.ts";
@@ -11,7 +12,13 @@ import { createSlackAdapter } from "./adapters/slack.ts";
 
 export type AdapterLogger = (event: string, data: Record<string, unknown>, level?: string) => void;
 
-type AdapterFactory = (config: AdapterConfig, cwd?: string, log?: AdapterLogger) => ChannelAdapter;
+export interface AdapterFactoryContext {
+	cwd?: string;
+	log?: AdapterLogger;
+	modelRegistry?: ModelRegistry;
+}
+
+type AdapterFactory = (config: AdapterConfig, context: AdapterFactoryContext) => Promise<ChannelAdapter>;
 
 const builtinFactories: Record<string, AdapterFactory> = {
 	telegram: createTelegramAdapter,
@@ -27,6 +34,7 @@ export class ChannelRegistry {
 	private errors: Array<{ adapter: string; error: string }> = [];
 	private onIncoming: OnIncomingMessage = () => {};
 	private log?: AdapterLogger;
+	private modelRegistry?: ModelRegistry;
 
 	/**
 	 * Set the callback for incoming messages (called by the extension entry).
@@ -43,10 +51,17 @@ export class ChannelRegistry {
 	}
 
 	/**
+	 * Set the model registry for API key resolution.
+	 */
+	setModelRegistry(modelRegistry: ModelRegistry): void {
+		this.modelRegistry = modelRegistry;
+	}
+
+	/**
 	 * Load adapters + routes from config. Custom adapters (registered via events) are preserved.
 	 * @param cwd — working directory, passed to adapter factories for settings resolution.
 	 */
-	loadConfig(config: ChannelConfig, cwd?: string): void {
+	async loadConfig(config: ChannelConfig, cwd?: string): Promise<void> {
 		this.errors = [];
 
 		// Stop existing adapters
@@ -77,7 +92,12 @@ export class ChannelRegistry {
 				continue;
 			}
 			try {
-				this.adapters.set(name, factory(adapterConfig, cwd, this.log));
+				const adapter = await factory(adapterConfig, {
+					cwd,
+					log: this.log,
+					modelRegistry: this.modelRegistry,
+				});
+				this.adapters.set(name, adapter);
 			} catch (err: any) {
 				this.errors.push({ adapter: name, error: err.message });
 			}

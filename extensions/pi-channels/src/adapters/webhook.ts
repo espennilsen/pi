@@ -17,8 +17,9 @@
  */
 
 import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelPayloadMode } from "../types.ts";
+import type { AdapterFactoryContext } from "../registry.ts";
 
-export function createWebhookAdapter(config: AdapterConfig): ChannelAdapter {
+export async function createWebhookAdapter(config: AdapterConfig, _context: AdapterFactoryContext): Promise<ChannelAdapter> {
 	const defaultMethod = (config.method as string) ?? "POST";
 	const defaultContentType = (config.contentType as string) ?? "application/json";
 	const extraHeaders = (config.headers as Record<string, string>) ?? {};

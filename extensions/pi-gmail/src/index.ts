@@ -11,8 +11,8 @@
  *
  * Settings (in settings.json):
  *   "pi-gmail": {
- *     "clientId": "env:GMAIL_CLIENT_ID",
- *     "clientSecret": "env:GMAIL_CLIENT_SECRET",
+ *     "clientId": "your-client-id",
+ *     "clientSecret": "your-client-secret",
  *     "maxResults": 20,
  *     "notifications": {
  *       "enabled": false,
@@ -37,7 +37,7 @@ import {
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
-import { resolveEnv, openUrl } from "./utils.ts";
+import { openUrl } from "./utils.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -187,7 +187,7 @@ export default function (pi: ExtensionAPI) {
 		const agentDir = getAgentDir();
 		cachedSettings = getSettings(ctx.cwd);
 
-		const clientId = resolveEnv(cachedSettings.clientId);
+		const clientId = cachedSettings.clientId ?? "";
 		if (!clientId) {
 			log("init", { status: "no clientId configured" }, "WARN");
 			ctx.ui.setStatus("gmail", "Gmail: not configured");
@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const agentDir = getAgentDir();
 			const settings = getSettings(ctx.cwd);
-			const clientId = resolveEnv(settings.clientId);
+			const clientId = settings.clientId ?? "";
 
 			if (!clientId) {
 				ctx.ui.notify(

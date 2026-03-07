@@ -11,14 +11,13 @@
  * Integration:
  *   - pi-kysely: database schema via event bus (no direct imports)
  *   - pi-webserver: web UI and JSON API routes
- *   - pi-cron: scheduled RSS polling
+ *   - pi-cron: scheduled RSS polling (configured via crontab, see README)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { initDb } from "./db/init.ts";
 import { mountWebRoutes, unmountWebRoutes } from "./web/index.ts";
-import { setupCronJobs } from "./cron.ts";
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -37,11 +36,11 @@ export default function (pi: ExtensionAPI) {
 		// Try mounting immediately if webserver is already running
 		mountWeb();
 
-		// Also mount when webserver starts
-		pi.events.on("web:ready", mountWeb);
-
-		// Setup cron jobs if cron extension is available
-		setupCronJobs(pi, log);
+		// Re-mount when webserver restarts
+		pi.events.on("web:ready", () => {
+			unmountWebRoutes(pi.events);
+			mountWebRoutes(pi.events, log);
+		});
 
 		log("ready", { cwd: ctx.cwd });
 	});

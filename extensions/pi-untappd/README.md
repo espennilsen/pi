@@ -148,10 +148,18 @@ No special configuration required. Integrates with existing pi settings.
 
 ## Cron Jobs
 
-When pi-cron is enabled:
+pi-untappd relies on [pi-cron](../pi-cron/) for scheduled tasks. Jobs must be added manually via the `cron` tool:
 
-- **untappd:poll-rss**: Every 15 minutes - polls enabled RSS sources
-- **untappd:decay-confidence**: Daily at 2 AM - decays menu item confidence
+```
+cron add --name "untappd:poll-rss" --schedule "*/15 * * * *" --prompt "Poll all enabled Untappd RSS sources for new check-ins. Use the untappd API endpoint: POST /api/untappd/rss-sources to list sources, then poll each."
+
+cron add --name "untappd:decay-confidence" --schedule "0 2 * * *" --prompt "Run menu item confidence decay for Untappd. Items not seen in 7+ days get reduced confidence."
+```
+
+Start the scheduler with `/cron on` or `pi --cron`.
+
+- **untappd:poll-rss**: Every 15 minutes — polls enabled RSS sources for new check-ins
+- **untappd:decay-confidence**: Daily at 2 AM — decays menu item confidence based on last seen date
 
 ## Development
 

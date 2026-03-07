@@ -353,6 +353,6 @@ export async function handleAPIRequest(
 		return sendJSON(404, { ok: false, error: "Not Found" });
 	} catch (err: any) {
 		log("api_error", { path: pathname, error: err.message }, "error");
-		return sendJSON(500, { ok: false, error: err.message });
+		return sendJSON(500, { ok: false, error: "Internal server error" });
 	}
 }

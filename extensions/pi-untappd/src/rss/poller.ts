@@ -4,6 +4,7 @@
  * All DB access via operations module (event bus, no direct kysely).
  */
 
+import { createHash } from "node:crypto";
 import type { LogFn } from "../logger.ts";
 import { fetchRSS, parseCheckinFromRSS } from "./client.ts";
 import * as ops from "../db/operations.ts";
@@ -66,14 +67,15 @@ export async function pollRSSSource(
 			try {
 				const parsed = parseCheckinFromRSS(item);
 
-				// Skip if we already have this check-in
-				if (item.link) {
-					const checkinId = extractCheckinId(item.link);
-					if (checkinId) {
-						const existing = await ops.getActivityEventByCheckinId(checkinId);
-						if (existing) {
-							continue;
-						}
+				// Deduplicate: use checkin ID from link, or fall back to a hash
+				const checkinId = item.link ? extractCheckinId(item.link) : null;
+				const dedupKey = checkinId
+					?? hashDedupKey(item.link, item.pubDate, item.title);
+
+				if (dedupKey) {
+					const existing = await ops.getActivityEventByCheckinId(dedupKey);
+					if (existing) {
+						continue;
 					}
 				}
 
@@ -113,7 +115,7 @@ export async function pollRSSSource(
 				await ops.createActivityEvent({
 					rssSourceId: source.id as number,
 					eventType: "checkin",
-					untappdCheckinId: extractCheckinId(item.link),
+					untappdCheckinId: dedupKey,
 					untappdBeerId: parsed.beerId,
 					beerId,
 					venueId,
@@ -184,4 +186,18 @@ function extractCheckinId(url: string | null): string | null {
 	if (!url) return null;
 	const match = url.match(/\/checkin\/(\d+)/);
 	return match ? match[1] : null;
+}
+
+/**
+ * Generate a stable dedup key from RSS item fields when no checkin ID is available.
+ * Returns null only if all inputs are falsy (shouldn't happen in practice).
+ */
+function hashDedupKey(
+	link: string | null | undefined,
+	pubDate: string | null | undefined,
+	title: string | null | undefined,
+): string | null {
+	const input = `${link ?? ""}|${pubDate ?? ""}|${title ?? ""}`;
+	if (input === "||") return null;
+	return `hash:${createHash("sha256").update(input).digest("hex").slice(0, 16)}`;
 }

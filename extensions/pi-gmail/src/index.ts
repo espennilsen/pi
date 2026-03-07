@@ -11,8 +11,8 @@
  *
  * Settings (in settings.json):
  *   "pi-gmail": {
- *     "clientId": "env:GMAIL_CLIENT_ID",
- *     "clientSecret": "env:GMAIL_CLIENT_SECRET",
+ *     "clientId": "your-client-id",
+ *     "clientSecret": "your-client-secret",
  *     "maxResults": 20,
  *     "notifications": {
  *       "enabled": false,

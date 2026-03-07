@@ -61,8 +61,7 @@ export interface TranscriptionConfig {
 	provider: "apple" | "openai" | "elevenlabs";
 	/**
 	 * API key for cloud providers. Optional for OpenAI if pi has authentication configured.
-	 * Supports "env:PI_VAR_NAME" for environment variables (PI_ prefix required).
-	 * Not needed for apple provider.
+	 * Put the key value directly in settings.json. Not needed for apple provider.
 	 */
 	apiKey?: string;
 	/** Model name (e.g. "whisper-1", "scribe_v1"). Provider-specific default used if omitted. */

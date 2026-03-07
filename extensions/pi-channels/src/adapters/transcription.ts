@@ -56,8 +56,7 @@ export async function createTranscriptionProvider(
  * Resolve API key from config value.
  * Priority:
  * 1. If no value provided and modelRegistry available → use pi's built-in auth
- * 2. "env:PI_VAR_NAME" → environment variable (PI_ prefix required for security)
- * 3. Plain string → literal value
+ * 2. Plain string → literal value (put secrets directly in settings.json)
  */
 async function resolveApiKey(
 	value: string | undefined,
@@ -73,19 +72,6 @@ async function resolveApiKey(
 		return undefined;
 	}
 
-	// "env:PI_VAR_NAME" → use environment variable with PI_ prefix requirement
-	if (value.startsWith("env:")) {
-		const envVar = value.slice(4);
-		if (!envVar.startsWith("PI_")) {
-			throw new Error(
-				`Environment variable must start with PI_ prefix (got: ${envVar}). ` +
-				`Use "env:PI_${envVar}" instead.`
-			);
-		}
-		return process.env[envVar] || undefined;
-	}
-
-	// Plain value
 	return value;
 }
 
@@ -308,7 +294,7 @@ class ElevenLabsProvider implements TranscriptionProvider {
 		if (!key) {
 			throw new Error(
 				"ElevenLabs transcription requires API key. " +
-				"Set apiKey in config as 'env:PI_ELEVENLABS_API_KEY'."
+				"Set apiKey in settings.json under pi-channels transcription config."
 			);
 		}
 		return new ElevenLabsProvider(key, config.model || "scribe_v1", config.language);

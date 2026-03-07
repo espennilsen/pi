@@ -21,15 +21,14 @@ export function escapeHtml(str: string): string {
 	return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]!);
 }
 
-// ── Environment variable resolution ─────────────────────────────
+// ── Config value helpers ────────────────────────────────────────
 
 /**
- * Resolve a value that may use the `env:VAR_NAME` pattern.
- * Returns the environment variable value, or the original string.
+ * Return a config value as-is (empty string if undefined).
+ * Values should be set directly in settings.json.
  */
 export function resolveEnv(value: string | undefined): string {
 	if (!value) return "";
-	if (value.startsWith("env:")) return process.env[value.slice(4)] ?? "";
 	return value;
 }
 

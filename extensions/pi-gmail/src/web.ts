@@ -120,12 +120,12 @@ ${
 <li>Enable the <strong>Gmail API</strong></li>
 <li>Create OAuth 2.0 credentials (Desktop app or Web app)</li>
 <li>Add <code>${getRedirectUri()}</code> as an authorized redirect URI</li>
-<li>Set <code>GMAIL_CLIENT_ID</code> and <code>GMAIL_CLIENT_SECRET</code> environment variables, or add to <code>settings.json</code>:
+<li>Add credentials to <code>settings.json</code>:
 <pre style="background:#161b22;padding:12px;border-radius:6px;overflow-x:auto">
 {
   "pi-gmail": {
-    "clientId": "env:GMAIL_CLIENT_ID",
-    "clientSecret": "env:GMAIL_CLIENT_SECRET"
+    "clientId": "your-client-id",
+    "clientSecret": "your-client-secret"
   }
 }</pre>
 </li>

@@ -202,6 +202,8 @@ export default function (pi: ExtensionAPI) {
 	// ── Outbound A2A request tracking ─────────────────────────
 	/** Number of outbound a2a_send requests currently in flight. */
 	let outboundPending = 0;
+	/** Monotonic token incremented on each session_start. Stale closures bail out when mismatched. */
+	let sessionToken = 0;
 
 	// ── TUI: status line ──────────────────────────────────────
 
@@ -264,6 +266,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Clean restart — reset all async state from previous session
 		outboundPending = 0;
+		sessionToken++;
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
@@ -519,6 +522,7 @@ export default function (pi: ExtensionAPI) {
 			const sendStart = Date.now();
 			const resolvedName = agentName;
 			const resolvedUrl = agentUrl;
+			const myToken = sessionToken;
 			outboundPending++;
 			updateStatusLine();
 
@@ -528,6 +532,9 @@ export default function (pi: ExtensionAPI) {
 				credential,
 				sender: { name: config.name ?? "Pi Agent", description: config.description },
 			}, log).then((result) => {
+				// Bail out if session restarted while we were waiting
+				if (sessionToken !== myToken) return;
+
 				outboundPending--;
 				updateStatusLine();
 
@@ -555,6 +562,9 @@ export default function (pi: ExtensionAPI) {
 					);
 				}
 			}).catch((err: unknown) => {
+				// Bail out if session restarted while we were waiting
+				if (sessionToken !== myToken) return;
+
 				outboundPending--;
 				updateStatusLine();
 

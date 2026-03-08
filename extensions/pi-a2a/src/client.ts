@@ -108,7 +108,7 @@ export async function sendA2AMessage(
 			jsonrpc: "2.0";
 			result?: Record<string, unknown>;
 			error?: { code: number; message: string; data?: unknown };
-			id: number;
+			id: string;
 		};
 
 		if (data.error) {

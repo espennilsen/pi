@@ -37,6 +37,8 @@ export interface SendMessageResult {
 	raw?: unknown;
 	/** Error message if the request failed. */
 	error?: string;
+	/** True when the remote agent returned HTTP 401 — credential may be stale. */
+	unauthorized?: boolean;
 }
 
 /**
@@ -71,7 +73,7 @@ export async function sendA2AMessage(
 		jsonrpc: "2.0" as const,
 		method: "message/send",
 		params: { message: msg },
-		id: 1,
+		id: randomUUID(),
 	};
 
 	const headers: Record<string, string> = {
@@ -93,7 +95,7 @@ export async function sendA2AMessage(
 
 		if (res.status === 401) {
 			log("a2a_send_unauthorized", { url }, "ERROR");
-			return { ok: false, error: "Unauthorized — the remote agent rejected the credential" };
+			return { ok: false, error: "Unauthorized — the remote agent rejected the credential", unauthorized: true };
 		}
 
 		if (!res.ok) {
@@ -106,7 +108,7 @@ export async function sendA2AMessage(
 			jsonrpc: "2.0";
 			result?: Record<string, unknown>;
 			error?: { code: number; message: string; data?: unknown };
-			id: number;
+			id: string;
 		};
 
 		if (data.error) {

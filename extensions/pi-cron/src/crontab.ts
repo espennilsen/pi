@@ -5,12 +5,11 @@
  *   schedule(5 fields) name [channel:ch] [disabled] prompt
  *
  * Lines starting with # are comments. Blank lines are ignored.
- * The file lives at ~/.pi/agent/pi-cron.tab by default.
+ * The file lives at <cwd>/.pi/pi-cron.tab (workspace-local).
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -22,14 +21,19 @@ export interface CronJob {
 	disabled: boolean;
 }
 
-// ── Default path ────────────────────────────────────────────────
+// ── Configurable path ───────────────────────────────────────────
 
-const DEFAULT_TAB_PATH = path.join(os.homedir(), ".pi", "agent", "pi-cron.tab");
-
-let tabPath = DEFAULT_TAB_PATH;
+let tabPath: string | null = null;
 
 export function setTabPath(p: string): void { tabPath = p; }
-export function getTabPath(): string { return tabPath; }
+export function getTabPath(): string {
+	if (!tabPath) throw new Error("pi-cron tab path not initialized. Call setTabPath() or initTabPath() first.");
+	return tabPath;
+}
+
+export function initTabPath(cwd: string): void {
+	tabPath = path.join(cwd, ".pi", "pi-cron.tab");
+}
 
 // ── Parser ──────────────────────────────────────────────────────
 

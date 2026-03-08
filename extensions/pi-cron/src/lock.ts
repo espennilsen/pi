@@ -1,16 +1,32 @@
 /**
  * pi-cron — Lock file for single-instance scheduler.
  *
- * Uses a PID-based lock file at ~/.pi/agent/pi-cron.lock.
+ * Uses a PID-based lock file at <cwd>/.pi/pi-cron.lock.
  * On acquire, writes our PID. On release, removes the file.
  * Stale locks (dead PIDs) are automatically cleaned up.
+ *
+ * The lock is per-workspace — multiple agents can each run their
+ * own scheduler independently.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
-const LOCK_PATH = path.join(os.homedir(), ".pi", "agent", "pi-cron.lock");
+// ── Configurable lock path ──────────────────────────────────────
+
+let lockPath: string | null = null;
+
+export function setLockPath(p: string): void { lockPath = p; }
+export function getLockPath(): string {
+	if (!lockPath) throw new Error("pi-cron lock path not initialized. Call setLockPath() first.");
+	return lockPath;
+}
+
+export function initLockPath(cwd: string): void {
+	lockPath = path.join(cwd, ".pi", "pi-cron.lock");
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
 
 function isProcessAlive(pid: number): boolean {
 	try {
@@ -26,11 +42,12 @@ function isProcessAlive(pid: number): boolean {
  * Returns true if we got it, false if another live process holds it.
  */
 export function acquireLock(): boolean {
-	fs.mkdirSync(path.dirname(LOCK_PATH), { recursive: true });
+	const lp = getLockPath();
+	fs.mkdirSync(path.dirname(lp), { recursive: true });
 
 	// Check existing lock
 	try {
-		const content = fs.readFileSync(LOCK_PATH, "utf-8").trim();
+		const content = fs.readFileSync(lp, "utf-8").trim();
 		const pid = parseInt(content, 10);
 		if (!isNaN(pid) && isProcessAlive(pid) && pid !== process.pid) {
 			return false; // Another live process holds the lock
@@ -40,7 +57,7 @@ export function acquireLock(): boolean {
 		// No lock file — fall through to acquire
 	}
 
-	fs.writeFileSync(LOCK_PATH, String(process.pid), "utf-8");
+	fs.writeFileSync(lp, String(process.pid), "utf-8");
 	return true;
 }
 
@@ -49,10 +66,11 @@ export function acquireLock(): boolean {
  */
 export function releaseLock(): void {
 	try {
-		const content = fs.readFileSync(LOCK_PATH, "utf-8").trim();
+		const lp = getLockPath();
+		const content = fs.readFileSync(lp, "utf-8").trim();
 		const pid = parseInt(content, 10);
 		if (pid === process.pid) {
-			fs.unlinkSync(LOCK_PATH);
+			fs.unlinkSync(lp);
 		}
 	} catch {
 		// Lock file already gone — fine
@@ -64,7 +82,8 @@ export function releaseLock(): void {
  */
 export function lockHolder(): number | null {
 	try {
-		const content = fs.readFileSync(LOCK_PATH, "utf-8").trim();
+		const lp = getLockPath();
+		const content = fs.readFileSync(lp, "utf-8").trim();
 		const pid = parseInt(content, 10);
 		if (!isNaN(pid) && isProcessAlive(pid)) return pid;
 		return null;

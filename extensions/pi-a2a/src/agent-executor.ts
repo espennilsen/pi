@@ -245,7 +245,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
 
-			// Record telemetry for hub reporting (no duration available)
+			// Record telemetry for hub reporting — clear stale duration
+			// to avoid pairing a previous task's timing with this failure
+			this.lastTaskDurationMs = undefined;
 			this.lastTaskStatus = "failed";
 			this.onTaskFinished?.();
 		}

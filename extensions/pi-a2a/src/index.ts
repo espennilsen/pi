@@ -195,9 +195,12 @@ export default function (pi: ExtensionAPI) {
 		if (hubAgentId) {
 			const { config } = loadConfig(cwd);
 			if (config.hub?.apiKey) {
+				const idleSnap = executor
+					? { ...executor.getTelemetrySnapshot(), queueDepth: 0, activeTasks: 0 }
+					: { queueDepth: 0, activeTasks: 0, maxConcurrent: 3 };
 				await reportTelemetryToHub(
 					hubAgentId,
-					{ queueDepth: 0, activeTasks: 0, maxConcurrent: 3 },
+					idleSnap,
 					config.hub,
 					log,
 				).catch(() => {});

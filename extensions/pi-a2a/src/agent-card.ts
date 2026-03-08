@@ -230,7 +230,7 @@ export function toSpecCard(card: AgentCard): SpecAgentCard {
 	}
 
 	if (card.securitySchemes) {
-		spec.securitySchemes = card.securitySchemes;
+		spec.securitySchemes = convertSecuritySchemes(card.securitySchemes);
 	}
 
 	if (card.security) {
@@ -238,6 +238,71 @@ export function toSpecCard(card: AgentCard): SpecAgentCard {
 	}
 
 	return spec;
+}
+
+/**
+ * Convert SDK/OpenAPI 3.x security schemes to A2A spec §4.5.1 format.
+ *
+ * The SDK uses raw OpenAPI format: `{type: "http", scheme: "bearer", ...}`
+ * The A2A spec uses a discriminated union with exactly one wrapper key:
+ *   `{httpAuthSecurityScheme: {scheme: "bearer", ...}}`
+ *
+ * Supported wrapper keys (§4.5.1):
+ *   apiKeySecurityScheme, httpAuthSecurityScheme, oauth2SecurityScheme,
+ *   openIdConnectSecurityScheme, mtlsSecurityScheme
+ */
+function convertSecuritySchemes(
+	schemes: Record<string, unknown>,
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+
+	for (const [name, value] of Object.entries(schemes)) {
+		const scheme = value as Record<string, unknown>;
+		const type = scheme.type as string | undefined;
+
+		if (type === "http") {
+			result[name] = {
+				httpAuthSecurityScheme: {
+					scheme: scheme.scheme,
+					...(scheme.description ? { description: scheme.description } : {}),
+					...(scheme.bearerFormat ? { bearerFormat: scheme.bearerFormat } : {}),
+				},
+			};
+		} else if (type === "apiKey") {
+			result[name] = {
+				apiKeySecurityScheme: {
+					name: scheme.name,
+					location: scheme.in ?? scheme.location,
+					...(scheme.description ? { description: scheme.description } : {}),
+				},
+			};
+		} else if (type === "oauth2") {
+			result[name] = {
+				oauth2SecurityScheme: {
+					flows: scheme.flows ?? {},
+					...(scheme.description ? { description: scheme.description } : {}),
+				},
+			};
+		} else if (type === "openIdConnect") {
+			result[name] = {
+				openIdConnectSecurityScheme: {
+					openIdConnectUrl: scheme.openIdConnectUrl,
+					...(scheme.description ? { description: scheme.description } : {}),
+				},
+			};
+		} else if (type === "mutualTLS") {
+			result[name] = {
+				mtlsSecurityScheme: {
+					...(scheme.description ? { description: scheme.description } : {}),
+				},
+			};
+		} else {
+			// Unknown type — pass through as-is (may already be in spec format)
+			result[name] = scheme;
+		}
+	}
+
+	return result;
 }
 
 /**

@@ -108,7 +108,11 @@ export function parseUserUrl(url: string): { username: string | null } {
 /**
  * Scrape venue HTML page.
  * 
- * NOTE: This is a placeholder implementation. In production, you would:
+ * ⚠️ STUB: Returns synthetic placeholder data — no HTTP request is made.
+ * Venues created via the API will have generated names (e.g. "Venue 123")
+ * and empty menus until real scraping is implemented.
+ * 
+ * TODO: Implement actual scraping:
  * 1. Fetch HTML with proper User-Agent
  * 2. Parse with cheerio or similar
  * 3. Extract venue metadata and menu sections

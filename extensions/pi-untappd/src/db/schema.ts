@@ -139,6 +139,8 @@ export const SCHEMA = {
 				{ columns: ["venue_id"], name: "idx_activity_events_venue_id" },
 			],
 		},
+		// Forward-compatibility: table scaffolded for future preference/filter rules.
+		// No operations, API endpoints, or UI yet — intentionally empty.
 		untappd_preference_rules: {
 			columns: {
 				id: { type: "integer" as const, primaryKey: true, autoIncrement: true },

@@ -335,7 +335,10 @@ export async function handleAPIRequest(
 
 			const body = await getBody();
 			if (body.enabled !== undefined) {
-				await ops.toggleRSSSource(id, body.enabled as boolean);
+				if (typeof body.enabled !== "boolean") {
+					return sendJSON(400, { ok: false, error: "enabled must be a boolean" });
+				}
+				await ops.toggleRSSSource(id, body.enabled);
 			}
 
 			const updated = await ops.getRSSSourceById(id);

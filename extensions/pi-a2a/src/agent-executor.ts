@@ -103,11 +103,13 @@ export class PiAgentExecutor implements AgentExecutor {
 		this._queueDepth--;
 		this.cancelCallbacks.delete(taskId);
 
-		// If canceled while queued, skip processing
+		// If canceled while queued (by abortAll or cancelTask), skip processing.
+		// Always call eventBus.finished() to complete the SDK task lifecycle.
 		if (canceled) {
 			this.log("executor_skip_canceled", { taskId });
+			eventBus.finished();
 			releaseQueue!();
-			return; // cancelTask() already published canceled status + called eventBus.finished()
+			return;
 		}
 
 		// Extract sender identity

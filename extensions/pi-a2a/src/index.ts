@@ -253,6 +253,7 @@ export default function (pi: ExtensionAPI) {
 			pendingResolve({ ok: false, response: "", error: "Session restart", durationMs: Date.now() - pendingStartTime });
 		}
 		pendingResolve = null;
+		pendingNonce = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -331,6 +332,7 @@ export default function (pi: ExtensionAPI) {
 		if (pendingResolve) {
 			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
 			pendingResolve = null;
+			pendingNonce = null;
 		}
 		if (executor) {
 			executor.abortAll();

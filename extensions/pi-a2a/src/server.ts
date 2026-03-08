@@ -6,9 +6,9 @@
  * this module handles the HTTP layer, auth, and CORS.
  *
  * Routes:
- *   GET  /.well-known/agent.json       — A2A Agent Card
- *   GET  /.well-known/agent-card.json   — A2A Agent Card (SDK convention)
- *   POST /                              — A2A JSON-RPC 2.0 endpoint
+ *   GET  /.well-known/agent-card.json   — A2A Agent Card (canonical SDK path)
+ *   GET  /.well-known/agent.json        — A2A Agent Card (alternate path)
+ *   POST /                              — A2A JSON-RPC 2.0 endpoint (streaming returns SSE)
  *   GET  /health                        — Health check
  */
 

@@ -1,14 +1,23 @@
 /**
  * pi-a2a — Agent executor using pi subprocess.
  *
- * Implements @a2a-js/sdk's AgentExecutor interface. Each execution
- * spawns an isolated `pi --mode rpc` subprocess, collects the response,
- * and publishes it as an A2A Message event.
+ * Implements @a2a-js/sdk's AgentExecutor interface following the SDK's
+ * task lifecycle pattern:
+ *
+ *   1. Publish initial Task (state: submitted) if new
+ *   2. Publish status-update (state: working)
+ *   3. Spawn pi subprocess, collect response
+ *   4. Publish artifact-update with the response
+ *   5. Publish final status-update (state: completed) with final=true
+ *   6. Call eventBus.finished()
+ *
+ * This enables proper task tracking via InMemoryTaskStore, streaming
+ * via SSE, and push notifications for long-running tasks.
  */
 
 import { randomUUID } from "node:crypto";
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
-import type { Message, TaskStatusUpdateEvent } from "@a2a-js/sdk";
+import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import { runPrompt, type SubprocessHandle } from "./subprocess.ts";
 import type { LogFn } from "./logger.ts";
 
@@ -36,7 +45,7 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
-		const { userMessage, taskId, contextId } = requestContext;
+		const { userMessage, taskId, contextId, task } = requestContext;
 
 		// Concurrency guard
 		if (this.running.size >= MAX_CONCURRENT) {
@@ -46,22 +55,58 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// Extract text from message parts
-		const textParts = userMessage.parts
-			.filter((p): p is { kind: "text"; text: string; metadata?: Record<string, unknown> } =>
-				p.kind === "text" && typeof (p as unknown as { text?: unknown }).text === "string")
-			.map((p) => p.text);
+		// Extract text from all part types
+		const textSegments: string[] = [];
+		for (const part of userMessage.parts) {
+			if (part.kind === "text") {
+				textSegments.push((part as { kind: "text"; text: string }).text);
+			} else if (part.kind === "data") {
+				// Serialize structured data as JSON for the subprocess
+				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
+				textSegments.push(JSON.stringify(dataPart.data, null, 2));
+			} else {
+				this.log("executor_unsupported_part", { taskId, kind: part.kind }, "WARN");
+			}
+		}
 
-		if (textParts.length === 0) {
-			this.publishError(taskId, contextId, eventBus, "No text content in message");
+		if (textSegments.length === 0) {
+			this.publishError(taskId, contextId, eventBus, "No processable content in message");
 			eventBus.finished();
 			return;
 		}
 
-		const prompt = textParts.join("\n");
+		// ── Step 1: Publish initial Task if this is a new task ──
+		if (!task) {
+			const initialTask: Task = {
+				kind: "task",
+				id: taskId,
+				contextId,
+				status: {
+					state: "submitted",
+					timestamp: new Date().toISOString(),
+				},
+				history: [userMessage],
+			};
+			eventBus.publish(initialTask);
+		}
+
+		// ── Step 2: Publish "working" status ──
+		const workingUpdate: TaskStatusUpdateEvent = {
+			kind: "status-update",
+			taskId,
+			contextId,
+			status: {
+				state: "working",
+				timestamp: new Date().toISOString(),
+			},
+			final: false,
+		};
+		eventBus.publish(workingUpdate);
+
+		const prompt = textSegments.join("\n");
 		this.log("executor_start", { taskId, promptLength: prompt.length });
 
-		// Spawn subprocess
+		// ── Step 3: Spawn subprocess ──
 		const handle = runPrompt(prompt, this.cwd, this.log);
 		this.running.set(taskId, { handle, contextId });
 
@@ -77,13 +122,37 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.running.delete(taskId);
 
 			if (result.ok) {
-				const agentMessage: Message = {
-					kind: "message",
-					messageId: randomUUID(),
-					role: "agent",
-					parts: [{ kind: "text", text: result.response }],
+				// ── Step 4: Publish artifact with response ──
+				const artifactUpdate: TaskArtifactUpdateEvent = {
+					kind: "artifact-update",
+					taskId,
+					contextId,
+					artifact: {
+						artifactId: randomUUID(),
+						name: "response",
+						parts: [{ kind: "text", text: result.response } as Part],
+					},
 				};
-				eventBus.publish(agentMessage);
+				eventBus.publish(artifactUpdate);
+
+				// ── Step 5: Publish final "completed" status ──
+				const completedUpdate: TaskStatusUpdateEvent = {
+					kind: "status-update",
+					taskId,
+					contextId,
+					status: {
+						state: "completed",
+						message: {
+							kind: "message",
+							messageId: randomUUID(),
+							role: "agent",
+							parts: [{ kind: "text", text: result.response } as Part],
+						},
+						timestamp: new Date().toISOString(),
+					},
+					final: true,
+				};
+				eventBus.publish(completedUpdate);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
 			} else {
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
@@ -96,6 +165,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
 		}
 
+		// ── Step 6: Signal execution finished ──
 		eventBus.finished();
 	}
 
@@ -133,7 +203,7 @@ export class PiAgentExecutor implements AgentExecutor {
 					kind: "message",
 					messageId: randomUUID(),
 					role: "agent",
-					parts: [{ kind: "text", text: `Error: ${error}` }],
+					parts: [{ kind: "text", text: `Error: ${error}` } as Part],
 				},
 				timestamp: new Date().toISOString(),
 			},

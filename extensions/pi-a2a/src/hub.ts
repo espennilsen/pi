@@ -3,6 +3,9 @@
  *
  * Registers the pi agent with an A2A Discovery Hub using its
  * JSON-RPC 2.0 API. Hub config comes from settings.json.
+ *
+ * Sends the full A2A-spec-compliant Agent Card, preserving all
+ * capabilities, skills (with tags, examples, etc.), and interfaces.
  */
 
 import type { AgentCard } from "@a2a-js/sdk";
@@ -18,6 +21,9 @@ interface HubRpcResponse {
 
 /**
  * Register this agent with the A2A Hub.
+ *
+ * Sends the full agent card as-is (A2A-compliant), plus hub-specific
+ * metadata like categories, tags, and visibility.
  */
 export async function registerWithHub(
 	agentCard: AgentCard,
@@ -37,24 +43,11 @@ export async function registerWithHub(
 				version: agentCard.version,
 				protocolVersion: agentCard.protocolVersion,
 				provider: agentCard.provider,
-				capabilities: {
-					acceptsText: true,
-					acceptsImages: false,
-					acceptsAudio: false,
-					acceptsVideo: false,
-					acceptsFiles: false,
-					producesText: true,
-					producesImages: false,
-					producesAudio: false,
-					producesVideo: false,
-					producesFiles: false,
-					supportsStreaming: agentCard.capabilities.streaming ?? false,
-					supportsPushNotifications: agentCard.capabilities.pushNotifications ?? false,
-				},
-				skills: agentCard.skills.map((s) => ({
-					name: s.name,
-					description: s.description,
-				})),
+				capabilities: agentCard.capabilities,
+				skills: agentCard.skills,
+				defaultInputModes: agentCard.defaultInputModes,
+				defaultOutputModes: agentCard.defaultOutputModes,
+				additionalInterfaces: agentCard.additionalInterfaces,
 			},
 			category: hubConfig.categories ?? ["development-tools"],
 			tags: hubConfig.tags ?? [],

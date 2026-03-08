@@ -3,6 +3,8 @@
  *
  * Constructs an A2A Agent Card (per @a2a-js/sdk types) from extension config.
  * Supports dynamic enrichment from registered tools.
+ *
+ * Targets A2A Protocol v0.3.0 (the version implemented by @a2a-js/sdk v0.3.x).
  */
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
@@ -31,23 +33,29 @@ const DEFAULT_SKILLS: AgentSkill[] = [
 		name: "General Coding",
 		description: "Read, write, edit, and debug code across languages and frameworks",
 		tags: ["coding", "development"],
+		examples: ["Fix the bug in auth.ts", "Add input validation to the signup form"],
 	},
 	{
 		id: "file_operations",
 		name: "File Operations",
 		description: "Read, create, and modify files in the project",
 		tags: ["files", "editing"],
+		examples: ["Create a new config file", "Read the contents of package.json"],
 	},
 	{
 		id: "shell_commands",
 		name: "Shell Commands",
 		description: "Execute bash commands for builds, tests, and system operations",
 		tags: ["bash", "shell", "cli"],
+		examples: ["Run the test suite", "Install the missing dependency"],
 	},
 ];
 
 /**
  * Build an A2A Agent Card with static config.
+ *
+ * The card declares the agent's identity, capabilities, skills, and
+ * transport interfaces per the A2A v0.3.0 protocol spec.
  */
 export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 	const configSkills: AgentSkill[] | undefined = config.skills?.map((s) => ({
@@ -55,25 +63,45 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		tags: s.tags ?? [],
 	}));
 
-	return {
+	// Build the JSON-RPC endpoint URL (POST to root)
+	const jsonRpcUrl = baseUrl;
+
+	const card: AgentCard = {
 		name: config.name ?? "Pi Agent",
 		description: config.description ?? "Personal AI coding agent powered by Pi",
-		url: baseUrl,
+		url: jsonRpcUrl,
 		version: config.version ?? "1.0.0",
-		protocolVersion: "0.2.2",
+		protocolVersion: "0.3.0",
 		provider: {
 			organization: config.organization ?? "Pi",
 			url: config.providerUrl ?? baseUrl,
 		},
 		capabilities: {
-			streaming: false,
-			pushNotifications: false,
-			stateTransitionHistory: false,
+			streaming: true,
+			pushNotifications: true,
+			stateTransitionHistory: true,
 		},
 		skills: configSkills ?? DEFAULT_SKILLS,
-		defaultInputModes: ["text/plain"],
-		defaultOutputModes: ["text/plain"],
+		defaultInputModes: ["text/plain", "application/json"],
+		defaultOutputModes: ["text/plain", "application/json"],
+		additionalInterfaces: [
+			{ url: jsonRpcUrl, transport: "JSONRPC" },
+		],
 	};
+
+	// Declare security scheme when API key is configured
+	if (config.apiKey) {
+		card.securitySchemes = {
+			bearerAuth: {
+				type: "http",
+				scheme: "bearer",
+				description: "API key passed as Bearer token in the Authorization header",
+			},
+		};
+		card.security = [{ bearerAuth: [] }];
+	}
+
+	return card;
 }
 
 /**

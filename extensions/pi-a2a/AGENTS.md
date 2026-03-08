@@ -1,11 +1,11 @@
 ---
 name: pi-a2a
-description: A2A protocol extension — self-contained server for agent-to-agent communication with optional hub registration
+description: A2A protocol extension — full A2A v0.3.0 server with streaming, push notifications, task lifecycle, and optional hub registration
 ---
 
 ## Overview
 
-pi-a2a makes Pi a compliant A2A (Agent-to-Agent) protocol server. It runs its own HTTP server (no dependency on pi-webserver or other extensions), serves an Agent Card at `/.well-known/agent.json`, handles JSON-RPC 2.0 requests via the `@a2a-js/sdk`, and optionally registers with an A2A Discovery Hub.
+pi-a2a makes Pi a fully compliant A2A (Agent-to-Agent) protocol v0.3.0 server. It runs its own HTTP server (no dependency on pi-webserver or other extensions), serves an Agent Card at `/.well-known/agent-card.json`, handles JSON-RPC 2.0 requests via the `@a2a-js/sdk`, and optionally registers with an A2A Discovery Hub.
 
 ## Architecture
 
@@ -24,7 +24,10 @@ src/
 
 ## Key Design Decisions
 
-- **@a2a-js/sdk integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, and `InMemoryTaskStore` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific subprocess logic.
+- **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `InMemoryTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific subprocess logic.
+- **Full task lifecycle** — The executor follows the SDK's canonical pattern: publish initial Task (submitted) → status-update (working) → artifact-update → status-update (completed, final=true) → finished. This ensures `tasks/get` returns proper state and streaming/push notifications work.
+- **Streaming support** — Capabilities declare `streaming: true`. The SDK's `sendMessageStream` returns an `AsyncGenerator`; the HTTP server detects this and responds with SSE (`text/event-stream`).
+- **Push notifications** — Capabilities declare `pushNotifications: true`. `InMemoryPushNotificationStore` and `DefaultPushNotificationSender` are wired into the `DefaultRequestHandler`, enabling clients to register webhook URLs for async task updates.
 - **Self-contained HTTP server** — Uses `node:http` directly. No dependency on pi-webserver, pi-kysely, or any other extension. Binds to `127.0.0.1` by default; optional API key auth for external access.
 - **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
 - **Subprocess isolation** — Each `message/send` spawns a fresh `pi --mode rpc -ne` process. No shared state, no extension leakage. Cancellation kills the subprocess via `AbortController`.
@@ -38,13 +41,25 @@ Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publ
 
 ## A2A Protocol Compliance
 
-Uses @a2a-js/sdk v0.3.10 for protocol handling. Implements A2A spec methods:
-- `message/send` — Synchronous message processing via subprocess
-- `tasks/get` — Task retrieval by ID
-- `tasks/cancel` — Task cancellation with subprocess kill
+Implements A2A Protocol Specification v0.3.0 via @a2a-js/sdk v0.3.10.
 
-Agent Card served at both `GET /.well-known/agent.json` and `GET /.well-known/agent-card.json` per A2A discovery conventions.
+### Supported methods (via DefaultRequestHandler):
+- `message/send` — Synchronous message processing via subprocess
+- `message/send` (streaming) — SSE streaming with real-time status/artifact updates
+- `tasks/get` — Task retrieval by ID with history
+- `tasks/cancel` — Task cancellation with subprocess kill
+- `tasks/pushNotificationConfig/set` — Register push notification webhook
+- `tasks/pushNotificationConfig/get` — Retrieve push notification config
+- `tasks/pushNotificationConfig/list` — List all push notification configs
+- `tasks/pushNotificationConfig/delete` — Remove push notification config
+- `tasks/resubscribe` — Re-subscribe to task SSE stream
+
+### Agent Card features:
+- Served at `GET /.well-known/agent-card.json` (canonical) and `GET /.well-known/agent.json` (compat)
+- Declares `additionalInterfaces` with JSON-RPC transport URL
+- Declares `securitySchemes` when API key is configured
+- Protocol version: `0.3.0`
 
 ## Hub Integration
 
-When `hub` config is present with a valid `apiKey`, the extension calls `agents.register` on the hub's JSON-RPC API at session start. The hub API follows the pattern: `POST {hub.url}/rpc` with `Authorization: Bearer {apiKey}`.
+When `hub` config is present with a valid `apiKey`, the extension calls `agents.register` on the hub's JSON-RPC API at session start. Sends the full A2A-compliant agent card with all capabilities, skills (including tags and examples), and interfaces. The hub API follows the pattern: `POST {hub.url}/rpc` with `Authorization: Bearer {apiKey}`.

@@ -5,8 +5,12 @@
  * Runs its own HTTP server, no dependency on pi-webserver or other extensions.
  *
  * Features:
- *   - Serves A2A Agent Card at /.well-known/agent.json
+ *   - Full A2A v0.3.0 protocol compliance via @a2a-js/sdk
+ *   - Serves A2A Agent Card at /.well-known/agent-card.json
  *   - Handles A2A JSON-RPC 2.0 requests via SDK's DefaultRequestHandler
+ *   - Proper task lifecycle: submitted → working → completed/failed
+ *   - SSE streaming support for real-time task updates
+ *   - Push notification support for async task updates
  *   - Processes messages via isolated `pi --mode rpc` subprocesses
  *   - Dynamically enriches the Agent Card with registered extension tools
  *   - Optional registration with an A2A Discovery Hub
@@ -28,7 +32,13 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler } from "@a2a-js/sdk/server";
+import {
+	DefaultRequestHandler,
+	InMemoryTaskStore,
+	InMemoryPushNotificationStore,
+	DefaultPushNotificationSender,
+	JsonRpcTransportHandler,
+} from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor } from "./agent-executor.ts";
@@ -73,10 +83,21 @@ export default function (pi: ExtensionAPI) {
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
 
-		// Set up SDK components
+		// Set up SDK components with full capability support
 		executor = new PiAgentExecutor(cwd, log);
 		const taskStore = new InMemoryTaskStore();
-		const requestHandler = new DefaultRequestHandler(agentCard, taskStore, executor);
+		const pushNotificationStore = new InMemoryPushNotificationStore();
+		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
+
+		const requestHandler = new DefaultRequestHandler(
+			agentCard,
+			taskStore,
+			executor,
+			undefined,                // eventBusManager — use SDK default
+			pushNotificationStore,
+			pushNotificationSender,
+			undefined,                // extendedAgentCard — not configured yet
+		);
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
 		// Start the A2A server
@@ -134,7 +155,10 @@ export default function (pi: ExtensionAPI) {
 					const card = getAgentCard();
 					const skillCount = card?.skills.length ?? 0;
 					ctx.ui.notify(
-						`A2A server running on port ${port}\nAgent Card: ${publicUrl}/.well-known/agent.json\nSkills: ${skillCount}`,
+						`A2A server running on port ${port}\n` +
+						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
+						`Protocol: A2A v0.3.0 | Transport: JSON-RPC\n` +
+						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`,
 						"info",
 					);
 				} else {

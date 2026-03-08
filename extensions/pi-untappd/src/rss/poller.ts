@@ -124,23 +124,30 @@ export async function pollRSSSource(
 					}
 				}
 
-				// Create activity event
-				await ops.createActivityEvent({
-					rssSourceId: source.id as number,
-					eventType: "checkin",
-					untappdCheckinId: dedupKey,
-					untappdBeerId: parsed.beerId,
-					beerId,
-					venueId,
-					userId,
-					userUsername: parsed.username,
-					beerName: parsed.beerName || item.title || "Unknown Beer",
-					venueUntappdId: parsed.venueId,
-					payloadRaw: JSON.stringify(item),
-					occurredAt: parsed.occurredAt || new Date().toISOString(),
-				});
+				// Create activity event.
+				// Uses try/catch to handle UNIQUE constraint violations from
+				// concurrent polls racing on the same checkin (TOCTOU).
+				try {
+					await ops.createActivityEvent({
+						rssSourceId: source.id as number,
+						eventType: "checkin",
+						untappdCheckinId: dedupKey,
+						untappdBeerId: parsed.beerId,
+						beerId,
+						venueId,
+						userId,
+						userUsername: parsed.username,
+						beerName: parsed.beerName || item.title || "Unknown Beer",
+						venueUntappdId: parsed.venueId,
+						payloadRaw: JSON.stringify(item),
+						occurredAt: parsed.occurredAt || new Date().toISOString(),
+					});
 
-				newEvents++;
+					newEvents++;
+				} catch {
+					// UNIQUE constraint violation — another poller inserted first.
+					// Safe to ignore; the event already exists.
+				}
 
 				// Update menu item last_seen_at if beer is at venue
 				if (beerId && venueId) {
@@ -155,9 +162,6 @@ export async function pollRSSSource(
 			}
 		}
 
-		// Update last polled time
-		await ops.updateRSSSourcePolled(source.id as number);
-
 		log("poll_rss_source_complete", {
 			sourceId: source.id,
 			itemsProcessed: feed.items.length,
@@ -169,6 +173,10 @@ export async function pollRSSSource(
 			error: err.message,
 		}, "error");
 		throw err;
+	} finally {
+		// Always update last polled time — even on failure — so broken feeds
+		// respect their poll interval instead of retrying in a tight loop.
+		await ops.updateRSSSourcePolled(source.id as number);
 	}
 }
 

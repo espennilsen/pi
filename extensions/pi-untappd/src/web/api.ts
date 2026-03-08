@@ -20,6 +20,17 @@ function isAllowedRSSUrl(rssUrl: string): boolean {
 	}
 }
 
+/** Validate that a venue or brewery URL is a genuine Untappd HTTPS link. */
+function isAllowedUntappdUrl(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		return parsed.protocol === "https:" &&
+			(parsed.hostname === "untappd.com" || parsed.hostname.endsWith(".untappd.com"));
+	} catch {
+		return false;
+	}
+}
+
 interface APIResponse {
 	ok: boolean;
 	data?: unknown;
@@ -91,6 +102,10 @@ export async function handleAPIRequest(
 
 			if (!venueUrl) {
 				return sendJSON(400, { ok: false, error: "url is required" });
+			}
+
+			if (!isAllowedUntappdUrl(venueUrl)) {
+				return sendJSON(400, { ok: false, error: "URL must be an https://untappd.com link" });
 			}
 
 			const scraper = await import("../scraper/index.ts");
@@ -246,6 +261,10 @@ export async function handleAPIRequest(
 			}
 			if (!breweryName) {
 				return sendJSON(400, { ok: false, error: "name is required" });
+			}
+
+			if (!isAllowedUntappdUrl(breweryUrl)) {
+				return sendJSON(400, { ok: false, error: "URL must be an https://untappd.com link" });
 			}
 
 			const scraper = await import("../scraper/index.ts");

@@ -53,6 +53,10 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 				else reject(new Error(`Schema register failed: ${result.errors.join("; ")}`));
 			},
 		});
+		// If pi-kysely isn't loaded, no listener fires — resolve immediately.
+		// EventEmitter.emit is synchronous, so if no listener called reply
+		// by the time emit returns, we can resolve.
+		resolve();
 	});
 }
 

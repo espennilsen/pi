@@ -4,17 +4,16 @@
  * Registers the pi agent with an A2A Discovery Hub using its
  * JSON-RPC 2.0 API. Hub config comes from settings.json.
  *
- * Sends the full A2A-spec-compliant Agent Card, preserving all
- * capabilities, skills (with tags, examples, etc.), and interfaces.
+ * The hub only needs the agent's public URL — it fetches the Agent Card
+ * from /.well-known/agent.json itself.
  */
 
-import type { AgentCard } from "@a2a-js/sdk";
 import type { HubConfig } from "./types.ts";
 import type { LogFn } from "./logger.ts";
 
 interface HubRpcResponse {
 	jsonrpc: "2.0";
-	result?: { agentId: string; status: string };
+	result?: { agentId: string; status: string; message?: string };
 	error?: { code: number; message: string; data?: unknown };
 	id: number;
 }
@@ -22,11 +21,12 @@ interface HubRpcResponse {
 /**
  * Register this agent with the A2A Hub.
  *
- * Sends the full agent card as-is (A2A-compliant), plus hub-specific
- * metadata like categories, tags, and visibility.
+ * Sends the agent's public URL plus hub-specific metadata (categories,
+ * tags, visibility). The hub fetches and validates the Agent Card from
+ * the agent's /.well-known/agent.json endpoint.
  */
 export async function registerWithHub(
-	agentCard: AgentCard,
+	agentUrl: string,
 	hubConfig: HubConfig,
 	log: LogFn,
 ): Promise<{ agentId: string; status: string } | null> {
@@ -36,19 +36,7 @@ export async function registerWithHub(
 		jsonrpc: "2.0" as const,
 		method: "agents.register",
 		params: {
-			agentCard: {
-				name: agentCard.name,
-				description: agentCard.description,
-				url: agentCard.url,
-				version: agentCard.version,
-				protocolVersion: agentCard.protocolVersion,
-				provider: agentCard.provider,
-				capabilities: agentCard.capabilities,
-				skills: agentCard.skills,
-				defaultInputModes: agentCard.defaultInputModes,
-				defaultOutputModes: agentCard.defaultOutputModes,
-				additionalInterfaces: agentCard.additionalInterfaces,
-			},
+			url: agentUrl,
 			category: hubConfig.categories ?? ["development-tools"],
 			tags: hubConfig.tags ?? [],
 			visibility: hubConfig.visibility ?? "public",
@@ -56,7 +44,7 @@ export async function registerWithHub(
 		id: 1,
 	};
 
-	log("hub_register_start", { url: rpcUrl, agentName: agentCard.name });
+	log("hub_register_start", { url: rpcUrl, agentUrl });
 
 	try {
 		const res = await fetch(rpcUrl, {
@@ -78,7 +66,7 @@ export async function registerWithHub(
 		const data = (await res.json()) as HubRpcResponse;
 
 		if (data.error) {
-			log("hub_register_rpc_error", { code: data.error.code, message: data.error.message }, "ERROR");
+			log("hub_register_rpc_error", { code: data.error.code, message: data.error.message, data: data.error.data }, "ERROR");
 			return null;
 		}
 

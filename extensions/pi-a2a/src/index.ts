@@ -129,7 +129,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(agentCard, config.hub, log);
+			const result = await registerWithHub(publicUrl, config.hub, log);
 			if (result) {
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 			}
@@ -209,8 +209,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const agentCard = getAgentCard() ?? buildAgentCard(config, publicUrl);
-				const result = await registerWithHub(agentCard, config.hub, log);
+				const result = await registerWithHub(publicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
 				} else {

@@ -26,7 +26,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		// Initialize database schema via pi-kysely event bus
-		await initDb(pi.events);
+		await initDb(pi.events, log);
 
 		// Mount web routes when webserver is ready
 		const mountWeb = () => {

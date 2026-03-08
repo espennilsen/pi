@@ -292,6 +292,14 @@ export async function getRSSSourceById(id: number): Promise<Record<string, unkno
 	return rows[0];
 }
 
+export async function getRSSSourceByTypeAndForeignId(type: string, foreignId: number): Promise<Record<string, unknown> | undefined> {
+	const { rows } = await query(
+		"SELECT * FROM untappd_rss_sources WHERE type = ? AND foreign_id = ?",
+		[type, foreignId],
+	);
+	return rows[0];
+}
+
 export async function listRSSSources(): Promise<Record<string, unknown>[]> {
 	const { rows } = await query(
 		"SELECT * FROM untappd_rss_sources ORDER BY id",

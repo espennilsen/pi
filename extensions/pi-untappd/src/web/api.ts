@@ -124,6 +124,17 @@ export async function handleAPIRequest(
 			if (venueId) {
 				const existing = await ops.getVenueByUntappdId(venueId);
 				if (existing) {
+					// Ensure RSS source exists (may be missing if previous create was interrupted)
+					const existingRss = await ops.getRSSSourceByTypeAndForeignId("venue", existing.id as number);
+					if (!existingRss) {
+						const rssUrl = `https://untappd.com/rss/venue/${venueId}`;
+						await ops.createRSSSource({
+							type: "venue",
+							foreignId: existing.id as number,
+							rssUrl,
+							pollIntervalMinutes: 15,
+						});
+					}
 					return sendJSON(200, { ok: true, data: existing });
 				}
 			}
@@ -226,6 +237,16 @@ export async function handleAPIRequest(
 
 			const existing = await ops.getUserByUsername(username);
 			if (existing) {
+				// Ensure RSS source exists (may be missing if previous create was interrupted)
+				const existingRss = await ops.getRSSSourceByTypeAndForeignId("user", existing.id as number);
+				if (!existingRss) {
+					await ops.createRSSSource({
+						type: "user",
+						foreignId: existing.id as number,
+						rssUrl,
+						pollIntervalMinutes: 15,
+					});
+				}
 				return sendJSON(200, { ok: true, data: existing });
 			}
 

@@ -16,6 +16,8 @@ import { SCHEMA } from "./schema.ts";
 
 const ACTOR = "pi-untappd";
 
+type LogFn = (event: string, data: unknown, level?: string) => void;
+
 type Driver = "sqlite" | "postgres" | "mysql";
 
 let events: EventBus;
@@ -23,7 +25,7 @@ let driver: Driver = "sqlite";
 
 // ── Init ────────────────────────────────────────────────────────
 
-export async function initDb(eventBus: EventBus): Promise<void> {
+export async function initDb(eventBus: EventBus, log?: LogFn): Promise<void> {
 	events = eventBus;
 
 	// Detect SQL dialect from pi-kysely (falls back to sqlite).
@@ -46,6 +48,7 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 	});
 
 	// Schema:register — creates tables and indexes if they don't exist.
+	// If pi-kysely isn't loaded, we warn — all query() calls will time out.
 	// Additive-only, idempotent, portable across dialects.
 	await new Promise<void>((resolve, reject) => {
 		let replied = false;
@@ -60,7 +63,10 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 		// If pi-kysely isn't loaded, no listener fires — resolve immediately.
 		// EventEmitter.emit is synchronous, so if a listener called reply
 		// during emit, `replied` is already true and we skip the fallback.
-		if (!replied) resolve();
+		if (!replied) {
+			log?.("init_warning", { message: "pi-kysely not loaded — schema not registered. All query() calls will time out." }, "warn");
+			resolve();
+		}
 	});
 }
 

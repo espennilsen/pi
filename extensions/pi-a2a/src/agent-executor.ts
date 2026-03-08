@@ -89,8 +89,13 @@ export class PiAgentExecutor implements AgentExecutor {
 					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
 				} else if (file?.name) {
 					textSegments.push(`[File: ${file.name}]`);
+				} else if (file?.bytes) {
+					textSegments.push("[File: binary content — not processable by text subprocess]");
+					this.log("executor_file_part_bytes_only", { taskId }, "WARN");
 				}
 				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
+			} else {
+				this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
 			}
 		}
 

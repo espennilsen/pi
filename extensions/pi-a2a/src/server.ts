@@ -101,6 +101,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						}));
 						return;
 					}
+					if (clientVersion && !clientVersion.startsWith("0.3")) {
+						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
+					}
 
 					// API key auth when configured
 					if (opts.apiKey) {

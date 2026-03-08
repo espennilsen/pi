@@ -11,7 +11,7 @@
  *   - Proper task lifecycle: submitted → working → completed/failed
  *   - SSE streaming support for real-time task updates
  *   - Push notification support for async task updates
- *   - Processes messages via isolated `pi --mode rpc` subprocesses
+ *   - Processes messages via the MAIN agent process — full TUI visibility
  *   - Dynamically enriches the Agent Card with registered extension tools
  *   - Optional registration with an A2A Discovery Hub
  *
@@ -31,7 +31,9 @@
  * }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { randomUUID } from "node:crypto";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
@@ -42,7 +44,7 @@ import {
 } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
-import { PiAgentExecutor } from "./agent-executor.ts";
+import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
 import { sendA2AMessage } from "./client.ts";
@@ -55,14 +57,167 @@ function txt(s: string) {
 	return { content: [{ type: "text" as const, text: s }], details: {} };
 }
 
+/** Format duration in human-readable form. */
+function fmtDuration(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	const s = Math.round(ms / 1000);
+	if (s < 60) return `${s}s`;
+	return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/** Extract text content from the last assistant message. */
+function extractAssistantText(messages: AgentMessage[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m && "role" in m && m.role === "assistant" && Array.isArray(m.content)) {
+			const textParts = m.content
+				.filter((c: { type: string }) => c.type === "text")
+				.map((c: { type: string; text?: string }) => c.text ?? "");
+			if (textParts.length > 0) return textParts.join("\n");
+		}
+	}
+	return "";
+}
+
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cwd = process.cwd();
 	let cardEnriched = false;
 	let firstTurnEnriched = false;
 	let executor: PiAgentExecutor | null = null;
+	/** Captured from session_start for use in async callbacks. */
+	let sessionCtx: ExtensionContext | null = null;
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
+
+	// ── Main-process message handling ─────────────────────────
+	//
+	// When an A2A message arrives, we inject it into the main conversation
+	// via pi.sendMessage({ triggerTurn: true }). The agent processes it
+	// with full tool/skill access — everything visible in the TUI.
+	// On agent_end, we capture the response and send it back to the caller.
+
+	/** Resolve function for the pending A2A request. */
+	let pendingResolve: ((result: ProcessResult) => void) | null = null;
+	let pendingStartTime = 0;
+	/** Nonce embedded in the injected message to correlate with agent_end. */
+	let pendingNonce: string | null = null;
+
+	/** Wait for agent to be idle before injecting an A2A message. */
+	let agentBusy = false;
+	let idleResolvers: (() => void)[] = [];
+
+	function waitForIdle(): Promise<void> {
+		if (!agentBusy) return Promise.resolve();
+		return new Promise((resolve) => {
+			idleResolvers.push(resolve);
+		});
+	}
+
+	/**
+	 * Process an incoming A2A message via the main agent.
+	 * Called by the executor — blocks until the agent responds.
+	 */
+	async function processMessage(prompt: string, sender: string): Promise<ProcessResult> {
+		const start = Date.now();
+
+		// Wait for agent to finish any current turn
+		await waitForIdle();
+
+		return new Promise<ProcessResult>((resolve) => {
+			const nonce = randomUUID();
+			pendingResolve = resolve;
+			pendingStartTime = start;
+			pendingNonce = nonce;
+
+			// Inject into the main conversation — triggers a full agent turn.
+			// The nonce in details lets agent_end correlate this turn's response.
+			pi.sendMessage(
+				{
+					customType: "a2a-request",
+					content:
+						`📨 **A2A request from ${sender}**\n\n` +
+						`> ${prompt.split("\n").join("\n> ")}\n\n` +
+						`*Process this request. Your full response will be sent back to ${sender} via A2A.*`,
+					display: true,
+					details: { nonce },
+				},
+				{ triggerTurn: true },
+			);
+
+			updateStatusLine();
+		});
+	}
+
+	// Capture agent lifecycle for response extraction
+	pi.on("agent_start", () => {
+		agentBusy = true;
+	});
+
+	pi.on("agent_end", (event) => {
+		agentBusy = false;
+
+		// Notify any waiters that the agent is idle
+		const resolvers = idleResolvers;
+		idleResolvers = [];
+		for (const r of resolvers) r();
+
+		// If we're waiting for an A2A response, capture it — but only if
+		// this agent_end corresponds to our injected A2A turn (matched by nonce).
+		// This prevents user-initiated turns from consuming the pending resolve.
+		if (pendingResolve && pendingNonce) {
+			const hasMatchingRequest = event.messages.some((m) =>
+				"customType" in m &&
+				m.customType === "a2a-request" &&
+				(m as { details?: { nonce?: string } }).details?.nonce === pendingNonce
+			);
+
+			if (hasMatchingRequest) {
+				const response = extractAssistantText(event.messages);
+				const durationMs = Date.now() - pendingStartTime;
+				const resolve = pendingResolve;
+				pendingResolve = null;
+				pendingNonce = null;
+
+				if (response) {
+					// Show completion in chat
+					pi.sendMessage(
+						{
+							customType: "a2a-response-sent",
+							content: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
+							display: true,
+						},
+						{ triggerTurn: false },
+					);
+					resolve({ ok: true, response, durationMs });
+				} else {
+					resolve({ ok: false, response: "", error: "Agent produced no text response", durationMs });
+				}
+
+				updateStatusLine();
+			}
+		}
+	});
+
+	// ── TUI: status line ──────────────────────────────────────
+
+	function updateStatusLine(): void {
+		if (!sessionCtx || !executor) return;
+		const theme = sessionCtx.ui.theme;
+		if (executor.isBusy()) {
+			const queued = executor.queueDepth();
+			const queueLabel = queued > 0 ? ` +${queued} queued` : "";
+			const dot = theme.fg("warning", "●");
+			const label = theme.fg("dim", ` A2A processing${queueLabel}`);
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else if (isRunning()) {
+			const dot = theme.fg("success", "●");
+			const label = theme.fg("dim", " A2A");
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else {
+			sessionCtx.ui.setStatus("a2a", undefined);
+		}
+	}
 
 	/**
 	 * Enrich the agent card with dynamically discovered tools.
@@ -94,10 +249,20 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
+		sessionCtx = ctx;
 		cardEnriched = false;
 		firstTurnEnriched = false;
 
-		// Clean restart: abort any running tasks, stop telemetry, stop server
+		// Clean restart — reset all async state from previous session
+		agentBusy = false;
+		const staleResolvers = idleResolvers;
+		idleResolvers = [];
+		for (const r of staleResolvers) r();
+		if (pendingResolve) {
+			pendingResolve({ ok: false, response: "", error: "Session restart", durationMs: Date.now() - pendingStartTime });
+		}
+		pendingResolve = null;
+		pendingNonce = null;
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
@@ -117,8 +282,8 @@ export default function (pi: ExtensionAPI) {
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
 
-		// Set up SDK components with full capability support
-		executor = new PiAgentExecutor(cwd, log);
+		// Set up executor with main-process callback
+		executor = new PiAgentExecutor(log, processMessage);
 		const taskStore = new InMemoryTaskStore();
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
@@ -127,10 +292,10 @@ export default function (pi: ExtensionAPI) {
 			agentCard,
 			taskStore,
 			executor,
-			undefined,                // eventBusManager — use SDK default
+			undefined,
 			pushNotificationStore,
 			pushNotificationSender,
-			undefined,                // extendedAgentCard — not configured yet
+			undefined,
 		);
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
@@ -152,7 +317,10 @@ export default function (pi: ExtensionAPI) {
 		// Deferred enrichment
 		queueMicrotask(() => enrichCard());
 
-		// Optional: register with A2A Hub (send agent apiKey as credential)
+		// Show idle status in footer
+		updateStatusLine();
+
+		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 			if (result) {
@@ -175,8 +343,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_start", () => {
 		if (!firstTurnEnriched) {
 			firstTurnEnriched = true;
-			// Force re-enrichment even if already done, to pick up tools
-			// registered after session_start's microtask fired
 			cardEnriched = false;
 			enrichCard();
 		}
@@ -184,6 +350,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		cardEnriched = false;
+		sessionCtx?.ui.setStatus("a2a", undefined);
+		sessionCtx = null;
+		// Reject pending A2A request if any
+		if (pendingResolve) {
+			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
+			pendingResolve = null;
+			pendingNonce = null;
+		}
 
 		// Stop telemetry interval
 		if (telemetryInterval) {
@@ -197,7 +371,7 @@ export default function (pi: ExtensionAPI) {
 			if (config.hub?.apiKey) {
 				const idleSnap = executor
 					? { ...executor.getTelemetrySnapshot(), queueDepth: 0, activeTasks: 0 }
-					: { queueDepth: 0, activeTasks: 0, maxConcurrent: 3 };
+					: { queueDepth: 0, activeTasks: 0, maxConcurrent: 1 };
 				await reportTelemetryToHub(
 					hubAgentId,
 					idleSnap,
@@ -332,6 +506,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Send the message with sender identity
+			const sendStart = Date.now();
 			const result = await sendA2AMessage({
 				url: agentUrl,
 				message: params.message,
@@ -343,7 +518,8 @@ export default function (pi: ExtensionAPI) {
 				return txt(`Error sending to ${agentName}: ${result.error}`);
 			}
 
-			return txt(`**Response from ${agentName}:**\n\n${result.response}`);
+			const dur = fmtDuration(Date.now() - sendStart);
+			return txt(`**Response from ${agentName}** (${dur}):\n\n${result.response}`);
 		},
 	});
 
@@ -361,10 +537,14 @@ export default function (pi: ExtensionAPI) {
 				if (isRunning()) {
 					const card = getAgentCard();
 					const skillCount = card?.skills.length ?? 0;
+					const queued = executor?.queueDepth() ?? 0;
+					const busy = executor?.isBusy()
+						? ` | Processing: 1 task${queued > 0 ? ` + ${queued} queued` : ""}`
+						: "";
 					let statusMsg =
 						`A2A server running on port ${port}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
-						`Protocol: A2A v0.3.0 | Transport: JSON-RPC\n` +
+						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
 						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`;
 
 					if (hubAgentId && executor) {

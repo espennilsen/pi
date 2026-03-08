@@ -52,6 +52,7 @@ export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cwd = process.cwd();
 	let cardEnriched = false;
+	let firstTurnEnriched = false;
 	let executor: PiAgentExecutor | null = null;
 
 	/**
@@ -78,6 +79,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		cardEnriched = false;
+		firstTurnEnriched = false;
 
 		// Clean restart: stop existing server to avoid stale handler
 		if (isRunning()) {
@@ -134,9 +136,15 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// Enrich on first agent turn (catches stragglers)
+	// Re-enrich on first agent turn to catch late-registering extension tools
 	pi.on("agent_start", () => {
-		enrichCard();
+		if (!firstTurnEnriched) {
+			firstTurnEnriched = true;
+			// Force re-enrichment even if already done, to pick up tools
+			// registered after session_start's microtask fired
+			cardEnriched = false;
+			enrichCard();
+		}
 	});
 
 	pi.on("session_shutdown", async () => {

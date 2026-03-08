@@ -59,6 +59,7 @@ function _runPromptInner(
 		let stderr = "";
 		let settled = false;
 		let killTimer: ReturnType<typeof setTimeout> | null = null;
+		let agentEnded = false;
 
 		const rl = readline.createInterface({ input: child.stdout });
 
@@ -129,6 +130,7 @@ function _runPromptInner(
 
 				// Agent finished — clean up
 				if (event.type === "agent_end") {
+					agentEnded = true;
 					child.stdin.end();
 					child.kill("SIGTERM");
 				}
@@ -148,7 +150,9 @@ function _runPromptInner(
 			if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 			const durationMs = Date.now() - start;
 
-			if (code === 0 || responseText.length > 0) {
+			// Only treat as success if process exited cleanly (code 0) or
+			// the agent protocol completed normally (agent_end observed)
+			if (code === 0 || (agentEnded && responseText.length > 0)) {
 				settle({ ok: true, response: responseText, durationMs });
 			} else {
 				settle({

@@ -13,7 +13,7 @@
  */
 
 import * as http from "node:http";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
@@ -58,9 +58,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			// CORS headers
 			if (corsOrigin) {
 				res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+				res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+				res.setHeader("Access-Control-Allow-Headers", corsHeaders);
 			}
-			res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-			res.setHeader("Access-Control-Allow-Headers", corsHeaders);
 
 			if (method === "OPTIONS") {
 				res.writeHead(204);
@@ -221,7 +221,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 	const ha = createHmac("sha256", key).update(a).digest();
 	const hb = createHmac("sha256", key).update(b).digest();
 	// HMAC outputs are always 32 bytes — no length leak
-	return ha.equals(hb);
+	return timingSafeEqual(ha, hb);
 }
 
 class PayloadTooLargeError extends Error {

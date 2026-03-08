@@ -59,6 +59,17 @@ export class PiAgentExecutor implements AgentExecutor {
 		// Concurrency guard
 		if (this.running.size >= MAX_CONCURRENT) {
 			this.log("executor_busy", { taskId, active: this.running.size, max: MAX_CONCURRENT }, "WARN");
+			// Publish initial Task so the store has a record before the failure
+			if (!task) {
+				const initialTask: Task = {
+					kind: "task",
+					id: taskId,
+					contextId,
+					status: { state: "submitted", timestamp: new Date().toISOString() },
+					history: [userMessage],
+				};
+				eventBus.publish(initialTask);
+			}
 			this.publishError(taskId, contextId, eventBus, "Server busy — too many concurrent requests");
 			eventBus.finished();
 			return;

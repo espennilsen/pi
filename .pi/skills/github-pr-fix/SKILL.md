@@ -198,6 +198,17 @@ git branch -d <branch-name>
 **Note:** Only clean up if the PR is fully addressed. If threads remain open
 or further rounds of review are expected, keep the worktree alive.
 
+## When you're stuck
+
+If anything is unclear — ambiguous review feedback, unsure how to fix, can't
+find the right file, or need Espen's input — use A2A to reach him:
+
+1. Discover the Aivena agent: `a2a_discover`
+2. Send a message via Aivena, who will forward it to Espen on Telegram:
+   `a2a_send` to **Aivena** with a clear, concise question
+
+Don't guess on ambiguous reviewer intent — ask.
+
 ## Rules
 
 - **Never fix without user confirmation** — always present assessment first

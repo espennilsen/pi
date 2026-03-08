@@ -171,24 +171,25 @@ export class PiAgentExecutor implements AgentExecutor {
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
 		const entry = this.running.get(taskId);
-		const contextId = entry?.contextId ?? taskId;
 		if (entry) {
 			entry.handle.abort();
 			this.running.delete(taskId);
 			this.log("executor_cancel", { taskId });
-		}
 
-		const cancelEvent: TaskStatusUpdateEvent = {
-			kind: "status-update",
-			taskId,
-			contextId,
-			status: {
-				state: "canceled",
-				timestamp: new Date().toISOString(),
-			},
-			final: true,
-		};
-		eventBus.publish(cancelEvent);
+			const cancelEvent: TaskStatusUpdateEvent = {
+				kind: "status-update",
+				taskId,
+				contextId: entry.contextId,
+				status: {
+					state: "canceled",
+					timestamp: new Date().toISOString(),
+				},
+				final: true,
+			};
+			eventBus.publish(cancelEvent);
+		} else {
+			this.log("executor_cancel_unknown", { taskId }, "WARN");
+		}
 		eventBus.finished();
 	}
 

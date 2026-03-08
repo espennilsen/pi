@@ -42,5 +42,20 @@ export function loadConfig(cwd: string): A2AConfig {
 		...(global[SETTINGS_KEY] as Record<string, unknown> ?? {}),
 		...(project[SETTINGS_KEY] as Record<string, unknown> ?? {}),
 	};
+	// Runtime validation for critical fields
+	if (merged.port !== undefined) {
+		const port = Number(merged.port);
+		if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+			console.warn(`[pi-a2a] Invalid port "${merged.port}", falling back to default (3100)`);
+			delete merged.port;
+		} else {
+			merged.port = port;
+		}
+	}
+	if (merged.bind !== undefined && typeof merged.bind !== "string") {
+		console.warn(`[pi-a2a] Invalid bind address "${merged.bind}", falling back to default ("127.0.0.1")`);
+		delete merged.bind;
+	}
+
 	return merged as A2AConfig;
 }

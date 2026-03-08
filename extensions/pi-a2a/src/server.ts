@@ -121,7 +121,12 @@ export function startServer(opts: ServerOptions): Promise<void> {
 							"Connection": "keep-alive",
 						});
 						const generator = result as AsyncGenerator<unknown>;
+						// Abort generator early if client disconnects to free subprocess slot
+						req.on("close", () => {
+							generator.return(undefined);
+						});
 						for await (const event of generator) {
+							if (res.writableEnded) break;
 							res.write(`data: ${JSON.stringify(event)}\n\n`);
 						}
 						res.end();
@@ -137,6 +142,12 @@ export function startServer(opts: ServerOptions): Promise<void> {
 				res.writeHead(404, { "Content-Type": "application/json" });
 				res.end(JSON.stringify({ error: "Not found" }));
 			} catch (err: unknown) {
+				if (err instanceof PayloadTooLargeError) {
+					opts.log("payload_too_large", { path: pathname }, "WARN");
+					res.writeHead(413, { "Content-Type": "application/json" });
+					res.end(JSON.stringify({ error: "Payload too large" }));
+					return;
+				}
 				const msg = err instanceof Error ? err.message : String(err);
 				opts.log("server_error", { path: pathname, error: msg }, "ERROR");
 				res.writeHead(500, { "Content-Type": "application/json" });
@@ -194,18 +205,28 @@ export function getAgentCard(): AgentCard | null {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+class PayloadTooLargeError extends Error {
+	constructor() {
+		super("Payload too large");
+		this.name = "PayloadTooLargeError";
+	}
+}
+
 function readBody(req: http.IncomingMessage): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let body = "";
+		let byteLength = 0;
 		let rejected = false;
 
 		req.on("data", (chunk: Buffer) => {
-			body += chunk.toString();
-			if (body.length > MAX_BODY) {
+			byteLength += chunk.byteLength;
+			if (byteLength > MAX_BODY) {
 				rejected = true;
 				req.destroy();
-				reject(new Error("Payload too large"));
+				reject(new PayloadTooLargeError());
+				return;
 			}
+			body += chunk.toString();
 		});
 
 		req.on("end", () => {

@@ -63,7 +63,7 @@ export async function registerWithHub(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"Authorization": `Bearer ${hubConfig.apiKey}`,
+				"X-API-Key": hubConfig.apiKey,
 			},
 			body: JSON.stringify(payload),
 			signal: AbortSignal.timeout(10_000),

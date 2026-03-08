@@ -13,6 +13,7 @@
  */
 
 import * as http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
@@ -88,7 +89,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					if (opts.apiKey) {
 						const authHeader = req.headers.authorization ?? "";
 						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-						if (token !== opts.apiKey) {
+						const tokenBuf = Buffer.from(token);
+						const keyBuf = Buffer.from(opts.apiKey);
+						if (tokenBuf.length !== keyBuf.length || !timingSafeEqual(tokenBuf, keyBuf)) {
 							res.writeHead(401, { "Content-Type": "application/json" });
 							res.end(JSON.stringify({ error: "Unauthorized" }));
 							return;
@@ -142,6 +145,13 @@ export function startServer(opts: ServerOptions): Promise<void> {
 				res.writeHead(404, { "Content-Type": "application/json" });
 				res.end(JSON.stringify({ error: "Not found" }));
 			} catch (err: unknown) {
+				// Guard against writing headers twice (e.g. error during SSE streaming)
+				if (res.headersSent) {
+					if (!res.writableEnded) res.end();
+					const msg = err instanceof Error ? err.message : String(err);
+					opts.log("server_error_after_headers", { path: pathname, error: msg }, "ERROR");
+					return;
+				}
 				if (err instanceof PayloadTooLargeError) {
 					opts.log("payload_too_large", { path: pathname }, "WARN");
 					res.writeHead(413, { "Content-Type": "application/json" });
@@ -176,6 +186,8 @@ export function stopServer(log: LogFn): Promise<void> {
 			resolve();
 			return;
 		}
+		// Destroy active connections (including SSE) so .close() callback fires promptly
+		server.closeAllConnections();
 		server.close(() => {
 			log("server_stopped");
 			server = null;

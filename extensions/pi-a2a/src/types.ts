@@ -46,3 +46,36 @@ export interface HubConfig {
 	/** Auto-register on session start. Defaults to true when hub config is present. */
 	autoRegister?: boolean;
 }
+
+// ── Remote Agent Types (from hub API responses) ─────────────────
+
+export interface RemoteAgentSummary {
+	id: string;
+	name: string;
+	description: string;
+	url: string;
+	category: string[];
+	tags: string[];
+	iconUrl: string | null;
+	healthStatus: "healthy" | "degraded" | "down" | "unknown";
+	popularity: number;
+	featured: boolean;
+}
+
+export interface RemoteAgentDetail {
+	id: string;
+	agentCard: Record<string, unknown>;
+	status: "pending" | "active" | "suspended" | "archived";
+	visibility: "public" | "private" | "unlisted";
+	category: string[];
+	tags: string[];
+	featured: boolean;
+	popularity: number;
+	healthStatus: "healthy" | "degraded" | "down" | "unknown";
+	uptimePercentage: number;
+	validationStatus: "valid" | "invalid" | "warning" | "unknown";
+	hasCredential: boolean;
+	credentialUpdatedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+}

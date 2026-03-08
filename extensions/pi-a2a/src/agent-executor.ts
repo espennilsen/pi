@@ -99,6 +99,18 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 		}
 
+		// Check for sender identity in message metadata (A2A spec extension)
+		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
+			| { name?: string; description?: string }
+			| undefined;
+		if (senderMeta?.name) {
+			const desc = senderMeta.description ? ` (${senderMeta.description})` : "";
+			textSegments.unshift(
+				`[This message is from agent "${senderMeta.name}"${desc}, not from the human user.]`,
+			);
+			this.log("executor_sender_identity", { taskId, senderName: senderMeta.name });
+		}
+
 		if (textSegments.length === 0) {
 			if (!task) {
 				const initialTask: Task = {

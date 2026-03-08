@@ -191,7 +191,15 @@ export async function pollRSSSource(
 	} finally {
 		// Always update last polled time — even on failure — so broken feeds
 		// respect their poll interval instead of retrying in a tight loop.
-		await ops.updateRSSSourcePolled(source.id as number);
+		try {
+			await ops.updateRSSSourcePolled(source.id as number);
+		} catch (finallyErr: any) {
+			// Log secondary failure rather than letting it swallow the original error
+			log("poll_rss_update_polled_error", {
+				sourceId: source.id,
+				error: finallyErr.message,
+			}, "warn");
+		}
 	}
 }
 

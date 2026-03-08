@@ -81,25 +81,27 @@ export interface QueryResult {
 const QUERY_TIMEOUT_MS = 10_000;
 
 export function query(sql: string, params: unknown[] = []): Promise<QueryResult> {
-	const queryPromise = new Promise<QueryResult>((resolve, reject) => {
-		events.emit("kysely:query", {
-			actor: ACTOR,
-			input: { sql, params },
-			reply: (result: QueryResult) => resolve(result),
-			ack: (ack: { ok: boolean; error?: string }) => {
-				if (!ack.ok) reject(new Error(ack.error));
-			},
-		});
-	});
-
-	const timeout = new Promise<never>((_, reject) => {
-		setTimeout(
+	return new Promise<QueryResult>((resolve, reject) => {
+		const timer = setTimeout(
 			() => reject(new Error(`query() timed out after ${QUERY_TIMEOUT_MS}ms — is pi-kysely loaded? SQL: ${sql.slice(0, 80)}`)),
 			QUERY_TIMEOUT_MS,
 		);
-	});
 
-	return Promise.race([queryPromise, timeout]);
+		events.emit("kysely:query", {
+			actor: ACTOR,
+			input: { sql, params },
+			reply: (result: QueryResult) => {
+				clearTimeout(timer);
+				resolve(result);
+			},
+			ack: (ack: { ok: boolean; error?: string }) => {
+				if (!ack.ok) {
+					clearTimeout(timer);
+					reject(new Error(ack.error));
+				}
+			},
+		});
+	});
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

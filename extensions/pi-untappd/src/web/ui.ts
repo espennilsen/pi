@@ -11,6 +11,9 @@ import * as ops from "../db/operations.ts";
 /** Escape HTML special characters in DB-derived values. */
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
+/** Sanitize a URL for use in href attributes — only allow https: scheme. */
+const safeUrl = (u: unknown) => String(u ?? "").startsWith("https://") ? String(u) : "#";
+
 export async function handleUIRequest(
 	req: IncomingMessage,
 	res: ServerResponse,
@@ -263,7 +266,7 @@ export async function handleUIRequest(
 						<tr><th>Slug</th><td>${esc(venue.slug || "—")}</td></tr>
 						<tr><th>City</th><td>${esc(venue.city || "—")}</td></tr>
 						<tr><th>Country</th><td>${esc(venue.country || "—")}</td></tr>
-						<tr><th>URL</th><td><a href="${esc(venue.url)}" target="_blank">${esc(venue.url)}</a></td></tr>
+						<tr><th>URL</th><td><a href="${esc(safeUrl(venue.url))}" target="_blank">${esc(venue.url)}</a></td></tr>
 						<tr><th>Last Scraped</th><td>${venue.last_menu_scraped_at ? esc(new Date(venue.last_menu_scraped_at as string).toLocaleString()) : "Never"}</td></tr>
 					</table>
 				</div>
@@ -397,7 +400,7 @@ export async function handleUIRequest(
 									<tr>
 										<td>${esc(b.name)}</td>
 										<td>${esc(b.slug)}</td>
-										<td><a href="${esc(b.url)}" target="_blank">View on Untappd</a></td>
+										<td><a href="${esc(safeUrl(b.url))}" target="_blank">View on Untappd</a></td>
 									</tr>
 								`).join("")}
 							</tbody>

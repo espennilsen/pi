@@ -122,9 +122,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		try {
 			const result = await handle.result;
 
-			// If canceled while running, don't publish completion
+			// If canceled while running, don't publish completion but do signal finished
 			if (!this.running.has(taskId)) {
 				this.log("executor_canceled_during_run", { taskId, durationMs: result.durationMs });
+				eventBus.finished();
 				return;
 			}
 

@@ -13,7 +13,7 @@
  */
 
 import * as http from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
@@ -89,9 +89,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					if (opts.apiKey) {
 						const authHeader = req.headers.authorization ?? "";
 						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-						const tokenBuf = Buffer.from(token);
-						const keyBuf = Buffer.from(opts.apiKey);
-						if (tokenBuf.length !== keyBuf.length || !timingSafeEqual(tokenBuf, keyBuf)) {
+						if (!constantTimeEqual(token, opts.apiKey)) {
 							res.writeHead(401, { "Content-Type": "application/json" });
 							res.end(JSON.stringify({ error: "Unauthorized" }));
 							return;
@@ -216,6 +214,15 @@ export function getAgentCard(): AgentCard | null {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+/** Constant-time string comparison using HMAC to avoid leaking input length. */
+function constantTimeEqual(a: string, b: string): boolean {
+	const key = "pi-a2a-auth"; // fixed key — only used to normalize comparison
+	const ha = createHmac("sha256", key).update(a).digest();
+	const hb = createHmac("sha256", key).update(b).digest();
+	// HMAC outputs are always 32 bytes — no length leak
+	return ha.equals(hb);
+}
 
 class PayloadTooLargeError extends Error {
 	constructor() {

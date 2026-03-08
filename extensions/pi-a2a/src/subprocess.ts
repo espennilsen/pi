@@ -66,7 +66,9 @@ function _runPromptInner(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			if (killTimer) { clearTimeout(killTimer); killTimer = null; }
+			// Note: killTimer is intentionally NOT cleared here — it must fire
+			// SIGKILL if the process ignores SIGTERM. It's cleared in the
+			// child "close" handler once the process actually exits.
 			signal.removeEventListener("abort", onAbort);
 			rl.close();
 			resolve(result);

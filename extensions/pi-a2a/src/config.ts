@@ -33,7 +33,12 @@ import type { A2AConfig } from "./types.ts";
 
 const SETTINGS_KEY = "pi-a2a";
 
-export function loadConfig(cwd: string): A2AConfig {
+export interface ConfigResult {
+	config: A2AConfig;
+	warnings: string[];
+}
+
+export function loadConfig(cwd: string): ConfigResult {
 	const agentDir = getAgentDir();
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, unknown>;
@@ -42,20 +47,22 @@ export function loadConfig(cwd: string): A2AConfig {
 		...(global[SETTINGS_KEY] as Record<string, unknown> ?? {}),
 		...(project[SETTINGS_KEY] as Record<string, unknown> ?? {}),
 	};
+	const warnings: string[] = [];
+
 	// Runtime validation for critical fields
 	if (merged.port !== undefined) {
 		const port = Number(merged.port);
 		if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-			console.warn(`[pi-a2a] Invalid port "${merged.port}", falling back to default (3100)`);
+			warnings.push(`Invalid port "${merged.port}", falling back to default (3100)`);
 			delete merged.port;
 		} else {
 			merged.port = port;
 		}
 	}
 	if (merged.bind !== undefined && typeof merged.bind !== "string") {
-		console.warn(`[pi-a2a] Invalid bind address "${merged.bind}", falling back to default ("127.0.0.1")`);
+		warnings.push(`Invalid bind address "${merged.bind}", falling back to default ("127.0.0.1")`);
 		delete merged.bind;
 	}
 
-	return merged as A2AConfig;
+	return { config: merged as A2AConfig, warnings };
 }

@@ -78,7 +78,14 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
 		cardEnriched = false;
-		const config = loadConfig(cwd);
+
+		// Clean restart: stop existing server to avoid stale handler
+		if (isRunning()) {
+			await stopServer(log);
+		}
+
+		const { config, warnings } = loadConfig(cwd);
+		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
@@ -146,7 +153,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register",
 		handler: async (args, ctx) => {
 			const action = args.trim();
-			const config = loadConfig(cwd);
+			const { config } = loadConfig(cwd);
 			const port = config.port ?? DEFAULT_PORT;
 			const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 

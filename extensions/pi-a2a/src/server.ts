@@ -162,7 +162,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 		});
 
 		const bind = opts.bind ?? "127.0.0.1";
-		const logHost = (bind && bind !== "0.0.0.0") ? bind : "localhost";
+		const logHost = bind === "::1" ? "[::1]" : (!bind || bind === "0.0.0.0") ? "localhost" : bind;
 		server.listen(opts.port, bind, () => {
 			opts.log("server_started", { port: opts.port, bind, agentCard: `http://${logHost}:${opts.port}/.well-known/agent.json` });
 			resolve();

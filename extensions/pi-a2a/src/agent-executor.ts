@@ -136,18 +136,13 @@ export class PiAgentExecutor implements AgentExecutor {
 				eventBus.publish(artifactUpdate);
 
 				// ── Step 5: Publish final "completed" status ──
+				// Content is in the artifact; status message is a brief summary to avoid duplication
 				const completedUpdate: TaskStatusUpdateEvent = {
 					kind: "status-update",
 					taskId,
 					contextId,
 					status: {
 						state: "completed",
-						message: {
-							kind: "message",
-							messageId: randomUUID(),
-							role: "agent",
-							parts: [{ kind: "text", text: result.response } as Part],
-						},
 						timestamp: new Date().toISOString(),
 					},
 					final: true,

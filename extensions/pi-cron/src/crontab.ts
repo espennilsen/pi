@@ -108,7 +108,7 @@ export function serialize(jobs: CronJob[]): string {
 
 export function loadJobs(): CronJob[] {
 	try {
-		const content = fs.readFileSync(tabPath, "utf-8");
+		const content = fs.readFileSync(getTabPath(), "utf-8");
 		return parse(content);
 	} catch {
 		return [];
@@ -116,12 +116,13 @@ export function loadJobs(): CronJob[] {
 }
 
 export function saveJobs(jobs: CronJob[]): void {
-	fs.mkdirSync(path.dirname(tabPath), { recursive: true });
-	fs.writeFileSync(tabPath, serialize(jobs), "utf-8");
+	const p = getTabPath();
+	fs.mkdirSync(path.dirname(p), { recursive: true });
+	fs.writeFileSync(p, serialize(jobs), "utf-8");
 }
 
 export function ensureTabFile(): void {
-	if (!fs.existsSync(tabPath)) {
+	if (!fs.existsSync(getTabPath())) {
 		saveJobs([]); // Creates file with header comments
 	}
 }

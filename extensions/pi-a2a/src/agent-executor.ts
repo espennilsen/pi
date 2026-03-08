@@ -23,6 +23,10 @@ import { randomUUID } from "node:crypto";
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
 import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
+import type { TelemetrySnapshot } from "./types.ts";
+
+/** Max concurrent tasks (1 for main-process delegation). */
+const MAX_CONCURRENT = 1;
 
 /** Result returned by the main agent process. */
 export interface ProcessResult {
@@ -53,10 +57,32 @@ export class PiAgentExecutor implements AgentExecutor {
 	private cancelCallbacks = new Map<string, () => void>();
 	/** Number of tasks waiting in the queue (not yet active). */
 	private _queueDepth = 0;
+	/** Last completed/failed task duration for telemetry reporting. */
+	private lastTaskDurationMs?: number;
+	/** Last completed/failed task status for telemetry reporting. */
+	private lastTaskStatus?: "completed" | "failed";
+	/** Optional callback invoked after each task completes or fails. */
+	onTaskFinished?: () => void;
 
 	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
 		this.processMessage = processMessage;
+	}
+
+	/** Return a snapshot of current telemetry state for hub reporting. */
+	getTelemetrySnapshot(): TelemetrySnapshot {
+		const snapshot: TelemetrySnapshot = {
+			queueDepth: this._queueDepth,
+			activeTasks: this.activeTaskId ? 1 : 0,
+			maxConcurrent: MAX_CONCURRENT,
+		};
+		if (this.lastTaskDurationMs !== undefined) {
+			snapshot.lastTaskDurationMs = this.lastTaskDurationMs;
+		}
+		if (this.lastTaskStatus !== undefined) {
+			snapshot.lastTaskStatus = this.lastTaskStatus;
+		}
+		return snapshot;
 	}
 
 	/** Abort the active task and cancel all queued tasks. */
@@ -193,9 +219,19 @@ export class PiAgentExecutor implements AgentExecutor {
 					final: true,
 				} as TaskStatusUpdateEvent);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
+
+				// Record telemetry for hub reporting
+				this.lastTaskDurationMs = result.durationMs;
+				this.lastTaskStatus = "completed";
+				this.onTaskFinished?.();
 			} else {
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
-				this.log("executor_failed", { taskId, error: result.error, durationMs: result.durationMs }, "ERROR");
+				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
+
+				// Record telemetry for hub reporting
+				this.lastTaskDurationMs = result.durationMs;
+				this.lastTaskStatus = "failed";
+				this.onTaskFinished?.();
 			}
 
 			eventBus.finished();
@@ -204,6 +240,13 @@ export class PiAgentExecutor implements AgentExecutor {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
+
+			// Record telemetry for hub reporting — clear stale duration
+			// to avoid pairing a previous task's timing with this failure
+			this.lastTaskDurationMs = undefined;
+			this.lastTaskStatus = "failed";
+			this.onTaskFinished?.();
+
 			eventBus.finished();
 		} finally {
 			// Release the queue so the next task can proceed

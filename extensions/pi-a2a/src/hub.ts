@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
 import type { LogFn } from "./logger.ts";
 
 interface HubRpcResponse {
@@ -107,12 +107,8 @@ export async function registerWithHub(
 
 	const result = await hubRpc(rpcUrl, "agents.register", params, hubConfig.apiKey, log, "hub_register");
 	if (result) {
-		const agentId = result.agentId;
-		const status = result.status;
-		if (typeof agentId !== "string" || typeof status !== "string") {
-			log("hub_register_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
-			return null;
-		}
+		const agentId = result.agentId as string;
+		const status = result.status as string;
 		log("hub_register_success", { agentId, status });
 		return { agentId, status };
 	}
@@ -141,13 +137,9 @@ export async function discoverAgentsOnHub(
 
 	const result = await hubRpc(rpcUrl, "agents.search", params, hubConfig.apiKey, log, "hub_discover");
 	if (result) {
-		if (!Array.isArray(result.agents) || typeof result.total !== "number") {
-			log("hub_discover_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
-			return null;
-		}
 		return {
 			agents: result.agents as RemoteAgentSummary[],
-			total: result.total,
+			total: result.total as number,
 		};
 	}
 	return null;
@@ -187,13 +179,9 @@ export async function getCredentialFromHub(
 
 	const result = await hubRpc(rpcUrl, "agents.getCredential", { agentId }, hubConfig.apiKey, log, "hub_get_credential");
 	if (result) {
-		if (typeof result.hasCredential !== "boolean") {
-			log("hub_get_credential_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
-			return null;
-		}
 		return {
-			credential: typeof result.credential === "string" ? result.credential : null,
-			hasCredential: result.hasCredential,
+			credential: (result.credential as string | null) ?? null,
+			hasCredential: result.hasCredential as boolean,
 		};
 	}
 	return null;
@@ -226,17 +214,49 @@ export async function setCredentialOnHub(
 		"hub_set_credential",
 	);
 	if (result) {
-		if (typeof result.agentId !== "string" || typeof result.hasCredential !== "boolean") {
-			log("hub_set_credential_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
-			return null;
-		}
 		const out = {
-			agentId: result.agentId,
-			hasCredential: result.hasCredential,
-			credentialUpdatedAt: typeof result.credentialUpdatedAt === "string" ? result.credentialUpdatedAt : null,
+			agentId: result.agentId as string,
+			hasCredential: result.hasCredential as boolean,
+			credentialUpdatedAt: (result.credentialUpdatedAt as string | null) ?? null,
 		};
 		log("hub_set_credential_success", out);
 		return out;
+	}
+	return null;
+}
+
+/**
+ * Report telemetry to the A2A Hub.
+ *
+ * Sends the agent's current operational state (queue depth, active tasks,
+ * response times) so the hub can compute availability and rank agents
+ * in search results. If the agent doesn't report for 5 minutes, the hub
+ * resets its telemetry to unknown.
+ */
+export async function reportTelemetryToHub(
+	agentId: string,
+	telemetry: TelemetrySnapshot,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ telemetryUpdatedAt: string } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	const params: Record<string, unknown> = {
+		agentId,
+		queueDepth: telemetry.queueDepth,
+		activeTasks: telemetry.activeTasks,
+		maxConcurrent: telemetry.maxConcurrent,
+	};
+	if (telemetry.lastTaskDurationMs !== undefined) {
+		params.lastTaskDurationMs = telemetry.lastTaskDurationMs;
+	}
+	if (telemetry.lastTaskStatus !== undefined) {
+		params.lastTaskStatus = telemetry.lastTaskStatus;
+	}
+
+	const result = await hubRpc(rpcUrl, "agents.reportTelemetry", params, hubConfig.apiKey, log, "hub_telemetry");
+	if (result) {
+		return { telemetryUpdatedAt: result.telemetryUpdatedAt as string };
 	}
 	return null;
 }

@@ -46,7 +46,7 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
 import { sendA2AMessage } from "./client.ts";
 import { createLogger } from "./logger.ts";
 import type { RemoteAgentSummary } from "./types.ts";
@@ -87,6 +87,8 @@ export default function (pi: ExtensionAPI) {
 	let executor: PiAgentExecutor | null = null;
 	/** Captured from session_start for use in async callbacks. */
 	let sessionCtx: ExtensionContext | null = null;
+	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
+	let hubAgentId: string | null = null;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -236,6 +238,13 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	/** Send a telemetry snapshot to the hub. Failures are logged but never thrown. */
+	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
+		if (!hubAgentId || !executor || !config.hub?.apiKey) return;
+		const snapshot = executor.getTelemetrySnapshot();
+		await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
+	}
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -254,6 +263,11 @@ export default function (pi: ExtensionAPI) {
 		}
 		pendingResolve = null;
 		pendingNonce = null;
+		if (telemetryInterval) {
+			clearInterval(telemetryInterval);
+			telemetryInterval = null;
+		}
+		hubAgentId = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -310,7 +324,17 @@ export default function (pi: ExtensionAPI) {
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 			if (result) {
+				hubAgentId = result.agentId;
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
+
+				// Start periodic telemetry reporting (every 30s)
+				telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
+
+				// Wire up immediate telemetry report after each task completes
+				executor.onTaskFinished = () => { sendTelemetry(config).catch(() => {}); };
+
+				// Send initial telemetry report
+				sendTelemetry(config).catch(() => {});
 			}
 		}
 	});
@@ -334,6 +358,30 @@ export default function (pi: ExtensionAPI) {
 			pendingResolve = null;
 			pendingNonce = null;
 		}
+
+		// Stop telemetry interval
+		if (telemetryInterval) {
+			clearInterval(telemetryInterval);
+			telemetryInterval = null;
+		}
+
+		// Send final "idle" telemetry report before shutting down
+		if (hubAgentId) {
+			const { config } = loadConfig(cwd);
+			if (config.hub?.apiKey) {
+				const idleSnap = executor
+					? { ...executor.getTelemetrySnapshot(), queueDepth: 0, activeTasks: 0 }
+					: { queueDepth: 0, activeTasks: 0, maxConcurrent: 1 };
+				await reportTelemetryToHub(
+					hubAgentId,
+					idleSnap,
+					config.hub,
+					log,
+				).catch(() => {});
+			}
+		}
+		hubAgentId = null;
+
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -383,9 +431,14 @@ export default function (pi: ExtensionAPI) {
 				return txt("No agents found on the hub.");
 			}
 
-			const lines = result.agents.map((a) =>
-				`• **${a.name}** (id: ${a.id})\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus} | Tags: ${a.tags.join(", ") || "none"}`
-			);
+			const availabilityEmoji: Record<string, string> = { idle: "🟢", busy: "🟡", saturated: "🔴", unknown: "⚪" };
+
+			const lines = result.agents.map((a) => {
+				const emoji = availabilityEmoji[a.availability] ?? "⚪";
+				const availLabel = a.availability.charAt(0).toUpperCase() + a.availability.slice(1);
+				const avgResp = a.avgResponseMs != null ? ` | Avg Response: ${(a.avgResponseMs / 1000).toFixed(1)}s` : "";
+				return `• **${a.name}** (id: ${a.id}) ${emoji} ${availLabel}\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus}${avgResp} | Tags: ${a.tags.join(", ") || "none"}`;
+			});
 
 			return txt(`Found ${result.total} agent(s) on the hub:\n\n${lines.join("\n\n")}`);
 		},
@@ -488,13 +541,22 @@ export default function (pi: ExtensionAPI) {
 					const busy = executor?.isBusy()
 						? ` | Processing: 1 task${queued > 0 ? ` + ${queued} queued` : ""}`
 						: "";
-					ctx.ui.notify(
+					let statusMsg =
 						`A2A server running on port ${port}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
 						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
-						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`,
-						"info",
-					);
+						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`;
+
+					if (hubAgentId && executor) {
+						const snap = executor.getTelemetrySnapshot();
+						const avgPart = snap.lastTaskDurationMs != null ? ` | avg ${(snap.lastTaskDurationMs / 1000).toFixed(1)}s` : "";
+						statusMsg += `\nHub: registered (agentId=${hubAgentId})\n` +
+							`Telemetry: ${snap.activeTasks} active / ${snap.maxConcurrent} max | ${snap.queueDepth} queued${avgPart}`;
+					} else if (config.hub?.apiKey) {
+						statusMsg += "\nHub: configured but not registered";
+					}
+
+					ctx.ui.notify(statusMsg, "info");
 				} else {
 					ctx.ui.notify("A2A server is not running", "info");
 				}
@@ -544,6 +606,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
+				// We need the agentId. Re-register to get it (idempotent on the hub).
 				const reg = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");

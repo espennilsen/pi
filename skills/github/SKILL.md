@@ -239,11 +239,13 @@ gh pr list --repo espennilsen/<repo>
 
 ## Common Workflows
 
-### Start a feature
+### Start a feature (use git worktrees — never checkout in main dir)
 ```bash
-git checkout -b feature/<name>
+# Create an isolated worktree for the feature branch
+git worktree add ../pi-worktrees/<task-id>/<name> -b <task-id>/<name>
+cd ../pi-worktrees/<task-id>/<name>
 # ... work ...
-git push -u origin feature/<name>
+git push -u origin <task-id>/<name>
 gh pr create --fill --draft
 ```
 
@@ -251,6 +253,9 @@ gh pr create --fill --draft
 ```bash
 gh pr ready <number>          # Mark as ready for review
 gh pr merge <number> --squash # Squash-merge after checks pass
+# Clean up the worktree after merge
+git worktree remove ../pi-worktrees/<task-id>/<name>
+git branch -d <task-id>/<name>
 gh release create v<x.y.z> --generate-notes
 ```
 

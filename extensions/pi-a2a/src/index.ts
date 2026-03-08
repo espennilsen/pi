@@ -1,13 +1,14 @@
 /**
  * pi-a2a — Agent-to-Agent (A2A) protocol extension for pi.
  *
- * Self-contained A2A server — runs its own HTTP server, no dependency
- * on pi-webserver or any other extensions.
+ * Self-contained A2A server using @a2a-js/sdk for protocol handling.
+ * Runs its own HTTP server, no dependency on pi-webserver or other extensions.
  *
  * Features:
  *   - Serves A2A Agent Card at /.well-known/agent.json
- *   - Handles A2A JSON-RPC 2.0 requests (message/send, tasks/get, tasks/cancel)
+ *   - Handles A2A JSON-RPC 2.0 requests via SDK's DefaultRequestHandler
  *   - Processes messages via isolated `pi --mode rpc` subprocesses
+ *   - Dynamically enriches the Agent Card with registered extension tools
  *   - Optional registration with an A2A Discovery Hub
  *
  * Configuration in settings.json under "pi-a2a":
@@ -27,9 +28,11 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
-import { buildAgentCard } from "./agent-card.ts";
-import { startServer, stopServer, isRunning } from "./server.ts";
+import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
+import { PiAgentExecutor } from "./agent-executor.ts";
+import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub } from "./hub.ts";
 import { createLogger } from "./logger.ts";
 
@@ -38,30 +41,61 @@ const DEFAULT_PORT = 3100;
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cwd = process.cwd();
+	let cardEnriched = false;
+	let executor: PiAgentExecutor | null = null;
+
+	/**
+	 * Enrich the agent card with dynamically discovered tools.
+	 */
+	function enrichCard(): void {
+		if (cardEnriched) return;
+		const currentCard = getAgentCard();
+		if (!currentCard) return;
+
+		const tools = pi.getAllTools();
+		const enriched = enrichAgentCard(currentCard, tools);
+		updateAgentCard(enriched);
+		cardEnriched = true;
+
+		const newSkillCount = enriched.skills.length - currentCard.skills.length;
+		if (newSkillCount > 0) {
+			log("agent_card_enriched", { newSkills: newSkillCount, totalSkills: enriched.skills.length });
+		}
+	}
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
+		cardEnriched = false;
 		const config = loadConfig(cwd);
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
 
-		// Start the A2A server (binds to 127.0.0.1 by default for security)
+		// Set up SDK components
+		executor = new PiAgentExecutor(cwd, log);
+		const taskStore = new InMemoryTaskStore();
+		const requestHandler = new DefaultRequestHandler(agentCard, taskStore, executor);
+		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
+
+		// Start the A2A server
 		const bind = config.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
 		if (!isLocalhost && !config.apiKey) {
 			ctx.ui.notify("pi-a2a: WARNING — binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.", "warning");
 		}
 		try {
-			await startServer({ port, bind, apiKey: config.apiKey, agentCard, cwd, log });
+			await startServer({ port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${port}`, "info");
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			ctx.ui.notify(`pi-a2a: Failed to start server — ${msg}`, "warning");
 			return;
 		}
+
+		// Deferred enrichment
+		queueMicrotask(() => enrichCard());
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
@@ -72,7 +106,14 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// Enrich on first agent turn (catches stragglers)
+	pi.on("agent_start", () => {
+		enrichCard();
+	});
+
 	pi.on("session_shutdown", async () => {
+		cardEnriched = false;
+		executor = null;
 		if (isRunning()) {
 			await stopServer(log);
 		}
@@ -81,7 +122,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Commands ──────────────────────────────────────────────
 
 	pi.registerCommand("a2a", {
-		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a register",
+		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register",
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			const config = loadConfig(cwd);
@@ -90,10 +131,33 @@ export default function (pi: ExtensionAPI) {
 
 			if (action === "status") {
 				if (isRunning()) {
-					ctx.ui.notify(`A2A server running on port ${port}\nAgent Card: ${publicUrl}/.well-known/agent.json`, "info");
+					const card = getAgentCard();
+					const skillCount = card?.skills.length ?? 0;
+					ctx.ui.notify(
+						`A2A server running on port ${port}\nAgent Card: ${publicUrl}/.well-known/agent.json\nSkills: ${skillCount}`,
+						"info",
+					);
 				} else {
 					ctx.ui.notify("A2A server is not running", "info");
 				}
+				return;
+			}
+
+			if (action === "card") {
+				const card = getAgentCard();
+				if (card) {
+					ctx.ui.notify(JSON.stringify(card, null, 2), "info");
+				} else {
+					ctx.ui.notify("No agent card — server is not running", "warning");
+				}
+				return;
+			}
+
+			if (action === "refresh") {
+				cardEnriched = false;
+				enrichCard();
+				const card = getAgentCard();
+				ctx.ui.notify(`Agent card refreshed — ${card?.skills.length ?? 0} skills`, "info");
 				return;
 			}
 
@@ -103,7 +167,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const agentCard = buildAgentCard(config, publicUrl);
+				const agentCard = getAgentCard() ?? buildAgentCard(config, publicUrl);
 				const result = await registerWithHub(agentCard, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
@@ -113,7 +177,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("Usage: /a2a status | /a2a register", "info");
+			ctx.ui.notify("Usage: /a2a status | /a2a card | /a2a refresh | /a2a register", "info");
 		},
 	});
 }

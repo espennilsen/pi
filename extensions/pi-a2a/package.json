@@ -32,5 +32,8 @@
     "type": "git",
     "url": "git+https://github.com/espennilsen/pi.git",
     "directory": "extensions/pi-a2a"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^0.3.10"
   }
 }

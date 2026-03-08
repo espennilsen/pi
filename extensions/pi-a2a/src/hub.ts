@@ -5,7 +5,8 @@
  * JSON-RPC 2.0 API. Hub config comes from settings.json.
  */
 
-import type { AgentCard, HubConfig } from "./types.ts";
+import type { AgentCard } from "@a2a-js/sdk";
+import type { HubConfig } from "./types.ts";
 import type { LogFn } from "./logger.ts";
 
 interface HubRpcResponse {
@@ -17,9 +18,6 @@ interface HubRpcResponse {
 
 /**
  * Register this agent with the A2A Hub.
- *
- * The Hub API expects a JSON-RPC 2.0 call to `agents.register` with
- * an agentCard object, categories, tags, and visibility.
  */
 export async function registerWithHub(
 	agentCard: AgentCard,
@@ -37,6 +35,7 @@ export async function registerWithHub(
 				description: agentCard.description,
 				url: agentCard.url,
 				version: agentCard.version,
+				protocolVersion: agentCard.protocolVersion,
 				provider: agentCard.provider,
 				capabilities: {
 					acceptsText: true,
@@ -49,9 +48,8 @@ export async function registerWithHub(
 					producesAudio: false,
 					producesVideo: false,
 					producesFiles: false,
-					supportsStreaming: agentCard.capabilities.streaming ?? true,
+					supportsStreaming: agentCard.capabilities.streaming ?? false,
 					supportsPushNotifications: agentCard.capabilities.pushNotifications ?? false,
-					supportsMultiTurn: agentCard.capabilities.multiTurn ?? true,
 				},
 				skills: agentCard.skills.map((s) => ({
 					name: s.name,

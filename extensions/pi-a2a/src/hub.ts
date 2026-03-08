@@ -107,8 +107,12 @@ export async function registerWithHub(
 
 	const result = await hubRpc(rpcUrl, "agents.register", params, hubConfig.apiKey, log, "hub_register");
 	if (result) {
-		const agentId = result.agentId as string;
-		const status = result.status as string;
+		const agentId = result.agentId;
+		const status = result.status;
+		if (typeof agentId !== "string" || typeof status !== "string") {
+			log("hub_register_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
+			return null;
+		}
 		log("hub_register_success", { agentId, status });
 		return { agentId, status };
 	}
@@ -137,9 +141,13 @@ export async function discoverAgentsOnHub(
 
 	const result = await hubRpc(rpcUrl, "agents.search", params, hubConfig.apiKey, log, "hub_discover");
 	if (result) {
+		if (!Array.isArray(result.agents) || typeof result.total !== "number") {
+			log("hub_discover_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
+			return null;
+		}
 		return {
 			agents: result.agents as RemoteAgentSummary[],
-			total: result.total as number,
+			total: result.total,
 		};
 	}
 	return null;
@@ -179,9 +187,13 @@ export async function getCredentialFromHub(
 
 	const result = await hubRpc(rpcUrl, "agents.getCredential", { agentId }, hubConfig.apiKey, log, "hub_get_credential");
 	if (result) {
+		if (typeof result.hasCredential !== "boolean") {
+			log("hub_get_credential_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
+			return null;
+		}
 		return {
-			credential: (result.credential as string | null) ?? null,
-			hasCredential: result.hasCredential as boolean,
+			credential: typeof result.credential === "string" ? result.credential : null,
+			hasCredential: result.hasCredential,
 		};
 	}
 	return null;
@@ -214,10 +226,14 @@ export async function setCredentialOnHub(
 		"hub_set_credential",
 	);
 	if (result) {
+		if (typeof result.agentId !== "string" || typeof result.hasCredential !== "boolean") {
+			log("hub_set_credential_unexpected_shape", { result: JSON.stringify(result).slice(0, 200) }, "WARN");
+			return null;
+		}
 		const out = {
-			agentId: result.agentId as string,
-			hasCredential: result.hasCredential as boolean,
-			credentialUpdatedAt: (result.credentialUpdatedAt as string | null) ?? null,
+			agentId: result.agentId,
+			hasCredential: result.hasCredential,
+			credentialUpdatedAt: typeof result.credentialUpdatedAt === "string" ? result.credentialUpdatedAt : null,
 		};
 		log("hub_set_credential_success", out);
 		return out;

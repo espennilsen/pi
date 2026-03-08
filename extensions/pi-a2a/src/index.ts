@@ -185,8 +185,10 @@ export default function (pi: ExtensionAPI) {
 		if (!sessionCtx || !executor) return;
 		const theme = sessionCtx.ui.theme;
 		if (executor.isBusy()) {
+			const queued = executor.queueDepth();
+			const queueLabel = queued > 0 ? ` +${queued} queued` : "";
 			const dot = theme.fg("warning", "●");
-			const label = theme.fg("dim", " A2A processing");
+			const label = theme.fg("dim", ` A2A processing${queueLabel}`);
 			sessionCtx.ui.setStatus("a2a", dot + label);
 		} else if (isRunning()) {
 			const dot = theme.fg("success", "●");
@@ -224,12 +226,19 @@ export default function (pi: ExtensionAPI) {
 		cardEnriched = false;
 		firstTurnEnriched = false;
 
-		// Clean restart
+		// Clean restart — reset all async state from previous session
+		agentBusy = false;
+		const staleResolvers = idleResolvers;
+		idleResolvers = [];
+		for (const r of staleResolvers) r();
+		if (pendingResolve) {
+			pendingResolve({ ok: false, response: "", error: "Session restart", durationMs: Date.now() - pendingStartTime });
+		}
+		pendingResolve = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
 		}
-		pendingResolve = null;
 		if (isRunning()) {
 			await stopServer(log);
 		}
@@ -455,7 +464,10 @@ export default function (pi: ExtensionAPI) {
 				if (isRunning()) {
 					const card = getAgentCard();
 					const skillCount = card?.skills.length ?? 0;
-					const busy = executor?.isBusy() ? " | Processing: 1 task" : "";
+					const queued = executor?.queueDepth() ?? 0;
+					const busy = executor?.isBusy()
+						? ` | Processing: 1 task${queued > 0 ? ` + ${queued} queued` : ""}`
+						: "";
 					ctx.ui.notify(
 						`A2A server running on port ${port}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +

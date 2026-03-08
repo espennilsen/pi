@@ -46,6 +46,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	private abortController: AbortController | null = null;
 	/** Serializing queue — tasks run one at a time in arrival order. */
 	private queue: Promise<void> = Promise.resolve();
+	/** Cancel callbacks for queued (not yet active) tasks. */
+	private cancelCallbacks = new Map<string, () => void>();
+	/** Number of tasks waiting in the queue (not yet active). */
+	private _queueDepth = 0;
 
 	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
@@ -80,8 +84,22 @@ export class PiAgentExecutor implements AgentExecutor {
 			} as Task);
 		}
 
+		// Register cancel callback so queued tasks can be canceled
+		let canceled = false;
+		this._queueDepth++;
+		this.cancelCallbacks.set(taskId, () => { canceled = true; });
+
 		// Wait for preceding tasks to finish
 		await myTurn;
+		this._queueDepth--;
+		this.cancelCallbacks.delete(taskId);
+
+		// If canceled while queued, skip processing
+		if (canceled) {
+			this.log("executor_skip_canceled", { taskId });
+			releaseQueue!();
+			return; // cancelTask() already published canceled status + called eventBus.finished()
+		}
 
 		// Extract sender identity
 		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
@@ -137,6 +155,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			// Check if canceled while processing
 			if (this.activeTaskId !== taskId) {
 				this.log("executor_canceled_during_run", { taskId });
+				eventBus.finished();
 				return;
 			}
 
@@ -185,9 +204,26 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
+		// Check queued tasks first
+		const queuedCancel = this.cancelCallbacks.get(taskId);
+		if (queuedCancel) {
+			queuedCancel();
+			this.cancelCallbacks.delete(taskId);
+			this.log("executor_cancel_queued", { taskId });
+			eventBus.publish({
+				kind: "status-update",
+				taskId,
+				contextId: taskId,
+				status: { state: "canceled", timestamp: new Date().toISOString() },
+				final: true,
+			} as TaskStatusUpdateEvent);
+			eventBus.finished();
+			return;
+		}
+
+		// Active task
 		if (this.activeTaskId === taskId) {
 			this.abortController?.abort();
-			const activeId = this.activeTaskId;
 			this.activeTaskId = null;
 			this.abortController = null;
 			this.log("executor_cancel", { taskId });
@@ -195,19 +231,27 @@ export class PiAgentExecutor implements AgentExecutor {
 			eventBus.publish({
 				kind: "status-update",
 				taskId,
-				contextId: taskId, // best effort
+				contextId: taskId,
 				status: { state: "canceled", timestamp: new Date().toISOString() },
 				final: true,
 			} as TaskStatusUpdateEvent);
-		} else {
-			this.log("executor_cancel_unknown", { taskId }, "WARN");
+			eventBus.finished();
+			return;
 		}
+
+		// Unknown task — already completed or never existed; don't double-finish
+		this.log("executor_cancel_unknown", { taskId }, "WARN");
 		eventBus.finished();
 	}
 
-	/** Whether the executor is currently processing a task. */
+	/** Whether the executor is currently processing a task or has queued tasks. */
 	isBusy(): boolean {
-		return this.activeTaskId !== null;
+		return this.activeTaskId !== null || this._queueDepth > 0;
+	}
+
+	/** Number of tasks waiting in the queue (not including the active one). */
+	queueDepth(): number {
+		return this._queueDepth;
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

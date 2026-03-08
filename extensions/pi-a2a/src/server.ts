@@ -21,6 +21,9 @@ export interface ServerOptions {
 	port: number;
 	/** Bind address. Defaults to "127.0.0.1" (localhost only). */
 	bind?: string;
+	/** API key for authenticating RPC requests. When set, POST / requires
+	 *  Authorization: Bearer <apiKey>. */
+	apiKey?: string;
 	agentCard: AgentCard;
 	cwd: string;
 	log: LogFn;
@@ -36,15 +39,21 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			return;
 		}
 
+		const isLocalhost = !opts.bind || opts.bind === "127.0.0.1" || opts.bind === "::1";
+		const corsOrigin = isLocalhost ? "*" : (opts.apiKey ? "*" : "");
+		const corsHeaders = opts.apiKey ? "Content-Type, Authorization" : "Content-Type";
+
 		server = http.createServer(async (req, res) => {
 			const method = req.method ?? "GET";
 			const url = new URL(req.url ?? "/", `http://localhost:${opts.port}`);
 			const pathname = url.pathname;
 
-			// CORS headers for browser-based A2A clients
-			res.setHeader("Access-Control-Allow-Origin", "*");
+			// CORS headers
+			if (corsOrigin) {
+				res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+			}
 			res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-			res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+			res.setHeader("Access-Control-Allow-Headers", corsHeaders);
 
 			if (method === "OPTIONS") {
 				res.writeHead(204);
@@ -69,6 +78,17 @@ export function startServer(opts: ServerOptions): Promise<void> {
 
 				// POST / — A2A JSON-RPC 2.0
 				if (pathname === "/" && method === "POST") {
+					// API key auth when configured
+					if (opts.apiKey) {
+						const authHeader = req.headers.authorization ?? "";
+						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+						if (token !== opts.apiKey) {
+							res.writeHead(401, { "Content-Type": "application/json" });
+							res.end(JSON.stringify({ error: "Unauthorized" }));
+							return;
+						}
+					}
+
 					const body = await readBody(req);
 					const result = await handleJsonRpc(body, opts.cwd, opts.log);
 					res.writeHead(200, { "Content-Type": "application/json" });
@@ -94,8 +114,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 		});
 
 		const bind = opts.bind ?? "127.0.0.1";
+		const logHost = (bind && bind !== "0.0.0.0") ? bind : "localhost";
 		server.listen(opts.port, bind, () => {
-			opts.log("server_started", { port: opts.port, bind, agentCard: `http://localhost:${opts.port}/.well-known/agent.json` });
+			opts.log("server_started", { port: opts.port, bind, agentCard: `http://${logHost}:${opts.port}/.well-known/agent.json` });
 			resolve();
 		});
 	});

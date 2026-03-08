@@ -12,6 +12,7 @@ const TASK_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_TASKS = 100;
 
 const tasks = new Map<string, Task>();
+const abortHandles = new Map<string, () => void>();
 
 export function createTask(contextId?: string): Task {
 	// Evict old tasks if over limit
@@ -85,7 +86,20 @@ export function addArtifact(id: string, artifact: Artifact): Task | undefined {
 	return task;
 }
 
+export function setAbortHandle(id: string, abort: () => void): void {
+	abortHandles.set(id, abort);
+}
+
+export function clearAbortHandle(id: string): void {
+	abortHandles.delete(id);
+}
+
 export function cancelTask(id: string): Task | undefined {
+	const abort = abortHandles.get(id);
+	if (abort) {
+		abort();
+		abortHandles.delete(id);
+	}
 	return updateTaskState(id, "canceled");
 }
 

@@ -109,7 +109,10 @@ async function handleSendMessage(
 	log("task_created", { taskId: task.id, promptLength: prompt.length });
 
 	// Run prompt via isolated pi subprocess
-	const result = await runPrompt(prompt, cwd, log);
+	const handle = runPrompt(prompt, cwd, log);
+	store.setAbortHandle(task.id, handle.abort);
+	const result = await handle.result;
+	store.clearAbortHandle(task.id);
 
 	// Guard: if the task was canceled while the subprocess was running,
 	// don't overwrite the canceled state with completed/failed.

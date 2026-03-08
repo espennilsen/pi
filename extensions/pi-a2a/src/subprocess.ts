@@ -21,11 +21,29 @@ export interface SubprocessResult {
 	durationMs: number;
 }
 
+export interface SubprocessHandle {
+	result: Promise<SubprocessResult>;
+	abort: () => void;
+}
+
 export function runPrompt(
 	prompt: string,
 	cwd: string,
 	log: LogFn,
 	timeoutMs = DEFAULT_TIMEOUT_MS,
+): SubprocessHandle {
+	const ac = new AbortController();
+
+	const result = _runPromptInner(prompt, cwd, log, timeoutMs, ac.signal);
+	return { result, abort: () => ac.abort() };
+}
+
+function _runPromptInner(
+	prompt: string,
+	cwd: string,
+	log: LogFn,
+	timeoutMs: number,
+	signal: AbortSignal,
 ): Promise<SubprocessResult> {
 	const start = Date.now();
 
@@ -48,6 +66,7 @@ export function runPrompt(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			signal.removeEventListener("abort", onAbort);
 			rl.close();
 			resolve(result);
 		}
@@ -63,6 +82,24 @@ export function runPrompt(
 				durationMs: Date.now() - start,
 			});
 		}, timeoutMs);
+
+		// External abort (e.g. task cancellation)
+		const onAbort = () => {
+			child.kill("SIGTERM");
+			killTimer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
+			killTimer.unref();
+			settle({
+				ok: false,
+				response: responseText,
+				error: "Canceled",
+				durationMs: Date.now() - start,
+			});
+		};
+		if (signal.aborted) {
+			onAbort();
+			return;
+		}
+		signal.addEventListener("abort", onAbort, { once: true });
 
 		child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 		child.stdin.on("error", () => { /* ignore EPIPE / ERR_STREAM_DESTROYED */ });

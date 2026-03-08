@@ -50,9 +50,13 @@ export default function (pi: ExtensionAPI) {
 
 		// Start the A2A server (binds to 127.0.0.1 by default for security)
 		const bind = config.bind;
+		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
+		if (!isLocalhost && !config.apiKey) {
+			ctx.ui.notify("pi-a2a: WARNING — binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.", "warning");
+		}
 		try {
-			await startServer({ port, bind, agentCard, cwd, log });
-			ctx.ui.notify(`pi-a2a: A2A server listening on port ${port}`, "info");
+			await startServer({ port, bind, apiKey: config.apiKey, agentCard, cwd, log });
+			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${port}`, "info");
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			ctx.ui.notify(`pi-a2a: Failed to start server — ${msg}`, "warning");

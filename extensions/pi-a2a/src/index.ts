@@ -32,6 +32,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
 	InMemoryTaskStore,
@@ -43,10 +44,16 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub } from "./hub.ts";
+import { sendA2AMessage } from "./client.ts";
 import { createLogger } from "./logger.ts";
+import type { RemoteAgentSummary } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
+
+function txt(s: string) {
+	return { content: [{ type: "text" as const, text: s }], details: {} };
+}
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -131,9 +138,9 @@ export default function (pi: ExtensionAPI) {
 		// Deferred enrichment
 		queueMicrotask(() => enrichCard());
 
-		// Optional: register with A2A Hub
+		// Optional: register with A2A Hub (send agent apiKey as credential)
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(publicUrl, config.hub, log);
+			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 			if (result) {
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 			}
@@ -162,10 +169,135 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// ── Tools ─────────────────────────────────────────────────
+
+	/** In-memory cache of discovered agents from the hub. */
+	let discoveredAgents: RemoteAgentSummary[] = [];
+
+	pi.registerTool({
+		name: "a2a_discover",
+		label: "A2A Discover",
+		description:
+			"Discover remote agents registered on the A2A Hub. " +
+			"Returns a list of available agents with their names, descriptions, skills, and health status. " +
+			"Use this before a2a_send to find agents you can communicate with.",
+		parameters: Type.Object({
+			q: Type.Optional(Type.String({ description: "Search query (optional — omit to list all agents)" })),
+			category: Type.Optional(Type.Array(Type.String(), { description: "Filter by category slugs" })),
+			tags: Type.Optional(Type.Array(Type.String(), { description: "Filter by tags" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			if (!config.hub?.apiKey) {
+				return txt("Error: No hub configured. Set pi-a2a.hub in settings.json.");
+			}
+
+			const result = await discoverAgentsOnHub(config.hub, log, {
+				q: params.q,
+				category: params.category,
+				tags: params.tags,
+				limit: 50,
+			});
+
+			if (!result) {
+				return txt("Error: Failed to query the hub. Check logs.");
+			}
+
+			discoveredAgents = result.agents;
+
+			if (result.agents.length === 0) {
+				return txt("No agents found on the hub.");
+			}
+
+			const lines = result.agents.map((a) =>
+				`• **${a.name}** (id: ${a.id})\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus} | Tags: ${a.tags.join(", ") || "none"}`
+			);
+
+			return txt(`Found ${result.total} agent(s) on the hub:\n\n${lines.join("\n\n")}`);
+		},
+	});
+
+	pi.registerTool({
+		name: "a2a_send",
+		label: "A2A Send",
+		description:
+			"Send a message to a remote A2A agent. " +
+			"Specify the agent by name (from a2a_discover results) or by agentId/URL. " +
+			"The hub provides the agent's URL and credential automatically.",
+		parameters: Type.Object({
+			agent: Type.String({
+				description: "Agent name, agent ID (UUID), or direct URL. Names are matched against discovered agents.",
+			}),
+			message: Type.String({ description: "Message to send to the remote agent" }),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			if (!config.hub?.apiKey) {
+				return txt("Error: No hub configured. Set pi-a2a.hub in settings.json.");
+			}
+
+			// Resolve agent URL
+			let agentUrl: string | null = null;
+			let agentId: string | null = null;
+			let agentName: string = params.agent;
+
+			// Direct URL?
+			if (params.agent.startsWith("http://") || params.agent.startsWith("https://")) {
+				agentUrl = params.agent;
+			} else {
+				// Try to match from discovered agents cache
+				const match = discoveredAgents.find((a) =>
+					a.id === params.agent || a.name.toLowerCase() === params.agent.toLowerCase()
+				);
+
+				if (match) {
+					agentUrl = match.url;
+					agentId = match.id;
+					agentName = match.name;
+				} else {
+					// Not cached — try as agentId via hub lookup
+					const detail = await getAgentFromHub(params.agent, config.hub, log);
+					if (detail) {
+						agentUrl = (detail.agentCard as { url?: string }).url ?? null;
+						agentId = detail.id;
+						agentName = (detail.agentCard as { name?: string }).name ?? params.agent;
+					}
+				}
+			}
+
+			if (!agentUrl) {
+				return txt(`Error: Could not resolve agent "${params.agent}". Run a2a_discover first, or provide a direct URL.`);
+			}
+
+			// Get credential from hub if we have an agentId
+			let credential: string | null = null;
+			if (agentId) {
+				const cred = await getCredentialFromHub(agentId, config.hub, log);
+				if (cred?.credential) {
+					credential = cred.credential;
+				}
+			}
+
+			// Send the message with sender identity
+			const result = await sendA2AMessage({
+				url: agentUrl,
+				message: params.message,
+				credential,
+				sender: { name: config.name ?? "Pi Agent", description: config.description },
+			}, log);
+
+			if (!result.ok) {
+				return txt(`Error sending to ${agentName}: ${result.error}`);
+			}
+
+			return txt(`**Response from ${agentName}:**\n\n${result.response}`);
+		},
+	});
+
 	// ── Commands ──────────────────────────────────────────────
 
 	pi.registerCommand("a2a", {
-		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register",
+		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query]",
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
@@ -213,7 +345,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(publicUrl, config.hub, log);
+				const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
 				} else {
@@ -222,7 +354,65 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("Usage: /a2a status | /a2a card | /a2a refresh | /a2a register", "info");
+			if (action === "credential") {
+				if (!config.hub?.apiKey) {
+					ctx.ui.notify("No hub config — set pi-a2a.hub.url and pi-a2a.hub.apiKey", "warning");
+					return;
+				}
+				if (!config.apiKey) {
+					ctx.ui.notify("No pi-a2a.apiKey configured — nothing to push to hub", "warning");
+					return;
+				}
+
+				// We need the agentId. Re-register to get it (idempotent on the hub).
+				const reg = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
+				if (!reg) {
+					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
+					return;
+				}
+
+				const result = await setCredentialOnHub(reg.agentId, config.apiKey, config.hub, log);
+				if (result) {
+					ctx.ui.notify(
+						`Credential updated on hub: hasCredential=${result.hasCredential}, ` +
+						`updatedAt=${result.credentialUpdatedAt ?? "n/a"}`,
+						"info",
+					);
+				} else {
+					ctx.ui.notify("Failed to update credential on hub — check logs", "warning");
+				}
+				return;
+			}
+
+			if (action === "discover" || action.startsWith("discover ")) {
+				if (!config.hub?.apiKey) {
+					ctx.ui.notify("No hub config — set pi-a2a.hub.url and pi-a2a.hub.apiKey", "warning");
+					return;
+				}
+
+				const query = action === "discover" ? undefined : action.slice("discover ".length).trim() || undefined;
+				const result = await discoverAgentsOnHub(config.hub, log, { q: query, limit: 50 });
+
+				if (!result) {
+					ctx.ui.notify("Failed to query the hub — check logs", "warning");
+					return;
+				}
+
+				discoveredAgents = result.agents;
+
+				if (result.agents.length === 0) {
+					ctx.ui.notify("No agents found on the hub.", "info");
+					return;
+				}
+
+				const lines = result.agents.map((a) =>
+					`  ${a.name} (${a.id.slice(0, 8)}…) — ${a.description.slice(0, 60)}${a.description.length > 60 ? "…" : ""} [${a.healthStatus}]`
+				);
+				ctx.ui.notify(`Found ${result.total} agent(s):\n${lines.join("\n")}`, "info");
+				return;
+			}
+
+			ctx.ui.notify("Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query]", "info");
 		},
 	});
 }

@@ -5,6 +5,7 @@
  * Handles Bearer auth when a credential is provided.
  */
 
+import { randomUUID } from "node:crypto";
 import type { LogFn } from "./logger.ts";
 
 /** Sender identity to include in message metadata. */
@@ -53,7 +54,7 @@ export async function sendA2AMessage(
 	// Build the message object, optionally including sender identity in metadata
 	const msg: Record<string, unknown> = {
 		kind: "message",
-		messageId: crypto.randomUUID(),
+		messageId: randomUUID(),
 		role: "user",
 		parts: [{ kind: "text", text: message }],
 	};

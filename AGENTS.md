@@ -71,26 +71,49 @@ Key extensions:
 
 **STOP. Read this before writing any code.**
 
-**Every single change MUST have a `td` task AND its own feature branch.** This is non-negotiable. No commits to `main`. No skipping tasks "because it's small". No bundling unrelated work. One task = one branch = one piece of work.
+**Every single change MUST have a `td` task AND its own git worktree.** This is non-negotiable. No commits to `main`. No skipping tasks "because it's small". No bundling unrelated work. One task = one worktree = one piece of work.
+
+### ⛔ NEVER use `git checkout` or `git switch` in the main working directory
+
+**Switching branches in `/Users/espen/Dev/pi` breaks running agents, extensions, and sessions.** Multiple agents share this directory — checking out a different branch yanks files out from under them.
+
+**Always use git worktrees instead.** Each task gets its own isolated directory with its own branch. The main directory stays on `main` at all times.
 
 ### Required workflow — follow every time:
 1. **Check for existing task:** `td status` or `td ready`
 2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore` (use `--minor` for small/trivial changes)
 3. **Start the task:** `td start <id>`
-4. **Create a feature branch:** `git checkout -b <task-id>/<short-description>` (e.g. `td-e29be6/delete-button-icon`)
-5. **Log progress as you go:** `td log "what you did"`
-6. **Commit to the feature branch**, then handoff: `td handoff <id> --done "..."`
-7. **Push and create PR:** `git push origin <branch>` then `gh pr create --fill`
-8. **Submit for review:** `td review <id>`
+4. **Create a worktree for the task:**
+   ```bash
+   git worktree add ../pi-worktrees/<task-id>/<short-description> -b <task-id>/<short-description>
+   ```
+   Example: `git worktree add ../pi-worktrees/td-e29be6/delete-button-icon -b td-e29be6/delete-button-icon`
+5. **Work in the worktree directory:** `cd ../pi-worktrees/<task-id>/<short-description>`
+6. **Install deps if needed:** `npm install` (worktrees share `.git` but not `node_modules`)
+7. **Log progress as you go:** `td log "what you did"`
+8. **Commit to the worktree branch**, then handoff: `td handoff <id> --done "..."`
+9. **Push and create PR:** `git push origin <branch>` then `gh pr create --fill`
+10. **Submit for review:** `td review <id>`
+11. **Clean up after merge:** `git worktree remove ../pi-worktrees/<task-id>/<short-description>`
+
+### Working on existing PR branches:
+```bash
+# For a PR branch that already exists remotely:
+git worktree add ../pi-worktrees/<task-id>/<short-description> <task-id>/<short-description>
+cd ../pi-worktrees/<task-id>/<short-description>
+```
 
 ### Rules:
-- **Never commit to `main`** — always use a feature branch
+- **Never commit to `main`** — always use a feature branch in a worktree
+- **Never `git checkout`/`git switch` in the main directory** — use `git worktree add` instead
+- **Worktrees go in `../pi-worktrees/`** (`/Users/espen/Dev/pi-worktrees/`) — one subdir per task
 - **Branch names start with task ID:** `<task-id>/<short-description>`
 - **Every change needs a task** — bug fixes, features, refactors, doc updates, config changes, typo fixes — everything
 - **One task per branch** — don't mix unrelated work
 - **Always create a PR** — push the branch and `gh pr create` before handoff. No orphan branches.
-- **PR review fixes go on the PR branch** — checkout the existing PR branch, commit, and push. Don't create a new branch.
+- **PR review fixes go on the existing worktree** — cd into the worktree, commit, and push. Don't create a new branch or worktree.
 - **Never merge without confirmation** — after resolving merge conflicts or pushing fixes, always wait for explicit user confirmation before merging a PR.
+- **Clean up worktrees after merge** — `git worktree remove <path>` and optionally `git branch -d <branch>`
 - **No exceptions** — if you forgot to create a task, stop and create one now before continuing
 
 ## Other Conventions

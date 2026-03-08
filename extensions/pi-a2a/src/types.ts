@@ -60,6 +60,12 @@ export interface RemoteAgentSummary {
 	healthStatus: "healthy" | "degraded" | "down" | "unknown";
 	popularity: number;
 	featured: boolean;
+	queueDepth: number;
+	activeTasks: number;
+	maxConcurrent: number;
+	avgResponseMs: number | null;
+	availability: "idle" | "busy" | "saturated" | "unknown";
+	telemetryUpdatedAt: string | null;
 }
 
 export interface RemoteAgentDetail {
@@ -78,4 +84,22 @@ export interface RemoteAgentDetail {
 	credentialUpdatedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
+	queueDepth: number;
+	activeTasks: number;
+	maxConcurrent: number;
+	avgResponseMs: number | null;
+	totalTasks: number;
+	totalFailures: number;
+	availability: "idle" | "busy" | "saturated" | "unknown";
+	telemetryUpdatedAt: string | null;
+}
+
+// ── Telemetry Snapshot ──────────────────────────────────────────
+
+export interface TelemetrySnapshot {
+	queueDepth: number;
+	activeTasks: number;
+	maxConcurrent: number;
+	lastTaskDurationMs?: number;
+	lastTaskStatus?: "completed" | "failed";
 }

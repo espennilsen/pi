@@ -40,10 +40,15 @@ function isProcessAlive(pid: number): boolean {
 /**
  * Try to acquire the scheduler lock.
  * Returns true if we got it, false if another live process holds it.
+ *
+ * Uses atomic rename to avoid TOCTOU races: writes PID to a temp file,
+ * then renames it to the lock path. On the same filesystem, rename is
+ * atomic — so two processes can't both "win" the lock.
  */
 export function acquireLock(): boolean {
 	const lp = getLockPath();
-	fs.mkdirSync(path.dirname(lp), { recursive: true });
+	const dir = path.dirname(lp);
+	fs.mkdirSync(dir, { recursive: true });
 
 	// Check existing lock
 	try {
@@ -57,8 +62,28 @@ export function acquireLock(): boolean {
 		// No lock file — fall through to acquire
 	}
 
-	fs.writeFileSync(lp, String(process.pid), "utf-8");
-	return true;
+	// Atomic acquire: write PID to temp file, then rename into place.
+	// rename() is atomic on the same filesystem, eliminating the race
+	// window between checking the lock and writing our PID.
+	const tmpFile = path.join(dir, `.pi-cron.lock.${process.pid}.tmp`);
+	try {
+		fs.writeFileSync(tmpFile, String(process.pid), "utf-8");
+		fs.renameSync(tmpFile, lp);
+	} catch {
+		// Clean up temp file on failure
+		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+		return false;
+	}
+
+	// Verify we actually hold the lock (another process may have
+	// renamed over us between our rename and this read)
+	try {
+		const content = fs.readFileSync(lp, "utf-8").trim();
+		const pid = parseInt(content, 10);
+		return pid === process.pid;
+	} catch {
+		return false;
+	}
 }
 
 /**

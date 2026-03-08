@@ -96,7 +96,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						res.writeHead(400, { "Content-Type": "application/json" });
 						res.end(JSON.stringify({
 							jsonrpc: "2.0",
-							error: { code: -32001, message: `Unsupported A2A version: ${clientVersion}. This agent supports 0.3.` },
+							error: { code: -32600, message: `Unsupported A2A version: ${clientVersion}. This agent supports 0.x.` },
 							id: null,
 						}));
 						return;

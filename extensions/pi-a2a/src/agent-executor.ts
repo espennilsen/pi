@@ -84,13 +84,13 @@ export class PiAgentExecutor implements AgentExecutor {
 				// File parts (§4.1.6): include URL reference or filename as context.
 				// Binary file content can't be passed to a text subprocess, but URLs
 				// and filenames give the agent useful context about what was sent.
-				const file = part.file as { url?: string; name?: string; bytes?: string };
-				if (file?.url) {
-					textSegments.push(`[File: ${file.name ?? file.url}](${file.url})`);
+				const file = part.file as { uri?: string; name?: string; bytes?: string };
+				if (file?.uri) {
+					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
 				} else if (file?.name) {
 					textSegments.push(`[File: ${file.name}]`);
 				}
-				this.log("executor_file_part", { taskId, url: file?.url, name: file?.name });
+				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
 			}
 		}
 

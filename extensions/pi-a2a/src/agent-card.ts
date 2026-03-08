@@ -55,7 +55,7 @@ const DEFAULT_SKILLS: AgentSkill[] = [
 	},
 ];
 
-const PROTOCOL_VERSION = "0.3";
+const PROTOCOL_VERSION = "0.3.0";
 
 /**
  * Build an A2A Agent Card (SDK format).

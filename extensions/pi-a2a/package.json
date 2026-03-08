@@ -1,0 +1,39 @@
+{
+  "name": "@e9n/pi-a2a",
+  "version": "0.1.0",
+  "description": "A2A protocol extension for pi — serves an Agent Card, handles JSON-RPC requests, and optionally registers with an A2A Hub",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-a2a"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^0.3.10"
+  }
+}

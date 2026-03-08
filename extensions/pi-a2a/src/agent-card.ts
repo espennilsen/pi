@@ -1,10 +1,18 @@
 /**
  * pi-a2a — Agent Card builder.
  *
- * Constructs an A2A Agent Card in two formats:
- * 1. SDK format (camelCase) — used internally by @a2a-js/sdk for JSON-RPC handling
- * 2. Proto format (snake_case) — served at /.well-known/agent.json, compatible
- *    with the A2A proto spec and hub validation
+ * Produces agent cards in two formats:
+ *
+ * 1. **SDK format** — used internally by @a2a-js/sdk for JSON-RPC handling.
+ *    The SDK has its own `AgentCard` type with some field name differences
+ *    from the official spec (e.g. `additionalInterfaces` vs `supportedInterfaces`,
+ *    `transport` vs `protocolBinding`). These are handled by the SDK internally.
+ *
+ * 2. **Spec format** — served at `/.well-known/agent.json` per the A2A spec.
+ *    Uses **camelCase** field names as mandated by spec §5.5:
+ *    "All JSON serializations MUST use camelCase naming for field names."
+ *    Field names follow the spec exactly: `supportedInterfaces`, `protocolBinding`,
+ *    `protocolVersion`, `pushNotifications`, `defaultInputModes`, etc.
  */
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
@@ -16,37 +24,59 @@ export interface ToolInfo {
 	description: string;
 }
 
-/** Proto-spec agent card (snake_case), served at /.well-known/agent.json. */
-export interface ProtoAgentCard {
+/**
+ * Spec-compliant agent card (§4.4.1 AgentCard), served at /.well-known/agent.json.
+ *
+ * Field names are camelCase per §5.5, matching the official A2A spec exactly.
+ * This is distinct from the SDK's internal type which uses slightly different names.
+ */
+export interface SpecAgentCard {
 	name: string;
 	description: string;
 	version: string;
-	supported_interfaces: Array<{
+	/** §4.4.6 — required, ordered list of supported interfaces. */
+	supportedInterfaces: Array<{
 		url: string;
-		protocol_binding: string;
-		protocol_version: string;
+		protocolBinding: string;
+		protocolVersion: string;
+		tenant?: string;
 	}>;
 	provider?: {
 		url: string;
 		organization: string;
 	};
+	/** §4.4.3 — all fields optional. */
 	capabilities: {
 		streaming?: boolean;
-		push_notifications?: boolean;
+		pushNotifications?: boolean;
+		extensions?: Array<{
+			uri: string;
+			description?: string;
+			required?: boolean;
+			params?: Record<string, unknown>;
+		}>;
+		extendedAgentCard?: boolean;
 	};
-	default_input_modes: string[];
-	default_output_modes: string[];
+	defaultInputModes: string[];
+	defaultOutputModes: string[];
 	skills: Array<{
 		id: string;
 		name: string;
 		description: string;
 		tags: string[];
 		examples?: string[];
+		inputModes?: string[];
+		outputModes?: string[];
 	}>;
-	documentation_url?: string;
-	icon_url?: string;
-	security_schemes?: Record<string, unknown>;
-	security_requirements?: Array<{ schemes?: Record<string, { list?: string[] }> }>;
+	documentationUrl?: string;
+	iconUrl?: string;
+	securitySchemes?: Record<string, unknown>;
+	securityRequirements?: Array<Record<string, string[]>>;
+	signatures?: Array<{
+		protected: string;
+		signature: string;
+		header?: Record<string, unknown>;
+	}>;
 }
 
 /** Built-in tools that are always present — no need to advertise individually. */
@@ -84,10 +114,14 @@ const DEFAULT_SKILLS: AgentSkill[] = [
 	},
 ];
 
+const PROTOCOL_VERSION = "0.3";
+
 /**
- * Build an A2A Agent Card (SDK format, camelCase).
+ * Build an A2A Agent Card (SDK format).
  *
  * Used internally by the SDK's DefaultRequestHandler for JSON-RPC protocol handling.
+ * The SDK has its own field names (e.g. `additionalInterfaces`, `transport`) that
+ * differ from the spec — the SDK maps these internally when processing requests.
  */
 export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 	const configSkills: AgentSkill[] | undefined = config.skills?.map((s) => ({
@@ -95,14 +129,12 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		tags: s.tags ?? [],
 	}));
 
-	const jsonRpcUrl = baseUrl;
-
 	const card: AgentCard = {
 		name: config.name ?? "Pi Agent",
 		description: config.description ?? "Personal AI coding agent powered by Pi",
-		url: jsonRpcUrl,
+		url: baseUrl,
 		version: config.version ?? "1.0.0",
-		protocolVersion: "0.3.0",
+		protocolVersion: PROTOCOL_VERSION,
 		provider: {
 			organization: config.organization ?? "Pi",
 			url: config.providerUrl ?? baseUrl,
@@ -110,13 +142,12 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		capabilities: {
 			streaming: true,
 			pushNotifications: true,
-			stateTransitionHistory: true,
 		},
 		skills: configSkills ?? DEFAULT_SKILLS,
 		defaultInputModes: ["text/plain", "application/json"],
 		defaultOutputModes: ["text/plain", "application/json"],
 		additionalInterfaces: [
-			{ url: jsonRpcUrl, transport: "JSONRPC" },
+			{ url: baseUrl, transport: "JSONRPC" },
 		],
 	};
 
@@ -135,33 +166,45 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 }
 
 /**
- * Convert SDK agent card (camelCase) to proto-spec format (snake_case).
+ * Convert an SDK agent card to the spec-compliant JSON format.
  *
- * This is the format served at /.well-known/agent.json and validated by
- * the A2A Discovery Hub. Follows the A2A proto AgentCard message spec.
+ * This is the canonical format served at `/.well-known/agent.json`.
+ * It follows the A2A spec exactly:
+ * - camelCase field names (§5.5)
+ * - `supportedInterfaces` (§4.4.1) instead of SDK's `additionalInterfaces`
+ * - `protocolBinding` (§4.4.6) instead of SDK's `transport`
+ * - `protocolVersion` per interface (§4.4.6)
+ * - No top-level `url` or `protocolVersion` (those are per-interface in the spec)
  */
-export function toProtoCard(card: AgentCard): ProtoAgentCard {
+export function toSpecCard(card: AgentCard): SpecAgentCard {
 	const url = card.url ?? card.additionalInterfaces?.[0]?.url ?? "";
 
-	const proto: ProtoAgentCard = {
+	const supportedInterfaces = (card.additionalInterfaces ?? []).map((iface) => ({
+		url: iface.url,
+		protocolBinding: iface.transport ?? "JSONRPC",
+		protocolVersion: card.protocolVersion ?? PROTOCOL_VERSION,
+	}));
+
+	// Ensure at least one interface exists (spec requires min 1)
+	if (supportedInterfaces.length === 0) {
+		supportedInterfaces.push({
+			url,
+			protocolBinding: "JSONRPC",
+			protocolVersion: card.protocolVersion ?? PROTOCOL_VERSION,
+		});
+	}
+
+	const spec: SpecAgentCard = {
 		name: card.name,
 		description: card.description,
 		version: card.version,
-		supported_interfaces: (card.additionalInterfaces ?? []).map((iface) => ({
-			url: iface.url,
-			protocol_binding: iface.transport ?? "JSONRPC",
-			protocol_version: card.protocolVersion ?? "0.3.0",
-		})),
-		provider: card.provider ? {
-			url: card.provider.url ?? url,
-			organization: card.provider.organization,
-		} : undefined,
+		supportedInterfaces,
 		capabilities: {
 			streaming: card.capabilities?.streaming,
-			push_notifications: card.capabilities?.pushNotifications,
+			pushNotifications: card.capabilities?.pushNotifications,
 		},
-		default_input_modes: card.defaultInputModes ?? ["text/plain"],
-		default_output_modes: card.defaultOutputModes ?? ["text/plain"],
+		defaultInputModes: card.defaultInputModes ?? ["text/plain"],
+		defaultOutputModes: card.defaultOutputModes ?? ["text/plain"],
 		skills: card.skills.map((s) => ({
 			id: s.id,
 			name: s.name,
@@ -171,16 +214,30 @@ export function toProtoCard(card: AgentCard): ProtoAgentCard {
 		})),
 	};
 
-	// Ensure at least one supported_interface exists
-	if (proto.supported_interfaces.length === 0) {
-		proto.supported_interfaces = [{
-			url,
-			protocol_binding: "JSONRPC",
-			protocol_version: card.protocolVersion ?? "0.3.0",
-		}];
+	if (card.provider) {
+		spec.provider = {
+			url: card.provider.url ?? url,
+			organization: card.provider.organization,
+		};
 	}
 
-	return proto;
+	if (card.documentationUrl) {
+		spec.documentationUrl = card.documentationUrl;
+	}
+
+	if (card.iconUrl) {
+		spec.iconUrl = card.iconUrl;
+	}
+
+	if (card.securitySchemes) {
+		spec.securitySchemes = card.securitySchemes;
+	}
+
+	if (card.security) {
+		spec.securityRequirements = card.security;
+	}
+
+	return spec;
 }
 
 /**

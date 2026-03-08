@@ -17,7 +17,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
-import { toProtoCard } from "./agent-card.ts";
+import { toSpecCard } from "./agent-card.ts";
 
 const MAX_BODY = 1_048_576; // 1 MB
 
@@ -72,10 +72,10 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			try {
 				// GET /.well-known/agent.json or /.well-known/agent-card.json — Agent Card
 				if ((pathname === "/.well-known/agent.json" || pathname === "/.well-known/agent-card.json") && method === "GET") {
-					// Serve proto-spec format (snake_case) for hub compatibility
-					const protoCard = currentAgentCard ? toProtoCard(currentAgentCard) : null;
+					// Serve spec-compliant format (camelCase, §5.5) at well-known endpoint
+					const specCard = currentAgentCard ? toSpecCard(currentAgentCard) : null;
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify(protoCard, null, 2));
+					res.end(JSON.stringify(specCard, null, 2));
 					return;
 				}
 

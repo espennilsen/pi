@@ -73,7 +73,7 @@ export async function sendA2AMessage(
 		jsonrpc: "2.0" as const,
 		method: "message/send",
 		params: { message: msg },
-		id: 1,
+		id: randomUUID(),
 	};
 
 	const headers: Record<string, string> = {

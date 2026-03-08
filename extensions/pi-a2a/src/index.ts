@@ -121,6 +121,12 @@ export default function (pi: ExtensionAPI) {
 	async function processMessage(prompt: string, sender: string): Promise<ProcessResult> {
 		const start = Date.now();
 
+		// Guard against concurrent invocations — singleton pendingResolve
+		// would silently clobber the first task's resolver, causing it to hang.
+		if (pendingResolve) {
+			return { ok: false, response: "", error: "A2A request already in progress — concurrent invocation rejected", durationMs: 0 };
+		}
+
 		// Wait for agent to finish any current turn
 		await waitForIdle();
 

@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
 import type { LogFn } from "./logger.ts";
 
 interface HubRpcResponse {
@@ -221,6 +221,42 @@ export async function setCredentialOnHub(
 		};
 		log("hub_set_credential_success", out);
 		return out;
+	}
+	return null;
+}
+
+/**
+ * Report telemetry to the A2A Hub.
+ *
+ * Sends the agent's current operational state (queue depth, active tasks,
+ * response times) so the hub can compute availability and rank agents
+ * in search results. If the agent doesn't report for 5 minutes, the hub
+ * resets its telemetry to unknown.
+ */
+export async function reportTelemetryToHub(
+	agentId: string,
+	telemetry: TelemetrySnapshot,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ telemetryUpdatedAt: string } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	const params: Record<string, unknown> = {
+		agentId,
+		queueDepth: telemetry.queueDepth,
+		activeTasks: telemetry.activeTasks,
+		maxConcurrent: telemetry.maxConcurrent,
+	};
+	if (telemetry.lastTaskDurationMs !== undefined) {
+		params.lastTaskDurationMs = telemetry.lastTaskDurationMs;
+	}
+	if (telemetry.lastTaskStatus !== undefined) {
+		params.lastTaskStatus = telemetry.lastTaskStatus;
+	}
+
+	const result = await hubRpc(rpcUrl, "agents.reportTelemetry", params, hubConfig.apiKey, log, "hub_telemetry");
+	if (result) {
+		return { telemetryUpdatedAt: result.telemetryUpdatedAt as string };
 	}
 	return null;
 }

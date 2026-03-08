@@ -20,6 +20,7 @@ import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/s
 import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import { runPrompt, type SubprocessHandle } from "./subprocess.ts";
 import type { LogFn } from "./logger.ts";
+import type { TelemetrySnapshot } from "./types.ts";
 
 /** Max concurrent subprocess executions. */
 const MAX_CONCURRENT = 3;
@@ -34,10 +35,32 @@ export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
 	/** Track running subprocesses for cancellation and concurrency. */
 	private running = new Map<string, RunningTask>();
+	/** Last completed/failed task duration for telemetry reporting. */
+	private lastTaskDurationMs?: number;
+	/** Last completed/failed task status for telemetry reporting. */
+	private lastTaskStatus?: "completed" | "failed";
+	/** Optional callback invoked after each task completes or fails. */
+	onTaskFinished?: () => void;
 
 	constructor(cwd: string, log: LogFn) {
 		this.cwd = cwd;
 		this.log = log;
+	}
+
+	/** Return a snapshot of current telemetry state for hub reporting. */
+	getTelemetrySnapshot(): TelemetrySnapshot {
+		const snapshot: TelemetrySnapshot = {
+			queueDepth: 0,  // Tasks are rejected, not queued — always 0
+			activeTasks: this.running.size,
+			maxConcurrent: MAX_CONCURRENT,
+		};
+		if (this.lastTaskDurationMs !== undefined) {
+			snapshot.lastTaskDurationMs = this.lastTaskDurationMs;
+		}
+		if (this.lastTaskStatus !== undefined) {
+			snapshot.lastTaskStatus = this.lastTaskStatus;
+		}
+		return snapshot;
 	}
 
 	/** Abort all running tasks. Call before discarding the executor. */
@@ -202,15 +225,31 @@ export class PiAgentExecutor implements AgentExecutor {
 				};
 				eventBus.publish(completedUpdate);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
+
+				// Record telemetry for hub reporting
+				this.lastTaskDurationMs = result.durationMs;
+				this.lastTaskStatus = "completed";
+				this.onTaskFinished?.();
 			} else {
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
 				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
+
+				// Record telemetry for hub reporting
+				this.lastTaskDurationMs = result.durationMs;
+				this.lastTaskStatus = "failed";
+				this.onTaskFinished?.();
 			}
 		} catch (err: unknown) {
 			this.running.delete(taskId);
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
+
+			// Record telemetry for hub reporting — clear stale duration
+			// to avoid pairing a previous task's timing with this failure
+			this.lastTaskDurationMs = undefined;
+			this.lastTaskStatus = "failed";
+			this.onTaskFinished?.();
 		}
 
 		// ── Step 6: Signal execution finished ──

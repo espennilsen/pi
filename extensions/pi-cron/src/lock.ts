@@ -56,7 +56,10 @@ export function acquireLock(): boolean {
 		if (!isNaN(pid) && isProcessAlive(pid) && pid !== process.pid) {
 			return false; // Another live process holds the lock
 		}
-		// Stale lock or our own — remove so we can re-acquire atomically
+		// Stale lock or our own — remove so we can re-acquire atomically.
+		// Note: narrow TOCTOU window here — another process could acquire
+		// between our unlink and the O_EXCL write below. Acceptable for a
+		// single-user local scheduler; closing it fully would require flock.
 		try { fs.unlinkSync(lp); } catch { /* already gone */ }
 	} catch {
 		// No lock file — fall through to acquire

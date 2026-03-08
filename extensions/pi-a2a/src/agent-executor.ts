@@ -1,116 +1,105 @@
 /**
- * pi-a2a — Agent executor using pi subprocess.
+ * pi-a2a — Agent executor that delegates to the main agent process.
  *
- * Implements @a2a-js/sdk's AgentExecutor interface following the SDK's
- * task lifecycle pattern:
+ * Instead of spawning isolated subprocesses, incoming A2A messages are
+ * injected into the main pi conversation via a callback. This gives full
+ * TUI visibility — tool calls, file edits, thinking — all visible in
+ * the chat, just like normal user messages.
  *
+ * Task lifecycle (unchanged from the SDK's perspective):
  *   1. Publish initial Task (state: submitted) if new
  *   2. Publish status-update (state: working)
- *   3. Spawn pi subprocess, collect response
+ *   3. Delegate to main agent process via processMessage callback
  *   4. Publish artifact-update with the response
  *   5. Publish final status-update (state: completed) with final=true
  *   6. Call eventBus.finished()
  *
- * This enables proper task tracking via InMemoryTaskStore, streaming
- * via SSE, and push notifications for long-running tasks.
+ * Concurrency: max 1 (blocks — the main agent handles one request at a
+ * time). Additional requests are rejected. Run more pi instances for
+ * parallel A2A processing.
  */
 
 import { randomUUID } from "node:crypto";
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
-import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
-import { runPrompt, type SubprocessHandle } from "./subprocess.ts";
+import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
 
-/** Max concurrent subprocess executions. */
-const MAX_CONCURRENT = 3;
-
-interface RunningTask {
-	handle: SubprocessHandle;
-	contextId: string;
+/** Result returned by the main agent process. */
+export interface ProcessResult {
+	ok: boolean;
+	response: string;
+	error?: string;
+	durationMs: number;
 }
 
-/** Activity events emitted by the executor for TUI display. */
-export type ActivityEvent =
-	| { type: "received"; taskId: string; sender: string; message: string }
-	| { type: "working"; taskId: string; sender: string }
-	| { type: "completed"; taskId: string; sender: string; response: string; durationMs: number }
-	| { type: "failed"; taskId: string; sender: string; error: string; durationMs?: number }
-	| { type: "canceled"; taskId: string; sender: string }
-	| { type: "busy"; taskId: string; sender: string };
-
-export type OnActivity = (event: ActivityEvent) => void;
+/**
+ * Callback to inject a message into the main agent conversation.
+ * Returns a promise that resolves when the agent finishes processing.
+ */
+export type ProcessMessage = (prompt: string, sender: string) => Promise<ProcessResult>;
 
 export class PiAgentExecutor implements AgentExecutor {
-	private cwd: string;
 	private log: LogFn;
-	private onActivity: OnActivity | null;
-	/** Track running subprocesses for cancellation and concurrency. */
-	private running = new Map<string, RunningTask>();
+	private processMessage: ProcessMessage;
+	/** Track the single active task for cancellation. */
+	private activeTaskId: string | null = null;
+	private abortController: AbortController | null = null;
 
-	constructor(cwd: string, log: LogFn, onActivity?: OnActivity) {
-		this.cwd = cwd;
+	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
-		this.onActivity = onActivity ?? null;
+		this.processMessage = processMessage;
 	}
 
-	/** Abort all running tasks. Call before discarding the executor. */
+	/** Abort any running task. */
 	abortAll(): void {
-		for (const [taskId, entry] of this.running) {
-			entry.handle.abort();
-			this.log("executor_abort_all", { taskId });
+		if (this.activeTaskId) {
+			this.abortController?.abort();
+			this.log("executor_abort_all", { taskId: this.activeTaskId });
+			this.activeTaskId = null;
+			this.abortController = null;
 		}
-		this.running.clear();
 	}
 
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
 		const { userMessage, taskId, contextId, task } = requestContext;
 
-		// Extract sender identity early (needed for activity events)
+		// Extract sender identity
 		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
 			| { name?: string; description?: string }
 			| undefined;
 		const senderName = senderMeta?.name ?? "Unknown agent";
 
-		// Concurrency guard
-		if (this.running.size >= MAX_CONCURRENT) {
-			this.log("executor_busy", { taskId, active: this.running.size, max: MAX_CONCURRENT }, "WARN");
+		// Only one task at a time (main agent is single-threaded)
+		if (this.activeTaskId) {
+			this.log("executor_busy", { taskId, activeTasks: 1 }, "WARN");
 			if (!task) {
-				const initialTask: Task = {
+				eventBus.publish({
 					kind: "task",
 					id: taskId,
 					contextId,
 					status: { state: "submitted", timestamp: new Date().toISOString() },
 					history: [userMessage],
-				};
-				eventBus.publish(initialTask);
+				} as Task);
 			}
-			this.publishError(taskId, contextId, eventBus, "Server busy — too many concurrent requests");
-			this.onActivity?.({ type: "busy", taskId, sender: senderName });
+			this.publishError(taskId, contextId, eventBus, "Agent busy — processing another A2A request. Try again shortly.");
 			eventBus.finished();
 			return;
 		}
 
-		// Extract text from all part types (§4.1.6)
+		// Extract text from all part types
 		const textSegments: string[] = [];
 		for (const part of userMessage.parts) {
 			if (part.kind === "text") {
 				textSegments.push((part as { kind: "text"; text: string }).text);
 			} else if (part.kind === "data") {
-				// Serialize structured data as JSON for the subprocess
 				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
 				textSegments.push(JSON.stringify(dataPart.data, null, 2));
 			} else if (part.kind === "file") {
-				// File parts (§4.1.6): include URL reference or filename as context.
-				// Binary file content can't be passed to a text subprocess, but URLs
-				// and filenames give the agent useful context about what was sent.
 				const file = part.file as { uri?: string; name?: string; bytes?: string };
 				if (file?.uri) {
 					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
 				} else if (file?.name) {
 					textSegments.push(`[File: ${file.name}]`);
-				} else if (file?.bytes) {
-					textSegments.push("[File: binary content — not processable by text subprocess]");
-					this.log("executor_file_part_bytes_only", { taskId }, "WARN");
 				}
 				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
 			} else {
@@ -118,85 +107,62 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 		}
 
-		// Prepend sender identity context for the subprocess (A2A spec extension)
-		if (senderMeta?.name) {
-			const desc = senderMeta.description ? ` (${senderMeta.description})` : "";
-			textSegments.unshift(
-				`[This message is from agent "${senderMeta.name}"${desc}, not from the human user.]`,
-			);
-			this.log("executor_sender_identity", { taskId, senderName: senderMeta.name });
-		}
-
 		if (textSegments.length === 0) {
 			if (!task) {
-				const initialTask: Task = {
+				eventBus.publish({
 					kind: "task",
 					id: taskId,
 					contextId,
 					status: { state: "submitted", timestamp: new Date().toISOString() },
 					history: [userMessage],
-				};
-				eventBus.publish(initialTask);
+				} as Task);
 			}
 			this.publishError(taskId, contextId, eventBus, "No processable content in message");
 			eventBus.finished();
 			return;
 		}
 
-		// ── Step 1: Publish initial Task if this is a new task ──
+		// ── Step 1: Publish initial Task ──
 		if (!task) {
-			const initialTask: Task = {
+			eventBus.publish({
 				kind: "task",
 				id: taskId,
 				contextId,
-				status: {
-					state: "submitted",
-					timestamp: new Date().toISOString(),
-				},
+				status: { state: "submitted", timestamp: new Date().toISOString() },
 				history: [userMessage],
-			};
-			eventBus.publish(initialTask);
+			} as Task);
 		}
 
 		// ── Step 2: Publish "working" status ──
-		const workingUpdate: TaskStatusUpdateEvent = {
+		eventBus.publish({
 			kind: "status-update",
 			taskId,
 			contextId,
-			status: {
-				state: "working",
-				timestamp: new Date().toISOString(),
-			},
+			status: { state: "working", timestamp: new Date().toISOString() },
 			final: false,
-		};
-		eventBus.publish(workingUpdate);
+		} as TaskStatusUpdateEvent);
 
 		const prompt = textSegments.join("\n");
-		this.log("executor_start", { taskId, promptLength: prompt.length });
-
-		// Notify TUI: message received and now working
-		this.onActivity?.({ type: "received", taskId, sender: senderName, message: prompt });
-		this.onActivity?.({ type: "working", taskId, sender: senderName });
-
-		// ── Step 3: Spawn subprocess ──
-		const handle = runPrompt(prompt, this.cwd, this.log);
-		this.running.set(taskId, { handle, contextId });
+		this.activeTaskId = taskId;
+		this.abortController = new AbortController();
+		this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
 
 		try {
-			const result = await handle.result;
+			// ── Step 3: Delegate to main agent process ──
+			const result = await this.processMessage(prompt, senderName);
 
-			// If canceled while running, cancelTask() already published the
-			// canceled status and called eventBus.finished() — don't call again
-			if (!this.running.has(taskId)) {
-				this.log("executor_canceled_during_run", { taskId, durationMs: result.durationMs });
-				return;
+			// Check if canceled while processing
+			if (this.activeTaskId !== taskId) {
+				this.log("executor_canceled_during_run", { taskId });
+				return; // cancelTask() already published the canceled status
 			}
 
-			this.running.delete(taskId);
+			this.activeTaskId = null;
+			this.abortController = null;
 
 			if (result.ok) {
-				// ── Step 4: Publish artifact with response ──
-				const artifactUpdate: TaskArtifactUpdateEvent = {
+				// ── Step 4: Publish artifact ──
+				eventBus.publish({
 					kind: "artifact-update",
 					taskId,
 					contextId,
@@ -205,73 +171,61 @@ export class PiAgentExecutor implements AgentExecutor {
 						name: "response",
 						parts: [{ kind: "text", text: result.response } as Part],
 					},
-				};
-				eventBus.publish(artifactUpdate);
+				} as TaskArtifactUpdateEvent);
 
-				// ── Step 5: Publish final "completed" status ──
-				const completedUpdate: TaskStatusUpdateEvent = {
+				// ── Step 5: Publish "completed" ──
+				eventBus.publish({
 					kind: "status-update",
 					taskId,
 					contextId,
-					status: {
-						state: "completed",
-						timestamp: new Date().toISOString(),
-					},
+					status: { state: "completed", timestamp: new Date().toISOString() },
 					final: true,
-				};
-				eventBus.publish(completedUpdate);
+				} as TaskStatusUpdateEvent);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
-				this.onActivity?.({ type: "completed", taskId, sender: senderName, response: result.response, durationMs: result.durationMs });
 			} else {
-				const isTimeout = result.error === "Prompt timed out";
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
-				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs, isTimeout }, "ERROR");
-				this.onActivity?.({ type: "failed", taskId, sender: senderName, error: result.error ?? "Unknown error", durationMs: result.durationMs });
+				this.log("executor_failed", { taskId, error: result.error, durationMs: result.durationMs }, "ERROR");
 			}
 		} catch (err: unknown) {
-			this.running.delete(taskId);
+			this.activeTaskId = null;
+			this.abortController = null;
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
-			this.onActivity?.({ type: "failed", taskId, sender: senderName, error: msg });
 		}
 
-		// ── Step 6: Signal execution finished ──
+		// ── Step 6: Signal finished ──
 		eventBus.finished();
 	}
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
-		const entry = this.running.get(taskId);
-		if (entry) {
-			entry.handle.abort();
-			this.running.delete(taskId);
+		if (this.activeTaskId === taskId) {
+			this.abortController?.abort();
+			const activeId = this.activeTaskId;
+			this.activeTaskId = null;
+			this.abortController = null;
 			this.log("executor_cancel", { taskId });
 
-			const cancelEvent: TaskStatusUpdateEvent = {
+			eventBus.publish({
 				kind: "status-update",
 				taskId,
-				contextId: entry.contextId,
-				status: {
-					state: "canceled",
-					timestamp: new Date().toISOString(),
-				},
+				contextId: taskId, // best effort
+				status: { state: "canceled", timestamp: new Date().toISOString() },
 				final: true,
-			};
-			eventBus.publish(cancelEvent);
-			this.onActivity?.({ type: "canceled", taskId, sender: "unknown" });
+			} as TaskStatusUpdateEvent);
 		} else {
 			this.log("executor_cancel_unknown", { taskId }, "WARN");
 		}
 		eventBus.finished();
 	}
 
-	/** Number of currently active tasks. */
-	getActiveCount(): number {
-		return this.running.size;
+	/** Whether the executor is currently processing a task. */
+	isBusy(): boolean {
+		return this.activeTaskId !== null;
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {
-		const errorEvent: TaskStatusUpdateEvent = {
+		eventBus.publish({
 			kind: "status-update",
 			taskId,
 			contextId,
@@ -286,7 +240,6 @@ export class PiAgentExecutor implements AgentExecutor {
 				timestamp: new Date().toISOString(),
 			},
 			final: true,
-		};
-		eventBus.publish(errorEvent);
+		} as TaskStatusUpdateEvent);
 	}
 }

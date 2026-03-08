@@ -11,7 +11,7 @@
  *   - Proper task lifecycle: submitted → working → completed/failed
  *   - SSE streaming support for real-time task updates
  *   - Push notification support for async task updates
- *   - Processes messages via isolated `pi --mode rpc` subprocesses
+ *   - Processes messages via the MAIN agent process — full TUI visibility
  *   - Dynamically enriches the Agent Card with registered extension tools
  *   - Optional registration with an A2A Discovery Hub
  *
@@ -32,6 +32,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
@@ -42,7 +43,7 @@ import {
 } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
-import { PiAgentExecutor, type ActivityEvent } from "./agent-executor.ts";
+import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub } from "./hub.ts";
 import { sendA2AMessage } from "./client.ts";
@@ -63,10 +64,18 @@ function fmtDuration(ms: number): string {
 	return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-/** Truncate text to a single line for message previews. */
-function truncate(text: string, max = 200): string {
-	const oneLine = text.replace(/\n/g, " ").trim();
-	return oneLine.length > max ? oneLine.slice(0, max) + "…" : oneLine;
+/** Extract text content from the last assistant message. */
+function extractAssistantText(messages: AgentMessage[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m && "role" in m && m.role === "assistant" && Array.isArray(m.content)) {
+			const textParts = m.content
+				.filter((c: { type: string }) => c.type === "text")
+				.map((c: { type: string; text?: string }) => c.text ?? "");
+			if (textParts.length > 0) return textParts.join("\n");
+		}
+	}
+	return "";
 }
 
 export default function (pi: ExtensionAPI) {
@@ -77,6 +86,116 @@ export default function (pi: ExtensionAPI) {
 	let executor: PiAgentExecutor | null = null;
 	/** Captured from session_start for use in async callbacks. */
 	let sessionCtx: ExtensionContext | null = null;
+
+	// ── Main-process message handling ─────────────────────────
+	//
+	// When an A2A message arrives, we inject it into the main conversation
+	// via pi.sendMessage({ triggerTurn: true }). The agent processes it
+	// with full tool/skill access — everything visible in the TUI.
+	// On agent_end, we capture the response and send it back to the caller.
+
+	/** Resolve function for the pending A2A request. */
+	let pendingResolve: ((result: ProcessResult) => void) | null = null;
+	let pendingStartTime = 0;
+
+	/** Wait for agent to be idle before injecting an A2A message. */
+	let agentBusy = false;
+	let idleResolvers: (() => void)[] = [];
+
+	function waitForIdle(): Promise<void> {
+		if (!agentBusy) return Promise.resolve();
+		return new Promise((resolve) => {
+			idleResolvers.push(resolve);
+		});
+	}
+
+	/**
+	 * Process an incoming A2A message via the main agent.
+	 * Called by the executor — blocks until the agent responds.
+	 */
+	async function processMessage(prompt: string, sender: string): Promise<ProcessResult> {
+		const start = Date.now();
+
+		// Wait for agent to finish any current turn
+		await waitForIdle();
+
+		return new Promise<ProcessResult>((resolve) => {
+			pendingResolve = resolve;
+			pendingStartTime = start;
+
+			// Inject into the main conversation — triggers a full agent turn
+			pi.sendMessage(
+				{
+					customType: "a2a-request",
+					content:
+						`📨 **A2A request from ${sender}**\n\n` +
+						`> ${prompt.split("\n").join("\n> ")}\n\n` +
+						`*Process this request. Your full response will be sent back to ${sender} via A2A.*`,
+					display: true,
+				},
+				{ triggerTurn: true },
+			);
+
+			updateStatusLine();
+		});
+	}
+
+	// Capture agent lifecycle for response extraction
+	pi.on("agent_start", () => {
+		agentBusy = true;
+	});
+
+	pi.on("agent_end", (event) => {
+		agentBusy = false;
+
+		// Notify any waiters that the agent is idle
+		const resolvers = idleResolvers;
+		idleResolvers = [];
+		for (const r of resolvers) r();
+
+		// If we're waiting for an A2A response, capture it
+		if (pendingResolve) {
+			const response = extractAssistantText(event.messages);
+			const durationMs = Date.now() - pendingStartTime;
+			const resolve = pendingResolve;
+			pendingResolve = null;
+
+			if (response) {
+				// Show completion in chat
+				pi.sendMessage(
+					{
+						customType: "a2a-response-sent",
+						content: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				resolve({ ok: true, response, durationMs });
+			} else {
+				resolve({ ok: false, response: "", error: "Agent produced no text response", durationMs });
+			}
+
+			updateStatusLine();
+		}
+	});
+
+	// ── TUI: status line ──────────────────────────────────────
+
+	function updateStatusLine(): void {
+		if (!sessionCtx || !executor) return;
+		const theme = sessionCtx.ui.theme;
+		if (executor.isBusy()) {
+			const dot = theme.fg("warning", "●");
+			const label = theme.fg("dim", " A2A processing");
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else if (isRunning()) {
+			const dot = theme.fg("success", "●");
+			const label = theme.fg("dim", " A2A");
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else {
+			sessionCtx.ui.setStatus("a2a", undefined);
+		}
+	}
 
 	/**
 	 * Enrich the agent card with dynamically discovered tools.
@@ -97,104 +216,6 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	// ── TUI: activity feed + status line ──────────────────────
-
-	function updateStatusLine(): void {
-		if (!sessionCtx || !executor) return;
-		const theme = sessionCtx.ui.theme;
-		const active = executor.getActiveCount();
-		if (active > 0) {
-			const dot = theme.fg("warning", "●");
-			const label = theme.fg("dim", ` A2A ${active} active`);
-			sessionCtx.ui.setStatus("a2a", dot + label);
-		} else if (isRunning()) {
-			const dot = theme.fg("success", "●");
-			const label = theme.fg("dim", " A2A");
-			sessionCtx.ui.setStatus("a2a", dot + label);
-		} else {
-			sessionCtx.ui.setStatus("a2a", undefined);
-		}
-	}
-
-	/** Handle activity events from the executor — inject into TUI chat. */
-	function handleActivity(event: ActivityEvent): void {
-		if (!sessionCtx) return;
-
-		switch (event.type) {
-			case "received": {
-				pi.sendMessage(
-					{
-						customType: "a2a-incoming",
-						content:
-							`📨 **A2A message from ${event.sender}**\n\n${truncate(event.message, 500)}`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				break;
-			}
-			case "working": {
-				updateStatusLine();
-				break;
-			}
-			case "completed": {
-				const dur = fmtDuration(event.durationMs);
-				pi.sendMessage(
-					{
-						customType: "a2a-response",
-						content:
-							`📤 **A2A response to ${event.sender}** (${dur})\n\n${truncate(event.response, 500)}`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				updateStatusLine();
-				break;
-			}
-			case "failed": {
-				const isTimeout = event.error === "Prompt timed out";
-				const icon = isTimeout ? "⏱️" : "❌";
-				const label = isTimeout ? "timed out" : "failed";
-				const dur = event.durationMs ? ` after ${fmtDuration(event.durationMs)}` : "";
-				pi.sendMessage(
-					{
-						customType: "a2a-error",
-						content:
-							`${icon} **A2A task for ${event.sender} ${label}**${dur}\n\n${event.error}`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				updateStatusLine();
-				break;
-			}
-			case "canceled": {
-				pi.sendMessage(
-					{
-						customType: "a2a-canceled",
-						content: `⏹ **A2A task canceled** (${event.taskId.slice(0, 8)}…)`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				updateStatusLine();
-				break;
-			}
-			case "busy": {
-				pi.sendMessage(
-					{
-						customType: "a2a-busy",
-						content:
-							`⚠️ **A2A request from ${event.sender} rejected** — server busy (max concurrent tasks reached)`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				break;
-			}
-		}
-	}
-
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -203,11 +224,12 @@ export default function (pi: ExtensionAPI) {
 		cardEnriched = false;
 		firstTurnEnriched = false;
 
-		// Clean restart: abort any running tasks and stop existing server
+		// Clean restart
 		if (executor) {
 			executor.abortAll();
 			executor = null;
 		}
+		pendingResolve = null;
 		if (isRunning()) {
 			await stopServer(log);
 		}
@@ -218,8 +240,8 @@ export default function (pi: ExtensionAPI) {
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
 
-		// Set up SDK components with full capability support
-		executor = new PiAgentExecutor(cwd, log, handleActivity);
+		// Set up executor with main-process callback
+		executor = new PiAgentExecutor(log, processMessage);
 		const taskStore = new InMemoryTaskStore();
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
@@ -228,10 +250,10 @@ export default function (pi: ExtensionAPI) {
 			agentCard,
 			taskStore,
 			executor,
-			undefined,                // eventBusManager — use SDK default
+			undefined,
 			pushNotificationStore,
 			pushNotificationSender,
-			undefined,                // extendedAgentCard — not configured yet
+			undefined,
 		);
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
@@ -256,7 +278,7 @@ export default function (pi: ExtensionAPI) {
 		// Show idle status in footer
 		updateStatusLine();
 
-		// Optional: register with A2A Hub (send agent apiKey as credential)
+		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 			if (result) {
@@ -269,8 +291,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_start", () => {
 		if (!firstTurnEnriched) {
 			firstTurnEnriched = true;
-			// Force re-enrichment even if already done, to pick up tools
-			// registered after session_start's microtask fired
 			cardEnriched = false;
 			enrichCard();
 		}
@@ -280,6 +300,11 @@ export default function (pi: ExtensionAPI) {
 		cardEnriched = false;
 		sessionCtx?.ui.setStatus("a2a", undefined);
 		sessionCtx = null;
+		// Reject pending A2A request if any
+		if (pendingResolve) {
+			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
+			pendingResolve = null;
+		}
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -430,10 +455,11 @@ export default function (pi: ExtensionAPI) {
 				if (isRunning()) {
 					const card = getAgentCard();
 					const skillCount = card?.skills.length ?? 0;
+					const busy = executor?.isBusy() ? " | Processing: 1 task" : "";
 					ctx.ui.notify(
 						`A2A server running on port ${port}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
-						`Protocol: A2A v0.3.0 | Transport: JSON-RPC\n` +
+						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
 						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`,
 						"info",
 					);
@@ -486,7 +512,6 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				// We need the agentId. Re-register to get it (idempotent on the hub).
 				const reg = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");

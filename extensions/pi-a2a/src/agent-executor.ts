@@ -56,8 +56,16 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.processMessage = processMessage;
 	}
 
-	/** Abort any running task. */
+	/** Abort the active task and cancel all queued tasks. */
 	abortAll(): void {
+		// Cancel queued tasks first — invoke their cancel callbacks so they
+		// see canceled=true when they wake up from `await myTurn`
+		for (const [taskId, cancel] of this.cancelCallbacks) {
+			cancel();
+			this.log("executor_abort_queued", { taskId });
+		}
+		this.cancelCallbacks.clear();
+
 		if (this.activeTaskId) {
 			this.abortController?.abort();
 			this.log("executor_abort_all", { taskId: this.activeTaskId });

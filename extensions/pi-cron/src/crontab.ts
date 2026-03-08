@@ -5,12 +5,11 @@
  *   schedule(5 fields) name [channel:ch] [disabled] prompt
  *
  * Lines starting with # are comments. Blank lines are ignored.
- * The file lives at ~/.pi/agent/pi-cron.tab by default.
+ * The file lives at <cwd>/.pi/pi-cron.tab (workspace-local).
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -22,14 +21,19 @@ export interface CronJob {
 	disabled: boolean;
 }
 
-// ── Default path ────────────────────────────────────────────────
+// ── Configurable path ───────────────────────────────────────────
 
-const DEFAULT_TAB_PATH = path.join(os.homedir(), ".pi", "agent", "pi-cron.tab");
-
-let tabPath = DEFAULT_TAB_PATH;
+let tabPath: string | null = null;
 
 export function setTabPath(p: string): void { tabPath = p; }
-export function getTabPath(): string { return tabPath; }
+export function getTabPath(): string {
+	if (!tabPath) throw new Error("pi-cron tab path not initialized. Call setTabPath() or initTabPath() first.");
+	return tabPath;
+}
+
+export function initTabPath(cwd: string): void {
+	tabPath = path.join(cwd, ".pi", "pi-cron.tab");
+}
 
 // ── Parser ──────────────────────────────────────────────────────
 
@@ -104,7 +108,7 @@ export function serialize(jobs: CronJob[]): string {
 
 export function loadJobs(): CronJob[] {
 	try {
-		const content = fs.readFileSync(tabPath, "utf-8");
+		const content = fs.readFileSync(getTabPath(), "utf-8");
 		return parse(content);
 	} catch {
 		return [];
@@ -112,12 +116,13 @@ export function loadJobs(): CronJob[] {
 }
 
 export function saveJobs(jobs: CronJob[]): void {
-	fs.mkdirSync(path.dirname(tabPath), { recursive: true });
-	fs.writeFileSync(tabPath, serialize(jobs), "utf-8");
+	const p = getTabPath();
+	fs.mkdirSync(path.dirname(p), { recursive: true });
+	fs.writeFileSync(p, serialize(jobs), "utf-8");
 }
 
 export function ensureTabFile(): void {
-	if (!fs.existsSync(tabPath)) {
+	if (!fs.existsSync(getTabPath())) {
 		saveJobs([]); // Creates file with header comments
 	}
 }

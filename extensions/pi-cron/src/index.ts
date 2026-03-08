@@ -13,7 +13,7 @@
  *   - `/cron on` command
  *   - settings.json: { "pi-cron": { "autostart": true } }
  *
- * The crontab file (~/.pi/agent/pi-cron.tab) is always readable/writable
+ * The crontab file (.pi/pi-cron.tab) is always readable/writable
  * regardless of scheduler state. The scheduler just controls whether
  * jobs actually execute on their schedule.
  */
@@ -21,9 +21,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
-import { ensureTabFile, loadJobs, getJob, addJob, removeJob, updateJob, type CronJob } from "./crontab.ts";
+import { ensureTabFile, loadJobs, addJob, removeJob, updateJob, initTabPath, type CronJob } from "./crontab.ts";
 import { CronScheduler, validateCron } from "./scheduler.ts";
-import { acquireLock, releaseLock, lockHolder } from "./lock.ts";
+import { acquireLock, releaseLock, lockHolder, initLockPath } from "./lock.ts";
 import { registerCronApi, type CronStatus } from "./api.ts";
 import { mountCronRoutes, unmountCronRoutes } from "./web.ts";
 import { resolveSettings } from "./settings.ts";
@@ -118,6 +118,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
+		initTabPath(cwd);
+		initLockPath(cwd);
 		ensureTabFile();
 
 		const settings = resolveSettings(cwd);
@@ -187,7 +189,7 @@ export default function (pi: ExtensionAPI) {
 		name: "cron",
 		label: "Cron",
 		description:
-			"Manage scheduled cron jobs stored in ~/.pi/agent/pi-cron.tab. " +
+			"Manage scheduled cron jobs stored in .pi/pi-cron.tab (workspace-local). " +
 			"Actions: list, add, update, remove, enable, disable, run. " +
 			"The scheduler must be started with /cron on or --cron for jobs to execute. " +
 			"Reading and writing jobs works regardless of scheduler state.",

@@ -17,7 +17,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
-import { toSpecCard } from "./agent-card.ts";
 
 const MAX_BODY = 1_048_576; // 1 MB
 
@@ -77,10 +76,8 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						res.end(JSON.stringify({ error: "Agent card not yet available" }));
 						return;
 					}
-					// Serve spec-compliant format (camelCase, §5.5) at well-known endpoint
-					const specCard = toSpecCard(currentAgentCard);
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify(specCard, null, 2));
+					res.end(JSON.stringify(currentAgentCard, null, 2));
 					return;
 				}
 

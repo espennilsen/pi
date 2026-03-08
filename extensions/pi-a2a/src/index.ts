@@ -199,6 +199,10 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// ── Outbound A2A request tracking ─────────────────────────
+	/** Number of outbound a2a_send requests currently in flight. */
+	let outboundPending = 0;
+
 	// ── TUI: status line ──────────────────────────────────────
 
 	function updateStatusLine(): void {
@@ -207,8 +211,13 @@ export default function (pi: ExtensionAPI) {
 		if (executor.isBusy()) {
 			const queued = executor.queueDepth();
 			const queueLabel = queued > 0 ? ` +${queued} queued` : "";
+			const outLabel = outboundPending > 0 ? ` | ${outboundPending} outbound` : "";
 			const dot = theme.fg("warning", "●");
-			const label = theme.fg("dim", ` A2A processing${queueLabel}`);
+			const label = theme.fg("dim", ` A2A processing${queueLabel}${outLabel}`);
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else if (outboundPending > 0) {
+			const dot = theme.fg("accent", "●");
+			const label = theme.fg("dim", ` A2A ${outboundPending} outbound pending`);
 			sessionCtx.ui.setStatus("a2a", dot + label);
 		} else if (isRunning()) {
 			const dot = theme.fg("success", "●");
@@ -254,6 +263,7 @@ export default function (pi: ExtensionAPI) {
 		firstTurnEnriched = false;
 
 		// Clean restart — reset all async state from previous session
+		outboundPending = 0;
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
@@ -463,7 +473,7 @@ export default function (pi: ExtensionAPI) {
 				return txt("Error: No hub configured. Set pi-a2a.hub in settings.json.");
 			}
 
-			// Resolve agent URL
+			// Resolve agent URL (fast — cached or single hub lookup)
 			let agentUrl: string | null = null;
 			let agentId: string | null = null;
 			let agentName: string = params.agent;
@@ -505,21 +515,63 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Send the message with sender identity
+			// Fire off the request in the background — don't block the agent
 			const sendStart = Date.now();
-			const result = await sendA2AMessage({
-				url: agentUrl,
+			const resolvedName = agentName;
+			const resolvedUrl = agentUrl;
+			outboundPending++;
+			updateStatusLine();
+
+			sendA2AMessage({
+				url: resolvedUrl,
 				message: params.message,
 				credential,
 				sender: { name: config.name ?? "Pi Agent", description: config.description },
-			}, log);
+			}, log).then((result) => {
+				outboundPending--;
+				updateStatusLine();
 
-			if (!result.ok) {
-				return txt(`Error sending to ${agentName}: ${result.error}`);
-			}
+				const dur = fmtDuration(Date.now() - sendStart);
 
-			const dur = fmtDuration(Date.now() - sendStart);
-			return txt(`**Response from ${agentName}** (${dur}):\n\n${result.response}`);
+				if (result.ok) {
+					pi.sendMessage(
+						{
+							customType: "a2a-response-received",
+							content:
+								`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`,
+							display: true,
+						},
+						{ triggerTurn: true },
+					);
+				} else {
+					pi.sendMessage(
+						{
+							customType: "a2a-response-error",
+							content:
+								`❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`,
+							display: true,
+						},
+						{ triggerTurn: true },
+					);
+				}
+			}).catch((err: unknown) => {
+				outboundPending--;
+				updateStatusLine();
+
+				const msg = err instanceof Error ? err.message : String(err);
+				const dur = fmtDuration(Date.now() - sendStart);
+				pi.sendMessage(
+					{
+						customType: "a2a-response-error",
+						content:
+							`❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`,
+						display: true,
+					},
+					{ triggerTurn: true },
+				);
+			});
+
+			return txt(`📤 Message sent to **${agentName}** — waiting for response in the background. You'll see it when it arrives.`);
 		},
 	});
 

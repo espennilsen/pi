@@ -1,18 +1,14 @@
 /**
  * pi-a2a — Agent Card builder.
  *
- * Produces agent cards in two formats:
+ * Produces agent cards in the @a2a-js/sdk format, which is the de facto standard
+ * used by all A2A SDK consumers. The SDK's AgentCard type follows the draft/0.2.x
+ * spec shape (top-level `url`, `protocolVersion`, `additionalInterfaces` with
+ * `transport`, OpenAPI 3.0 security schemes).
  *
- * 1. **SDK format** — used internally by @a2a-js/sdk for JSON-RPC handling.
- *    The SDK has its own `AgentCard` type with some field name differences
- *    from the official spec (e.g. `additionalInterfaces` vs `supportedInterfaces`,
- *    `transport` vs `protocolBinding`). These are handled by the SDK internally.
- *
- * 2. **Spec format** — served at `/.well-known/agent.json` per the A2A spec.
- *    Uses **camelCase** field names as mandated by spec §5.5:
- *    "All JSON serializations MUST use camelCase naming for field names."
- *    Field names follow the spec exactly: `supportedInterfaces`, `protocolBinding`,
- *    `protocolVersion`, `pushNotifications`, `defaultInputModes`, etc.
+ * The official A2A spec v1.0 introduced breaking changes (renamed fields, per-interface
+ * protocol versions, discriminated union security schemes) but no SDK has adopted them.
+ * Since other agents use the same SDK, we serve the SDK-native format for interoperability.
  */
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
@@ -22,61 +18,6 @@ import type { A2AConfig } from "./types.ts";
 export interface ToolInfo {
 	name: string;
 	description: string;
-}
-
-/**
- * Spec-compliant agent card (§4.4.1 AgentCard), served at /.well-known/agent.json.
- *
- * Field names are camelCase per §5.5, matching the official A2A spec exactly.
- * This is distinct from the SDK's internal type which uses slightly different names.
- */
-export interface SpecAgentCard {
-	name: string;
-	description: string;
-	version: string;
-	/** §4.4.6 — required, ordered list of supported interfaces. */
-	supportedInterfaces: Array<{
-		url: string;
-		protocolBinding: string;
-		protocolVersion: string;
-		tenant?: string;
-	}>;
-	provider?: {
-		url: string;
-		organization: string;
-	};
-	/** §4.4.3 — all fields optional. */
-	capabilities: {
-		streaming?: boolean;
-		pushNotifications?: boolean;
-		extensions?: Array<{
-			uri: string;
-			description?: string;
-			required?: boolean;
-			params?: Record<string, unknown>;
-		}>;
-		extendedAgentCard?: boolean;
-	};
-	defaultInputModes: string[];
-	defaultOutputModes: string[];
-	skills: Array<{
-		id: string;
-		name: string;
-		description: string;
-		tags: string[];
-		examples?: string[];
-		inputModes?: string[];
-		outputModes?: string[];
-	}>;
-	documentationUrl?: string;
-	iconUrl?: string;
-	securitySchemes?: Record<string, unknown>;
-	securityRequirements?: Array<Record<string, string[]>>;
-	signatures?: Array<{
-		protected: string;
-		signature: string;
-		header?: Record<string, unknown>;
-	}>;
 }
 
 /** Built-in tools that are always present — no need to advertise individually. */
@@ -114,7 +55,7 @@ const DEFAULT_SKILLS: AgentSkill[] = [
 	},
 ];
 
-const PROTOCOL_VERSION = "0.3";
+const PROTOCOL_VERSION = "0.3.0";
 
 /**
  * Build an A2A Agent Card (SDK format).
@@ -163,146 +104,6 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 	}
 
 	return card;
-}
-
-/**
- * Convert an SDK agent card to the spec-compliant JSON format.
- *
- * This is the canonical format served at `/.well-known/agent.json`.
- * It follows the A2A spec exactly:
- * - camelCase field names (§5.5)
- * - `supportedInterfaces` (§4.4.1) instead of SDK's `additionalInterfaces`
- * - `protocolBinding` (§4.4.6) instead of SDK's `transport`
- * - `protocolVersion` per interface (§4.4.6)
- * - No top-level `url` or `protocolVersion` (those are per-interface in the spec)
- */
-export function toSpecCard(card: AgentCard): SpecAgentCard {
-	const url = card.url ?? card.additionalInterfaces?.[0]?.url ?? "";
-
-	const supportedInterfaces = (card.additionalInterfaces ?? []).map((iface) => ({
-		url: iface.url,
-		protocolBinding: iface.transport ?? "JSONRPC",
-		protocolVersion: card.protocolVersion ?? PROTOCOL_VERSION,
-	}));
-
-	// Ensure at least one interface exists (spec requires min 1)
-	if (supportedInterfaces.length === 0) {
-		supportedInterfaces.push({
-			url,
-			protocolBinding: "JSONRPC",
-			protocolVersion: card.protocolVersion ?? PROTOCOL_VERSION,
-		});
-	}
-
-	const spec: SpecAgentCard = {
-		name: card.name,
-		description: card.description,
-		version: card.version,
-		supportedInterfaces,
-		capabilities: {
-			streaming: card.capabilities?.streaming,
-			pushNotifications: card.capabilities?.pushNotifications,
-		},
-		defaultInputModes: card.defaultInputModes ?? ["text/plain"],
-		defaultOutputModes: card.defaultOutputModes ?? ["text/plain"],
-		skills: card.skills.map((s) => ({
-			id: s.id,
-			name: s.name,
-			description: s.description,
-			tags: s.tags ?? [],
-			...(s.examples?.length ? { examples: s.examples } : {}),
-		})),
-	};
-
-	if (card.provider) {
-		spec.provider = {
-			url: card.provider.url ?? url,
-			organization: card.provider.organization,
-		};
-	}
-
-	if (card.documentationUrl) {
-		spec.documentationUrl = card.documentationUrl;
-	}
-
-	if (card.iconUrl) {
-		spec.iconUrl = card.iconUrl;
-	}
-
-	if (card.securitySchemes) {
-		spec.securitySchemes = convertSecuritySchemes(card.securitySchemes);
-	}
-
-	if (card.security) {
-		spec.securityRequirements = card.security;
-	}
-
-	return spec;
-}
-
-/**
- * Convert SDK/OpenAPI 3.x security schemes to A2A spec §4.5.1 format.
- *
- * The SDK uses raw OpenAPI format: `{type: "http", scheme: "bearer", ...}`
- * The A2A spec uses a discriminated union with exactly one wrapper key:
- *   `{httpAuthSecurityScheme: {scheme: "bearer", ...}}`
- *
- * Supported wrapper keys (§4.5.1):
- *   apiKeySecurityScheme, httpAuthSecurityScheme, oauth2SecurityScheme,
- *   openIdConnectSecurityScheme, mtlsSecurityScheme
- */
-function convertSecuritySchemes(
-	schemes: Record<string, unknown>,
-): Record<string, unknown> {
-	const result: Record<string, unknown> = {};
-
-	for (const [name, value] of Object.entries(schemes)) {
-		const scheme = value as Record<string, unknown>;
-		const type = scheme.type as string | undefined;
-
-		if (type === "http") {
-			result[name] = {
-				httpAuthSecurityScheme: {
-					scheme: scheme.scheme,
-					...(scheme.description ? { description: scheme.description } : {}),
-					...(scheme.bearerFormat ? { bearerFormat: scheme.bearerFormat } : {}),
-				},
-			};
-		} else if (type === "apiKey") {
-			result[name] = {
-				apiKeySecurityScheme: {
-					name: scheme.name,
-					location: scheme.in ?? scheme.location,
-					...(scheme.description ? { description: scheme.description } : {}),
-				},
-			};
-		} else if (type === "oauth2") {
-			result[name] = {
-				oauth2SecurityScheme: {
-					flows: scheme.flows ?? {},
-					...(scheme.description ? { description: scheme.description } : {}),
-				},
-			};
-		} else if (type === "openIdConnect") {
-			result[name] = {
-				openIdConnectSecurityScheme: {
-					openIdConnectUrl: scheme.openIdConnectUrl,
-					...(scheme.description ? { description: scheme.description } : {}),
-				},
-			};
-		} else if (type === "mutualTLS") {
-			result[name] = {
-				mtlsSecurityScheme: {
-					...(scheme.description ? { description: scheme.description } : {}),
-				},
-			};
-		} else {
-			// Unknown type — pass through as-is (may already be in spec format)
-			result[name] = scheme;
-		}
-	}
-
-	return result;
 }
 
 /**

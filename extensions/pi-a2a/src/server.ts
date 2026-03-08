@@ -17,7 +17,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
-import { toSpecCard } from "./agent-card.ts";
 
 const MAX_BODY = 1_048_576; // 1 MB
 
@@ -77,10 +76,8 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						res.end(JSON.stringify({ error: "Agent card not yet available" }));
 						return;
 					}
-					// Serve spec-compliant format (camelCase, §5.5) at well-known endpoint
-					const specCard = toSpecCard(currentAgentCard);
 					res.writeHead(200, { "Content-Type": "application/json" });
-					res.end(JSON.stringify(specCard, null, 2));
+					res.end(JSON.stringify(currentAgentCard, null, 2));
 					return;
 				}
 
@@ -93,6 +90,21 @@ export function startServer(opts: ServerOptions): Promise<void> {
 
 				// POST / — A2A JSON-RPC 2.0 (via SDK handler)
 				if (pathname === "/" && method === "POST") {
+					// A2A-Version header validation (§3.6.2, §9.2)
+					const clientVersion = req.headers["a2a-version"] as string | undefined;
+					if (clientVersion && !clientVersion.startsWith("0.")) {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({
+							jsonrpc: "2.0",
+							error: { code: -32600, message: `Unsupported A2A version: ${clientVersion}. This agent supports 0.x.` },
+							id: null,
+						}));
+						return;
+					}
+					if (clientVersion && !(clientVersion === "0.3" || clientVersion.startsWith("0.3."))) {
+						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
+					}
+
 					// API key auth when configured
 					if (opts.apiKey) {
 						const authHeader = req.headers.authorization ?? "";

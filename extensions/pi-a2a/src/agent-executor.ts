@@ -29,15 +29,28 @@ interface RunningTask {
 	contextId: string;
 }
 
+/** Activity events emitted by the executor for TUI display. */
+export type ActivityEvent =
+	| { type: "received"; taskId: string; sender: string; message: string }
+	| { type: "working"; taskId: string; sender: string }
+	| { type: "completed"; taskId: string; sender: string; response: string; durationMs: number }
+	| { type: "failed"; taskId: string; sender: string; error: string; durationMs?: number }
+	| { type: "canceled"; taskId: string; sender: string }
+	| { type: "busy"; taskId: string; sender: string };
+
+export type OnActivity = (event: ActivityEvent) => void;
+
 export class PiAgentExecutor implements AgentExecutor {
 	private cwd: string;
 	private log: LogFn;
+	private onActivity: OnActivity | null;
 	/** Track running subprocesses for cancellation and concurrency. */
 	private running = new Map<string, RunningTask>();
 
-	constructor(cwd: string, log: LogFn) {
+	constructor(cwd: string, log: LogFn, onActivity?: OnActivity) {
 		this.cwd = cwd;
 		this.log = log;
+		this.onActivity = onActivity ?? null;
 	}
 
 	/** Abort all running tasks. Call before discarding the executor. */
@@ -52,10 +65,15 @@ export class PiAgentExecutor implements AgentExecutor {
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
 		const { userMessage, taskId, contextId, task } = requestContext;
 
+		// Extract sender identity early (needed for activity events)
+		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
+			| { name?: string; description?: string }
+			| undefined;
+		const senderName = senderMeta?.name ?? "Unknown agent";
+
 		// Concurrency guard
 		if (this.running.size >= MAX_CONCURRENT) {
 			this.log("executor_busy", { taskId, active: this.running.size, max: MAX_CONCURRENT }, "WARN");
-			// Publish initial Task so the store has a record before the failure
 			if (!task) {
 				const initialTask: Task = {
 					kind: "task",
@@ -67,6 +85,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				eventBus.publish(initialTask);
 			}
 			this.publishError(taskId, contextId, eventBus, "Server busy — too many concurrent requests");
+			this.onActivity?.({ type: "busy", taskId, sender: senderName });
 			eventBus.finished();
 			return;
 		}
@@ -99,10 +118,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 		}
 
-		// Check for sender identity in message metadata (A2A spec extension)
-		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
-			| { name?: string; description?: string }
-			| undefined;
+		// Prepend sender identity context for the subprocess (A2A spec extension)
 		if (senderMeta?.name) {
 			const desc = senderMeta.description ? ` (${senderMeta.description})` : "";
 			textSegments.unshift(
@@ -158,6 +174,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		const prompt = textSegments.join("\n");
 		this.log("executor_start", { taskId, promptLength: prompt.length });
 
+		// Notify TUI: message received and now working
+		this.onActivity?.({ type: "received", taskId, sender: senderName, message: prompt });
+		this.onActivity?.({ type: "working", taskId, sender: senderName });
+
 		// ── Step 3: Spawn subprocess ──
 		const handle = runPrompt(prompt, this.cwd, this.log);
 		this.running.set(taskId, { handle, contextId });
@@ -189,7 +209,6 @@ export class PiAgentExecutor implements AgentExecutor {
 				eventBus.publish(artifactUpdate);
 
 				// ── Step 5: Publish final "completed" status ──
-				// Content is in the artifact; status message is a brief summary to avoid duplication
 				const completedUpdate: TaskStatusUpdateEvent = {
 					kind: "status-update",
 					taskId,
@@ -202,15 +221,19 @@ export class PiAgentExecutor implements AgentExecutor {
 				};
 				eventBus.publish(completedUpdate);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
+				this.onActivity?.({ type: "completed", taskId, sender: senderName, response: result.response, durationMs: result.durationMs });
 			} else {
+				const isTimeout = result.error === "Prompt timed out";
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
-				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
+				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs, isTimeout }, "ERROR");
+				this.onActivity?.({ type: "failed", taskId, sender: senderName, error: result.error ?? "Unknown error", durationMs: result.durationMs });
 			}
 		} catch (err: unknown) {
 			this.running.delete(taskId);
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
+			this.onActivity?.({ type: "failed", taskId, sender: senderName, error: msg });
 		}
 
 		// ── Step 6: Signal execution finished ──
@@ -235,10 +258,16 @@ export class PiAgentExecutor implements AgentExecutor {
 				final: true,
 			};
 			eventBus.publish(cancelEvent);
+			this.onActivity?.({ type: "canceled", taskId, sender: "unknown" });
 		} else {
 			this.log("executor_cancel_unknown", { taskId }, "WARN");
 		}
 		eventBus.finished();
+	}
+
+	/** Number of currently active tasks. */
+	getActiveCount(): number {
+		return this.running.size;
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

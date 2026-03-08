@@ -31,7 +31,7 @@
  * }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
@@ -42,7 +42,7 @@ import {
 } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
-import { PiAgentExecutor } from "./agent-executor.ts";
+import { PiAgentExecutor, type ActivityEvent } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub } from "./hub.ts";
 import { sendA2AMessage } from "./client.ts";
@@ -55,12 +55,28 @@ function txt(s: string) {
 	return { content: [{ type: "text" as const, text: s }], details: {} };
 }
 
+/** Format duration in human-readable form. */
+function fmtDuration(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	const s = Math.round(ms / 1000);
+	if (s < 60) return `${s}s`;
+	return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/** Truncate text to a single line for message previews. */
+function truncate(text: string, max = 200): string {
+	const oneLine = text.replace(/\n/g, " ").trim();
+	return oneLine.length > max ? oneLine.slice(0, max) + "…" : oneLine;
+}
+
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cwd = process.cwd();
 	let cardEnriched = false;
 	let firstTurnEnriched = false;
 	let executor: PiAgentExecutor | null = null;
+	/** Captured from session_start for use in async callbacks. */
+	let sessionCtx: ExtensionContext | null = null;
 
 	/**
 	 * Enrich the agent card with dynamically discovered tools.
@@ -81,10 +97,109 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// ── TUI: activity feed + status line ──────────────────────
+
+	function updateStatusLine(): void {
+		if (!sessionCtx || !executor) return;
+		const theme = sessionCtx.ui.theme;
+		const active = executor.getActiveCount();
+		if (active > 0) {
+			const dot = theme.fg("warning", "●");
+			const label = theme.fg("dim", ` A2A ${active} active`);
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else if (isRunning()) {
+			const dot = theme.fg("success", "●");
+			const label = theme.fg("dim", " A2A");
+			sessionCtx.ui.setStatus("a2a", dot + label);
+		} else {
+			sessionCtx.ui.setStatus("a2a", undefined);
+		}
+	}
+
+	/** Handle activity events from the executor — inject into TUI chat. */
+	function handleActivity(event: ActivityEvent): void {
+		if (!sessionCtx) return;
+
+		switch (event.type) {
+			case "received": {
+				pi.sendMessage(
+					{
+						customType: "a2a-incoming",
+						content:
+							`📨 **A2A message from ${event.sender}**\n\n${truncate(event.message, 500)}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				break;
+			}
+			case "working": {
+				updateStatusLine();
+				break;
+			}
+			case "completed": {
+				const dur = fmtDuration(event.durationMs);
+				pi.sendMessage(
+					{
+						customType: "a2a-response",
+						content:
+							`📤 **A2A response to ${event.sender}** (${dur})\n\n${truncate(event.response, 500)}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				updateStatusLine();
+				break;
+			}
+			case "failed": {
+				const isTimeout = event.error === "Prompt timed out";
+				const icon = isTimeout ? "⏱️" : "❌";
+				const label = isTimeout ? "timed out" : "failed";
+				const dur = event.durationMs ? ` after ${fmtDuration(event.durationMs)}` : "";
+				pi.sendMessage(
+					{
+						customType: "a2a-error",
+						content:
+							`${icon} **A2A task for ${event.sender} ${label}**${dur}\n\n${event.error}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				updateStatusLine();
+				break;
+			}
+			case "canceled": {
+				pi.sendMessage(
+					{
+						customType: "a2a-canceled",
+						content: `⏹ **A2A task canceled** (${event.taskId.slice(0, 8)}…)`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				updateStatusLine();
+				break;
+			}
+			case "busy": {
+				pi.sendMessage(
+					{
+						customType: "a2a-busy",
+						content:
+							`⚠️ **A2A request from ${event.sender} rejected** — server busy (max concurrent tasks reached)`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				break;
+			}
+		}
+	}
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
 		cwd = ctx.cwd;
+		sessionCtx = ctx;
 		cardEnriched = false;
 		firstTurnEnriched = false;
 
@@ -104,7 +219,7 @@ export default function (pi: ExtensionAPI) {
 		const agentCard = buildAgentCard(config, publicUrl);
 
 		// Set up SDK components with full capability support
-		executor = new PiAgentExecutor(cwd, log);
+		executor = new PiAgentExecutor(cwd, log, handleActivity);
 		const taskStore = new InMemoryTaskStore();
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
@@ -138,6 +253,9 @@ export default function (pi: ExtensionAPI) {
 		// Deferred enrichment
 		queueMicrotask(() => enrichCard());
 
+		// Show idle status in footer
+		updateStatusLine();
+
 		// Optional: register with A2A Hub (send agent apiKey as credential)
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
@@ -160,6 +278,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		cardEnriched = false;
+		sessionCtx?.ui.setStatus("a2a", undefined);
+		sessionCtx = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -279,6 +399,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Send the message with sender identity
+			const sendStart = Date.now();
 			const result = await sendA2AMessage({
 				url: agentUrl,
 				message: params.message,
@@ -290,7 +411,8 @@ export default function (pi: ExtensionAPI) {
 				return txt(`Error sending to ${agentName}: ${result.error}`);
 			}
 
-			return txt(`**Response from ${agentName}:**\n\n${result.response}`);
+			const dur = fmtDuration(Date.now() - sendStart);
+			return txt(`**Response from ${agentName}** (${dur}):\n\n${result.response}`);
 		},
 	});
 

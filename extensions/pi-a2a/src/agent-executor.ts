@@ -44,6 +44,8 @@ export class PiAgentExecutor implements AgentExecutor {
 	/** Track the single active task for cancellation. */
 	private activeTaskId: string | null = null;
 	private abortController: AbortController | null = null;
+	/** Serializing queue — tasks run one at a time in arrival order. */
+	private queue: Promise<void> = Promise.resolve();
 
 	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
@@ -61,68 +63,13 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
+		// Serialize: queue behind any active task, process in arrival order
+		let releaseQueue: () => void;
+		const myTurn = this.queue;
+		this.queue = new Promise<void>((resolve) => { releaseQueue = resolve; });
+
+		// Publish submitted immediately so the caller sees progress
 		const { userMessage, taskId, contextId, task } = requestContext;
-
-		// Extract sender identity
-		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
-			| { name?: string; description?: string }
-			| undefined;
-		const senderName = senderMeta?.name ?? "Unknown agent";
-
-		// Only one task at a time (main agent is single-threaded)
-		if (this.activeTaskId) {
-			this.log("executor_busy", { taskId, activeTasks: 1 }, "WARN");
-			if (!task) {
-				eventBus.publish({
-					kind: "task",
-					id: taskId,
-					contextId,
-					status: { state: "submitted", timestamp: new Date().toISOString() },
-					history: [userMessage],
-				} as Task);
-			}
-			this.publishError(taskId, contextId, eventBus, "Agent busy — processing another A2A request. Try again shortly.");
-			eventBus.finished();
-			return;
-		}
-
-		// Extract text from all part types
-		const textSegments: string[] = [];
-		for (const part of userMessage.parts) {
-			if (part.kind === "text") {
-				textSegments.push((part as { kind: "text"; text: string }).text);
-			} else if (part.kind === "data") {
-				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
-				textSegments.push(JSON.stringify(dataPart.data, null, 2));
-			} else if (part.kind === "file") {
-				const file = part.file as { uri?: string; name?: string; bytes?: string };
-				if (file?.uri) {
-					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
-				} else if (file?.name) {
-					textSegments.push(`[File: ${file.name}]`);
-				}
-				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
-			} else {
-				this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
-			}
-		}
-
-		if (textSegments.length === 0) {
-			if (!task) {
-				eventBus.publish({
-					kind: "task",
-					id: taskId,
-					contextId,
-					status: { state: "submitted", timestamp: new Date().toISOString() },
-					history: [userMessage],
-				} as Task);
-			}
-			this.publishError(taskId, contextId, eventBus, "No processable content in message");
-			eventBus.finished();
-			return;
-		}
-
-		// ── Step 1: Publish initial Task ──
 		if (!task) {
 			eventBus.publish({
 				kind: "task",
@@ -133,35 +80,71 @@ export class PiAgentExecutor implements AgentExecutor {
 			} as Task);
 		}
 
-		// ── Step 2: Publish "working" status ──
-		eventBus.publish({
-			kind: "status-update",
-			taskId,
-			contextId,
-			status: { state: "working", timestamp: new Date().toISOString() },
-			final: false,
-		} as TaskStatusUpdateEvent);
+		// Wait for preceding tasks to finish
+		await myTurn;
 
-		const prompt = textSegments.join("\n");
-		this.activeTaskId = taskId;
-		this.abortController = new AbortController();
-		this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
+		// Extract sender identity
+		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
+			| { name?: string; description?: string }
+			| undefined;
+		const senderName = senderMeta?.name ?? "Unknown agent";
 
 		try {
-			// ── Step 3: Delegate to main agent process ──
+			// Extract text from all part types
+			const textSegments: string[] = [];
+			for (const part of userMessage.parts) {
+				if (part.kind === "text") {
+					textSegments.push((part as { kind: "text"; text: string }).text);
+				} else if (part.kind === "data") {
+					const dataPart = part as { kind: "data"; data: Record<string, unknown> };
+					textSegments.push(JSON.stringify(dataPart.data, null, 2));
+				} else if (part.kind === "file") {
+					const file = part.file as { uri?: string; name?: string; bytes?: string };
+					if (file?.uri) {
+						textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
+					} else if (file?.name) {
+						textSegments.push(`[File: ${file.name}]`);
+					}
+					this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
+				} else {
+					this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
+				}
+			}
+
+			if (textSegments.length === 0) {
+				this.publishError(taskId, contextId, eventBus, "No processable content in message");
+				eventBus.finished();
+				return;
+			}
+
+			// ── Publish "working" status ──
+			eventBus.publish({
+				kind: "status-update",
+				taskId,
+				contextId,
+				status: { state: "working", timestamp: new Date().toISOString() },
+				final: false,
+			} as TaskStatusUpdateEvent);
+
+			const prompt = textSegments.join("\n");
+			this.activeTaskId = taskId;
+			this.abortController = new AbortController();
+			this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
+
+			// ── Delegate to main agent process ──
 			const result = await this.processMessage(prompt, senderName);
 
 			// Check if canceled while processing
 			if (this.activeTaskId !== taskId) {
 				this.log("executor_canceled_during_run", { taskId });
-				return; // cancelTask() already published the canceled status
+				return;
 			}
 
 			this.activeTaskId = null;
 			this.abortController = null;
 
 			if (result.ok) {
-				// ── Step 4: Publish artifact ──
+				// Publish artifact with response
 				eventBus.publish({
 					kind: "artifact-update",
 					taskId,
@@ -173,7 +156,7 @@ export class PiAgentExecutor implements AgentExecutor {
 					},
 				} as TaskArtifactUpdateEvent);
 
-				// ── Step 5: Publish "completed" ──
+				// Publish "completed"
 				eventBus.publish({
 					kind: "status-update",
 					taskId,
@@ -186,16 +169,19 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
 				this.log("executor_failed", { taskId, error: result.error, durationMs: result.durationMs }, "ERROR");
 			}
+
+			eventBus.finished();
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			this.abortController = null;
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
+			eventBus.finished();
+		} finally {
+			// Release the queue so the next task can proceed
+			releaseQueue!();
 		}
-
-		// ── Step 6: Signal finished ──
-		eventBus.finished();
 	}
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {

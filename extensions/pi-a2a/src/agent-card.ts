@@ -1,10 +1,10 @@
 /**
  * pi-a2a — Agent Card builder.
  *
- * Constructs an A2A Agent Card (per @a2a-js/sdk types) from extension config.
- * Supports dynamic enrichment from registered tools.
- *
- * Targets A2A Protocol v0.3.0 (the version implemented by @a2a-js/sdk v0.3.x).
+ * Constructs an A2A Agent Card in two formats:
+ * 1. SDK format (camelCase) — used internally by @a2a-js/sdk for JSON-RPC handling
+ * 2. Proto format (snake_case) — served at /.well-known/agent.json, compatible
+ *    with the A2A proto spec and hub validation
  */
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
@@ -14,6 +14,39 @@ import type { A2AConfig } from "./types.ts";
 export interface ToolInfo {
 	name: string;
 	description: string;
+}
+
+/** Proto-spec agent card (snake_case), served at /.well-known/agent.json. */
+export interface ProtoAgentCard {
+	name: string;
+	description: string;
+	version: string;
+	supported_interfaces: Array<{
+		url: string;
+		protocol_binding: string;
+		protocol_version: string;
+	}>;
+	provider?: {
+		url: string;
+		organization: string;
+	};
+	capabilities: {
+		streaming?: boolean;
+		push_notifications?: boolean;
+	};
+	default_input_modes: string[];
+	default_output_modes: string[];
+	skills: Array<{
+		id: string;
+		name: string;
+		description: string;
+		tags: string[];
+		examples?: string[];
+	}>;
+	documentation_url?: string;
+	icon_url?: string;
+	security_schemes?: Record<string, unknown>;
+	security_requirements?: Array<{ schemes?: Record<string, { list?: string[] }> }>;
 }
 
 /** Built-in tools that are always present — no need to advertise individually. */
@@ -52,10 +85,9 @@ const DEFAULT_SKILLS: AgentSkill[] = [
 ];
 
 /**
- * Build an A2A Agent Card with static config.
+ * Build an A2A Agent Card (SDK format, camelCase).
  *
- * The card declares the agent's identity, capabilities, skills, and
- * transport interfaces per the A2A v0.3.0 protocol spec.
+ * Used internally by the SDK's DefaultRequestHandler for JSON-RPC protocol handling.
  */
 export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 	const configSkills: AgentSkill[] | undefined = config.skills?.map((s) => ({
@@ -63,7 +95,6 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		tags: s.tags ?? [],
 	}));
 
-	// Build the JSON-RPC endpoint URL (POST to root)
 	const jsonRpcUrl = baseUrl;
 
 	const card: AgentCard = {
@@ -89,7 +120,6 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		],
 	};
 
-	// Declare security scheme when API key is configured
 	if (config.apiKey) {
 		card.securitySchemes = {
 			bearerAuth: {
@@ -102,6 +132,55 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 	}
 
 	return card;
+}
+
+/**
+ * Convert SDK agent card (camelCase) to proto-spec format (snake_case).
+ *
+ * This is the format served at /.well-known/agent.json and validated by
+ * the A2A Discovery Hub. Follows the A2A proto AgentCard message spec.
+ */
+export function toProtoCard(card: AgentCard): ProtoAgentCard {
+	const url = card.url ?? card.additionalInterfaces?.[0]?.url ?? "";
+
+	const proto: ProtoAgentCard = {
+		name: card.name,
+		description: card.description,
+		version: card.version,
+		supported_interfaces: (card.additionalInterfaces ?? []).map((iface) => ({
+			url: iface.url,
+			protocol_binding: iface.transport ?? "JSONRPC",
+			protocol_version: card.protocolVersion ?? "0.3.0",
+		})),
+		provider: card.provider ? {
+			url: card.provider.url ?? url,
+			organization: card.provider.organization,
+		} : undefined,
+		capabilities: {
+			streaming: card.capabilities?.streaming,
+			push_notifications: card.capabilities?.pushNotifications,
+		},
+		default_input_modes: card.defaultInputModes ?? ["text/plain"],
+		default_output_modes: card.defaultOutputModes ?? ["text/plain"],
+		skills: card.skills.map((s) => ({
+			id: s.id,
+			name: s.name,
+			description: s.description,
+			tags: s.tags ?? [],
+			...(s.examples?.length ? { examples: s.examples } : {}),
+		})),
+	};
+
+	// Ensure at least one supported_interface exists
+	if (proto.supported_interfaces.length === 0) {
+		proto.supported_interfaces = [{
+			url,
+			protocol_binding: "JSONRPC",
+			protocol_version: card.protocolVersion ?? "0.3.0",
+		}];
+	}
+
+	return proto;
 }
 
 /**

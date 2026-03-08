@@ -41,48 +41,36 @@ function isProcessAlive(pid: number): boolean {
  * Try to acquire the scheduler lock.
  * Returns true if we got it, false if another live process holds it.
  *
- * Uses atomic rename to avoid TOCTOU races: writes PID to a temp file,
- * then renames it to the lock path. On the same filesystem, rename is
- * atomic — so two processes can't both "win" the lock.
+ * Uses O_EXCL (flag 'wx') for atomic create-or-fail after cleaning up
+ * any stale locks from dead processes.
  */
 export function acquireLock(): boolean {
 	const lp = getLockPath();
 	const dir = path.dirname(lp);
 	fs.mkdirSync(dir, { recursive: true });
 
-	// Check existing lock
+	// Clean up stale locks (dead PIDs) so O_EXCL can succeed
 	try {
 		const content = fs.readFileSync(lp, "utf-8").trim();
 		const pid = parseInt(content, 10);
 		if (!isNaN(pid) && isProcessAlive(pid) && pid !== process.pid) {
 			return false; // Another live process holds the lock
 		}
-		// Stale lock — fall through to acquire
+		// Stale lock or our own — remove so we can re-acquire atomically
+		try { fs.unlinkSync(lp); } catch { /* already gone */ }
 	} catch {
 		// No lock file — fall through to acquire
 	}
 
-	// Atomic acquire: write PID to temp file, then rename into place.
-	// rename() is atomic on the same filesystem, eliminating the race
-	// window between checking the lock and writing our PID.
-	const tmpFile = path.join(dir, `.pi-cron.lock.${process.pid}.tmp`);
+	// Atomic acquire: O_EXCL guarantees only one process can create the
+	// file. If another process races past the stale check above,
+	// writeFileSync with flag 'wx' fails with EEXIST.
 	try {
-		fs.writeFileSync(tmpFile, String(process.pid), "utf-8");
-		fs.renameSync(tmpFile, lp);
-	} catch {
-		// Clean up temp file on failure
-		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-		return false;
-	}
-
-	// Verify we actually hold the lock (another process may have
-	// renamed over us between our rename and this read)
-	try {
-		const content = fs.readFileSync(lp, "utf-8").trim();
-		const pid = parseInt(content, 10);
-		return pid === process.pid;
-	} catch {
-		return false;
+		fs.writeFileSync(lp, String(process.pid), { flag: "wx" });
+		return true;
+	} catch (e: any) {
+		if (e.code === "EEXIST") return false;
+		throw e;
 	}
 }
 

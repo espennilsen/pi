@@ -94,7 +94,24 @@ For each unresolved thread, present:
 **Wait for user confirmation** before making any code changes. If any feedback
 is ambiguous, subjective, or you disagree with it, flag it and ask the user.
 
-### Step 4: Apply fixes
+### Step 4: Ensure you're in the right worktree
+
+The PR branch should already be checked out in a worktree. Find it:
+
+```bash
+# Check if the branch is in a worktree
+git worktree list
+```
+
+- If the PR branch has a worktree, `cd` into that worktree directory
+- If not, create one:
+  ```bash
+  git worktree add ../pi-worktrees/<task-id>/<short-name> <branch-name>
+  cd ../pi-worktrees/<task-id>/<short-name>
+  ```
+- **Never `git checkout` or `git switch` in the main working directory** — always use worktrees
+
+### Step 5: Apply fixes
 
 For each confirmed thread:
 
@@ -103,10 +120,10 @@ For each confirmed thread:
 3. Apply the fix surgically — edit only what's needed, don't refactor surrounding code
 4. Verify the fix compiles: `npx tsc --noEmit` or project-appropriate check
 
-### Step 5: Commit and push
+### Step 6: Commit and push
 
 ```bash
-# Stage and commit with a descriptive message
+# Stage and commit with a descriptive message (in the worktree)
 git add <files>
 git commit -m "fix: address review feedback — <brief summary>
 
@@ -117,7 +134,7 @@ git commit -m "fix: address review feedback — <brief summary>
 git push origin <branch>
 ```
 
-### Step 6: Resolve threads on GitHub
+### Step 7: Resolve threads on GitHub
 
 For each addressed thread, reply with a summary then resolve:
 
@@ -144,7 +161,7 @@ gh api graphql -f query='mutation {
 - **Skipped** (SUGGESTION) → leave open, note in summary
 - **Needs discussion** → leave open
 
-### Step 7: Post summary comment on the PR
+### Step 8: Post summary comment on the PR
 
 ```bash
 gh pr comment <NUMBER> -R <owner/repo> --body 'All N review threads addressed in <commit-hash>:
@@ -154,7 +171,7 @@ gh pr comment <NUMBER> -R <owner/repo> --body 'All N review threads addressed in
 ...'
 ```
 
-### Step 8: Report to user
+### Step 9: Report to user
 
 Provide a summary including:
 - What was fixed per thread (one bullet each)
@@ -162,6 +179,24 @@ Provide a summary including:
 - Any SUGGESTION threads intentionally skipped
 - Commit hash and branch pushed to
 - Confirmation that GitHub threads were resolved
+
+### Step 10: Clean up worktree
+
+After the push succeeds and threads are resolved, clean up:
+
+```bash
+# Return to the main project directory
+cd /path/to/main/project
+
+# Remove the worktree
+git worktree remove ../pi-worktrees/<task-id>/<short-name>
+
+# Delete the local branch (use -D if git complains about unmerged)
+git branch -d <branch-name>
+```
+
+**Note:** Only clean up if the PR is fully addressed. If threads remain open
+or further rounds of review are expected, keep the worktree alive.
 
 ## Rules
 
@@ -174,7 +209,6 @@ Provide a summary including:
 
 ## Tips
 
-- If the PR branch is in a worktree, work in the worktree directory
+- **Always use worktrees** — never checkout/switch branches in the main working directory
 - Use `git add -f` if files are in gitignored directories (some extensions gitignore `src/`)
-- For multi-byte string safety in Node.js HTTP body parsing, always use `Buffer[]` collection + `Buffer.concat().toString('utf8')`
-- For event-bus reply patterns, guard fallback `resolve()` with a `replied` flag
+- Don't clean up the worktree if more review rounds are expected — only after final push

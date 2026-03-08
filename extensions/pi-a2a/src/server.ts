@@ -72,8 +72,13 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			try {
 				// GET /.well-known/agent.json or /.well-known/agent-card.json — Agent Card
 				if ((pathname === "/.well-known/agent.json" || pathname === "/.well-known/agent-card.json") && method === "GET") {
+					if (!currentAgentCard) {
+						res.writeHead(503, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: "Agent card not yet available" }));
+						return;
+					}
 					// Serve spec-compliant format (camelCase, §5.5) at well-known endpoint
-					const specCard = currentAgentCard ? toSpecCard(currentAgentCard) : null;
+					const specCard = toSpecCard(currentAgentCard);
 					res.writeHead(200, { "Content-Type": "application/json" });
 					res.end(JSON.stringify(specCard, null, 2));
 					return;
@@ -236,7 +241,7 @@ class PayloadTooLargeError extends Error {
 
 function readBody(req: http.IncomingMessage): Promise<string> {
 	return new Promise((resolve, reject) => {
-		let body = "";
+		const chunks: Buffer[] = [];
 		let byteLength = 0;
 		let rejected = false;
 
@@ -248,11 +253,11 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 				reject(new PayloadTooLargeError());
 				return;
 			}
-			body += chunk.toString();
+			chunks.push(chunk);
 		});
 
 		req.on("end", () => {
-			if (!rejected) resolve(body);
+			if (!rejected) resolve(Buffer.concat(chunks).toString("utf-8"));
 		});
 
 		req.on("error", reject);

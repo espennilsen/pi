@@ -81,7 +81,11 @@ export default function (pi: ExtensionAPI) {
 		cardEnriched = false;
 		firstTurnEnriched = false;
 
-		// Clean restart: stop existing server to avoid stale handler
+		// Clean restart: abort any running tasks and stop existing server
+		if (executor) {
+			executor.abortAll();
+			executor = null;
+		}
 		if (isRunning()) {
 			await stopServer(log);
 		}

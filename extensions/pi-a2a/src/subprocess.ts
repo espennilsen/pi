@@ -133,6 +133,8 @@ function _runPromptInner(
 					agentEnded = true;
 					child.stdin.end();
 					child.kill("SIGTERM");
+					killTimer = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5_000);
+					killTimer.unref();
 				}
 			} catch {
 				// Ignore non-JSON lines
@@ -150,9 +152,10 @@ function _runPromptInner(
 			if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 			const durationMs = Date.now() - start;
 
-			// Only treat as success if process exited cleanly (code 0) or
-			// the agent protocol completed normally (agent_end observed)
-			if (code === 0 || (agentEnded && responseText.length > 0)) {
+			// Treat as success if process exited cleanly (code 0) or
+			// the agent protocol completed normally (agent_end observed).
+			// Empty responseText is valid for side-effect-only tasks.
+			if (code === 0 || agentEnded) {
 				settle({ ok: true, response: responseText, durationMs });
 			} else {
 				settle({

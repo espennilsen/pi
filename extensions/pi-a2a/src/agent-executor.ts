@@ -40,10 +40,6 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.log = log;
 	}
 
-	setCwd(cwd: string): void {
-		this.cwd = cwd;
-	}
-
 	/** Abort all running tasks. Call before discarding the executor. */
 	abortAll(): void {
 		for (const [taskId, entry] of this.running) {
@@ -90,6 +86,16 @@ export class PiAgentExecutor implements AgentExecutor {
 		}
 
 		if (textSegments.length === 0) {
+			if (!task) {
+				const initialTask: Task = {
+					kind: "task",
+					id: taskId,
+					contextId,
+					status: { state: "submitted", timestamp: new Date().toISOString() },
+					history: [userMessage],
+				};
+				eventBus.publish(initialTask);
+			}
 			this.publishError(taskId, contextId, eventBus, "No processable content in message");
 			eventBus.finished();
 			return;
@@ -133,10 +139,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		try {
 			const result = await handle.result;
 
-			// If canceled while running, don't publish completion but do signal finished
+			// If canceled while running, cancelTask() already published the
+			// canceled status and called eventBus.finished() — don't call again
 			if (!this.running.has(taskId)) {
 				this.log("executor_canceled_during_run", { taskId, durationMs: result.durationMs });
-				eventBus.finished();
 				return;
 			}
 

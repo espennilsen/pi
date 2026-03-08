@@ -12,7 +12,6 @@
  *     "description": "Personal AI coding agent",
  *     "version": "1.0.0",
  *     "organization": "e9n",
- *     "contactEmail": "hi@e9n.dev",
  *     "skills": [
  *       { "id": "coding", "name": "Coding", "description": "Write and edit code" }
  *     ],

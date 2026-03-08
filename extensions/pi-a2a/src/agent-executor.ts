@@ -12,11 +12,19 @@ import type { Message, TaskStatusUpdateEvent } from "@a2a-js/sdk";
 import { runPrompt, type SubprocessHandle } from "./subprocess.ts";
 import type { LogFn } from "./logger.ts";
 
+/** Max concurrent subprocess executions. */
+const MAX_CONCURRENT = 3;
+
+interface RunningTask {
+	handle: SubprocessHandle;
+	contextId: string;
+}
+
 export class PiAgentExecutor implements AgentExecutor {
 	private cwd: string;
 	private log: LogFn;
-	/** Track running subprocesses for cancellation. */
-	private running = new Map<string, SubprocessHandle>();
+	/** Track running subprocesses for cancellation and concurrency. */
+	private running = new Map<string, RunningTask>();
 
 	constructor(cwd: string, log: LogFn) {
 		this.cwd = cwd;
@@ -28,15 +36,25 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
-		const { userMessage, taskId } = requestContext;
+		const { userMessage, taskId, contextId } = requestContext;
+
+		// Concurrency guard
+		if (this.running.size >= MAX_CONCURRENT) {
+			this.log("executor_busy", { taskId, active: this.running.size, max: MAX_CONCURRENT }, "WARN");
+			this.publishError(taskId, contextId, eventBus, "Server busy — too many concurrent requests");
+			eventBus.finished();
+			return;
+		}
 
 		// Extract text from message parts
 		const textParts = userMessage.parts
-			.filter((p): p is { kind: "text"; text: string; metadata?: Record<string, unknown> } => p.kind === "text")
+			.filter((p): p is { kind: "text"; text: string; metadata?: Record<string, unknown> } =>
+				p.kind === "text" && typeof (p as unknown as { text?: unknown }).text === "string")
 			.map((p) => p.text);
 
 		if (textParts.length === 0) {
-			this.publishError(taskId, eventBus, "No text content in message");
+			this.publishError(taskId, contextId, eventBus, "No text content in message");
+			eventBus.finished();
 			return;
 		}
 
@@ -45,7 +63,7 @@ export class PiAgentExecutor implements AgentExecutor {
 
 		// Spawn subprocess
 		const handle = runPrompt(prompt, this.cwd, this.log);
-		this.running.set(taskId, handle);
+		this.running.set(taskId, { handle, contextId });
 
 		try {
 			const result = await handle.result;
@@ -68,13 +86,13 @@ export class PiAgentExecutor implements AgentExecutor {
 				eventBus.publish(agentMessage);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
 			} else {
-				this.publishError(taskId, eventBus, result.error ?? "Unknown error");
+				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
 				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
 			}
 		} catch (err: unknown) {
 			this.running.delete(taskId);
 			const msg = err instanceof Error ? err.message : String(err);
-			this.publishError(taskId, eventBus, msg);
+			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
 		}
 
@@ -82,9 +100,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
-		const handle = this.running.get(taskId);
-		if (handle) {
-			handle.abort();
+		const entry = this.running.get(taskId);
+		const contextId = entry?.contextId ?? taskId;
+		if (entry) {
+			entry.handle.abort();
 			this.running.delete(taskId);
 			this.log("executor_cancel", { taskId });
 		}
@@ -92,7 +111,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		const cancelEvent: TaskStatusUpdateEvent = {
 			kind: "status-update",
 			taskId,
-			contextId: taskId,
+			contextId,
 			status: {
 				state: "canceled",
 				timestamp: new Date().toISOString(),
@@ -103,11 +122,11 @@ export class PiAgentExecutor implements AgentExecutor {
 		eventBus.finished();
 	}
 
-	private publishError(taskId: string, eventBus: ExecutionEventBus, error: string): void {
+	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {
 		const errorEvent: TaskStatusUpdateEvent = {
 			kind: "status-update",
 			taskId,
-			contextId: taskId,
+			contextId,
 			status: {
 				state: "failed",
 				message: {

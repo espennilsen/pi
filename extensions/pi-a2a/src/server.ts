@@ -45,7 +45,8 @@ export function startServer(opts: ServerOptions): Promise<void> {
 		currentAgentCard = opts.agentCard;
 
 		const isLocalhost = !opts.bind || opts.bind === "127.0.0.1" || opts.bind === "::1";
-		const corsOrigin = isLocalhost ? "*" : (opts.apiKey ? "*" : "");
+		// Only allow CORS on localhost; external bindings should use a reverse proxy for cross-origin access
+		const corsOrigin = isLocalhost ? "*" : "";
 		const corsHeaders = opts.apiKey ? "Content-Type, Authorization" : "Content-Type";
 
 		server = http.createServer(async (req, res) => {
@@ -95,7 +96,20 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					}
 
 					const body = await readBody(req);
-					const parsed = JSON.parse(body);
+
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(body);
+					} catch {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({
+							jsonrpc: "2.0",
+							error: { code: -32700, message: "Parse error" },
+							id: null,
+						}));
+						return;
+					}
+
 					const result = await opts.rpcHandler.handle(parsed);
 
 					// Check if result is an async generator (streaming)

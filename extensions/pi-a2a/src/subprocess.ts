@@ -101,7 +101,15 @@ function _runPromptInner(
 		}
 		signal.addEventListener("abort", onAbort, { once: true });
 
-		child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+		const MAX_STDERR = 65_536; // 64 KB
+		child.stderr.on("data", (chunk: Buffer) => {
+			if (stderr.length < MAX_STDERR) {
+				stderr += chunk.toString();
+				if (stderr.length > MAX_STDERR) {
+					stderr = stderr.slice(0, MAX_STDERR);
+				}
+			}
+		});
 		child.stdin.on("error", () => { /* ignore EPIPE / ERR_STREAM_DESTROYED */ });
 
 		rl.on("line", (line) => {

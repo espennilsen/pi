@@ -15,8 +15,8 @@
  *   6. Call eventBus.finished()
  *
  * Concurrency: max 1 (blocks — the main agent handles one request at a
- * time). Additional requests are rejected. Run more pi instances for
- * parallel A2A processing.
+ * time). Additional requests are queued and processed in arrival order.
+ * Run more pi instances for parallel A2A processing.
  */
 
 import { randomUUID } from "node:crypto";
@@ -41,9 +41,12 @@ export type ProcessMessage = (prompt: string, sender: string) => Promise<Process
 export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
 	private processMessage: ProcessMessage;
-	/** Track the single active task for cancellation. */
+	/**
+	 * Track the single active task for cancellation.
+	 * Note: cancellation only prevents result dispatch — the underlying
+	 * agent turn cannot be interrupted mid-execution at this layer.
+	 */
 	private activeTaskId: string | null = null;
-	private abortController: AbortController | null = null;
 	/** Serializing queue — tasks run one at a time in arrival order. */
 	private queue: Promise<void> = Promise.resolve();
 	/** Cancel callbacks for queued (not yet active) tasks. */
@@ -67,10 +70,8 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.cancelCallbacks.clear();
 
 		if (this.activeTaskId) {
-			this.abortController?.abort();
 			this.log("executor_abort_all", { taskId: this.activeTaskId });
 			this.activeTaskId = null;
-			this.abortController = null;
 		}
 	}
 
@@ -154,7 +155,6 @@ export class PiAgentExecutor implements AgentExecutor {
 
 			const prompt = textSegments.join("\n");
 			this.activeTaskId = taskId;
-			this.abortController = new AbortController();
 			this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
 
 			// ── Delegate to main agent process ──
@@ -168,7 +168,6 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 
 			this.activeTaskId = null;
-			this.abortController = null;
 
 			if (result.ok) {
 				// Publish artifact with response
@@ -200,7 +199,6 @@ export class PiAgentExecutor implements AgentExecutor {
 			eventBus.finished();
 		} catch (err: unknown) {
 			this.activeTaskId = null;
-			this.abortController = null;
 			const msg = err instanceof Error ? err.message : String(err);
 			this.publishError(taskId, contextId, eventBus, msg);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
@@ -229,11 +227,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// Active task
+		// Active task — mark as canceled so result dispatch is skipped
 		if (this.activeTaskId === taskId) {
-			this.abortController?.abort();
 			this.activeTaskId = null;
-			this.abortController = null;
 			this.log("executor_cancel", { taskId });
 
 			eventBus.publish({

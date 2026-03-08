@@ -31,6 +31,7 @@
  * }
  */
 
+import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
@@ -97,6 +98,8 @@ export default function (pi: ExtensionAPI) {
 	/** Resolve function for the pending A2A request. */
 	let pendingResolve: ((result: ProcessResult) => void) | null = null;
 	let pendingStartTime = 0;
+	/** Nonce embedded in the injected message to correlate with agent_end. */
+	let pendingNonce: string | null = null;
 
 	/** Wait for agent to be idle before injecting an A2A message. */
 	let agentBusy = false;
@@ -120,10 +123,13 @@ export default function (pi: ExtensionAPI) {
 		await waitForIdle();
 
 		return new Promise<ProcessResult>((resolve) => {
+			const nonce = randomUUID();
 			pendingResolve = resolve;
 			pendingStartTime = start;
+			pendingNonce = nonce;
 
-			// Inject into the main conversation — triggers a full agent turn
+			// Inject into the main conversation — triggers a full agent turn.
+			// The nonce in details lets agent_end correlate this turn's response.
 			pi.sendMessage(
 				{
 					customType: "a2a-request",
@@ -132,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 						`> ${prompt.split("\n").join("\n> ")}\n\n` +
 						`*Process this request. Your full response will be sent back to ${sender} via A2A.*`,
 					display: true,
+					details: { nonce },
 				},
 				{ triggerTurn: true },
 			);
@@ -153,29 +160,40 @@ export default function (pi: ExtensionAPI) {
 		idleResolvers = [];
 		for (const r of resolvers) r();
 
-		// If we're waiting for an A2A response, capture it
-		if (pendingResolve) {
-			const response = extractAssistantText(event.messages);
-			const durationMs = Date.now() - pendingStartTime;
-			const resolve = pendingResolve;
-			pendingResolve = null;
+		// If we're waiting for an A2A response, capture it — but only if
+		// this agent_end corresponds to our injected A2A turn (matched by nonce).
+		// This prevents user-initiated turns from consuming the pending resolve.
+		if (pendingResolve && pendingNonce) {
+			const hasMatchingRequest = event.messages.some((m) =>
+				"customType" in m &&
+				m.customType === "a2a-request" &&
+				(m as { details?: { nonce?: string } }).details?.nonce === pendingNonce
+			);
 
-			if (response) {
-				// Show completion in chat
-				pi.sendMessage(
-					{
-						customType: "a2a-response-sent",
-						content: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
-						display: true,
-					},
-					{ triggerTurn: false },
-				);
-				resolve({ ok: true, response, durationMs });
-			} else {
-				resolve({ ok: false, response: "", error: "Agent produced no text response", durationMs });
+			if (hasMatchingRequest) {
+				const response = extractAssistantText(event.messages);
+				const durationMs = Date.now() - pendingStartTime;
+				const resolve = pendingResolve;
+				pendingResolve = null;
+				pendingNonce = null;
+
+				if (response) {
+					// Show completion in chat
+					pi.sendMessage(
+						{
+							customType: "a2a-response-sent",
+							content: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
+							display: true,
+						},
+						{ triggerTurn: false },
+					);
+					resolve({ ok: true, response, durationMs });
+				} else {
+					resolve({ ok: false, response: "", error: "Agent produced no text response", durationMs });
+				}
+
+				updateStatusLine();
 			}
-
-			updateStatusLine();
 		}
 	});
 

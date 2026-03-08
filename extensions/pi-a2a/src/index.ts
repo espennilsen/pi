@@ -141,7 +141,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		cardEnriched = false;
-		executor = null;
+		if (executor) {
+			executor.abortAll();
+			executor = null;
+		}
 		if (isRunning()) {
 			await stopServer(log);
 		}

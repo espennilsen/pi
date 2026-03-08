@@ -44,6 +44,15 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.cwd = cwd;
 	}
 
+	/** Abort all running tasks. Call before discarding the executor. */
+	abortAll(): void {
+		for (const [taskId, entry] of this.running) {
+			entry.handle.abort();
+			this.log("executor_abort_all", { taskId });
+		}
+		this.running.clear();
+	}
+
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
 		const { userMessage, taskId, contextId, task } = requestContext;
 

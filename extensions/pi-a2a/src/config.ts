@@ -43,10 +43,16 @@ export function loadConfig(cwd: string): ConfigResult {
 	const sm = SettingsManager.create(cwd, agentDir);
 	const global = sm.getGlobalSettings() as Record<string, unknown>;
 	const project = sm.getProjectSettings() as Record<string, unknown>;
-	const merged = {
-		...(global[SETTINGS_KEY] as Record<string, unknown> ?? {}),
-		...(project[SETTINGS_KEY] as Record<string, unknown> ?? {}),
-	};
+	const globalConf = (global[SETTINGS_KEY] as Record<string, unknown>) ?? {};
+	const projectConf = (project[SETTINGS_KEY] as Record<string, unknown>) ?? {};
+	const merged = { ...globalConf, ...projectConf };
+
+	// Deep merge `hub` — project hub settings extend global hub settings
+	const globalHub = globalConf.hub as Record<string, unknown> | undefined;
+	const projectHub = projectConf.hub as Record<string, unknown> | undefined;
+	if (globalHub || projectHub) {
+		merged.hub = { ...(globalHub ?? {}), ...(projectHub ?? {}) };
+	}
 	const warnings: string[] = [];
 
 	// Runtime validation for critical fields

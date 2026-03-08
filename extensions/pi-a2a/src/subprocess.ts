@@ -66,6 +66,7 @@ function _runPromptInner(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			if (killTimer) { clearTimeout(killTimer); killTimer = null; }
 			signal.removeEventListener("abort", onAbort);
 			rl.close();
 			resolve(result);

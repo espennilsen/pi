@@ -47,9 +47,9 @@ import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
-import { sendA2AMessage } from "./client.ts";
+import { sendA2AMessage, type SenderIdentity } from "./client.ts";
 import { createLogger } from "./logger.ts";
-import type { RemoteAgentSummary } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -267,6 +267,7 @@ export default function (pi: ExtensionAPI) {
 		// Clean restart — reset all async state from previous session
 		outboundPending = 0;
 		sessionToken++;
+		credentialCache.clear();
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
@@ -409,6 +410,28 @@ export default function (pi: ExtensionAPI) {
 	/** In-memory cache of discovered agents from the hub. */
 	let discoveredAgents: RemoteAgentSummary[] = [];
 
+	/** Credential cache: agentId → { credential, fetchedAt }. TTL = 1 hour. */
+	const CREDENTIAL_TTL_MS = 60 * 60 * 1000; // 1 hour
+	const credentialCache = new Map<string, { credential: string | null; fetchedAt: number }>();
+
+	/** Get credential for an agent, using cache with 1h TTL. */
+	async function getCachedCredential(
+		agentId: string,
+		hubConfig: HubConfig,
+	): Promise<string | null> {
+		const cached = credentialCache.get(agentId);
+		if (cached && (Date.now() - cached.fetchedAt) < CREDENTIAL_TTL_MS) {
+			log("credential_cache_hit", { agentId });
+			return cached.credential;
+		}
+
+		log("credential_cache_miss", { agentId, expired: !!cached });
+		const result = await getCredentialFromHub(agentId, hubConfig, log);
+		const credential = result?.credential ?? null;
+		credentialCache.set(agentId, { credential, fetchedAt: Date.now() });
+		return credential;
+	}
+
 	pi.registerTool({
 		name: "a2a_discover",
 		label: "A2A Discover",
@@ -509,29 +532,43 @@ export default function (pi: ExtensionAPI) {
 				return txt(`Error: Could not resolve agent "${params.agent}". Run a2a_discover first, or provide a direct URL.`);
 			}
 
-			// Get credential from hub if we have an agentId
+			// Get credential from hub if we have an agentId (cached for 1h)
 			let credential: string | null = null;
 			if (agentId) {
-				const cred = await getCredentialFromHub(agentId, config.hub, log);
-				if (cred?.credential) {
-					credential = cred.credential;
-				}
+				credential = await getCachedCredential(agentId, config.hub);
 			}
 
 			// Fire off the request in the background — don't block the agent
 			const sendStart = Date.now();
 			const resolvedName = agentName;
 			const resolvedUrl = agentUrl;
+			const resolvedAgentId = agentId;
+			const hubConfig = config.hub;
 			const myToken = sessionToken;
 			outboundPending++;
 			updateStatusLine();
 
-			sendA2AMessage({
+			const sendOpts = {
 				url: resolvedUrl,
 				message: params.message,
 				credential,
-				sender: { name: config.name ?? "Pi Agent", description: config.description },
-			}, log).then((result) => {
+				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+			};
+
+			(async () => {
+				let result = await sendA2AMessage(sendOpts, log);
+
+				// Retry once on 401 — evict cached credential, fetch fresh, and resend
+				if (result.unauthorized && resolvedAgentId && hubConfig) {
+					log("credential_retry", { agentId: resolvedAgentId });
+					credentialCache.delete(resolvedAgentId);
+					const freshCredential = await getCachedCredential(resolvedAgentId, hubConfig);
+					sendOpts.credential = freshCredential;
+					result = await sendA2AMessage(sendOpts, log);
+				}
+
+				return result;
+			})().then((result) => {
 				// Bail out if session restarted while we were waiting
 				if (sessionToken !== myToken) return;
 

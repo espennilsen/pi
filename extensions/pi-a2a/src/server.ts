@@ -101,7 +101,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						}));
 						return;
 					}
-					if (clientVersion && !clientVersion.startsWith("0.3")) {
+					if (clientVersion && !(clientVersion === "0.3" || clientVersion.startsWith("0.3."))) {
 						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
 					}
 

@@ -194,15 +194,17 @@ export function toSpecCard(card: AgentCard): SpecAgentCard {
 		});
 	}
 
+	// Build capabilities — only include defined fields (§5.7)
+	const capabilities: SpecAgentCard["capabilities"] = {};
+	if (card.capabilities?.streaming != null) capabilities.streaming = card.capabilities.streaming;
+	if (card.capabilities?.pushNotifications != null) capabilities.pushNotifications = card.capabilities.pushNotifications;
+
 	const spec: SpecAgentCard = {
 		name: card.name,
 		description: card.description,
 		version: card.version,
 		supportedInterfaces,
-		capabilities: {
-			streaming: card.capabilities?.streaming,
-			pushNotifications: card.capabilities?.pushNotifications,
-		},
+		capabilities,
 		defaultInputModes: card.defaultInputModes ?? ["text/plain"],
 		defaultOutputModes: card.defaultOutputModes ?? ["text/plain"],
 		skills: card.skills.map((s) => ({

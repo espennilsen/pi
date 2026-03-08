@@ -93,6 +93,18 @@ export function startServer(opts: ServerOptions): Promise<void> {
 
 				// POST / — A2A JSON-RPC 2.0 (via SDK handler)
 				if (pathname === "/" && method === "POST") {
+					// A2A-Version header validation (§3.6.2, §9.2)
+					const clientVersion = req.headers["a2a-version"] as string | undefined;
+					if (clientVersion && !clientVersion.startsWith("0.")) {
+						res.writeHead(400, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({
+							jsonrpc: "2.0",
+							error: { code: -32001, message: `Unsupported A2A version: ${clientVersion}. This agent supports 0.3.` },
+							id: null,
+						}));
+						return;
+					}
+
 					// API key auth when configured
 					if (opts.apiKey) {
 						const authHeader = req.headers.authorization ?? "";

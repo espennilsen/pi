@@ -71,7 +71,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// Extract text from all part types
+		// Extract text from all part types (§4.1.6)
 		const textSegments: string[] = [];
 		for (const part of userMessage.parts) {
 			if (part.kind === "text") {
@@ -80,8 +80,17 @@ export class PiAgentExecutor implements AgentExecutor {
 				// Serialize structured data as JSON for the subprocess
 				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
 				textSegments.push(JSON.stringify(dataPart.data, null, 2));
-			} else {
-				this.log("executor_unsupported_part", { taskId, kind: part.kind }, "WARN");
+			} else if (part.kind === "file") {
+				// File parts (§4.1.6): include URL reference or filename as context.
+				// Binary file content can't be passed to a text subprocess, but URLs
+				// and filenames give the agent useful context about what was sent.
+				const file = part.file as { url?: string; name?: string; bytes?: string };
+				if (file?.url) {
+					textSegments.push(`[File: ${file.name ?? file.url}](${file.url})`);
+				} else if (file?.name) {
+					textSegments.push(`[File: ${file.name}]`);
+				}
+				this.log("executor_file_part", { taskId, url: file?.url, name: file?.name });
 			}
 		}
 

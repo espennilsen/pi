@@ -29,8 +29,10 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 	// Detect SQL dialect from pi-kysely (falls back to sqlite).
 	// Wrapped in a Promise so driver is resolved before schema registration.
 	await new Promise<void>((resolve) => {
+		let replied = false;
 		events.emit("kysely:info", {
 			reply: (info: { defaultDriver?: string }) => {
+				replied = true;
 				if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
 					driver = info.defaultDriver;
 				}
@@ -38,25 +40,27 @@ export async function initDb(eventBus: EventBus): Promise<void> {
 			},
 		});
 		// If pi-kysely isn't loaded, no listener fires — resolve immediately.
-		// EventEmitter.emit is synchronous, so if no listener called reply
-		// by the time emit returns, we can resolve.
-		resolve();
+		// EventEmitter.emit is synchronous, so if a listener called reply
+		// during emit, `replied` is already true and we skip the fallback.
+		if (!replied) resolve();
 	});
 
 	// Schema:register — creates tables and indexes if they don't exist.
 	// Additive-only, idempotent, portable across dialects.
 	await new Promise<void>((resolve, reject) => {
+		let replied = false;
 		events.emit("kysely:schema:register", {
 			...SCHEMA,
 			reply: (result: { ok: boolean; errors: string[] }) => {
+				replied = true;
 				if (result.ok) resolve();
 				else reject(new Error(`Schema register failed: ${result.errors.join("; ")}`));
 			},
 		});
 		// If pi-kysely isn't loaded, no listener fires — resolve immediately.
-		// EventEmitter.emit is synchronous, so if no listener called reply
-		// by the time emit returns, we can resolve.
-		resolve();
+		// EventEmitter.emit is synchronous, so if a listener called reply
+		// during emit, `replied` is already true and we skip the fallback.
+		if (!replied) resolve();
 	});
 }
 

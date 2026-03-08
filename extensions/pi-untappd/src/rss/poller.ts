@@ -58,8 +58,23 @@ export async function pollRSSSource(
 	});
 
 	try {
+		// Defence-in-depth: re-validate the URL domain before making an outbound request,
+		// in case a bad URL was inserted directly into the DB bypassing API validation.
+		const rssUrl = source.rss_url as string;
+		try {
+			const parsed = new URL(rssUrl);
+			if (parsed.protocol !== "https:" ||
+				(parsed.hostname !== "untappd.com" && !parsed.hostname.endsWith(".untappd.com"))) {
+				log("poll_rss_blocked", { sourceId: source.id, url: rssUrl, reason: "URL failed domain allowlist" }, "error");
+				return;
+			}
+		} catch {
+			log("poll_rss_blocked", { sourceId: source.id, url: rssUrl, reason: "Malformed URL" }, "error");
+			return;
+		}
+
 		// Fetch RSS feed
-		const feed = await fetchRSS(source.rss_url as string, log);
+		const feed = await fetchRSS(rssUrl, log);
 
 		// Process each item
 		let newEvents = 0;

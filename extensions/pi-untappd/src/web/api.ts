@@ -9,12 +9,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LogFn } from "../logger.ts";
 import * as ops from "../db/operations.ts";
 
-/** Validate that an RSS URL points to untappd.com to prevent SSRF. */
+/** Validate that an RSS URL points to an untappd.com /rss/ feed to prevent SSRF. */
 function isAllowedRSSUrl(rssUrl: string): boolean {
 	try {
 		const parsed = new URL(rssUrl);
 		return parsed.protocol === "https:" &&
-			(parsed.hostname === "untappd.com" || parsed.hostname.endsWith(".untappd.com"));
+			(parsed.hostname === "untappd.com" || parsed.hostname.endsWith(".untappd.com")) &&
+			parsed.pathname.startsWith("/rss/");
 	} catch {
 		return false;
 	}
@@ -64,19 +65,23 @@ export async function handleAPIRequest(
 				return;
 			}
 
-			let body = "";
+			const chunks: Buffer[] = [];
+			let totalLength = 0;
 			let rejected = false;
 			req.on("data", (chunk: Buffer) => {
-				body += chunk;
-				if (body.length > MAX_BODY) {
+				totalLength += chunk.length;
+				if (totalLength > MAX_BODY) {
 					rejected = true;
 					req.destroy();
 					reject(new Error("Payload too large"));
+					return;
 				}
+				chunks.push(chunk);
 			});
 			req.on("end", () => {
 				if (rejected) return;
 				try {
+					const body = Buffer.concat(chunks).toString("utf8");
 					resolve(body ? JSON.parse(body) : {});
 				} catch {
 					reject(new Error("Invalid JSON"));

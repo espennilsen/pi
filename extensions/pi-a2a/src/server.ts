@@ -19,6 +19,8 @@ const MAX_BODY = 1_048_576; // 1 MB
 
 export interface ServerOptions {
 	port: number;
+	/** Bind address. Defaults to "127.0.0.1" (localhost only). */
+	bind?: string;
 	agentCard: AgentCard;
 	cwd: string;
 	log: LogFn;
@@ -91,8 +93,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 			reject(err);
 		});
 
-		server.listen(opts.port, () => {
-			opts.log("server_started", { port: opts.port, agentCard: `http://localhost:${opts.port}/.well-known/agent.json` });
+		const bind = opts.bind ?? "127.0.0.1";
+		server.listen(opts.port, bind, () => {
+			opts.log("server_started", { port: opts.port, bind, agentCard: `http://localhost:${opts.port}/.well-known/agent.json` });
 			resolve();
 		});
 	});

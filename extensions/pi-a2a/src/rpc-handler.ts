@@ -99,7 +99,7 @@ async function handleSendMessage(
 	}
 
 	const prompt = textParts.join("\n");
-	const contextId = (params as unknown as Record<string, unknown>).contextId as string | undefined;
+	const contextId = params.contextId;
 
 	// Create task
 	const task = store.createTask(contextId);
@@ -110,6 +110,14 @@ async function handleSendMessage(
 
 	// Run prompt via isolated pi subprocess
 	const result = await runPrompt(prompt, cwd, log);
+
+	// Guard: if the task was canceled while the subprocess was running,
+	// don't overwrite the canceled state with completed/failed.
+	const currentState = store.getTask(task.id)?.status.state;
+	if (currentState === "canceled") {
+		log("task_already_canceled", { taskId: task.id, durationMs: result.durationMs });
+		return success(id, store.getTask(task.id));
+	}
 
 	if (result.ok) {
 		const agentMessage: Message = {

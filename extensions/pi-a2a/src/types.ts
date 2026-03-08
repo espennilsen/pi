@@ -10,6 +10,9 @@
 export interface A2AConfig {
 	/** HTTP port for the A2A server. Defaults to 3100. */
 	port?: number;
+	/** Bind address for the HTTP server. Defaults to "127.0.0.1" (localhost only).
+	 *  Set to "0.0.0.0" for external access. */
+	bind?: string;
 	/** Public-facing base URL. Defaults to http://localhost:{port}. */
 	publicUrl?: string;
 	/** Agent display name. Defaults to "Pi Agent". */
@@ -169,6 +172,8 @@ export interface Artifact {
 
 export interface SendMessageRequest {
 	message: Message;
+	/** Optional context ID for multi-turn conversations. */
+	contextId?: string;
 	configuration?: SendMessageConfiguration;
 }
 

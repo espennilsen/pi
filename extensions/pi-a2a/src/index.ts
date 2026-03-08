@@ -48,9 +48,10 @@ export default function (pi: ExtensionAPI) {
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		const agentCard = buildAgentCard(config, publicUrl);
 
-		// Start the A2A server
+		// Start the A2A server (binds to 127.0.0.1 by default for security)
+		const bind = config.bind;
 		try {
-			await startServer({ port, agentCard, cwd, log });
+			await startServer({ port, bind, agentCard, cwd, log });
 			ctx.ui.notify(`pi-a2a: A2A server listening on port ${port}`, "info");
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);

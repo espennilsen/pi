@@ -259,6 +259,107 @@ export async function setCredentialOnHub(
 	return null;
 }
 
+// ── Clarification (Human-in-the-Loop) ───────────────────────
+
+export interface ClarificationRequest {
+	clarificationId: string;
+	status: "pending";
+	createdAt: string;
+	expiresAt: string | null;
+}
+
+export interface ClarificationPollResult {
+	clarificationId: string;
+	status: "pending" | "answered" | "expired" | "cancelled";
+	response: string | null;
+	answeredAt: string | null;
+}
+
+/**
+ * Request clarification from the agent owner via the A2A Hub.
+ *
+ * Sends a question to the hub which the owner can answer through the
+ * hub's web UI. Returns the clarification ID for polling.
+ */
+export async function requestClarification(
+	agentId: string,
+	question: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+	options?: {
+		context?: Record<string, unknown>;
+		handoff?: Record<string, unknown>;
+		priority?: "low" | "normal" | "urgent";
+		expiresIn?: number;
+	},
+): Promise<ClarificationRequest | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	const params: Record<string, unknown> = { agentId, question };
+	if (options?.context) params.context = options.context;
+	if (options?.handoff) params.handoff = options.handoff;
+	if (options?.priority) params.priority = options.priority;
+	if (options?.expiresIn) params.expiresIn = options.expiresIn;
+
+	log("hub_clarification_request_start", { agentId, questionLength: question.length, priority: options?.priority ?? "normal" });
+
+	const result = await hubRpc(rpcUrl, "clarification.request", params, hubConfig.apiKey, log, "hub_clarification_request");
+	if (result) {
+		const out: ClarificationRequest = {
+			clarificationId: result.clarificationId as string,
+			status: "pending",
+			createdAt: result.createdAt as string,
+			expiresAt: (result.expiresAt as string | null) ?? null,
+		};
+		log("hub_clarification_request_success", { clarificationId: out.clarificationId });
+		return out;
+	}
+	return null;
+}
+
+/**
+ * Poll the hub for a clarification response.
+ *
+ * Returns the current status. When status is "answered", the response
+ * field contains the owner's reply.
+ */
+export async function pollClarification(
+	agentId: string,
+	clarificationId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ClarificationPollResult | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	const result = await hubRpc(rpcUrl, "clarification.poll", { agentId, clarificationId }, hubConfig.apiKey, log, "hub_clarification_poll");
+	if (result) {
+		return {
+			clarificationId: result.clarificationId as string,
+			status: result.status as ClarificationPollResult["status"],
+			response: (result.response as string | null) ?? null,
+			answeredAt: (result.answeredAt as string | null) ?? null,
+		};
+	}
+	return null;
+}
+
+/**
+ * Cancel a pending clarification request.
+ */
+export async function cancelClarification(
+	agentId: string,
+	clarificationId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	log("hub_clarification_cancel", { agentId, clarificationId });
+
+	const result = await hubRpc(rpcUrl, "clarification.cancel", { agentId, clarificationId }, hubConfig.apiKey, log, "hub_clarification_cancel");
+	return result !== null;
+}
+
 /**
  * Report telemetry to the A2A Hub.
  *

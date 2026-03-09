@@ -46,7 +46,7 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
@@ -770,6 +770,113 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			return txt(`📤 Message sent to **${agentName}** — waiting for response in the background. You'll see it when it arrives.`);
+		},
+	});
+
+	// ── Ask Owner (Human-in-the-Loop) ────────────────────────
+
+	pi.registerTool({
+		name: "ask_owner",
+		label: "Ask Owner",
+		description:
+			"Ask your human owner a question via the A2A Hub when you need clarification, " +
+			"a decision, or approval to proceed. The owner answers through the hub's web UI. " +
+			"This tool blocks until the owner responds (or timeout/expiry). " +
+			"Use sparingly — only when you genuinely cannot proceed without human input.",
+		parameters: Type.Object({
+			question: Type.String({ description: "The question to ask the owner (max 2000 chars)" }),
+			context: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional structured metadata to help the owner understand the context" })),
+			priority: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("normal"), Type.Literal("urgent")], { description: "Priority level. Default: normal" })),
+			timeoutMinutes: Type.Optional(Type.Number({ description: "How long to wait for a response in minutes. Default: 60, max: 4320 (72 hours)" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+			if (!hubAgentId) {
+				return txt("❌ Agent not registered with the hub. The agent must be registered before asking the owner for clarification.");
+			}
+
+			const question = params.question.slice(0, 2000);
+			const timeoutMinutes = Math.min(Math.max(params.timeoutMinutes ?? 60, 1), 4320);
+			const timeoutMs = timeoutMinutes * 60 * 1000;
+			const pollIntervalMs = 15_000; // 15 seconds
+
+			// Submit the clarification request
+			const clarification = await requestClarification(
+				hubAgentId,
+				question,
+				hubConfig,
+				log,
+				{
+					context: params.context,
+					priority: params.priority,
+				},
+			);
+
+			if (!clarification) {
+				return txt("❌ Failed to submit clarification request to the hub. Check hub connectivity and API key.");
+			}
+
+			const { clarificationId } = clarification;
+			const expiryNote = clarification.expiresAt
+				? ` (expires ${clarification.expiresAt})`
+				: "";
+
+			log("ask_owner_waiting", { clarificationId, question: question.slice(0, 100), timeoutMinutes });
+
+			// Poll until answered, expired, cancelled, or timeout
+			const deadline = Date.now() + timeoutMs;
+			const myToken = sessionToken;
+
+			while (Date.now() < deadline) {
+				// Abort if session restarted while we were waiting
+				if (sessionToken !== myToken) {
+					await cancelClarification(hubAgentId!, clarificationId, hubConfig, log);
+					return txt("⚠️ Session restarted — clarification request cancelled.");
+				}
+
+				await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+				// Check again after sleep
+				if (sessionToken !== myToken) {
+					return txt("⚠️ Session restarted — clarification request cancelled.");
+				}
+
+				const poll = await pollClarification(hubAgentId!, clarificationId, hubConfig, log);
+
+				if (!poll) {
+					// Network error — keep trying until timeout
+					log("ask_owner_poll_error", { clarificationId }, "WARN");
+					continue;
+				}
+
+				switch (poll.status) {
+					case "answered":
+						log("ask_owner_answered", { clarificationId, responseLength: poll.response?.length ?? 0 });
+						return txt(`✅ **Owner responded:**\n\n${poll.response}`);
+
+					case "expired":
+						log("ask_owner_expired", { clarificationId });
+						return txt(`⏰ Clarification request expired${expiryNote}. The owner did not respond in time. Proceed with your best judgment or try again.`);
+
+					case "cancelled":
+						log("ask_owner_cancelled", { clarificationId });
+						return txt("🚫 Clarification request was cancelled. Proceed with your best judgment or try again.");
+
+					case "pending":
+						// Still waiting — continue polling
+						break;
+				}
+			}
+
+			// Timeout reached — cancel the pending request
+			await cancelClarification(hubAgentId!, clarificationId, hubConfig, log);
+			log("ask_owner_timeout", { clarificationId, timeoutMinutes });
+			return txt(`⏰ Timed out after ${timeoutMinutes} minute(s) waiting for owner response. The clarification request has been cancelled. Proceed with your best judgment or try again with a longer timeout.`);
 		},
 	});
 

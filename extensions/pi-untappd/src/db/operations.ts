@@ -211,6 +211,16 @@ export async function getBeerByUntappdId(untappdBeerId: string): Promise<Record<
 	return rows[0];
 }
 
+export async function getBeersByIds(ids: number[]): Promise<Record<string, unknown>[]> {
+	if (ids.length === 0) return [];
+	const placeholders = ids.map(() => "?").join(", ");
+	const { rows } = await query(
+		`SELECT * FROM untappd_beers WHERE id IN (${placeholders})`,
+		ids,
+	);
+	return rows;
+}
+
 export async function listBeers(limit = 100): Promise<Record<string, unknown>[]> {
 	const { rows } = await query(
 		"SELECT * FROM untappd_beers ORDER BY name LIMIT ?",
@@ -487,4 +497,39 @@ export async function updateMenuItemConfidence(id: number, newConfidence: number
 		"UPDATE untappd_menu_items SET active_confidence = ?, updated_at = ? WHERE id = ?",
 		[newConfidence, ts, id],
 	);
+}
+
+/**
+ * Batch-update confidence for multiple menu items in a single query.
+ * Slices into batches of 100 to stay within reasonable SQL limits.
+ */
+export async function updateMenuItemConfidenceBatch(
+	updates: Array<{ id: number; confidence: number }>,
+): Promise<void> {
+	if (updates.length === 0) return;
+
+	const BATCH_SIZE = 100;
+	const ts = now();
+
+	for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+		const batch = updates.slice(i, i + BATCH_SIZE);
+		const cases = batch.map(() => "WHEN ? THEN ?").join(" ");
+		const ids = batch.map(() => "?").join(", ");
+		const params: unknown[] = [];
+		for (const u of batch) {
+			params.push(u.id, u.confidence);
+		}
+		params.push(ts);
+		for (const u of batch) {
+			params.push(u.id);
+		}
+
+		await query(
+			`UPDATE untappd_menu_items
+			 SET active_confidence = CASE id ${cases} END,
+			     updated_at = ?
+			 WHERE id IN (${ids})`,
+			params,
+		);
+	}
 }

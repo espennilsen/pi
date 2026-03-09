@@ -73,7 +73,7 @@ export async function handleAPIRequest(
 				totalLength += chunk.length;
 				if (totalLength > MAX_BODY) {
 					rejected = true;
-					req.destroy();
+					req.resume(); // drain remaining data without buffering
 					reject(new Error("Payload too large"));
 					return;
 				}
@@ -189,23 +189,35 @@ export async function handleAPIRequest(
 
 			const menus = await ops.getVenueMenusByVenueId(id);
 
-			const menusWithItems = await Promise.all(
-				menus.map(async (menu) => {
-					const items = await ops.getMenuItemsByMenuId(menu.id as number);
-
-					const itemsWithBeers = await Promise.all(
-						items.map(async (item) => {
-							let beer = null;
-							if (item.beer_id) {
-								beer = await ops.getBeerById(item.beer_id as number);
-							}
-							return { ...item, beer };
-						}),
-					);
-
-					return { ...menu, items: itemsWithBeers };
-				}),
+			// Fetch all items for all menus, then batch-load beers
+			const menuItemPairs = await Promise.all(
+				menus.map(async (menu) => ({
+					menu,
+					items: await ops.getMenuItemsByMenuId(menu.id as number),
+				})),
 			);
+
+			// Collect unique beer IDs across all menus
+			const beerIds = [
+				...new Set(
+					menuItemPairs
+						.flatMap(({ items }) => items)
+						.map((item) => item.beer_id as number | null)
+						.filter((id): id is number => id != null),
+				),
+			];
+
+			// Single query for all beers
+			const beers = beerIds.length > 0 ? await ops.getBeersByIds(beerIds) : [];
+			const beerMap = new Map(beers.map((b) => [b.id as number, b]));
+
+			const menusWithItems = menuItemPairs.map(({ menu, items }) => ({
+				...menu,
+				items: items.map((item) => ({
+					...item,
+					beer: item.beer_id ? (beerMap.get(item.beer_id as number) ?? null) : null,
+				})),
+			}));
 
 			return sendJSON(200, { ok: true, data: menusWithItems });
 		}
@@ -445,6 +457,9 @@ export async function handleAPIRequest(
 		// 404 Not Found
 		return sendJSON(404, { ok: false, error: "Not Found" });
 	} catch (err: any) {
+		if (err.message === "Payload too large") {
+			return sendJSON(413, { ok: false, error: "Payload too large" });
+		}
 		log("api_error", { path: pathname, error: err.message }, "error");
 		return sendJSON(500, { ok: false, error: "Internal server error" });
 	}

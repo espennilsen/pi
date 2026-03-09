@@ -41,7 +41,7 @@ export async function decayConfidences(log: LogFn): Promise<void> {
 		const now = new Date();
 		const items = await ops.getAllMenuItems();
 
-		let decayed = 0;
+		const updates: Array<{ id: number; confidence: number }> = [];
 
 		for (const item of items) {
 			if (!item.last_seen_at) {
@@ -62,14 +62,17 @@ export async function decayConfidences(log: LogFn): Promise<void> {
 
 			const currentConfidence = item.active_confidence as number;
 			if (currentConfidence > targetConfidence) {
-				await ops.updateMenuItemConfidence(item.id as number, targetConfidence);
-				decayed++;
+				updates.push({ id: item.id as number, confidence: targetConfidence });
 			}
+		}
+
+		if (updates.length > 0) {
+			await ops.updateMenuItemConfidenceBatch(updates);
 		}
 
 		log("decay_confidences_complete", {
 			totalItems: items.length,
-			decayed,
+			decayed: updates.length,
 		});
 	} catch (err: any) {
 		log("decay_confidences_error", { error: err.message }, "error");

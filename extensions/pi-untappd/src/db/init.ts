@@ -20,7 +20,7 @@ type LogFn = (event: string, data: unknown, level?: string) => void;
 
 type Driver = "sqlite" | "postgres" | "mysql";
 
-let events: EventBus;
+let events: EventBus | undefined;
 let driver: Driver = "sqlite";
 
 // ── Init ────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export async function initDb(eventBus: EventBus, log?: LogFn): Promise<void> {
 	// Wrapped in a Promise so driver is resolved before schema registration.
 	await new Promise<void>((resolve) => {
 		let replied = false;
-		events.emit("kysely:info", {
+		events!.emit("kysely:info", {
 			reply: (info: { defaultDriver?: string }) => {
 				replied = true;
 				if (info.defaultDriver === "postgres" || info.defaultDriver === "mysql") {
@@ -52,7 +52,7 @@ export async function initDb(eventBus: EventBus, log?: LogFn): Promise<void> {
 	// Additive-only, idempotent, portable across dialects.
 	await new Promise<void>((resolve, reject) => {
 		let replied = false;
-		events.emit("kysely:schema:register", {
+		events!.emit("kysely:schema:register", {
 			...SCHEMA,
 			reply: (result: { ok: boolean; errors: string[] }) => {
 				replied = true;
@@ -81,13 +81,17 @@ export interface QueryResult {
 const QUERY_TIMEOUT_MS = 10_000;
 
 export function query(sql: string, params: unknown[] = []): Promise<QueryResult> {
+	if (!events) {
+		throw new Error("pi-untappd: query() called before initDb()");
+	}
+	const bus = events;
 	return new Promise<QueryResult>((resolve, reject) => {
 		const timer = setTimeout(
 			() => reject(new Error(`query() timed out after ${QUERY_TIMEOUT_MS}ms — is pi-kysely loaded? SQL: ${sql.slice(0, 80)}`)),
 			QUERY_TIMEOUT_MS,
 		);
 
-		events.emit("kysely:query", {
+		bus.emit("kysely:query", {
 			actor: ACTOR,
 			input: { sql, params },
 			reply: (result: QueryResult) => {

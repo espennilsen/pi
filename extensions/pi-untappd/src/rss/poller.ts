@@ -155,7 +155,9 @@ export async function pollRSSSource(
 						beerName: parsed.beerName || item.title || "Unknown Beer",
 						venueUntappdId: parsed.venueId,
 						payloadRaw: JSON.stringify(item),
-						occurredAt: parsed.occurredAt || new Date().toISOString(),
+						occurredAt: parsed.occurredAt
+						? new Date(parsed.occurredAt).toISOString()
+						: new Date().toISOString(),
 					});
 
 					newEvents++;

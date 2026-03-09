@@ -224,9 +224,11 @@ export async function handleAPIRequest(
 
 		// ── Beers ───────────────────────────────────────────
 
-		// GET /beers
+		// GET /beers?limit=N (default 200)
 		if (pathname === "/beers" && method === "GET") {
-			const beers = await ops.listBeers();
+			const limitParam = parsedUrl.searchParams.get("limit");
+			const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam) || 200)) : 200;
+			const beers = await ops.listBeers(limit);
 			return sendJSON(200, { ok: true, data: beers });
 		}
 

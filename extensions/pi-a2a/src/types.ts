@@ -30,6 +30,20 @@ export interface A2AConfig {
 	skills?: Array<{ id: string; name: string; description: string; tags?: string[] }>;
 	/** A2A Hub settings for optional registration. */
 	hub?: HubConfig;
+	/** Manually configured remote agents (no hub required). */
+	staticAgents?: StaticAgentConfig[];
+}
+
+/** Configuration for a manually defined remote agent. */
+export interface StaticAgentConfig {
+	/** Agent display name (used for resolution in a2a_send). */
+	name: string;
+	/** Agent's A2A base URL (e.g. "http://192.168.1.50:3100"). */
+	url: string;
+	/** API key for authenticating with this agent (sent as Bearer token). */
+	apiKey?: string;
+	/** Optional description override (defaults to agent card description). */
+	description?: string;
 }
 
 export interface HubConfig {

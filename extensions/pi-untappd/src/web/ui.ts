@@ -611,6 +611,6 @@ export async function handleUIRequest(
 	} catch (err: any) {
 		log("ui_error", { path: pathname, error: err.message }, "error");
 		res.writeHead(500, { "Content-Type": "text/html" });
-		res.end(renderHTML("Error", `<h1>Error</h1><p>${esc(err.message)}</p>`));
+		res.end(renderHTML("Error", `<h1>Error</h1><p>Something went wrong. Check the server logs for details.</p>`));
 	}
 }

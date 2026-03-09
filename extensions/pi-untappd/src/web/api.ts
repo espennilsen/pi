@@ -140,13 +140,24 @@ export async function handleAPIRequest(
 				}
 			}
 
-			// Create venue
-			const id = await ops.createVenue({
-				untappdVenueId: venueId,
-				slug,
-				name: (body.name as string) || `Venue ${venueId || slug}`,
-				url: venueUrl,
-			});
+			// Create venue — try/catch handles UNIQUE constraint race
+			// (concurrent request may have inserted between the check above and here)
+			let id: number;
+			try {
+				id = await ops.createVenue({
+					untappdVenueId: venueId,
+					slug,
+					name: (body.name as string) || `Venue ${venueId || slug}`,
+					url: venueUrl,
+				});
+			} catch {
+				// UNIQUE constraint violation — return the row the other request created
+				const raced = venueId
+					? await ops.getVenueByUntappdId(venueId)
+					: undefined;
+				if (raced) return sendJSON(200, { ok: true, data: raced });
+				throw new Error("Failed to create venue");
+			}
 
 			// Create RSS source (only if we have a numeric venue ID for the RSS URL)
 			if (venueId) {
@@ -255,12 +266,20 @@ export async function handleAPIRequest(
 				return sendJSON(200, { ok: true, data: existing });
 			}
 
-			const id = await ops.createUser({
-				username,
-				displayName: displayName || null,
-				rssUrl,
-				url: profileUrl || null,
-			});
+			let id: number;
+			try {
+				id = await ops.createUser({
+					username,
+					displayName: displayName || null,
+					rssUrl,
+					url: profileUrl || null,
+				});
+			} catch {
+				// UNIQUE constraint violation — return the row the other request created
+				const raced = await ops.getUserByUsername(username);
+				if (raced) return sendJSON(200, { ok: true, data: raced });
+				throw new Error("Failed to create user");
+			}
 
 			await ops.createRSSSource({
 				type: "user",
@@ -310,12 +329,20 @@ export async function handleAPIRequest(
 				return sendJSON(200, { ok: true, data: existing });
 			}
 
-			const id = await ops.createBrewery({
-				untappdBreweryId: breweryId,
-				slug,
-				name: breweryName,
-				url: breweryUrl,
-			});
+			let id: number;
+			try {
+				id = await ops.createBrewery({
+					untappdBreweryId: breweryId,
+					slug,
+					name: breweryName,
+					url: breweryUrl,
+				});
+			} catch {
+				// UNIQUE constraint violation — return the row the other request created
+				const raced = await ops.getBreweryBySlug(slug);
+				if (raced) return sendJSON(200, { ok: true, data: raced });
+				throw new Error("Failed to create brewery");
+			}
 
 			const brewery = await ops.getBreweryById(id);
 			return sendJSON(201, { ok: true, data: brewery });

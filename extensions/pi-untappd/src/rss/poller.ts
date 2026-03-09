@@ -113,8 +113,8 @@ export async function pollRSSSource(
 						} catch {
 							// UNIQUE constraint violation — another poller inserted first.
 							// Look up the row they created.
-							const existing = await ops.getBeerByUntappdId(parsed.beerId);
-							beerId = existing ? (existing.id as number) : null;
+							const existingBeer = await ops.getBeerByUntappdId(parsed.beerId);
+							beerId = existingBeer ? (existingBeer.id as number) : null;
 						}
 					} else if (beer) {
 						beerId = beer.id as number;

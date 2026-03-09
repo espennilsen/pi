@@ -61,8 +61,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	private lastTaskDurationMs?: number;
 	/** Last completed/failed task status for telemetry reporting. */
 	private lastTaskStatus?: "completed" | "failed";
-	/** Optional callback invoked after each task completes or fails. */
+	/** Optional callback invoked after each task completes or fails (used for telemetry). */
 	onTaskFinished?: () => void;
+	/** Optional callback invoked when a task completes with a response and the sender requested a callback. */
+	onResultReady?: (taskId: string, response: string, callbackInfo: { url: string; credential?: string }) => void;
 
 	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
@@ -219,6 +221,14 @@ export class PiAgentExecutor implements AgentExecutor {
 					final: true,
 				} as TaskStatusUpdateEvent);
 				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
+
+				// Send callback to sender if requested via pi:callback metadata
+				const callbackMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:callback"] as
+					| { url?: string; credential?: string }
+					| undefined;
+				if (callbackMeta?.url && this.onResultReady) {
+					this.onResultReady(taskId, result.response, { url: callbackMeta.url, credential: callbackMeta.credential });
+				}
 
 				// Record telemetry for hub reporting
 				this.lastTaskDurationMs = result.durationMs;

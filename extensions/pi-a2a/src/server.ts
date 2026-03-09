@@ -13,6 +13,7 @@
  */
 
 import * as http from "node:http";
+import { randomUUID } from "node:crypto";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AgentCard } from "@a2a-js/sdk";
 import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
@@ -30,6 +31,8 @@ export interface ServerOptions {
 	/** SDK JSON-RPC transport handler for A2A protocol dispatch. */
 	rpcHandler: JsonRpcTransportHandler;
 	log: LogFn;
+	/** Handler for A2A callback messages (async responses from remote agents). */
+	onCallback?: (text: string, senderName: string, taskId: string) => void;
 }
 
 let server: http.Server | null = null;
@@ -129,6 +132,41 @@ export function startServer(opts: ServerOptions): Promise<void> {
 							id: null,
 						}));
 						return;
+					}
+
+					// Intercept callback messages — async responses from remote agents.
+					// These have pi:isCallback in message metadata and should be injected
+					// directly into the conversation without going through the executor.
+					if (opts.onCallback) {
+						const rpc = parsed as { method?: string; params?: { message?: Record<string, unknown> }; id?: unknown };
+						if (rpc.method === "message/send") {
+							const meta = rpc.params?.message?.metadata as Record<string, unknown> | undefined;
+							if (meta?.["pi:isCallback"] === true) {
+								const parts = rpc.params?.message?.parts as Array<{ kind: string; text?: string }> | undefined;
+								const text = parts?.find((p) => p.kind === "text")?.text ?? "";
+								const senderMeta = meta["pi:sender"] as { name?: string } | undefined;
+								const senderName = senderMeta?.name ?? "Unknown agent";
+								const taskId = (meta["pi:taskId"] as string) ?? "";
+
+								opts.onCallback(text, senderName, taskId);
+
+								// Return ACK — don't pass to SDK handler
+								res.writeHead(200, { "Content-Type": "application/json" });
+								res.end(JSON.stringify({
+									jsonrpc: "2.0",
+									id: rpc.id ?? null,
+									result: {
+										message: {
+											kind: "message",
+											messageId: randomUUID(),
+											role: "agent",
+											parts: [{ kind: "text", text: "Callback received" }],
+										},
+									},
+								}));
+								return;
+							}
+						}
 					}
 
 					const result = await opts.rpcHandler.handle(parsed);

@@ -27,6 +27,12 @@ export interface SendMessageOptions {
 	timeoutMs?: number;
 	/** Local agent identity to include as sender metadata. */
 	sender?: SenderIdentity;
+	/** If false, server returns immediately with a submitted task. Defaults to true. */
+	blocking?: boolean;
+	/** Callback URL for the receiver to send results back (used with blocking: false). */
+	callbackUrl?: string;
+	/** Credential for authenticating the callback to our endpoint. */
+	callbackCredential?: string;
 }
 
 export interface SendMessageResult {
@@ -39,6 +45,10 @@ export interface SendMessageResult {
 	error?: string;
 	/** True when the remote agent returned HTTP 401 — credential may be stale. */
 	unauthorized?: boolean;
+	/** Task state if the response is a non-completed task (async processing). */
+	taskState?: string;
+	/** Task ID if the response is a task. */
+	taskId?: string;
 }
 
 /**
@@ -51,28 +61,42 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs = 120_000, sender } = opts;
+	const { url, message, credential, timeoutMs = 120_000, sender, blocking = true, callbackUrl, callbackCredential } = opts;
 
-	// Build the message object, optionally including sender identity in metadata
+	// Build the message object, optionally including sender identity and callback info in metadata
+	const metadata: Record<string, unknown> = {};
+	if (sender) {
+		metadata["pi:sender"] = {
+			name: sender.name,
+			...(sender.description ? { description: sender.description } : {}),
+		};
+	}
+	if (callbackUrl) {
+		metadata["pi:callback"] = {
+			url: callbackUrl,
+			...(callbackCredential ? { credential: callbackCredential } : {}),
+		};
+	}
+
 	const msg: Record<string, unknown> = {
 		kind: "message",
 		messageId: randomUUID(),
 		role: "user",
 		parts: [{ kind: "text", text: message }],
 	};
-	if (sender) {
-		msg.metadata = {
-			"pi:sender": {
-				name: sender.name,
-				...(sender.description ? { description: sender.description } : {}),
-			},
-		};
+	if (Object.keys(metadata).length > 0) {
+		msg.metadata = metadata;
+	}
+
+	const params: Record<string, unknown> = { message: msg };
+	if (!blocking) {
+		params.configuration = { blocking: false };
 	}
 
 	const payload = {
 		jsonrpc: "2.0" as const,
 		method: "message/send",
-		params: { message: msg },
+		params,
 		id: randomUUID(),
 	};
 
@@ -120,6 +144,16 @@ export async function sendA2AMessage(
 			return { ok: false, error: "Empty result from remote agent", raw: data };
 		}
 
+		// Check if response is a task in a non-terminal state (async processing)
+		const resultObj = data.result as Record<string, unknown>;
+		const taskStatus = resultObj.status as { state?: string } | undefined;
+		const terminalStates = ["completed", "failed", "canceled", "rejected"];
+		if (taskStatus?.state && !terminalStates.includes(taskStatus.state)) {
+			const taskId = resultObj.id as string | undefined;
+			log("a2a_send_async", { url, taskId, state: taskStatus.state });
+			return { ok: true, response: "", taskId, taskState: taskStatus.state, raw: data.result };
+		}
+
 		// Extract response text from the A2A task result
 		const responseText = extractResponseText(data.result);
 		log("a2a_send_success", { url, responseLength: responseText.length });
@@ -129,6 +163,76 @@ export async function sendA2AMessage(
 		const msg = err instanceof Error ? err.message : String(err);
 		log("a2a_send_error", { url, error: msg }, "ERROR");
 		return { ok: false, error: msg };
+	}
+}
+
+/**
+ * Send a callback with results to the original sender.
+ *
+ * Used by the receiver after async processing completes.
+ * The callback is a standard message/send with `pi:isCallback: true` metadata,
+ * which the sender's server intercepts and injects directly into the conversation.
+ */
+export async function sendA2ACallback(
+	opts: {
+		url: string;
+		credential?: string | null;
+		taskId: string;
+		response: string;
+		sender?: SenderIdentity;
+	},
+	log: LogFn,
+): Promise<void> {
+	const { url, credential, taskId, response, sender } = opts;
+	const metadata: Record<string, unknown> = {
+		"pi:isCallback": true,
+		"pi:taskId": taskId,
+	};
+	if (sender) {
+		metadata["pi:sender"] = {
+			name: sender.name,
+			...(sender.description ? { description: sender.description } : {}),
+		};
+	}
+
+	const msg = {
+		kind: "message",
+		messageId: randomUUID(),
+		role: "user",
+		parts: [{ kind: "text", text: response }],
+		metadata,
+	};
+
+	const payload = {
+		jsonrpc: "2.0" as const,
+		method: "message/send",
+		params: { message: msg },
+		id: randomUUID(),
+	};
+
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	if (credential) {
+		headers["Authorization"] = `Bearer ${credential}`;
+	}
+
+	log("a2a_callback_start", { url, taskId, responseLength: response.length });
+
+	try {
+		const res = await fetch(url, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(payload),
+			signal: AbortSignal.timeout(30_000),
+		});
+
+		if (!res.ok) {
+			log("a2a_callback_failed", { url, taskId, status: res.status }, "ERROR");
+		} else {
+			log("a2a_callback_sent", { url, taskId });
+		}
+	} catch (err: unknown) {
+		const errMsg = err instanceof Error ? err.message : String(err);
+		log("a2a_callback_error", { url, taskId, error: errMsg }, "ERROR");
 	}
 }
 

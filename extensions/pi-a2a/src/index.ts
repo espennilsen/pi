@@ -47,7 +47,7 @@ import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
-import { sendA2AMessage, type SenderIdentity } from "./client.ts";
+import { sendA2AMessage, sendA2ACallback, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import type { HubConfig, RemoteAgentSummary } from "./types.ts";
@@ -91,6 +91,8 @@ export default function (pi: ExtensionAPI) {
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
+	/** Public URL of our A2A server (for async callbacks). */
+	let serverPublicUrl: string | null = null;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -291,6 +293,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		hubAgentId = null;
 		staticRegistry = null;
+		serverPublicUrl = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -303,10 +306,27 @@ export default function (pi: ExtensionAPI) {
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+		serverPublicUrl = publicUrl;
 		const agentCard = buildAgentCard(config, publicUrl);
 
 		// Set up executor with main-process callback
 		executor = new PiAgentExecutor(log, processMessage);
+
+		// Wire async callback: when a task completes and the sender requested a callback,
+		// send the result back to the sender's A2A endpoint.
+		executor.onResultReady = (taskId, response, callbackInfo) => {
+			sendA2ACallback(
+				{
+					url: callbackInfo.url,
+					credential: callbackInfo.credential,
+					taskId,
+					response,
+					sender: { name: config.name ?? "Pi Agent", description: config.description },
+				},
+				log,
+			).catch(() => {}); // fire and forget
+		};
+
 		const taskStore = new InMemoryTaskStore();
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
@@ -329,7 +349,22 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("pi-a2a: WARNING — binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.", "warning");
 		}
 		try {
-			await startServer({ port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
+			await startServer({
+				port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log,
+				// Handle async callback responses from remote agents
+				onCallback: (text, senderName, taskId) => {
+					log("a2a_callback_received", { senderName, taskId, responseLength: text.length });
+					pi.sendMessage(
+						{
+							customType: "a2a-response-received",
+							content: `📨 **A2A response from ${senderName}** (async):\n\n${text}`,
+							display: true,
+						},
+						{ triggerTurn: true },
+					);
+					updateStatusLine();
+				},
+			});
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${port}`, "info");
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -634,6 +669,12 @@ export default function (pi: ExtensionAPI) {
 				message: params.message,
 				credential,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+				// Send non-blocking with callback so we don't hold the connection open.
+				// The receiver returns immediately with a submitted task, then sends
+				// the result back to our A2A endpoint when processing completes.
+				blocking: false,
+				callbackUrl: serverPublicUrl ?? undefined,
+				callbackCredential: config.apiKey,
 			};
 
 			(async () => {
@@ -659,15 +700,29 @@ export default function (pi: ExtensionAPI) {
 				const dur = fmtDuration(Date.now() - sendStart);
 
 				if (result.ok) {
-					pi.sendMessage(
-						{
-							customType: "a2a-response-received",
-							content:
-								`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`,
-							display: true,
-						},
-						{ triggerTurn: true },
-					);
+					if (result.taskState && result.taskState !== "completed") {
+						// Non-blocking: task accepted, response will arrive via async callback
+						pi.sendMessage(
+							{
+								customType: "a2a-submitted",
+								content:
+									`✅ **${resolvedName}** accepted the request. Response will arrive when processing completes.`,
+								display: true,
+							},
+							{ triggerTurn: false },
+						);
+					} else {
+						// Blocking fallback or fast completion: full response available
+						pi.sendMessage(
+							{
+								customType: "a2a-response-received",
+								content:
+									`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`,
+								display: true,
+							},
+							{ triggerTurn: true },
+						);
+					}
 				} else {
 					pi.sendMessage(
 						{

@@ -32,6 +32,7 @@ src/
 - **Self-contained HTTP server** — Uses `node:http` directly. No dependency on pi-webserver, pi-kysely, or any other extension. Binds to `127.0.0.1` by default; optional API key auth for external access.
 - **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
 - **Subprocess isolation** — Each `message/send` spawns a fresh `pi --mode rpc -ne` process. No shared state, no extension leakage. Cancellation kills the subprocess via `AbortController`.
+- **Async fire-and-forget messaging** — Outbound `a2a_send` sends with `blocking: false` (A2A spec §3.3.3). The receiver returns a submitted task immediately; the sender goes idle. When processing completes, the receiver sends results back via a callback POST to the sender's A2A endpoint (`pi:callback` metadata). The sender's server intercepts callbacks (`pi:isCallback` metadata) and injects the response directly into the conversation.
 - **Settings-driven** — All config via `pi-a2a` key in settings.json. No env vars.
 - **Static agent registry** — Manually configured remote agents in `staticAgents[]`. Agent cards are fetched from `/.well-known/agent-card.json` on session start and cached in memory. No hub required. Refresh via `/a2a agents refresh` command. Static agents are resolved first in `a2a_send`, before hub lookup.
 

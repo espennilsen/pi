@@ -49,7 +49,7 @@ import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } fro
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
 import { createLogger } from "./logger.ts";
-import type { HubConfig, RemoteAgentSummary } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -155,13 +155,27 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// Capture agent lifecycle for response extraction
+	// Capture agent lifecycle for response extraction + telemetry
 	pi.on("agent_start", () => {
 		agentBusy = true;
+		lastTurnStartMs = Date.now();
+
+		// Report "busy" to hub immediately
+		if (hubAgentId) {
+			const { config } = loadConfig(cwd);
+			sendTelemetry(config).catch(() => {});
+		}
 	});
 
 	pi.on("agent_end", (event) => {
 		agentBusy = false;
+
+		// Record turn duration for telemetry
+		if (lastTurnStartMs > 0) {
+			lastTurnDurationMs = Date.now() - lastTurnStartMs;
+			lastTurnStatus = "completed";
+			lastTurnStartMs = 0;
+		}
 
 		// Notify any waiters that the agent is idle
 		const resolvers = idleResolvers;
@@ -197,11 +211,18 @@ export default function (pi: ExtensionAPI) {
 					);
 					resolve({ ok: true, response, durationMs });
 				} else {
+					lastTurnStatus = "failed";
 					resolve({ ok: false, response: "", error: "Agent produced no text response", durationMs });
 				}
 
 				updateStatusLine();
 			}
+		}
+
+		// Report "idle" to hub immediately
+		if (hubAgentId) {
+			const { config } = loadConfig(cwd);
+			sendTelemetry(config).catch(() => {});
 		}
 	});
 
@@ -255,10 +276,34 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// ── Telemetry ────────────────────────────────────────────
+	//
+	// Report agent state to the hub so it can compute availability.
+	// Uses pi's own isIdle() + hasPendingMessages() for ground truth
+	// (covers ALL work — user turns, A2A turns, queued messages)
+	// combined with the executor's A2A queue depth.
+
+	let lastTurnStartMs = 0;
+	let lastTurnDurationMs: number | undefined;
+	let lastTurnStatus: "completed" | "failed" | undefined;
+
+	/** Build a telemetry snapshot from pi's actual state + executor A2A queue. */
+	function buildTelemetrySnapshot(): TelemetrySnapshot {
+		const isActive = sessionCtx ? !sessionCtx.isIdle() : false;
+		const snapshot: TelemetrySnapshot = {
+			queueDepth: executor?.queueDepth() ?? 0,
+			activeTasks: isActive ? 1 : 0,
+			maxConcurrent: 1,
+		};
+		if (lastTurnDurationMs !== undefined) snapshot.lastTaskDurationMs = lastTurnDurationMs;
+		if (lastTurnStatus !== undefined) snapshot.lastTaskStatus = lastTurnStatus;
+		return snapshot;
+	}
+
 	/** Send a telemetry snapshot to the hub. Failures are logged but never thrown. */
 	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
-		if (!hubAgentId || !executor || !config.hub?.apiKey) return;
-		const snapshot = executor.getTelemetrySnapshot();
+		if (!hubAgentId || !config.hub?.apiKey) return;
+		const snapshot = buildTelemetrySnapshot();
 		await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
 	}
 
@@ -342,16 +387,22 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
+			const result = await registerWithHub(publicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
-				// Start periodic telemetry reporting (every 30s)
-				telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
+				// Always push credential via setCredential — registration may
+				// have been a no-op (conflict/existing) and the credential may
+				// have changed since last registration.
+				if (config.apiKey) {
+					await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
+				}
 
-				// Wire up immediate telemetry report after each task completes
-				executor.onTaskFinished = () => { sendTelemetry(config).catch(() => {}); };
+				// Periodic heartbeat (30s) — keeps hub from resetting
+				// telemetry to unknown. Real-time updates come from
+				// agent_start/agent_end hooks.
+				telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
 
 				// Send initial telemetry report
 				sendTelemetry(config).catch(() => {});
@@ -389,9 +440,11 @@ export default function (pi: ExtensionAPI) {
 		if (hubAgentId) {
 			const { config } = loadConfig(cwd);
 			if (config.hub?.apiKey) {
-				const idleSnap = executor
-					? { ...executor.getTelemetrySnapshot(), queueDepth: 0, activeTasks: 0 }
-					: { queueDepth: 0, activeTasks: 0, maxConcurrent: 1 };
+				const idleSnap: TelemetrySnapshot = {
+					queueDepth: 0,
+					activeTasks: 0,
+					maxConcurrent: 1,
+				};
 				await reportTelemetryToHub(
 					hubAgentId,
 					idleSnap,
@@ -652,9 +705,9 @@ export default function (pi: ExtensionAPI) {
 						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
 						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`;
 
-					if (hubAgentId && executor) {
-						const snap = executor.getTelemetrySnapshot();
-						const avgPart = snap.lastTaskDurationMs != null ? ` | avg ${(snap.lastTaskDurationMs / 1000).toFixed(1)}s` : "";
+					if (hubAgentId) {
+						const snap = buildTelemetrySnapshot();
+						const avgPart = snap.lastTaskDurationMs != null ? ` | last ${(snap.lastTaskDurationMs / 1000).toFixed(1)}s` : "";
 						statusMsg += `\nHub: registered (agentId=${hubAgentId})\n` +
 							`Telemetry: ${snap.activeTasks} active / ${snap.maxConcurrent} max | ${snap.queueDepth} queued${avgPart}`;
 					} else if (config.hub?.apiKey) {
@@ -692,9 +745,13 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
+				const result = await registerWithHub(publicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
+					if (config.apiKey) {
+						await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
+						ctx.ui.notify("Credential pushed to hub", "info");
+					}
 				} else {
 					ctx.ui.notify("Hub registration failed — check logs", "warning");
 				}
@@ -711,8 +768,9 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				// We need the agentId. Re-register to get it (idempotent on the hub).
-				const reg = await registerWithHub(publicUrl, config.hub, log, config.apiKey);
+				// We need the agentId. Use registerWithHub which handles conflict
+				// (returns existing agentId if already registered).
+				const reg = await registerWithHub(publicUrl, config.hub, log);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
 					return;

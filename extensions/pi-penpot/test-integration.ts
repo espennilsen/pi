@@ -307,8 +307,178 @@ async function main() {
 		else fail("search files", "file not found in search");
 	} catch (e: any) { fail("search files", e.message.slice(0, 100)); }
 
+	// ── Components ──
+	console.log("\nComponents:");
+
+	try {
+		// Create a frame to use as component root
+		const compFrameId = randomUUID();
+		await updateFile(fileId, [{ type: "add-obj", id: compFrameId, frameId: compFrameId, parentId: ROOT, pageId,
+			obj: makeShape("frame", compFrameId, {
+				name: "Button", x: 0, y: 500, width: 120, height: 40,
+				frameId: compFrameId, shapes: [],
+				fills: [{ fillColor: "#3B82F6", fillOpacity: 1 }],
+			}) }]);
+
+		const componentId = randomUUID();
+		await updateFile(fileId, [{
+			type: "add-component",
+			id: componentId,
+			name: "Button",
+			mainInstanceId: compFrameId,
+			mainInstancePage: pageId,
+		}]);
+		ok("add component");
+
+		// Verify via get-file
+		const f = await apiPost<File>("get-file", { id: fileId });
+		const comps = (f.data as any)?.components ?? {};
+		if (comps[componentId]) ok("list components (via get-file)");
+		else fail("list components", "component not in file data");
+	} catch (e: any) { fail("components", e.message.slice(0, 100)); }
+
+	// ── Image Shape (from URL) ──
+	console.log("\nImage:");
+
+	try {
+		const media = await apiPost<any>("create-file-media-object-from-url", {
+			fileId,
+			url: "https://picsum.photos/200",
+			name: "test-image",
+			isLocal: true,
+		});
+		if (media.id) {
+			const imgId = randomUUID();
+			await updateFile(fileId, [{ type: "add-obj", id: imgId, frameId: ROOT, parentId: ROOT, pageId,
+				obj: makeShape("image", imgId, {
+					name: "Logo", x: 500, y: 200, width: media.width ?? 100, height: media.height ?? 100,
+					metadata: { id: media.id, width: media.width ?? 100, height: media.height ?? 100, mtype: media.mtype ?? "image/svg+xml" },
+				}) }]);
+			ok("image shape (from URL)");
+		} else fail("image shape", "no media ID returned");
+	} catch (e: any) { fail("image shape", e.message.slice(0, 100)); }
+
+	// ── Webhooks ──
+	console.log("\nWebhooks:");
+
+	let webhookId: string = "";
+	try {
+		const wh = await apiPost<any>("create-webhook", {
+			teamId: TEAM_ID,
+			uri: "https://webhook.site/test",
+			mtype: "application/json",
+		});
+		webhookId = wh.id;
+		if (webhookId) ok("create webhook");
+		else fail("create webhook", "no id returned");
+	} catch (e: any) { fail("create webhook", e.message.slice(0, 100)); }
+
+	if (webhookId) {
+		try {
+			const hooks = await apiPost<any[]>("get-webhooks", { teamId: TEAM_ID });
+			if (hooks.some((h: any) => h.id === webhookId)) ok(`get webhooks (${hooks.length} found)`);
+			else fail("get webhooks", "webhook not in list");
+		} catch (e: any) { fail("get webhooks", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("update-webhook", {
+				id: webhookId,
+				uri: "https://webhook.site/test",
+				mtype: "application/json",
+				isActive: false,
+			});
+			ok("update webhook (deactivate)");
+		} catch (e: any) { fail("update webhook", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("delete-webhook", { id: webhookId });
+			ok("delete webhook");
+		} catch (e: any) { fail("delete webhook", e.message.slice(0, 100)); }
+	}
+
+	// ── Share Links ──
+	console.log("\nShare Links:");
+
+	let shareLinkId: string = "";
+	try {
+		const sl = await apiPost<any>("create-share-link", {
+			fileId,
+			pages: [pageId],
+			whoComment: "team",
+			whoInspect: "all",
+		});
+		shareLinkId = sl.id;
+		if (shareLinkId) ok("create share link");
+		else fail("create share link", "no id returned");
+	} catch (e: any) { fail("create share link", e.message.slice(0, 100)); }
+
+	if (shareLinkId) {
+		try {
+			await apiPost("delete-share-link", { id: shareLinkId });
+			ok("delete share link");
+		} catch (e: any) { fail("delete share link", e.message.slice(0, 100)); }
+	}
+
+	// ── Snapshots ──
+	console.log("\nSnapshots:");
+
+	let snapshotId: string = "";
+	try {
+		const snap = await apiPost<any>("create-file-snapshot", {
+			fileId,
+			label: "Test Snapshot",
+		});
+		snapshotId = snap.id;
+		if (snapshotId) ok("create snapshot");
+		else fail("create snapshot", "no id returned");
+	} catch (e: any) { fail("create snapshot", e.message.slice(0, 100)); }
+
+	if (snapshotId) {
+		try {
+			const snaps = await apiPost<any[]>("get-file-snapshots", { fileId });
+			if (snaps.some((s: any) => s.id === snapshotId)) ok(`get snapshots (${snaps.length} found)`);
+			else fail("get snapshots", "snapshot not in list");
+		} catch (e: any) { fail("get snapshots", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("restore-file-snapshot", { fileId, id: snapshotId });
+			ok("restore snapshot");
+		} catch (e: any) { fail("restore snapshot", e.message.slice(0, 100)); }
+	}
+
+	// ── Libraries ──
+	console.log("\nLibraries:");
+
+	try {
+		// Make file shared first
+		await apiPost("set-file-shared", { id: fileId, isShared: true });
+		ok("set file shared");
+	} catch (e: any) { fail("set file shared", e.message.slice(0, 100)); }
+
+	// Create a second file and link library
+	let file2Id: string = "";
+	try {
+		const f2 = await apiPost<File>("create-file", { projectId, name: "Consumer File" });
+		file2Id = f2.id;
+
+		await apiPost("link-file-to-library", { fileId: file2Id, libraryId: fileId });
+		ok("link library");
+
+		const libs = await apiPost<any[]>("get-file-libraries", { fileId: file2Id });
+		if (libs.some((l: any) => l.id === fileId)) ok(`get file libraries (${libs.length} found)`);
+		else fail("get file libraries", "library not linked");
+
+		await apiPost("unlink-file-from-library", { fileId: file2Id, libraryId: fileId });
+		ok("unlink library");
+	} catch (e: any) { fail("libraries", e.message.slice(0, 100)); }
+
 	// ── Cleanup ──
 	console.log("\nCleanup:");
+	if (file2Id) {
+		try { await apiPost("delete-file", { id: file2Id }); ok("delete consumer file"); }
+		catch (e: any) { fail("delete consumer file", e.message.slice(0, 100)); }
+	}
+
 	try {
 		await apiPost("delete-file", { id: fileId });
 		ok("delete file");

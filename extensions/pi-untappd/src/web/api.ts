@@ -36,6 +36,7 @@ interface APIResponse {
 	ok: boolean;
 	data?: unknown;
 	error?: string;
+	warning?: string;
 }
 
 export async function handleAPIRequest(
@@ -159,7 +160,11 @@ export async function handleAPIRequest(
 			}
 
 			const venue = await ops.getVenueById(id);
-			return sendJSON(201, { ok: true, data: venue });
+			const response: APIResponse = { ok: true, data: venue };
+			if (!venueId) {
+				response.warning = "Venue created from slug-only URL — RSS polling requires a numeric Untappd venue ID. This venue will not be automatically monitored.";
+			}
+			return sendJSON(201, response);
 		}
 
 		// POST /venues/:id/scrape

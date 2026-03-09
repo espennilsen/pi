@@ -542,7 +542,9 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (totalCount === 0) {
-				return txt("No agents found. Configure static agents in settings.json under pi-a2a.staticAgents, or set up a hub.");
+				const msg = "No agents found. Configure static agents in settings.json under pi-a2a.staticAgents, or set up a hub.";
+				const suffix = lines.length > 0 ? `\n\n${lines.join("\n\n")}` : "";
+				return txt(`${msg}${suffix}`);
 			}
 
 			return txt(`Found ${totalCount} agent(s):\n\n${lines.join("\n\n")}`);

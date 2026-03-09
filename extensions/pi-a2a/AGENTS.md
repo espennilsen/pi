@@ -18,6 +18,7 @@ src/
 ├── agent-card.ts     # Agent Card builder from config, dynamic tool enrichment
 ├── agent-executor.ts # AgentExecutor implementation — spawns pi subprocesses
 ├── server.ts         # Self-contained HTTP server (node:http) + SDK RPC handler
+├── static-agents.ts  # Static agent registry — fetch/cache remote agent cards
 ├── subprocess.ts     # Isolated pi subprocess runner (pi --mode rpc)
 └── hub.ts            # A2A Hub registration client
 ```
@@ -32,12 +33,34 @@ src/
 - **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
 - **Subprocess isolation** — Each `message/send` spawns a fresh `pi --mode rpc -ne` process. No shared state, no extension leakage. Cancellation kills the subprocess via `AbortController`.
 - **Settings-driven** — All config via `pi-a2a` key in settings.json. No env vars.
+- **Static agent registry** — Manually configured remote agents in `staticAgents[]`. Agent cards are fetched from `/.well-known/agent-card.json` on session start and cached in memory. No hub required. Refresh via `/a2a agents refresh` command. Static agents are resolved first in `a2a_send`, before hub lookup.
 
 ## Config
 
 Settings key: `pi-a2a` in `~/.pi/agent/settings.json` or `.pi/settings.json`.
 
-Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `skills[]`, `hub` (url, apiKey, categories, tags, visibility, autoRegister).
+Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `skills[]`, `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
+
+### Static Agents (no hub required)
+
+Configure remote agents manually when you don't want to use a hub:
+
+```json
+{
+  "pi-a2a": {
+    "staticAgents": [
+      {
+        "name": "My Other Agent",
+        "url": "http://192.168.1.50:3100",
+        "apiKey": "secret-key",
+        "description": "Agent on my local network"
+      }
+    ]
+  }
+}
+```
+
+Agent cards are fetched at session start and cached in memory. Use `/a2a agents refresh` to re-fetch. Static agents appear in `a2a_discover` results and can be targeted by name in `a2a_send`.
 
 ## A2A Protocol Compliance
 

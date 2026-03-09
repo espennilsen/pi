@@ -48,6 +48,7 @@ import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
+import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import type { HubConfig, RemoteAgentSummary } from "./types.ts";
 
@@ -89,6 +90,7 @@ export default function (pi: ExtensionAPI) {
 	let sessionCtx: ExtensionContext | null = null;
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
+	let staticRegistry: StaticAgentRegistry | null = null;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -288,6 +290,7 @@ export default function (pi: ExtensionAPI) {
 			telemetryInterval = null;
 		}
 		hubAgentId = null;
+		staticRegistry = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -339,6 +342,18 @@ export default function (pi: ExtensionAPI) {
 
 		// Show idle status in footer
 		updateStatusLine();
+
+		// Initialize static agent registry and fetch agent cards
+		staticRegistry = new StaticAgentRegistry(log);
+		if (config.staticAgents?.length) {
+			staticRegistry.configure(config.staticAgents);
+			const refreshResult = await staticRegistry.refreshAll();
+			if (refreshResult.succeeded > 0 || refreshResult.failed > 0) {
+				const msg = `pi-a2a: Static agents: ${refreshResult.succeeded} card(s) fetched` +
+					(refreshResult.failed > 0 ? `, ${refreshResult.failed} failed` : "");
+				ctx.ui.notify(msg, refreshResult.failed > 0 ? "warning" : "info");
+			}
+		}
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
@@ -401,6 +416,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		hubAgentId = null;
+		staticRegistry = null;
 
 		if (executor) {
 			executor.abortAll();
@@ -452,37 +468,69 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
-			if (!config.hub?.apiKey) {
-				return txt("Error: No hub configured. Set pi-a2a.hub in settings.json.");
+			const lines: string[] = [];
+			let totalCount = 0;
+
+			// Static agents (always shown, no hub needed)
+			if (staticRegistry && staticRegistry.size > 0) {
+				const statics = staticRegistry.getAll();
+				const query = params.q?.toLowerCase();
+				const filtered = query
+					? statics.filter((e) => {
+							const desc = e.config.description ?? (e.card?.description as string) ?? "";
+							return e.config.name.toLowerCase().includes(query) || desc.toLowerCase().includes(query);
+						})
+					: statics;
+
+				for (const entry of filtered) {
+					const name = entry.config.name;
+					const desc = entry.config.description ?? (entry.card?.description as string) ?? "No description";
+					const url = entry.config.url;
+					const skills = entry.card ? extractSkills(entry.card) : [];
+					const skillList = skills.length > 0 ? skills.map((s) => s.name).join(", ") : "unknown";
+					const cardStatus = entry.card ? "✓ card cached" : entry.error ?? "card not fetched";
+					lines.push(
+						`• **${name}** 🔗 Static\n  ${desc}\n  URL: ${url} | ${cardStatus}\n  Skills: ${skillList}`,
+					);
+					totalCount++;
+				}
 			}
 
-			const result = await discoverAgentsOnHub(config.hub, log, {
-				q: params.q,
-				category: params.category,
-				tags: params.tags,
-				limit: 50,
-			});
+			// Hub agents (only if hub is configured)
+			if (config.hub?.apiKey) {
+				const result = await discoverAgentsOnHub(config.hub, log, {
+					q: params.q,
+					category: params.category,
+					tags: params.tags,
+					limit: 50,
+				});
 
-			if (!result) {
-				return txt("Error: Failed to query the hub. Check logs.");
+				if (result) {
+					discoveredAgents = result.agents;
+					const availabilityEmoji: Record<string, string> = {
+						idle: "🟢",
+						busy: "🟡",
+						saturated: "🔴",
+						unknown: "⚪",
+					};
+
+					for (const a of result.agents) {
+						const emoji = availabilityEmoji[a.availability] ?? "⚪";
+						const availLabel = a.availability.charAt(0).toUpperCase() + a.availability.slice(1);
+						const avgResp = a.avgResponseMs != null ? ` | Avg Response: ${(a.avgResponseMs / 1000).toFixed(1)}s` : "";
+						lines.push(
+							`• **${a.name}** (id: ${a.id}) ${emoji} ${availLabel}\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus}${avgResp} | Tags: ${a.tags.join(", ") || "none"}`,
+						);
+						totalCount++;
+					}
+				}
 			}
 
-			discoveredAgents = result.agents;
-
-			if (result.agents.length === 0) {
-				return txt("No agents found on the hub.");
+			if (totalCount === 0) {
+				return txt("No agents found. Configure static agents in settings.json under pi-a2a.staticAgents, or set up a hub.");
 			}
 
-			const availabilityEmoji: Record<string, string> = { idle: "🟢", busy: "🟡", saturated: "🔴", unknown: "⚪" };
-
-			const lines = result.agents.map((a) => {
-				const emoji = availabilityEmoji[a.availability] ?? "⚪";
-				const availLabel = a.availability.charAt(0).toUpperCase() + a.availability.slice(1);
-				const avgResp = a.avgResponseMs != null ? ` | Avg Response: ${(a.avgResponseMs / 1000).toFixed(1)}s` : "";
-				return `• **${a.name}** (id: ${a.id}) ${emoji} ${availLabel}\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus}${avgResp} | Tags: ${a.tags.join(", ") || "none"}`;
-			});
-
-			return txt(`Found ${result.total} agent(s) on the hub:\n\n${lines.join("\n\n")}`);
+			return txt(`Found ${totalCount} agent(s):\n\n${lines.join("\n\n")}`);
 		},
 	});
 
@@ -501,46 +549,72 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
-			if (!config.hub?.apiKey) {
-				return txt("Error: No hub configured. Set pi-a2a.hub in settings.json.");
-			}
 
-			// Resolve agent URL (fast — cached or single hub lookup)
+			// Resolve agent URL, credential, and display name.
+			// Resolution order: direct URL → static agents → hub cache → hub lookup.
 			let agentUrl: string | null = null;
 			let agentId: string | null = null;
 			let agentName: string = params.agent;
+			let credential: string | null = null;
+			let fromStatic = false;
 
-			// Direct URL?
+			// 1. Direct URL
 			if (params.agent.startsWith("http://") || params.agent.startsWith("https://")) {
 				agentUrl = params.agent;
+				// Check if URL matches a static agent (for name + credential)
+				if (staticRegistry) {
+					const match = staticRegistry.findByUrl(params.agent);
+					if (match) {
+						credential = match.config.apiKey ?? null;
+						agentName = match.config.name;
+						fromStatic = true;
+					}
+				}
 			} else {
-				// Try to match from discovered agents cache
-				const match = discoveredAgents.find((a) =>
-					a.id === params.agent || a.name.toLowerCase() === params.agent.toLowerCase()
-				);
+				// 2. Static agent by name
+				if (staticRegistry) {
+					const match = staticRegistry.findByName(params.agent);
+					if (match) {
+						agentUrl = match.config.url;
+						credential = match.config.apiKey ?? null;
+						agentName = match.config.name;
+						fromStatic = true;
+					}
+				}
 
-				if (match) {
-					agentUrl = match.url;
-					agentId = match.id;
-					agentName = match.name;
-				} else {
-					// Not cached — try as agentId via hub lookup
-					const detail = await getAgentFromHub(params.agent, config.hub, log);
-					if (detail) {
-						agentUrl = (detail.agentCard as { url?: string }).url ?? null;
-						agentId = detail.id;
-						agentName = (detail.agentCard as { name?: string }).name ?? params.agent;
+				// 3. Hub agents (only if not resolved from static)
+				if (!agentUrl) {
+					if (config.hub?.apiKey) {
+						const match = discoveredAgents.find((a) =>
+							a.id === params.agent || a.name.toLowerCase() === params.agent.toLowerCase()
+						);
+
+						if (match) {
+							agentUrl = match.url;
+							agentId = match.id;
+							agentName = match.name;
+						} else {
+							// Not cached — try as agentId via hub lookup
+							const detail = await getAgentFromHub(params.agent, config.hub, log);
+							if (detail) {
+								agentUrl = (detail.agentCard as { url?: string }).url ?? null;
+								agentId = detail.id;
+								agentName = (detail.agentCard as { name?: string }).name ?? params.agent;
+							}
+						}
 					}
 				}
 			}
 
 			if (!agentUrl) {
-				return txt(`Error: Could not resolve agent "${params.agent}". Run a2a_discover first, or provide a direct URL.`);
+				return txt(
+					`Error: Could not resolve agent "${params.agent}". ` +
+					`Run a2a_discover first, provide a direct URL, or configure static agents in settings.json.`,
+				);
 			}
 
-			// Get credential from hub if we have an agentId (cached for 1h)
-			let credential: string | null = null;
-			if (agentId) {
+			// Get credential from hub for hub agents (static agents already have their credential)
+			if (!fromStatic && agentId && config.hub?.apiKey) {
 				credential = await getCachedCredential(agentId, config.hub);
 			}
 
@@ -554,6 +628,7 @@ export default function (pi: ExtensionAPI) {
 			outboundPending++;
 			updateStatusLine();
 
+			const resolvedFromStatic = fromStatic;
 			const sendOpts = {
 				url: resolvedUrl,
 				message: params.message,
@@ -564,8 +639,8 @@ export default function (pi: ExtensionAPI) {
 			(async () => {
 				let result = await sendA2AMessage(sendOpts, log);
 
-				// Retry once on 401 — evict cached credential, fetch fresh, and resend
-				if (result.unauthorized && resolvedAgentId && hubConfig) {
+				// Retry once on 401 — evict cached credential, fetch fresh (hub agents only)
+				if (result.unauthorized && !resolvedFromStatic && resolvedAgentId && hubConfig) {
 					log("credential_retry", { agentId: resolvedAgentId });
 					credentialCache.delete(resolvedAgentId);
 					const freshCredential = await getCachedCredential(resolvedAgentId, hubConfig);
@@ -631,7 +706,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Commands ──────────────────────────────────────────────
 
 	pi.registerCommand("a2a", {
-		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query]",
+		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query] | /a2a agents [refresh|name]",
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
@@ -659,6 +734,11 @@ export default function (pi: ExtensionAPI) {
 							`Telemetry: ${snap.activeTasks} active / ${snap.maxConcurrent} max | ${snap.queueDepth} queued${avgPart}`;
 					} else if (config.hub?.apiKey) {
 						statusMsg += "\nHub: configured but not registered";
+					}
+
+					if (staticRegistry && staticRegistry.size > 0) {
+						const withCards = staticRegistry.getAll().filter((a) => a.card !== null).length;
+						statusMsg += `\nStatic agents: ${staticRegistry.size} configured, ${withCards} card(s) cached`;
 					}
 
 					ctx.ui.notify(statusMsg, "info");
@@ -759,7 +839,65 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query]", "info");
+			if (action === "agents" || action === "agents refresh" || action.startsWith("agents ")) {
+				if (!staticRegistry || staticRegistry.size === 0) {
+					ctx.ui.notify("No static agents configured. Add pi-a2a.staticAgents to settings.json.", "info");
+					return;
+				}
+
+				// /a2a agents refresh — re-fetch all agent cards
+				if (action === "agents refresh") {
+					ctx.ui.notify("Refreshing static agent cards…", "info");
+					const result = await staticRegistry.refreshAll();
+					const lines = result.details.map((d) =>
+						d.ok ? `  ✓ ${d.name} — ${d.skillCount} skill(s)` : `  ✗ ${d.name} — ${d.error}`,
+					);
+					ctx.ui.notify(
+						`Static agent cards refreshed: ${result.succeeded} succeeded, ${result.failed} failed\n${lines.join("\n")}`,
+						result.failed > 0 ? "warning" : "info",
+					);
+					return;
+				}
+
+				// /a2a agents <name> — show specific agent's full card
+				if (action.startsWith("agents ") && action !== "agents refresh") {
+					const name = action.slice("agents ".length).trim();
+					const entry = staticRegistry.findByName(name);
+					if (!entry) {
+						ctx.ui.notify(`Static agent "${name}" not found.`, "warning");
+						return;
+					}
+					if (!entry.card) {
+						ctx.ui.notify(
+							`Agent card for "${entry.config.name}" has not been fetched. Run /a2a agents refresh.`,
+							"warning",
+						);
+						return;
+					}
+					ctx.ui.notify(
+						`Agent Card for ${entry.config.name}:\n${JSON.stringify(entry.card, null, 2)}`,
+						"info",
+					);
+					return;
+				}
+
+				// /a2a agents — list all static agents
+				const agents = staticRegistry.getAll();
+				const lines = agents.map((e) => {
+					const skills = e.card ? extractSkills(e.card) : [];
+					const cardInfo = e.card
+						? `✓ card cached | ${skills.length} skill(s)`
+						: e.error ?? "card not fetched";
+					return `  ${e.config.name} — ${e.config.url}\n    ${cardInfo}`;
+				});
+				ctx.ui.notify(`Static agents (${agents.length}):\n${lines.join("\n")}`, "info");
+				return;
+			}
+
+			ctx.ui.notify(
+				"Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query] | /a2a agents [refresh|name]",
+				"info",
+			);
 		},
 	});
 }

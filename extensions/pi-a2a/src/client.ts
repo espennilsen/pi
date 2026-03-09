@@ -23,7 +23,7 @@ export interface SendMessageOptions {
 	message: string;
 	/** Bearer token for authenticating with the remote agent. */
 	credential?: string | null;
-	/** Timeout in milliseconds. Defaults to 120_000 (2 min). */
+	/** Timeout in milliseconds. No timeout by default (requests are async/background). */
 	timeoutMs?: number;
 	/** Local agent identity to include as sender metadata. */
 	sender?: SenderIdentity;
@@ -51,7 +51,7 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs = 120_000, sender } = opts;
+	const { url, message, credential, timeoutMs, sender } = opts;
 
 	// Build the message object, optionally including sender identity in metadata
 	const msg: Record<string, unknown> = {
@@ -90,7 +90,7 @@ export async function sendA2AMessage(
 			method: "POST",
 			headers,
 			body: JSON.stringify(payload),
-			signal: AbortSignal.timeout(timeoutMs),
+			...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
 		});
 
 		if (res.status === 401) {

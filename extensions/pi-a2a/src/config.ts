@@ -68,6 +68,15 @@ export function loadConfig(cwd: string): ConfigResult {
 		warnings.push(`Invalid bind address "${merged.bind}", falling back to default ("127.0.0.1")`);
 		delete merged.bind;
 	}
+	if (merged.sendTimeoutMs !== undefined) {
+		const timeout = Number(merged.sendTimeoutMs);
+		if (!Number.isFinite(timeout) || timeout <= 0) {
+			warnings.push(`Invalid sendTimeoutMs "${merged.sendTimeoutMs}", ignoring (no timeout)`);
+			delete merged.sendTimeoutMs;
+		} else {
+			merged.sendTimeoutMs = timeout;
+		}
+	}
 
 	return { config: merged as A2AConfig, warnings };
 }

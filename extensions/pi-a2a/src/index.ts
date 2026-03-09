@@ -703,6 +703,7 @@ export default function (pi: ExtensionAPI) {
 				url: resolvedUrl,
 				message: params.message,
 				credential,
+				timeoutMs: config.sendTimeoutMs,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
 			};
 

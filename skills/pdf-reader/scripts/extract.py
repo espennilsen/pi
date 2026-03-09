@@ -57,6 +57,8 @@ def parse_page_range(range_str, total_pages):
         start, end = p, p + 1
     if start < 0:
         raise ValueError(f"Invalid page number: pages are 1-indexed (got {start + 1})")
+    if end <= start:
+        raise ValueError(f"Invalid page range: start ({start + 1}) must be less than end ({end})")
     return start, end
 
 
@@ -324,19 +326,23 @@ def main():
         elif arg == '--lang' and i + 1 < len(args):
             lang = args[i + 1]
 
-    if mode == 'text':
-        text_with_ocr_fallback(pdf_path, page_range, dpi, lang)
-    elif mode == 'ocr':
-        ocr_pdf(pdf_path, page_range, dpi, lang)
-    elif mode == 'tables':
-        extract_tables(pdf_path, page_range, as_csv, as_json)
-    elif mode == 'metadata':
-        extract_metadata(pdf_path)
-    elif mode == 'scan':
-        scan_pdf(pdf_path)
-    else:
-        print(f"Unknown mode: {mode}")
-        print("Modes: text, ocr, tables, metadata, scan")
+    try:
+        if mode == 'text':
+            text_with_ocr_fallback(pdf_path, page_range, dpi, lang)
+        elif mode == 'ocr':
+            ocr_pdf(pdf_path, page_range, dpi, lang)
+        elif mode == 'tables':
+            extract_tables(pdf_path, page_range, as_csv, as_json)
+        elif mode == 'metadata':
+            extract_metadata(pdf_path)
+        elif mode == 'scan':
+            scan_pdf(pdf_path)
+        else:
+            print(f"Unknown mode: {mode}")
+            print("Modes: text, ocr, tables, metadata, scan")
+            sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 

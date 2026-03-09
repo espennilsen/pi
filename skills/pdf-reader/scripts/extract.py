@@ -51,10 +51,13 @@ def parse_page_range(range_str, total_pages):
     """Parse '3-5' or '3' into (start, end) 0-indexed."""
     if '-' in range_str:
         start, end = range_str.split('-', 1)
-        return int(start) - 1, min(int(end), total_pages)
+        start, end = int(start) - 1, min(int(end), total_pages)
     else:
         p = int(range_str) - 1
-        return p, p + 1
+        start, end = p, p + 1
+    if start < 0:
+        raise ValueError(f"Invalid page number: pages are 1-indexed (got {start + 1})")
+    return start, end
 
 
 def extract_text(pdf_path, page_range=None):
@@ -88,10 +91,13 @@ def extract_tables(pdf_path, page_range=None, as_csv=False, as_json=False):
         start, end = 0, total
 
     all_tables = []
+    found_any = False
 
     for i in range(start, end):
         page = pdf.pages[i]
         tables = page.extract_tables()
+        if tables:
+            found_any = True
         for t_idx, table in enumerate(tables):
             if as_json:
                 # Use first row as headers
@@ -126,15 +132,8 @@ def extract_tables(pdf_path, page_range=None, as_csv=False, as_json=False):
     if as_json:
         print(json.dumps(all_tables, indent=2))
 
-    if not as_json and not as_csv and not all_tables:
-        # Check if we found any tables at all
-        found = False
-        for i in range(start, end):
-            if pdf.pages[i].extract_tables():
-                found = True
-                break
-        if not found:
-            print("No tables found in the specified pages.")
+    if not as_json and not as_csv and not found_any:
+        print("No tables found in the specified pages.")
 
     pdf.close()
 

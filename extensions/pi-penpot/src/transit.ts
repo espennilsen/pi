@@ -181,8 +181,13 @@ export function buildTransitShape(obj: Record<string, any>): TransitShape {
 		} else if (key === "blur" && value && typeof value === "object") {
 			transitMap.set(kw, convertMap(value));
 		} else if (key === "content" && value && typeof value === "object") {
-			// Text content: type values are STRINGS not keywords
-			transitMap.set(kw, convertTextContent(value));
+			if (shapeType === "path" && Array.isArray(value)) {
+				// Path content: array of segments with :command keywords
+				transitMap.set(kw, convertPathContent(value));
+			} else {
+				// Text content: type values are STRINGS not keywords
+				transitMap.set(kw, convertTextContent(value));
+			}
 		} else if (key === "metadata" && value && typeof value === "object") {
 			// Image metadata: id is a UUID
 			transitMap.set(kw, convertImageMetadata(value));
@@ -337,6 +342,32 @@ function convertOperationValue(attr: string, value: any): any {
 // ══════════════════════════════════════════════════════════════════
 // Helpers
 // ══════════════════════════════════════════════════════════════════
+
+/** Convert path content — command values are keywords, params contain float coordinates. */
+function convertPathContent(segments: any[]): any[] {
+	return segments.map((seg: any) => {
+		const pairs: any[] = [];
+		for (const [key, value] of Object.entries(seg as Record<string, any>)) {
+			if (value === undefined) continue;
+			const kw = transit.keyword(camelToKebab(key));
+
+			if (key === "command" && typeof value === "string") {
+				pairs.push(kw, transit.keyword(camelToKebab(value)));
+			} else if (key === "params" && typeof value === "object" && value !== null) {
+				// Params contain x/y coordinates as floats
+				const paramPairs: any[] = [];
+				for (const [pk, pv] of Object.entries(value as Record<string, any>)) {
+					paramPairs.push(transit.keyword(camelToKebab(pk)));
+					paramPairs.push(typeof pv === "number" ? toFloat(pv as number) : pv);
+				}
+				pairs.push(kw, transit.map(paramPairs));
+			} else {
+				pairs.push(kw, value);
+			}
+		}
+		return transit.map(pairs);
+	});
+}
 
 /** Convert text content — type values stay as STRINGS (not keywords).
  *  Keys are kebab-cased keywords. */

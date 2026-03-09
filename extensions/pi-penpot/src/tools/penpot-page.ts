@@ -544,16 +544,50 @@ async function handleAddGroup(params: any, signal?: AbortSignal) {
 	const groupId = randomUUID();
 	const frameId = params.parentId ?? ROOT_FRAME_ID;
 
+	// Compute bounding box from child shapes
+	const page = await apiPost<PageData>("get-page", {
+		fileId: params.fileId,
+		pageId: params.pageId,
+	}, signal);
+	const objects = page.objects ?? {};
+
+	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+	for (const sid of params.shapeIds) {
+		const s = objects[sid];
+		if (!s) continue;
+		const sx = s.x ?? 0, sy = s.y ?? 0;
+		const sw = s.width ?? 0, sh = s.height ?? 0;
+		if (sx < minX) minX = sx;
+		if (sy < minY) minY = sy;
+		if (sx + sw > maxX) maxX = sx + sw;
+		if (sy + sh > maxY) maxY = sy + sh;
+	}
+	if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 0.01; maxY = 0.01; }
+	const gw = maxX - minX;
+	const gh = maxY - minY;
+
 	const obj: Record<string, any> = {
 		id: groupId,
 		type: "group",
 		name: params.name ?? `group-${groupId.slice(0, 6)}`,
+		x: minX,
+		y: minY,
+		width: gw,
+		height: gh,
 		parentId: frameId,
 		frameId,
 		shapes: params.shapeIds,
-		selrect: { x: 0, y: 0, width: 0, height: 0 },
+		selrect: { x: minX, y: minY, width: gw, height: gh, x1: minX, y1: minY, x2: maxX, y2: maxY },
+		points: [
+			{ x: minX, y: minY },
+			{ x: maxX, y: minY },
+			{ x: maxX, y: maxY },
+			{ x: minX, y: maxY },
+		],
 		transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
 		transformInverse: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+		rotation: 0,
+		opacity: 1,
 	};
 
 	// Add the group and move shapes into it

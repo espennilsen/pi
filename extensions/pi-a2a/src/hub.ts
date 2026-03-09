@@ -82,14 +82,16 @@ async function hubRpc(
  * tags, visibility). The hub fetches and validates the Agent Card from
  * the agent's /.well-known/agent.json endpoint.
  *
- * When `agentApiKey` is provided, it is sent as `credential` so the hub
- * can share it with other agents that want to call this agent's A2A endpoint.
+ * Does NOT send credentials inline — use `setCredentialOnHub` after
+ * registration to store credentials separately.
+ *
+ * If the agent is already registered (conflict), falls back to finding
+ * the existing agent by URL and returns its agentId.
  */
 export async function registerWithHub(
 	agentUrl: string,
 	hubConfig: HubConfig,
 	log: LogFn,
-	agentApiKey?: string,
 ): Promise<{ agentId: string; status: string } | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 
@@ -99,11 +101,8 @@ export async function registerWithHub(
 		tags: hubConfig.tags ?? [],
 		visibility: hubConfig.visibility ?? "public",
 	};
-	if (agentApiKey) {
-		params.credential = agentApiKey;
-	}
 
-	log("hub_register_start", { url: rpcUrl, agentUrl, hasCredential: !!agentApiKey });
+	log("hub_register_start", { url: rpcUrl, agentUrl });
 
 	const result = await hubRpc(rpcUrl, "agents.register", params, hubConfig.apiKey, log, "hub_register");
 	if (result) {
@@ -112,6 +111,41 @@ export async function registerWithHub(
 		log("hub_register_success", { agentId, status });
 		return { agentId, status };
 	}
+
+	// Registration failed — check if it was a conflict (already registered).
+	// hubRpc already logged the error; try to find the existing agent by URL.
+	const existing = await findAgentByUrl(agentUrl, hubConfig, log);
+	if (existing) {
+		log("hub_register_existing", { agentId: existing.agentId, url: agentUrl });
+		return { agentId: existing.agentId, status: "existing" };
+	}
+
+	return null;
+}
+
+/**
+ * Find an agent on the hub by its URL.
+ *
+ * Searches agents and matches by URL. Returns the agentId if found.
+ */
+async function findAgentByUrl(
+	agentUrl: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ agentId: string } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	// Search with a generous limit — we'll filter by URL client-side
+	const result = await hubRpc(rpcUrl, "agents.search", { limit: 100 }, hubConfig.apiKey, log, "hub_find_by_url");
+	if (!result) return null;
+
+	const agents = result.agents as Array<{ id: string; url: string }>;
+	const match = agents.find((a) => a.url === agentUrl);
+	if (match) {
+		return { agentId: match.id };
+	}
+
+	log("hub_find_by_url_not_found", { url: agentUrl }, "WARN");
 	return null;
 }
 

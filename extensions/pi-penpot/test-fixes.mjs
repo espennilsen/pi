@@ -5,7 +5,8 @@
  */
 import transit from "transit-js";
 
-const TOKEN = process.env.PENPOT_TOKEN || "eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.U-62RZbdffBNnEQy3gFO2_FdCGk2PGo2UD8bNK8Cljk3FKHsGf_fSA.ipHCkNP1i7MmZ_uY.dkdL3xxD55tZM5axQvh8h6GgBCjypJSbU7cW3bVYsYN4_ui9oYcjZAluAffjT6IcnUdaiAuA_Xgdi_MbqnuTXh3HAwi5g_DcE8Xl9jBk9xPrvTb9A1PbdGe4NkfZlfm7mBWcSXDjjeI.w6Nb42hFOrXBzuSiOB-OjQ";
+const TOKEN = process.env.PENPOT_TOKEN;
+if (!TOKEN) { console.error("Set PENPOT_TOKEN env var"); process.exit(1); }
 const API = "https://penpot.e9n.dev/api/rpc/command";
 
 async function apiJson(cmd, body) {

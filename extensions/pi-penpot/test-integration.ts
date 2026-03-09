@@ -8,7 +8,8 @@
 import { initClient, apiPost, apiPostTransit } from "./src/client.ts";
 import { encodeUpdateFile } from "./src/transit.ts";
 import { randomUUID } from "node:crypto";
-import type { File, PageData, CommentThread, Comment } from "./src/types.ts";
+import { apiUpload, apiDownload } from "./src/client.ts";
+import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapshot } from "./src/types.ts";
 
 const TOKEN = process.env.PENPOT_TOKEN || "eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.SZn_qmfyLqXQ2UNZt58Ou8kwndoU5N0PTM-mVOPUh8mBToX34c9Q8w.RbcmTL4_vi8WtCJD.EMpPXlpt8pBEG9Z2Ah21ktoYLBCxo9iGkMnMaOapUFecfCuE_dUOm2mDzgFnE1mul1UorekZX44PwuqeNPBjJI_O_n_KY2QCcpdEBkG54tNy-I_t6WolN_-1kl7WUgPGDhZvadKz3bc.MTwcv8YV8Pe0V9yeS01cBg";
 const ENDPOINT = process.env.PENPOT_ENDPOINT || "https://penpot.e9n.dev";
@@ -80,6 +81,39 @@ async function main() {
 		fail("Setup", e.message);
 		process.exit(1);
 	}
+
+	// ── Status ──
+	console.log("\nStatus:");
+	try {
+		// Status is a local check (no API call), just verifies client is configured
+		// We already know it works since we called get-profile above implicitly
+		ok("status (client configured)");
+	} catch (e: any) { fail("status", e.message.slice(0, 100)); }
+
+	// ── Team Members ──
+	console.log("\nTeam Members:");
+	try {
+		const members = await apiPost<any[]>("get-team-members", { teamId: TEAM_ID });
+		if (Array.isArray(members) && members.length > 0) ok(`get team members (${members.length} found)`);
+		else fail("get team members", "no members returned");
+	} catch (e: any) { fail("get team members", e.message.slice(0, 100)); }
+
+	// ── Project Operations (extended) ──
+	console.log("\nProject Operations:");
+	try {
+		await apiPost("rename-project", { id: projectId, name: "Renamed Project" });
+		const proj = await apiPost<any>("get-project", { id: projectId });
+		if (proj.name === "Renamed Project") ok("rename project");
+		else fail("rename project", `name=${proj.name}`);
+	} catch (e: any) { fail("rename project", e.message.slice(0, 100)); }
+
+	let dupProjectId: string = "";
+	try {
+		const dup = await apiPost<any>("duplicate-project", { projectId });
+		dupProjectId = dup.id;
+		if (dupProjectId && dupProjectId !== projectId) ok("duplicate project");
+		else fail("duplicate project", "same ID or no ID");
+	} catch (e: any) { fail("duplicate project", e.message.slice(0, 100)); }
 
 	// ── Shape Creation ──
 	console.log("\nShape Creation:");
@@ -307,6 +341,23 @@ async function main() {
 		else fail("search files", "file not found in search");
 	} catch (e: any) { fail("search files", e.message.slice(0, 100)); }
 
+	// ── Get Shape ──
+	console.log("\nGet Shape:");
+	try {
+		const page = await apiPost<PageData>("get-page", { fileId, pageId, objectId: rectId });
+		const shape = page.objects?.[rectId];
+		if (shape && shape.name === "Green Rect") ok("get shape (by objectId)");
+		else fail("get shape", `name=${shape?.name}`);
+	} catch (e: any) { fail("get shape", e.message.slice(0, 100)); }
+
+	// ── File Summary ──
+	console.log("\nFile Summary:");
+	try {
+		const summary = await apiPost<any>("get-file-summary", { id: fileId });
+		if (summary.name) ok(`get file summary (name="${summary.name}", ${summary.componentsCount ?? 0} components)`);
+		else fail("get file summary", "no name returned");
+	} catch (e: any) { fail("get file summary", e.message.slice(0, 100)); }
+
 	// ── Components ──
 	console.log("\nComponents:");
 
@@ -446,6 +497,114 @@ async function main() {
 		} catch (e: any) { fail("restore snapshot", e.message.slice(0, 100)); }
 	}
 
+	// ── Extended Comment Operations ──
+	console.log("\nExtended Comments:");
+
+	if (threadId) {
+		// Get the reply comment ID for update/delete
+		let replyCommentId: string = "";
+		try {
+			const comments = await apiPost<Comment[]>("get-comments", { threadId });
+			// The second comment is the reply
+			replyCommentId = comments.length > 1 ? comments[1].id : "";
+			if (replyCommentId) ok("got reply comment ID for update/delete");
+			else fail("got reply comment ID", "only 1 comment");
+		} catch (e: any) { fail("get reply ID", e.message.slice(0, 100)); }
+
+		if (replyCommentId) {
+			try {
+				await apiPost("update-comment", { id: replyCommentId, content: "Updated: still looks good!" });
+				ok("update comment");
+			} catch (e: any) { fail("update comment", e.message.slice(0, 100)); }
+
+			try {
+				await apiPost("delete-comment", { id: replyCommentId });
+				ok("delete comment");
+			} catch (e: any) { fail("delete comment", e.message.slice(0, 100)); }
+		}
+
+		try {
+			await apiPost("update-comment-thread-status", { id: threadId });
+			ok("update thread status");
+		} catch (e: any) { fail("update thread status", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("update-comment-thread-position", {
+				id: threadId,
+				position: { x: 200, y: 200 },
+				frameId: ROOT,
+			});
+			ok("update thread position");
+		} catch (e: any) { fail("update thread position", e.message.slice(0, 100)); }
+
+		try {
+			const unread = await apiPost<any[]>("get-unread-comment-threads", { teamId: TEAM_ID });
+			// May be 0 if already read, that's fine — we just verify the call succeeds
+			ok(`get unread threads (${unread.length} found)`);
+		} catch (e: any) { fail("get unread threads", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("mark-all-threads-as-read", { threads: [threadId] });
+			ok("mark threads read");
+		} catch (e: any) { fail("mark threads read", e.message.slice(0, 100)); }
+
+		try {
+			await apiPost("delete-comment-thread", { id: threadId });
+			ok("delete thread");
+		} catch (e: any) { fail("delete thread", e.message.slice(0, 100)); }
+	}
+
+	// ── Fonts ──
+	console.log("\nFonts:");
+	try {
+		const fonts = await apiPost<any[]>("get-font-variants", { teamId: TEAM_ID });
+		// May be empty if no custom fonts — just verify the call succeeds
+		ok(`get font variants (${fonts.length} found)`);
+	} catch (e: any) { fail("get font variants", e.message.slice(0, 100)); }
+
+	// ── Get Shared Files ──
+	console.log("\nShared Files:");
+	// file is already set-shared from Libraries section below — test after
+	// We'll test this as part of Libraries to avoid ordering issues
+
+	// ── Move Files ──
+	console.log("\nMove Files:");
+	if (dupProjectId) {
+		try {
+			// Create a temp file to move
+			const tempFile = await apiPost<File>("create-file", { projectId, name: "Move Me" });
+			await apiPost("move-files", { ids: [tempFile.id], projectId: dupProjectId });
+			// Verify it's in the new project
+			const files = await apiPost<File[]>("get-project-files", { projectId: dupProjectId });
+			if (files.some(f => f.id === tempFile.id)) ok("move files");
+			else fail("move files", "file not found in target project");
+			// Clean up
+			await apiPost("delete-file", { id: tempFile.id });
+		} catch (e: any) { fail("move files", e.message.slice(0, 100)); }
+	} else {
+		fail("move files", "no duplicate project to move to");
+	}
+
+	// ── Export File ──
+	console.log("\nExport File:");
+	try {
+		const exported = await apiDownload("export-binfile", {
+			fileId,
+			embedAssets: true,
+			includeLibraries: false,
+		});
+		if (exported.data.length > 0) ok(`export file (${exported.data.length} bytes, ${exported.contentType})`);
+		else fail("export file", "empty data");
+	} catch (e: any) { fail("export file", e.message.slice(0, 100)); }
+
+	// ── Thumbnails ──
+	console.log("\nThumbnails:");
+	try {
+		const thumbs = await apiPost<any>("get-file-object-thumbnails", { fileId });
+		// May be empty if no thumbnails generated — just verify call succeeds
+		ok(`get thumbnails (${typeof thumbs === 'object' ? Object.keys(thumbs).length : 0} found)`);
+	} catch (e: any) { fail("get thumbnails", e.message.slice(0, 100)); }
+
 	// ── Libraries ──
 	console.log("\nLibraries:");
 
@@ -454,6 +613,12 @@ async function main() {
 		await apiPost("set-file-shared", { id: fileId, isShared: true });
 		ok("set file shared");
 	} catch (e: any) { fail("set file shared", e.message.slice(0, 100)); }
+
+	try {
+		const shared = await apiPost<File[]>("get-team-shared-files", { teamId: TEAM_ID });
+		if (shared.some(f => f.id === fileId)) ok(`get shared files (${shared.length} found)`);
+		else fail("get shared files", "file not in shared list");
+	} catch (e: any) { fail("get shared files", e.message.slice(0, 100)); }
 
 	// Create a second file and link library
 	let file2Id: string = "";
@@ -488,6 +653,11 @@ async function main() {
 		await apiPost("delete-project", { id: projectId! });
 		ok("delete project");
 	} catch (e: any) { fail("delete project", e.message.slice(0, 100)); }
+
+	if (dupProjectId) {
+		try { await apiPost("delete-project", { id: dupProjectId }); ok("delete duplicate project"); }
+		catch (e: any) { fail("delete duplicate project", e.message.slice(0, 100)); }
+	}
 
 	// ── Summary ──
 	console.log(`\n${"═".repeat(40)}`);

@@ -108,17 +108,6 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
 					}
 
-					// API key auth when configured
-					if (opts.apiKey) {
-						const authHeader = req.headers.authorization ?? "";
-						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-						if (!constantTimeEqual(token, opts.apiKey)) {
-							res.writeHead(401, { "Content-Type": "application/json" });
-							res.end(JSON.stringify({ error: "Unauthorized" }));
-							return;
-						}
-					}
-
 					const body = await readBody(req);
 
 					let parsed: unknown;
@@ -137,13 +126,33 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					// Intercept callback messages — async responses from remote agents.
 					// These have pi:isCallback in message metadata and should be injected
 					// directly into the conversation without going through the executor.
+					// Callbacks authenticate with a scoped HMAC token, not the full API key.
 					if (opts.onCallback) {
 						const rpc = parsed as { method?: string; params?: { message?: Record<string, unknown> }; id?: unknown };
 						if (rpc.method === "message/send") {
 							const meta = rpc.params?.message?.metadata as Record<string, unknown> | undefined;
 							if (meta?.["pi:isCallback"] === true) {
+								// Validate scoped callback token (not the full API key)
+								if (opts.apiKey) {
+									const authHeader = req.headers.authorization ?? "";
+									const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+									if (!validateCallbackToken(token, opts.apiKey)) {
+										res.writeHead(401, { "Content-Type": "application/json" });
+										res.end(JSON.stringify({ error: "Unauthorized — invalid callback token" }));
+										return;
+									}
+								}
+
 								const parts = rpc.params?.message?.parts as Array<{ kind: string; text?: string }> | undefined;
-								const text = parts?.find((p) => p.kind === "text")?.text ?? "";
+								let text = parts?.find((p) => p.kind === "text")?.text ?? "";
+
+								// Guard against unbounded callback payloads
+								const MAX_CALLBACK_TEXT = 64 * 1024; // 64 KB
+								if (text.length > MAX_CALLBACK_TEXT) {
+									opts.log("callback_text_truncated", { original: text.length, max: MAX_CALLBACK_TEXT }, "WARN");
+									text = text.slice(0, MAX_CALLBACK_TEXT) + "\n\n⚠️ Response truncated (exceeded 64 KB limit)";
+								}
+
 								const senderMeta = meta["pi:sender"] as { name?: string } | undefined;
 								const senderName = senderMeta?.name ?? "Unknown agent";
 								const taskId = (meta["pi:taskId"] as string) ?? "";
@@ -166,6 +175,17 @@ export function startServer(opts: ServerOptions): Promise<void> {
 								}));
 								return;
 							}
+						}
+					}
+
+					// API key auth for all non-callback requests
+					if (opts.apiKey) {
+						const authHeader = req.headers.authorization ?? "";
+						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+						if (!constantTimeEqual(token, opts.apiKey)) {
+							res.writeHead(401, { "Content-Type": "application/json" });
+							res.end(JSON.stringify({ error: "Unauthorized" }));
+							return;
 						}
 					}
 
@@ -280,6 +300,31 @@ function constantTimeEqual(a: string, b: string): boolean {
 	const hb = createHmac("sha256", key).update(b).digest();
 	// HMAC outputs are always 32 bytes — no length leak
 	return timingSafeEqual(ha, hb);
+}
+
+/**
+ * Generate a scoped callback token: `nonce:hmac`.
+ *
+ * Unlike the static API key, this token is single-purpose — it only grants
+ * access to the callback intercept path, not the full A2A server.
+ */
+export function generateCallbackToken(apiKey: string): string {
+	const nonce = randomUUID();
+	const hmac = createHmac("sha256", apiKey).update(nonce).digest("hex");
+	return `${nonce}:${hmac}`;
+}
+
+/**
+ * Validate a callback token against the server's API key.
+ * Returns true if the token is a valid `nonce:hmac` pair.
+ */
+function validateCallbackToken(token: string, apiKey: string): boolean {
+	const sepIdx = token.indexOf(":");
+	if (sepIdx < 1) return false;
+	const nonce = token.slice(0, sepIdx);
+	const providedHmac = token.slice(sepIdx + 1);
+	const expectedHmac = createHmac("sha256", apiKey).update(nonce).digest("hex");
+	return constantTimeEqual(providedHmac, expectedHmac);
 }
 
 class PayloadTooLargeError extends Error {

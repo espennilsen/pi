@@ -45,7 +45,7 @@ import {
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
-import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
+import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard, generateCallbackToken } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub } from "./hub.ts";
 import { sendA2AMessage, sendA2ACallback, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
@@ -674,7 +674,9 @@ export default function (pi: ExtensionAPI) {
 				// the result back to our A2A endpoint when processing completes.
 				blocking: false,
 				callbackUrl: serverPublicUrl ?? undefined,
-				callbackCredential: config.apiKey,
+				// Issue a scoped HMAC callback token instead of sending the full API key.
+				// This token only grants access to the callback intercept path.
+				callbackCredential: config.apiKey ? generateCallbackToken(config.apiKey) : undefined,
 			};
 
 			(async () => {

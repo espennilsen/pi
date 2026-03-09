@@ -475,12 +475,25 @@ export default function (pi: ExtensionAPI) {
 			if (staticRegistry && staticRegistry.size > 0) {
 				const statics = staticRegistry.getAll();
 				const query = params.q?.toLowerCase();
-				const filtered = query
-					? statics.filter((e) => {
-							const desc = e.config.description ?? (e.card?.description as string) ?? "";
-							return e.config.name.toLowerCase().includes(query) || desc.toLowerCase().includes(query);
-						})
-					: statics;
+				const tagFilter = params.tags?.map((t: string) => t.toLowerCase());
+				const filtered = statics.filter((e) => {
+					// Text search filter
+					if (query) {
+						const desc = e.config.description ?? (e.card?.description as string) ?? "";
+						if (!e.config.name.toLowerCase().includes(query) && !desc.toLowerCase().includes(query)) {
+							return false;
+						}
+					}
+					// Tags filter — match against skill tags from cached agent card
+					if (tagFilter?.length) {
+						const skills = e.card ? extractSkills(e.card) : [];
+						const allTags = skills.flatMap((s) => (s.tags ?? []).map((t) => t.toLowerCase()));
+						if (!tagFilter.some((t: string) => allTags.includes(t))) {
+							return false;
+						}
+					}
+					return true;
+				});
 
 				for (const entry of filtered) {
 					const name = entry.config.name;
@@ -523,6 +536,8 @@ export default function (pi: ExtensionAPI) {
 						);
 						totalCount++;
 					}
+				} else {
+					lines.push("⚠️ Hub unreachable — hub agents not listed. Only showing static agents.");
 				}
 			}
 

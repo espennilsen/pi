@@ -62,7 +62,7 @@ export class StaticAgentRegistry {
 		let failed = 0;
 
 		const promises = Array.from(this.agents.values()).map(async (entry) => {
-			const card = await fetchAgentCard(entry.config.url, this.log);
+			const card = await fetchAgentCard(entry.config.url, this.log, entry.config.apiKey);
 			if (card) {
 				entry.card = card;
 				entry.fetchedAt = Date.now();
@@ -87,7 +87,7 @@ export class StaticAgentRegistry {
 		const entry = this.agents.get(name.toLowerCase());
 		if (!entry) return false;
 
-		const card = await fetchAgentCard(entry.config.url, this.log);
+		const card = await fetchAgentCard(entry.config.url, this.log, entry.config.apiKey);
 		if (card) {
 			entry.card = card;
 			entry.fetchedAt = Date.now();
@@ -132,15 +132,19 @@ export class StaticAgentRegistry {
  * Tries the canonical path first (/.well-known/agent-card.json),
  * then falls back to the compat path (/.well-known/agent.json).
  */
-async function fetchAgentCard(baseUrl: string, log: LogFn): Promise<Record<string, unknown> | null> {
+async function fetchAgentCard(baseUrl: string, log: LogFn, apiKey?: string): Promise<Record<string, unknown> | null> {
 	const base = baseUrl.replace(/\/+$/, "");
 	const canonicalUrl = `${base}/.well-known/agent-card.json`;
+	const headers: Record<string, string> = { Accept: "application/json" };
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
+	}
 
 	try {
 		log("static_agent_card_fetch", { url: canonicalUrl });
 		const res = await fetch(canonicalUrl, {
 			signal: AbortSignal.timeout(10_000),
-			headers: { Accept: "application/json" },
+			headers,
 		});
 
 		if (res.ok) {
@@ -154,7 +158,7 @@ async function fetchAgentCard(baseUrl: string, log: LogFn): Promise<Record<strin
 		log("static_agent_card_fetch_compat", { url: compatUrl });
 		const res2 = await fetch(compatUrl, {
 			signal: AbortSignal.timeout(10_000),
-			headers: { Accept: "application/json" },
+			headers,
 		});
 
 		if (res2.ok) {

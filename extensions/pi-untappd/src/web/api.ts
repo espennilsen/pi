@@ -227,7 +227,8 @@ export async function handleAPIRequest(
 		// GET /beers?limit=N (default 200)
 		if (pathname === "/beers" && method === "GET") {
 			const limitParam = parsedUrl.searchParams.get("limit");
-			const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam) || 200)) : 200;
+			const parsed = parseInt(limitParam ?? "");
+			const limit = isNaN(parsed) ? 200 : Math.max(1, Math.min(1000, parsed));
 			const beers = await ops.listBeers(limit);
 			return sendJSON(200, { ok: true, data: beers });
 		}

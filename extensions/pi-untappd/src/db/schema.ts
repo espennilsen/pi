@@ -137,6 +137,7 @@ export const SCHEMA = {
 				{ columns: ["occurred_at"], name: "idx_activity_events_occurred_at" },
 				{ columns: ["beer_id"], name: "idx_activity_events_beer_id" },
 				{ columns: ["venue_id"], name: "idx_activity_events_venue_id" },
+				{ columns: ["user_id"], name: "idx_activity_events_user_id" },
 			],
 		},
 		// Forward-compatibility: table scaffolded for future preference/filter rules.

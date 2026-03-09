@@ -274,7 +274,7 @@ export async function createRSSSource(params: CreateRSSSourceParams): Promise<nu
 			params.type,
 			params.foreignId,
 			params.rssUrl,
-			params.pollIntervalMinutes || 15,
+			params.pollIntervalMinutes ?? 15,
 			null,
 			params.enabled === false ? 0 : 1,
 			ts,
@@ -449,6 +449,24 @@ export async function updateMenuItemLastSeen(id: number): Promise<void> {
 	await query(
 		"UPDATE untappd_menu_items SET last_seen_at = ?, active_confidence = 1.0, updated_at = ? WHERE id = ?",
 		[ts, ts, id],
+	);
+}
+
+/**
+ * Update last_seen_at for all menu items matching a beer at a venue.
+ * Single query replaces N+1 loop (menus → items → filter by beer_id).
+ */
+export async function updateMenuItemLastSeenByBeerAndVenue(
+	venueId: number,
+	beerId: number,
+): Promise<void> {
+	const ts = now();
+	await query(
+		`UPDATE untappd_menu_items
+		 SET last_seen_at = ?, active_confidence = 1.0, updated_at = ?
+		 WHERE beer_id = ?
+		   AND venue_menu_id IN (SELECT id FROM untappd_venue_menus WHERE venue_id = ?)`,
+		[ts, ts, beerId, venueId],
 	);
 }
 

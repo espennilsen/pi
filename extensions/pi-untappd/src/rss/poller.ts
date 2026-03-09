@@ -210,17 +210,7 @@ async function updateMenuItemsForBeer(
 	venueId: number,
 	beerId: number,
 ): Promise<void> {
-	const menus = await ops.getVenueMenusByVenueId(venueId);
-
-	for (const menu of menus) {
-		const items = await ops.getMenuItemsByMenuId(menu.id as number);
-
-		for (const item of items) {
-			if (item.beer_id === beerId) {
-				await ops.updateMenuItemLastSeen(item.id as number);
-			}
-		}
-	}
+	await ops.updateMenuItemLastSeenByBeerAndVenue(venueId, beerId);
 }
 
 /**

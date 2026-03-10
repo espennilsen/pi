@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S npx tsx
 /**
  * Quick smoke test for the attrs/styling fixes.
  * Tests via the Transit encoding path (same as the extension uses).

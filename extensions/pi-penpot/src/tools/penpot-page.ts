@@ -212,15 +212,29 @@ async function updateFile(
 		changes,
 	});
 
-	const result = await apiPostTransit("update-file", transitBody, signal);
+	let result: any;
+	try {
+		result = await apiPostTransit("update-file", transitBody, signal);
+	} catch (err) {
+		// Invalidate cache so next attempt fetches a fresh revision
+		invalidateFileCache(fileId);
+		throw err;
+	}
 
-	// Update cached revision from lagged changes
+	// Update cached revision — prefer top-level revn (always present),
+	// fall back to lagged array for concurrent-edit catch-up
 	if (result && typeof result === "object") {
+		const newRevn = (result as any).revn;
+		const newVern = (result as any).vern;
+		if (newRevn !== undefined) {
+			fileCache.set(fileId, { revn: newRevn, vern: newVern ?? vern });
+		}
+		// Lagged changes from concurrent sessions may carry a higher revn
 		const lagged = (result as any).lagged;
 		if (Array.isArray(lagged) && lagged.length > 0) {
 			const last = lagged[lagged.length - 1];
-			if (last.revn !== undefined) {
-				fileCache.set(fileId, { revn: last.revn, vern });
+			if (last.revn !== undefined && (newRevn === undefined || last.revn > newRevn)) {
+				fileCache.set(fileId, { revn: last.revn, vern: last.vern ?? newVern ?? vern });
 			}
 		}
 	}
@@ -258,8 +272,6 @@ async function handleGetPage(params: any, signal?: AbortSignal) {
 	// Show shape tree (summarized)
 	if (objectCount > 0 && objectCount <= 500) {
 		lines.push("", "**Shape Tree:**");
-		// Root frame always has UUID 00000000-0000-0000-0000-000000000000
-		const ROOT_FRAME_ID = "00000000-0000-0000-0000-000000000000";
 		const root = objects[ROOT_FRAME_ID];
 		if (root && root.shapes) {
 			buildShapeTree(objects, root.shapes, lines, 0);

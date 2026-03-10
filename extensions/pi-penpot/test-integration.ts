@@ -11,7 +11,8 @@ import { randomUUID } from "node:crypto";
 import { apiUpload, apiDownload } from "./src/client.ts";
 import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapshot } from "./src/types.ts";
 
-const TOKEN = process.env.PENPOT_TOKEN || "eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.SZn_qmfyLqXQ2UNZt58Ou8kwndoU5N0PTM-mVOPUh8mBToX34c9Q8w.RbcmTL4_vi8WtCJD.EMpPXlpt8pBEG9Z2Ah21ktoYLBCxo9iGkMnMaOapUFecfCuE_dUOm2mDzgFnE1mul1UorekZX44PwuqeNPBjJI_O_n_KY2QCcpdEBkG54tNy-I_t6WolN_-1kl7WUgPGDhZvadKz3bc.MTwcv8YV8Pe0V9yeS01cBg";
+const TOKEN = process.env.PENPOT_TOKEN;
+if (!TOKEN) throw new Error("PENPOT_TOKEN env var required — set it before running integration tests");
 const ENDPOINT = process.env.PENPOT_ENDPOINT || "https://penpot.e9n.dev";
 const TEAM_ID = "0d727cf9-ca60-8039-8007-b069e54aa839";
 const ROOT = "00000000-0000-0000-0000-000000000000";

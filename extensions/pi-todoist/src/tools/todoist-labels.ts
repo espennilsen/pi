@@ -82,7 +82,7 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             }
 
             const updateArgs: any = {};
-            if (params.name) updateArgs.name = params.name;
+            if (params.name !== undefined) updateArgs.name = params.name;
             if (params.color) updateArgs.color = params.color;
             if (params.order !== undefined) updateArgs.order = params.order;
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;

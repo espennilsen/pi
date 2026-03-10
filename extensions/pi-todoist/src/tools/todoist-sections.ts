@@ -88,7 +88,7 @@ export function registerSectionsTool(pi: ExtensionAPI) {
             }
 
             const updateArgs: any = {};
-            if (params.name) updateArgs.name = params.name;
+            if (params.name !== undefined) updateArgs.name = params.name;
 
             if (Object.keys(updateArgs).length === 0) {
               return { content: [{ type: "text", text: "❌ No fields to update provided" }] };

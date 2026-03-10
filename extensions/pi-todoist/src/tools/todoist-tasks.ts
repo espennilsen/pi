@@ -27,7 +27,7 @@ export function registerTasksTool(pi: ExtensionAPI) {
       projectId: Type.Optional(Type.String({ description: "Project ID (for list/add/update/move)" })),
       sectionId: Type.Optional(Type.String({ description: "Section ID (for list/add/update/move)" })),
       parentId: Type.Optional(Type.String({ description: "Parent task ID for subtasks (for add/update/move)" })),
-      labelId: Type.Optional(Type.String({ description: "Label ID (for list)" })),
+      label: Type.Optional(Type.String({ description: "Label name to filter by (for list)" })),
       labels: Type.Optional(Type.Array(Type.String(), { description: "Label names (for add/update)" })),
       priority: Type.Optional(Type.Number({ description: "Priority: 1=normal, 2=medium, 3=high, 4=urgent (for add/update)" })),
       dueString: Type.Optional(Type.String({ description: "Due date in natural language like 'tomorrow', 'next Monday' (for add/update)" })),
@@ -68,7 +68,7 @@ export function registerTasksTool(pi: ExtensionAPI) {
               const queryParams: any = {};
               if (params.projectId) queryParams.projectId = params.projectId;
               if (params.sectionId) queryParams.sectionId = params.sectionId;
-              if (params.labelId) queryParams.labelId = params.labelId;
+              if (params.label) queryParams.label = params.label;
               
               let cursor: string | undefined = undefined;
               while (true) {
@@ -128,8 +128,8 @@ export function registerTasksTool(pi: ExtensionAPI) {
             }
 
             const updateArgs: any = {};
-            if (params.content) updateArgs.content = params.content;
-            if (params.description) updateArgs.description = params.description;
+            if (params.content !== undefined) updateArgs.content = params.content;
+            if (params.description !== undefined) updateArgs.description = params.description;
             if (params.labels) updateArgs.labels = params.labels;
             if (params.priority) updateArgs.priority = params.priority;
             if (params.dueString) updateArgs.dueString = params.dueString;
@@ -193,13 +193,21 @@ export function registerTasksTool(pi: ExtensionAPI) {
               return { content: [{ type: "text", text: "❌ Missing required parameter: query" }] };
             }
 
-            const results = await client.searchCompletedTasks({ query: params.query });
-            
-            if (results.items.length === 0) {
+            let allItems: Task[] = [];
+            let cursor: string | undefined = undefined;
+            while (true) {
+              if (signal?.aborted) break;
+              const results = await client.searchCompletedTasks({ query: params.query, cursor });
+              allItems.push(...results.items);
+              if (!results.nextCursor || (params.limit && allItems.length >= params.limit)) break;
+              cursor = results.nextCursor;
+            }
+
+            if (allItems.length === 0) {
               return { content: [{ type: "text", text: "No completed tasks found." }] };
             }
 
-            let tasks = results.items;
+            let tasks = allItems;
             if (params.limit) {
               tasks = tasks.slice(0, params.limit);
             }

@@ -86,7 +86,7 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             }
 
             const updateArgs: any = {};
-            if (params.name) updateArgs.name = params.name;
+            if (params.name !== undefined) updateArgs.name = params.name;
             if (params.color) updateArgs.color = params.color;
             if (params.viewStyle) updateArgs.viewStyle = params.viewStyle;
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;

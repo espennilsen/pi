@@ -26,11 +26,6 @@ const ROOT_FRAME_ID = "00000000-0000-0000-0000-000000000000";
 /** Cached file metadata for revision tracking */
 const fileCache = new Map<string, { revn: number; vern: number }>();
 
-/** Clear cached file revisions (call on session restart). */
-export function clearFileCache(): void {
-	fileCache.clear();
-}
-
 /** Persistent session ID for update-file calls */
 const sessionId = randomUUID();
 
@@ -84,9 +79,7 @@ export function registerPenpotPageTool(pi: ExtensionAPI): void {
 		promptGuidelines: [
 			"Always get the file first (`penpot get-file`) to learn pageIds before using penpot_page.",
 			"Shape creation requires fileId + pageId. Most shapes need x, y, width, height.",
-			"Use `modify-shape` to change any shape property. First-class params: fills, strokes, opacity, r1-r4 (border radius), shadow, blur, textContent.",
-			"For text creation, use fontSize, fontWeight, fontFamily, fontColor params on add-text.",
-			"Shadow format: [{style: 'drop-shadow', color: {color: '#hex', opacity: 1}, offsetX: 0, offsetY: 4, blur: 8, spread: 0}] — id is auto-generated.",
+			"Use `modify-shape` with the `attrs` object to change any shape property (fills, strokes, opacity, etc.).",
 			"Fills and strokes use Penpot's format: `[{\"fillColor\": \"#ff0000\", \"fillOpacity\": 1}]`.",
 			"Frame IDs: use the root frame UUID (same as pageId) or an existing frame's ID as parentId.",
 		],
@@ -107,27 +100,14 @@ export function registerPenpotPageTool(pi: ExtensionAPI): void {
 			fills: Type.Optional(Type.Array(Type.Any(), { description: "Fill array: [{fillColor: '#hex', fillOpacity: 1}]" })),
 			strokes: Type.Optional(Type.Array(Type.Any(), { description: "Stroke array: [{strokeColor: '#hex', strokeWidth: 1, strokeAlignment: 'center', strokeOpacity: 1}]" })),
 			opacity: Type.Optional(Type.Number({ description: "Opacity (0-1)" })),
-			// Border radius (rect/frame)
-			r1: Type.Optional(Type.Number({ description: "Top-left border radius" })),
-			r2: Type.Optional(Type.Number({ description: "Top-right border radius" })),
-			r3: Type.Optional(Type.Number({ description: "Bottom-right border radius" })),
-			r4: Type.Optional(Type.Number({ description: "Bottom-left border radius" })),
-			// Shadow & blur (modify-shape)
-			shadow: Type.Optional(Type.Array(Type.Any(), { description: "Shadow array: [{style: 'drop-shadow', color: {color: '#hex', opacity: 1}, offsetX: 0, offsetY: 4, blur: 8, spread: 0}]" })),
-			blur: Type.Optional(Type.Any({ description: "Blur object: {type: 'layer-blur', value: 4}" })),
 			// Text
 			text: Type.Optional(Type.String({ description: "Text content (for add-text)" })),
-			fontSize: Type.Optional(Type.String({ description: "Font size as string e.g. '24' (for add-text)" })),
-			fontWeight: Type.Optional(Type.String({ description: "Font weight as string e.g. '700' (for add-text)" })),
-			fontFamily: Type.Optional(Type.String({ description: "Font family e.g. 'sourcesanspro' (for add-text)" })),
-			fontColor: Type.Optional(Type.String({ description: "Text color as hex e.g. '#FFFFFF' (for add-text)" })),
-			textContent: Type.Optional(Type.Any({ description: "Full text content structure for modify-shape (root > paragraph-set > paragraph > leaf with font-size, font-weight, fill-color etc.)" })),
 			// Path
 			pathContent: Type.Optional(Type.Any({ description: "SVG path content object (for add-path)" })),
 			// Image
 			imageUrl: Type.Optional(Type.String({ description: "Image URL (for add-image, will be fetched and uploaded)" })),
-			// Modify — generic attrs passthrough
-			attrs: Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Key-value attributes to set on shape (for modify-shape). Any shape property." })),
+			// Modify
+			attrs: Type.Optional(Type.Any({ description: "Key-value attributes to set on shape (for modify-shape). JSON object." })),
 			// Move
 			shapeIds: Type.Optional(Type.Array(Type.String(), { description: "Array of shape UUIDs (for move-shapes, delete multiple)" })),
 			index: Type.Optional(Type.Number({ description: "Target index in parent (for move-shapes)" })),
@@ -240,7 +220,7 @@ async function updateFile(
 		if (Array.isArray(lagged) && lagged.length > 0) {
 			const last = lagged[lagged.length - 1];
 			if (last.revn !== undefined) {
-				fileCache.set(fileId, { revn: last.revn, vern: last.vern ?? vern });
+				fileCache.set(fileId, { revn: last.revn, vern });
 			}
 		}
 	}
@@ -370,7 +350,7 @@ async function handleListShapes(params: any, signal?: AbortSignal) {
 	}
 
 	// Exclude root frame
-	shapes = shapes.filter(s => s.id !== ROOT_FRAME_ID);
+	shapes = shapes.filter(s => s.id !== page.id);
 
 	if (shapes.length === 0) {
 		return text(params.shapeType
@@ -456,12 +436,6 @@ async function handleAddShape(params: any, shapeType: ShapeType, signal?: AbortS
 	if (params.fills) obj.fills = params.fills;
 	if (params.strokes) obj.strokes = params.strokes;
 
-	// Border radius for rect/frame shapes
-	if (params.r1 !== undefined) obj.r1 = params.r1;
-	if (params.r2 !== undefined) obj.r2 = params.r2;
-	if (params.r3 !== undefined) obj.r3 = params.r3;
-	if (params.r4 !== undefined) obj.r4 = params.r4;
-
 	// Default fill for rect and circle if not specified
 	if (!params.fills && (shapeType === "rect" || shapeType === "circle")) {
 		obj.fills = [{ fillColor: "#B1B2B5", fillOpacity: 1 }];
@@ -497,12 +471,6 @@ async function handleAddText(params: any, signal?: AbortSignal) {
 	const height = params.height ?? 50;
 	const textContent = params.text ?? "Text";
 
-	// Text styling — accept params or use sensible defaults
-	const fontSize = params.fontSize ?? "14";
-	const fontWeight = params.fontWeight ?? "400";
-	const fontFamily = params.fontFamily ?? "sourcesanspro";
-	const fontColor = params.fontColor ?? "#000000";
-
 	const obj: Record<string, any> = {
 		id: shapeId,
 		type: "text",
@@ -535,11 +503,11 @@ async function handleAddText(params: any, signal?: AbortSignal) {
 							children: [
 								{
 									text: textContent,
-									fontFamily,
-									fontSize,
-									fontWeight,
+									fontFamily: "sourcesanspro",
+									fontSize: "14",
+									fontWeight: "400",
 									fontStyle: "normal",
-									fillColor: fontColor,
+									fillColor: "#000000",
 									fillOpacity: 1,
 								},
 							],
@@ -781,45 +749,17 @@ async function handleModifyShape(params: any, signal?: AbortSignal) {
 	if (params.strokes) operations.push({ type: "set", attr: "strokes", val: params.strokes });
 	if (params.opacity !== undefined) operations.push({ type: "set", attr: "opacity", val: params.opacity });
 
-	// Border radius
-	if (params.r1 !== undefined) operations.push({ type: "set", attr: "r1", val: params.r1 });
-	if (params.r2 !== undefined) operations.push({ type: "set", attr: "r2", val: params.r2 });
-	if (params.r3 !== undefined) operations.push({ type: "set", attr: "r3", val: params.r3 });
-	if (params.r4 !== undefined) operations.push({ type: "set", attr: "r4", val: params.r4 });
-
-	// Shadow — auto-generate UUIDs for convenience
-	if (params.shadow) {
-		const shadowVal = (params.shadow as any[]).map((s: any) => ({
-			...s,
-			id: s.id ?? randomUUID(),
-		}));
-		operations.push({ type: "set", attr: "shadow", val: shadowVal });
-	}
-	// Blur — auto-generate UUID for convenience
-	if (params.blur) {
-		const blurVal = { ...params.blur, id: params.blur.id ?? randomUUID() };
-		operations.push({ type: "set", attr: "blur", val: blurVal });
-	}
-
-	// Text content (full content structure for text shapes)
-	if (params.textContent) operations.push({ type: "set", attr: "content", val: params.textContent });
-
 	// Name
 	if (params.name) operations.push({ type: "set", attr: "name", val: params.name });
 
-	// Generic attrs passthrough (any key-value pairs)
-	// Handle both object and string (JSON) forms for robustness
-	let attrsObj = params.attrs;
-	if (typeof attrsObj === "string") {
-		try { attrsObj = JSON.parse(attrsObj); } catch { attrsObj = null; }
-	}
-	if (attrsObj && typeof attrsObj === "object" && !Array.isArray(attrsObj)) {
-		for (const [attr, val] of Object.entries(attrsObj)) {
+	// Generic attrs (any key-value pairs)
+	if (params.attrs && typeof params.attrs === "object") {
+		for (const [attr, val] of Object.entries(params.attrs)) {
 			operations.push({ type: "set", attr, val });
 		}
 	}
 
-	if (operations.length === 0) return text("❌ No modifications specified. Use x, y, width, height, fills, strokes, opacity, r1-r4, shadow, blur, textContent, name, or attrs.");
+	if (operations.length === 0) return text("❌ No modifications specified. Use x, y, width, height, fills, strokes, opacity, name, or attrs.");
 
 	// Recalculate selrect if geometry changed
 	const hasGeomChange = operations.some(op =>

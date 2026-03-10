@@ -8,13 +8,14 @@
 import { initClient, apiPost, apiPostTransit } from "./src/client.ts";
 import { encodeUpdateFile } from "./src/transit.ts";
 import { randomUUID } from "node:crypto";
-import { apiUpload, apiDownload } from "./src/client.ts";
+import { apiDownload } from "./src/client.ts";
 import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapshot } from "./src/types.ts";
 
 const TOKEN = process.env.PENPOT_TOKEN;
 if (!TOKEN) throw new Error("PENPOT_TOKEN env var required — set it before running integration tests");
 const ENDPOINT = process.env.PENPOT_ENDPOINT || "https://penpot.e9n.dev";
-const TEAM_ID = process.env.PENPOT_TEAM_ID || "0d727cf9-ca60-8039-8007-b069e54aa839";
+const TEAM_ID = process.env.PENPOT_TEAM_ID;
+if (!TEAM_ID) throw new Error("PENPOT_TEAM_ID env var required — set it before running integration tests");
 const ROOT = "00000000-0000-0000-0000-000000000000";
 
 let passed = 0;

@@ -1,7 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env npx tsx
 /**
  * Quick smoke test for the attrs/styling fixes.
  * Tests via the Transit encoding path (same as the extension uses).
+ * Run with: npx tsx test-fixes.mjs (requires tsx for .ts imports)
  */
 import transit from "transit-js";
 

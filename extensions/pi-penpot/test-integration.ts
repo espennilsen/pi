@@ -104,9 +104,10 @@ async function main() {
 	console.log("\nProject Operations:");
 	try {
 		await apiPost("rename-project", { id: projectId, name: "Renamed Project" });
-		const proj = await apiPost<any>("get-project", { id: projectId });
-		if (proj.name === "Renamed Project") ok("rename project");
-		else fail("rename project", `name=${proj.name}`);
+		const allProjects = await apiPost<any[]>("get-projects", { teamId: TEAM_ID });
+		const proj = allProjects.find((p: any) => p.id === projectId);
+		if (proj?.name === "Renamed Project") ok("rename project");
+		else fail("rename project", `name=${proj?.name ?? "not found"}`);
 	} catch (e: any) { fail("rename project", e.message.slice(0, 100)); }
 
 	let dupProjectId: string = "";

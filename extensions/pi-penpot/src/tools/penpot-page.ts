@@ -922,6 +922,7 @@ async function handleMoveShapes(params: any, signal?: AbortSignal) {
 
 async function handleAddComponent(params: any, signal?: AbortSignal) {
 	if (!params.fileId) return text("❌ 'fileId' is required");
+	if (!params.pageId) return text("❌ 'pageId' is required");
 	if (!params.shapeId) return text("❌ 'shapeId' is required (shape to turn into component)");
 	if (!params.name) return text("❌ 'name' is required");
 

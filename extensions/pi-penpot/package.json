@@ -1,0 +1,40 @@
+{
+  "name": "@e9n/pi-penpot",
+  "version": "0.1.0",
+  "description": "Penpot design tool integration for pi — projects, files, pages, shapes, comments, and more",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "files": [
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-penpot"
+  },
+  "dependencies": {
+    "transit-js": "^0.8.874"
+  }
+}

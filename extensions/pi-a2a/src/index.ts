@@ -828,14 +828,18 @@ export default function (pi: ExtensionAPI) {
 
 			log("ask_owner_waiting", { clarificationId, question: question.slice(0, 100), timeoutMinutes });
 
-			// Poll until answered, expired, cancelled, or timeout
+			// Poll until answered, expired, cancelled, or timeout.
+			// Capture hubAgentId now — session_start resets it to null,
+			// and we need the original value for cancel/poll calls.
+			// Safe to assert non-null: guarded by the hubAgentId check above.
+			const capturedAgentId = hubAgentId!;
 			const deadline = Date.now() + timeoutMs;
 			const myToken = sessionToken;
 
 			while (Date.now() < deadline) {
 				// Abort if session restarted while we were waiting
 				if (sessionToken !== myToken) {
-					await cancelClarification(hubAgentId!, clarificationId, hubConfig, log);
+					await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
 					return txt("⚠️ Session restarted — clarification request cancelled.");
 				}
 
@@ -846,7 +850,7 @@ export default function (pi: ExtensionAPI) {
 					return txt("⚠️ Session restarted — clarification request cancelled.");
 				}
 
-				const poll = await pollClarification(hubAgentId!, clarificationId, hubConfig, log);
+				const poll = await pollClarification(capturedAgentId, clarificationId, hubConfig, log);
 
 				if (!poll) {
 					// Network error — keep trying until timeout
@@ -874,7 +878,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Timeout reached — cancel the pending request
-			await cancelClarification(hubAgentId!, clarificationId, hubConfig, log);
+			await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
 			log("ask_owner_timeout", { clarificationId, timeoutMinutes });
 			return txt(`⏰ Timed out after ${timeoutMinutes} minute(s) waiting for owner response. The clarification request has been cancelled. Proceed with your best judgment or try again with a longer timeout.`);
 		},

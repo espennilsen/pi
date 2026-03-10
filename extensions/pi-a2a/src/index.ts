@@ -847,6 +847,7 @@ export default function (pi: ExtensionAPI) {
 
 				// Check again after sleep
 				if (sessionToken !== myToken) {
+					await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
 					return txt("⚠️ Session restarted — clarification request cancelled.");
 				}
 

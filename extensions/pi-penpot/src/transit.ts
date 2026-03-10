@@ -327,6 +327,21 @@ function convertOperationValue(attr: string, value: any): any {
 		return convertArrayOfMaps(value);
 	}
 
+	// Blur — object with id (uuid) and type (keyword)
+	if (attr === "blur" && typeof value === "object" && !Array.isArray(value)) {
+		return convertMap(value);
+	}
+
+	// Text content — uses convertTextContent (type values stay as strings)
+	if (attr === "content" && typeof value === "object") {
+		return convertTextContent(value);
+	}
+
+	// Grow type keyword
+	if (attr === "growType" && typeof value === "string") {
+		return transit.keyword(camelToKebab(value));
+	}
+
 	// Object values
 	if (typeof value === "object" && !Array.isArray(value)) {
 		return convertMap(value);
@@ -426,13 +441,35 @@ function toFloat(n: number): number {
 	return Number.isInteger(n) ? n + 0.0 : n;
 }
 
-/** Convert a camelCase map to a Transit map with keyword keys. */
+/** Keys whose values are UUIDs inside style maps (shadow, blur, stroke). */
+const MAP_UUID_KEYS = new Set(["id"]);
+
+/** Keys whose values are keywords inside style maps (shadow, blur, stroke, fills). */
+const MAP_KEYWORD_KEYS = new Set([
+	"style",              // shadow: drop-shadow, inner-shadow
+	"type",               // blur: layer-blur, background-blur
+	"strokeStyle",        // stroke: solid, dotted, dashed, mixed, none
+	"strokeAlignment",    // stroke: inner, center, outer
+	"fillColorRefFile",   // fill reference
+	"growType",           // text: auto-height, auto-width, fixed
+]);
+
+/** Convert a camelCase map to a Transit map with keyword keys.
+ *  Handles UUIDs and keywords for special keys (shadow, blur, stroke). */
 function convertMap(obj: Record<string, any>): any {
 	const pairs: any[] = [];
 	for (const [key, value] of Object.entries(obj)) {
 		if (value === undefined) continue;
-		pairs.push(transit.keyword(camelToKebab(key)));
-		pairs.push(convertDeep(value));
+		const kebabKey = camelToKebab(key);
+		pairs.push(transit.keyword(kebabKey));
+
+		if (MAP_UUID_KEYS.has(key) && typeof value === "string") {
+			pairs.push(transit.uuid(value));
+		} else if (MAP_KEYWORD_KEYS.has(key) && typeof value === "string") {
+			pairs.push(transit.keyword(camelToKebab(value)));
+		} else {
+			pairs.push(convertDeep(value));
+		}
 	}
 	return transit.map(pairs);
 }

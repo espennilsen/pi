@@ -191,7 +191,7 @@ async function handleCreateThread(params: any, signal?: AbortSignal) {
 		pageId: params.pageId,
 		content: params.content,
 		position: params.position,
-		frameId: params.frameId ?? params.pageId,
+		frameId: params.frameId ?? "00000000-0000-0000-0000-000000000000",
 	};
 	if (params.shareId) body.shareId = params.shareId;
 

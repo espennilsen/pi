@@ -459,7 +459,7 @@ async function handleExportFile(params: any, signal?: AbortSignal) {
 	const tempDir = os.tmpdir();
 	const filename = `penpot-export-${params.fileId.slice(0, 8)}.penpot`;
 	const filePath = path.join(tempDir, filename);
-	fs.writeFileSync(filePath, data);
+	await fs.promises.writeFile(filePath, data);
 
 	return text(`✅ File exported (${formatSize(data.length)}, ${contentType})\nSaved to: \`${filePath}\``);
 }
@@ -614,13 +614,25 @@ async function handleDeleteWebhook(params: any, signal?: AbortSignal) {
 
 async function handleCreateShareLink(params: any, signal?: AbortSignal) {
 	if (!params.fileId) return text("❌ 'fileId' is required");
-	const body: Record<string, any> = { fileId: params.fileId };
-	if (params.pages) body.pages = params.pages;
-	if (params.whoComment) body.whoComment = params.whoComment;
-	if (params.whoInspect) body.whoInspect = params.whoInspect;
+
+	// pages is required by the API — if not provided, fetch all pages from the file
+	let pages: string[] = params.pages;
+	if (!pages || pages.length === 0) {
+		const file = await apiPost<any>("get-file", { id: params.fileId }, signal);
+		pages = file.data?.pages ?? [];
+		if (pages.length === 0) return text("❌ File has no pages");
+	}
+
+	const body: Record<string, any> = {
+		fileId: params.fileId,
+		pages,
+		whoComment: params.whoComment ?? "all",
+		whoInspect: params.whoInspect ?? "all",
+	};
 	const link = await apiPost<any>("create-share-link", body, signal);
-	const shareUrl = `${getEndpoint()}/view/${link.id}`;
-	return text(`✅ Share link created: ${shareUrl}\nID: \`${link.id}\``);
+	const firstPage = pages[0];
+	const shareUrl = `${getEndpoint()}/#/view?file-id=${params.fileId}&page-id=${firstPage}&section=interactions&index=0&share-id=${link.id}`;
+	return text(`✅ Share link created\n- **URL:** ${shareUrl}\n- **Share ID:** \`${link.id}\`\n- **Pages:** ${pages.length}`);
 }
 
 async function handleDeleteShareLink(params: any, signal?: AbortSignal) {

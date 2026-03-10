@@ -39,6 +39,7 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             let cursor: string | undefined = undefined;
             
             while (true) {
+              if (signal?.aborted) break;
               const response = await client.getLabels({ cursor });
               labels.push(...response.results);
               if (!response.nextCursor) break;
@@ -85,6 +86,10 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             if (params.color) updateArgs.color = params.color;
             if (params.order !== undefined) updateArgs.order = params.order;
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;
+
+            if (Object.keys(updateArgs).length === 0) {
+              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+            }
 
             const label = await client.updateLabel(params.id, updateArgs);
             return { content: [{ type: "text", text: `✅ Label updated:\n\n${formatLabel(label)}` }] };

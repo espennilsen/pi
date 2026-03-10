@@ -42,6 +42,7 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             let cursor: string | undefined = undefined;
             
             while (true) {
+              if (signal?.aborted) break;
               const response = await client.getProjects({ cursor });
               projects.push(...response.results);
               if (!response.nextCursor) break;
@@ -89,6 +90,10 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             if (params.color) updateArgs.color = params.color;
             if (params.viewStyle) updateArgs.viewStyle = params.viewStyle;
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;
+
+            if (Object.keys(updateArgs).length === 0) {
+              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+            }
 
             const project = await client.updateProject(params.id, updateArgs);
             return { content: [{ type: "text", text: `✅ Project updated:\n\n${formatProject(project)}` }] };

@@ -41,6 +41,7 @@ export function registerSectionsTool(pi: ExtensionAPI) {
             if (params.projectId) queryParams.projectId = params.projectId;
 
             while (true) {
+              if (signal?.aborted) break;
               const response = await client.getSections({ ...queryParams, cursor });
               sections.push(...response.results);
               if (!response.nextCursor) break;
@@ -88,6 +89,10 @@ export function registerSectionsTool(pi: ExtensionAPI) {
 
             const updateArgs: any = {};
             if (params.name) updateArgs.name = params.name;
+
+            if (Object.keys(updateArgs).length === 0) {
+              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+            }
 
             const section = await client.updateSection(params.id, updateArgs);
             return { content: [{ type: "text", text: `✅ Section updated:\n\n${formatSection(section)}` }] };

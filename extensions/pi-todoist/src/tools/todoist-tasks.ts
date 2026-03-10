@@ -57,6 +57,7 @@ export function registerTasksTool(pi: ExtensionAPI) {
               // Use filter-based query
               let cursor: string | undefined = undefined;
               while (true) {
+                if (signal?.aborted) break;
                 const response = await client.getTasksByFilter({ query: params.filter, cursor });
                 tasks.push(...response.results);
                 if (!response.nextCursor || (params.limit && tasks.length >= params.limit)) break;
@@ -71,6 +72,7 @@ export function registerTasksTool(pi: ExtensionAPI) {
               
               let cursor: string | undefined = undefined;
               while (true) {
+                if (signal?.aborted) break;
                 const response = await client.getTasks({ ...queryParams, cursor });
                 tasks.push(...response.results);
                 if (!response.nextCursor || (params.limit && tasks.length >= params.limit)) break;
@@ -136,6 +138,10 @@ export function registerTasksTool(pi: ExtensionAPI) {
             if (params.duration !== undefined) updateArgs.duration = params.duration;
             if (params.durationUnit) updateArgs.durationUnit = params.durationUnit;
 
+            if (Object.keys(updateArgs).length === 0) {
+              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+            }
+
             const task = await client.updateTask(params.id, updateArgs);
             return { content: [{ type: "text", text: `✅ Task updated:\n\n${formatTask(task)}` }] };
           }
@@ -168,7 +174,8 @@ export function registerTasksTool(pi: ExtensionAPI) {
             if (!params.id) {
               return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
             }
-            if (!params.projectId && !params.sectionId && !params.parentId) {
+            const destinations = [params.projectId, params.sectionId, params.parentId].filter(Boolean);
+            if (destinations.length !== 1) {
               return { content: [{ type: "text", text: "❌ Must specify exactly one of: projectId, sectionId, parentId" }] };
             }
 

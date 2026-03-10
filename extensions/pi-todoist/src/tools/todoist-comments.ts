@@ -54,6 +54,7 @@ export function registerCommentsTool(pi: ExtensionAPI) {
             if (params.projectId) queryParams.projectId = params.projectId;
 
             while (true) {
+              if (signal?.aborted) break;
               const response = await client.getComments({ ...queryParams, cursor });
               comments.push(...response.results);
               if (!response.nextCursor) break;

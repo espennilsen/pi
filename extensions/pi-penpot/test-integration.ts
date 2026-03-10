@@ -14,7 +14,7 @@ import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapsh
 const TOKEN = process.env.PENPOT_TOKEN;
 if (!TOKEN) throw new Error("PENPOT_TOKEN env var required — set it before running integration tests");
 const ENDPOINT = process.env.PENPOT_ENDPOINT || "https://penpot.e9n.dev";
-const TEAM_ID = "0d727cf9-ca60-8039-8007-b069e54aa839";
+const TEAM_ID = process.env.PENPOT_TEAM_ID || "0d727cf9-ca60-8039-8007-b069e54aa839";
 const ROOT = "00000000-0000-0000-0000-000000000000";
 
 let passed = 0;

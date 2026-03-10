@@ -459,7 +459,7 @@ async function handleExportFile(params: any, signal?: AbortSignal) {
 	const tempDir = os.tmpdir();
 	const filename = `penpot-export-${params.fileId.slice(0, 8)}.penpot`;
 	const filePath = path.join(tempDir, filename);
-	fs.writeFileSync(filePath, data);
+	await fs.promises.writeFile(filePath, data);
 
 	return text(`✅ File exported (${formatSize(data.length)}, ${contentType})\nSaved to: \`${filePath}\``);
 }

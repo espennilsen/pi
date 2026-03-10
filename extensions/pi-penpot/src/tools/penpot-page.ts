@@ -81,7 +81,7 @@ export function registerPenpotPageTool(pi: ExtensionAPI): void {
 			"Shape creation requires fileId + pageId. Most shapes need x, y, width, height.",
 			"Use `modify-shape` with the `attrs` object to change any shape property (fills, strokes, opacity, etc.).",
 			"Fills and strokes use Penpot's format: `[{\"fillColor\": \"#ff0000\", \"fillOpacity\": 1}]`.",
-			"Frame IDs: use the root frame UUID (same as pageId) or an existing frame's ID as parentId.",
+			"Frame IDs: use the root frame UUID '00000000-0000-0000-0000-000000000000' for the page root, or an existing frame shape's UUID as parentId.",
 		],
 		parameters: Type.Object({
 			action: StringEnum(ACTIONS, { description: "Operation to perform" }),

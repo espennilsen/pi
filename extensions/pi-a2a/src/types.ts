@@ -30,6 +30,8 @@ export interface A2AConfig {
 	skills?: Array<{ id: string; name: string; description: string; tags?: string[] }>;
 	/** A2A Hub settings for optional registration. */
 	hub?: HubConfig;
+	/** Timeout in milliseconds for outbound a2a_send requests. No timeout by default. */
+	sendTimeoutMs?: number;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
 }

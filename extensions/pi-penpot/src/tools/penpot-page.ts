@@ -26,6 +26,11 @@ const ROOT_FRAME_ID = "00000000-0000-0000-0000-000000000000";
 /** Cached file metadata for revision tracking */
 const fileCache = new Map<string, { revn: number; vern: number }>();
 
+/** Clear cached file revisions (call on session restart). */
+export function clearFileCache(): void {
+	fileCache.clear();
+}
+
 /** Persistent session ID for update-file calls */
 const sessionId = randomUUID();
 
@@ -235,7 +240,7 @@ async function updateFile(
 		if (Array.isArray(lagged) && lagged.length > 0) {
 			const last = lagged[lagged.length - 1];
 			if (last.revn !== undefined) {
-				fileCache.set(fileId, { revn: last.revn, vern });
+				fileCache.set(fileId, { revn: last.revn, vern: last.vern ?? vern });
 			}
 		}
 	}
@@ -365,7 +370,7 @@ async function handleListShapes(params: any, signal?: AbortSignal) {
 	}
 
 	// Exclude root frame
-	shapes = shapes.filter(s => s.id !== page.id);
+	shapes = shapes.filter(s => s.id !== ROOT_FRAME_ID);
 
 	if (shapes.length === 0) {
 		return text(params.shapeType

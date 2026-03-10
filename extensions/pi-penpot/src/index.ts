@@ -17,7 +17,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSettings } from "./settings.ts";
 import { initClient, resetClient, isClientReady } from "./client.ts";
 import { registerPenpotTool } from "./tools/penpot.ts";
-import { registerPenpotPageTool } from "./tools/penpot-page.ts";
+import { registerPenpotPageTool, clearFileCache } from "./tools/penpot-page.ts";
 import { registerPenpotCommentTool } from "./tools/penpot-comment.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -28,7 +28,12 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
+	let sessionCtx: Parameters<Parameters<typeof pi.on>[1]>[1] | null = null;
+
 	pi.on("session_start", async (_event, ctx) => {
+		sessionCtx = ctx;
+		clearFileCache();
+
 		const settings = resolveSettings(ctx.cwd);
 
 		if (!settings.endpoint || !settings.accessToken) {
@@ -46,5 +51,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		resetClient();
+		clearFileCache();
+		sessionCtx?.ui.setStatus("pi-penpot", undefined);
+		sessionCtx = null;
 	});
 }

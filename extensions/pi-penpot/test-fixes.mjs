@@ -20,7 +20,9 @@ async function apiJson(cmd, body) {
 
 async function main() {
   // Create a test file
-  const projects = await apiJson("get-projects", { "team-id": "0d727cf9-ca60-8039-8007-b069e54aa839" });
+  const teamId = process.env.PENPOT_TEAM_ID;
+  if (!teamId) { console.error("Set PENPOT_TEAM_ID env var"); process.exit(1); }
+  const projects = await apiJson("get-projects", { "team-id": teamId });
   const drafts = projects.find(p => p.isDefault);
   const file = await apiJson("create-file", { "project-id": drafts.id, name: "test-fixes-" + Date.now() });
   const fileId = file.id;

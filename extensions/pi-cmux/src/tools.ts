@@ -21,6 +21,16 @@ function txt(text: string, details: Record<string, unknown> = {}) {
 	return { content: [{ type: "text" as const, text }], details };
 }
 
+const ALLOWED_SCHEMES = ["http:", "https:"];
+
+/** Validate that a URL uses an allowed scheme (http/https only). */
+function assertSafeUrl(url: string): void {
+	const parsed = URL.canParse(url) ? new URL(url) : null;
+	if (!parsed || !ALLOWED_SCHEMES.includes(parsed.protocol)) {
+		throw new Error("Disallowed URL scheme — only http/https are permitted");
+	}
+}
+
 export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn): void {
 
 	// ── cmux_list ───────────────────────────────────────────────
@@ -218,12 +228,14 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			switch (params.action) {
 				case "open": {
 					if (!params.url) throw new Error("url is required for open action");
+					assertSafeUrl(params.url);
 					const result = await client.browserOpen(params.url);
 					return txt(`Opened browser: ${params.url}`, { result });
 				}
 				case "navigate": {
 					if (!params.surface) throw new Error("surface is required for navigate");
 					if (!params.url) throw new Error("url is required for navigate");
+					assertSafeUrl(params.url);
 					await client.browserNavigate(params.surface, params.url);
 					return txt(`Navigated ${params.surface} to ${params.url}`);
 				}

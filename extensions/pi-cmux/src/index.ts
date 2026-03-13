@@ -59,9 +59,6 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	// Track tool execution for status updates
-	let activeToolName: string | null = null;
-
 	pi.on("session_start", async (_event, ctx) => {
 		// Set workspace name from session
 		const name = pi.getSessionName();
@@ -81,6 +78,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", () => {
+		turnCount = 0;
 		safe(() => client.setStatus("Pi: thinking..."));
 	});
 
@@ -93,13 +91,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_start", (event) => {
-		activeToolName = event.toolName;
 		const label = `Pi: running ${event.toolName}...`;
 		safe(() => client.setStatus(label));
 	});
 
 	pi.on("tool_execution_end", () => {
-		activeToolName = null;
 		safe(() => client.setStatus("Pi: thinking..."));
 	});
 
@@ -114,11 +110,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("turn_end", () => {
 		// Reset at end — agent_end will set final status
-	});
-
-	// Reset turn count on agent start
-	pi.on("agent_start", () => {
-		turnCount = 0;
 	});
 
 	pi.on("session_shutdown", () => {

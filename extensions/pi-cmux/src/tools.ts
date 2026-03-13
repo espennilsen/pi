@@ -136,6 +136,9 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			})),
 		}),
 		async execute(_toolCallId, params) {
+			if (params.text && params.key) {
+				throw new Error("Provide either text or key, not both");
+			}
 			if (params.text) {
 				await client.sendInput(params.surface, params.text);
 				return txt(`Sent text to ${params.surface}: ${params.text.replace(/\n/g, "\\n")}`, { surface: params.surface });

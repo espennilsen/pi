@@ -10,6 +10,8 @@
  *   6. Clean up: delete remote/local branch, pull base, prune
  */
 
+import { rmdir } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { gh, ghJson, gitExec, gitExecRetry, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
@@ -204,7 +206,39 @@ async function cleanupBranches(
 		errors.push(`Failed to delete remote branch: ${remoteDelete.stderr}`);
 	}
 
-	// Switch to base branch and pull
+	// ── Remove head-branch worktree (if any) ────────────────
+	// Do this BEFORE checkout/pull so the branch is unlocked and
+	// we don't fail trying to checkout or delete it later.
+	let worktreeBlocking = false;
+	const headWorktree = await findWorktreeForBranch(headBranch, cwd);
+	if (headWorktree) {
+		const resolvedCwd = resolvePath(cwd);
+		const resolvedWorktree = resolvePath(headWorktree);
+		if (resolvedCwd === resolvedWorktree || resolvedCwd.startsWith(resolvedWorktree + "/")) {
+			// We're running from inside the worktree — can't remove it
+			worktreeBlocking = true;
+			ctx.ui.notify(`⚠️ Branch \`${headBranch}\` is checked out in the current worktree at \`${headWorktree}\`. Can't auto-remove — run from the main repo or remove manually: \`git worktree remove ${headWorktree}\``, "warning");
+		} else {
+			// Safe to auto-remove the worktree
+			const wtRemove = await gitExec(["worktree", "remove", headWorktree], cwd, 15_000);
+			if (wtRemove.ok) {
+				ctx.ui.notify(`🗑️ Removed worktree at \`${headWorktree}\`.`, "info");
+
+				// Try to clean up the empty parent directory (e.g. ../pi-worktrees/td-xxx/)
+				try {
+					const parentDir = resolvePath(headWorktree, "..");
+					await rmdir(parentDir); // only succeeds if empty
+				} catch {
+					// Not empty or doesn't exist — fine
+				}
+			} else {
+				worktreeBlocking = true;
+				errors.push(`Could not remove worktree at \`${headWorktree}\`: ${wtRemove.stderr}`);
+			}
+		}
+	}
+
+	// ── Switch to base branch and pull ──────────────────────
 	let onBaseBranch = false;
 	let pullCwd = cwd; // where to run pull — may differ if base is in a worktree
 	const currentBranch = await getCurrentBranch(cwd);
@@ -216,11 +250,11 @@ async function cleanupBranches(
 			onBaseBranch = true;
 		} else {
 			// Check if the base branch is checked out in a worktree
-			const worktreePath = await findWorktreeForBranch(baseBranch, cwd);
-			if (worktreePath) {
+			const baseWorktree = await findWorktreeForBranch(baseBranch, cwd);
+			if (baseWorktree) {
 				onBaseBranch = true;
-				pullCwd = worktreePath;
-				ctx.ui.notify(`Branch \`${baseBranch}\` is in worktree at \`${worktreePath}\`. Pulling there.`, "info");
+				pullCwd = baseWorktree;
+				ctx.ui.notify(`Branch \`${baseBranch}\` is in worktree at \`${baseWorktree}\`. Pulling there.`, "info");
 			} else {
 				errors.push(`Failed to checkout ${baseBranch}: ${checkout.stderr}`);
 			}
@@ -235,16 +269,11 @@ async function cleanupBranches(
 			errors.push(`Failed to pull ${baseBranch}: ${pull.stderr}`);
 		}
 
-		// Delete local branch (if it exists and we're not on it).
+		// ── Delete local head branch ────────────────────────
 		// Use -D (force) because squash/rebase merges on GitHub don't create
 		// a local merge commit, so git branch -d thinks it's "not fully merged".
-		//
-		// If the head branch is checked out in a worktree, we can't delete it —
-		// the worktree must be removed first. Warn and skip.
-		const headWorktree = await findWorktreeForBranch(headBranch, cwd);
-		if (headWorktree) {
-			ctx.ui.notify(`⚠️ Branch \`${headBranch}\` is checked out in worktree at \`${headWorktree}\`. Remove the worktree first to delete the branch: \`git worktree remove ${headWorktree}\``, "warning");
-		} else {
+		// Skip if the worktree couldn't be removed (branch is still locked).
+		if (!worktreeBlocking) {
 			const nowOn = await getCurrentBranch(cwd);
 			if (nowOn !== headBranch) {
 				// Guard: warn about local-only commits before force-deleting.

@@ -113,9 +113,11 @@ export default function (pi: ExtensionAPI) {
 		// Reset at end — agent_end will set final status
 	});
 
-	pi.on("session_shutdown", () => {
-		safe(() => client.clearStatus());
-		safe(() => client.clearProgress());
+	pi.on("session_shutdown", async () => {
+		await Promise.allSettled([
+			client.clearStatus(),
+			client.clearProgress(),
+		]);
 		log("session_shutdown");
 	});
 

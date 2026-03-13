@@ -68,7 +68,8 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		label: "cmux Split",
 		description:
 			"Split the current terminal pane and optionally run a command in the new pane. " +
-			"Returns the new surface ID for subsequent reads/sends.",
+			"Returns the new surface ID for subsequent reads/sends. " +
+			"Note: if you pass a command, the shell may not be fully ready — use cmux_read to verify the command ran.",
 		parameters: Type.Object({
 			direction: Type.Union([Type.Literal("right"), Type.Literal("down")], {
 				description: 'Split direction: "right" (vertical split) or "down" (horizontal split)',
@@ -78,7 +79,8 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			})),
 		}),
 		async execute(_toolCallId, params) {
-			const result = await client.splitSurface(params.direction) as Record<string, unknown>;
+			const raw = await client.splitSurface(params.direction);
+			const result = (raw != null && typeof raw === "object") ? raw as Record<string, unknown> : {};
 			const surfaceId = (result.surfaceId ?? result.id ?? "unknown") as string;
 
 			if (params.command) {
@@ -246,11 +248,11 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 					if (!params.selector) throw new Error("selector is required for fill");
 					if (params.value === undefined) throw new Error("value is required for fill");
 					await client.browserFill(params.surface, params.selector, params.value);
-					return txt(`Filled ${params.selector} with "${params.value}"`);
+					return txt(`Filled ${params.selector}`, { surface: params.surface });
 				}
 				case "eval": {
 					if (!params.surface) throw new Error("surface is required for eval");
-					if (!params.value) throw new Error("value (JS expression) is required for eval");
+					if (params.value === undefined) throw new Error("value (JS expression) is required for eval");
 					const evalResult = await client.browserEval(params.surface, params.value);
 					return txt(JSON.stringify(evalResult, null, 2), { surface: params.surface });
 				}

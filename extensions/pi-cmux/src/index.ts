@@ -59,6 +59,9 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
+	// Track turn progress for multi-turn agents
+	let turnCount = 0;
+
 	pi.on("session_start", async (_event, ctx) => {
 		// Set workspace name from session
 		const name = pi.getSessionName();
@@ -99,8 +102,6 @@ export default function (pi: ExtensionAPI) {
 		safe(() => client.setStatus("Pi: thinking..."));
 	});
 
-	// Track turn progress for multi-turn agents
-	let turnCount = 0;
 	pi.on("turn_start", () => {
 		turnCount++;
 		if (turnCount > 1) {

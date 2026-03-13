@@ -123,6 +123,7 @@ export class CmuxClient {
 			});
 
 			conn.on("connect", () => {
+				conn.setTimeout(0); // disable idle timer — only guard the connect phase
 				const payload = JSON.stringify({ id, method, params }) + "\n";
 				conn.write(payload);
 				this.log("rpc_sent", { method, id }, "DEBUG");

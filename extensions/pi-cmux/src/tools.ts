@@ -122,6 +122,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		label: "cmux Send Input",
 		description:
 			"Send text or keystrokes to another cmux pane. " +
+			"Provide exactly one of `text` or `key` (not both). " +
 			"Use this to type commands, answer prompts, or interact with programs " +
 			"running in other panes. Append \\n to execute a command.",
 		parameters: Type.Object({

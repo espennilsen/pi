@@ -10,6 +10,8 @@
  *   6. Clean up: delete remote/local branch, pull base, prune
  */
 
+import { rmdir } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { gh, ghJson, gitExec, gitExecRetry, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
@@ -239,12 +241,38 @@ async function cleanupBranches(
 		// Use -D (force) because squash/rebase merges on GitHub don't create
 		// a local merge commit, so git branch -d thinks it's "not fully merged".
 		//
-		// If the head branch is checked out in a worktree, we can't delete it —
-		// the worktree must be removed first. Warn and skip.
-		const headWorktree = await findWorktreeForBranch(headBranch, cwd);
+		// If the head branch is checked out in a worktree, remove the worktree
+		// first so the branch can be deleted. If we're currently inside the
+		// worktree, we can't remove it — warn and skip.
+		let headWorktree = await findWorktreeForBranch(headBranch, cwd);
 		if (headWorktree) {
-			ctx.ui.notify(`⚠️ Branch \`${headBranch}\` is checked out in worktree at \`${headWorktree}\`. Remove the worktree first to delete the branch: \`git worktree remove ${headWorktree}\``, "warning");
-		} else {
+			const resolvedCwd = resolvePath(cwd);
+			const resolvedWorktree = resolvePath(headWorktree);
+			if (resolvedCwd === resolvedWorktree || resolvedCwd.startsWith(resolvedWorktree + "/")) {
+				// We're running from inside the worktree — can't remove it
+				ctx.ui.notify(`⚠️ Branch \`${headBranch}\` is checked out in the current worktree at \`${headWorktree}\`. Can't auto-remove — run from the main repo or remove manually: \`git worktree remove ${headWorktree}\``, "warning");
+			} else {
+				// Safe to auto-remove the worktree
+				const wtPath = headWorktree; // save before nulling
+				const wtRemove = await gitExec(["worktree", "remove", wtPath], cwd, 15_000);
+				if (wtRemove.ok) {
+					ctx.ui.notify(`🗑️ Removed worktree at \`${wtPath}\`.`, "info");
+					headWorktree = null; // cleared — proceed to branch deletion below
+
+					// Try to clean up the empty parent directory (e.g. ../pi-worktrees/td-xxx/)
+					try {
+						const parentDir = resolvePath(wtPath, "..");
+						await rmdir(parentDir); // only succeeds if empty
+					} catch {
+						// Not empty or doesn't exist — fine
+					}
+				} else {
+					errors.push(`Could not remove worktree at \`${wtPath}\`: ${wtRemove.stderr}`);
+				}
+			}
+		}
+
+		if (!headWorktree) {
 			const nowOn = await getCurrentBranch(cwd);
 			if (nowOn !== headBranch) {
 				// Guard: warn about local-only commits before force-deleting.

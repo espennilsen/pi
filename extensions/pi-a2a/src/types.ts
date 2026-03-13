@@ -82,6 +82,7 @@ export interface RemoteAgentSummary {
 	avgResponseMs: number | null;
 	availability: "idle" | "busy" | "saturated" | "unknown";
 	telemetryUpdatedAt: string | null;
+	lastSeenAt: string | null;
 }
 
 export interface RemoteAgentDetail {
@@ -108,6 +109,7 @@ export interface RemoteAgentDetail {
 	totalFailures: number;
 	availability: "idle" | "busy" | "saturated" | "unknown";
 	telemetryUpdatedAt: string | null;
+	lastSeenAt: string | null;
 }
 
 // ── Telemetry Snapshot ──────────────────────────────────────────

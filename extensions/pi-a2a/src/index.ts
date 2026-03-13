@@ -352,6 +352,18 @@ export default function (pi: ExtensionAPI) {
 
 		// Set up executor with main-process callback
 		executor = new PiAgentExecutor(log, processMessage);
+
+		// When the executor finishes an A2A task, refresh TUI status and
+		// send telemetry so the hub sees "idle" immediately — agent_end
+		// fires before the executor clears activeTaskId, so this callback
+		// is the earliest reliable point where executor.isBusy() is false.
+		executor.onTaskFinished = () => {
+			updateStatusLine();
+			if (hubAgentId) {
+				sendTelemetry(config).catch(() => {});
+			}
+		};
+
 		const taskStore = new InMemoryTaskStore();
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
@@ -584,8 +596,9 @@ export default function (pi: ExtensionAPI) {
 						const emoji = availabilityEmoji[a.availability] ?? "⚪";
 						const availLabel = a.availability.charAt(0).toUpperCase() + a.availability.slice(1);
 						const avgResp = a.avgResponseMs != null ? ` | Avg Response: ${(a.avgResponseMs / 1000).toFixed(1)}s` : "";
+						const lastSeen = a.lastSeenAt ? ` | Last seen: ${a.lastSeenAt}` : "";
 						lines.push(
-							`• **${a.name}** (id: ${a.id}) ${emoji} ${availLabel}\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus}${avgResp} | Tags: ${a.tags.join(", ") || "none"}`,
+							`• **${a.name}** (id: ${a.id}) ${emoji} ${availLabel}\n  ${a.description}\n  URL: ${a.url} | Health: ${a.healthStatus}${avgResp}${lastSeen} | Tags: ${a.tags.join(", ") || "none"}`,
 						);
 						totalCount++;
 					}

@@ -15,7 +15,7 @@ import {
 	createAuthenticatingFetchWithRetry,
 	type AuthenticationHandler,
 } from "@a2a-js/sdk/client";
-import type { MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
+import type { AgentCard, MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
 
 /** Sender identity to include in message metadata. */
@@ -75,6 +75,11 @@ export async function sendA2AMessage(
 
 	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
 
+	// Track auth state explicitly so we can set `unauthorized: true`
+	// without relying on SDK error message format (which is unstable
+	// in pre-1.0 @a2a-js/sdk). Declared outside try so catch can read it.
+	let sawUnauthorized = false;
+
 	try {
 		// ── Build auth-aware fetch ─────────────────────────────────
 		let currentCredential = credential ?? null;
@@ -89,16 +94,24 @@ export async function sendA2AMessage(
 				return hdrs;
 			},
 			async shouldRetryWithHeaders(_req, res) {
-				if (res.status === 401 && !retried && onRefreshCredential) {
-					retried = true;
-					log("credential_retry_via_auth_handler", { url });
-					const fresh = await onRefreshCredential();
-					if (fresh) {
-						currentCredential = fresh;
-						return { Authorization: `Bearer ${fresh}` };
+				if (res.status === 401) {
+					sawUnauthorized = true;
+					if (!retried && onRefreshCredential) {
+						retried = true;
+						log("credential_retry_via_auth_handler", { url });
+						const fresh = await onRefreshCredential();
+						if (fresh) {
+							currentCredential = fresh;
+							sawUnauthorized = false; // reset — retry may succeed
+							return { Authorization: `Bearer ${fresh}` };
+						}
 					}
 				}
 				return undefined;
+			},
+			async onSuccessfulRetry() {
+				// Retry succeeded — clear the unauthorized flag
+				sawUnauthorized = false;
 			},
 		};
 
@@ -110,17 +123,22 @@ export async function sendA2AMessage(
 			fetchImpl,
 		});
 
-		// Minimal agent card — we only need the URL for outbound messaging.
-		// The Client constructor requires an AgentCard but we don't fetch it
-		// since we already know the endpoint.
-		const minimalCard = {
+		// Minimal agent card for outbound messaging. We don't fetch the remote
+		// card since we already know the endpoint URL. All required AgentCard
+		// fields are provided; optional fields are omitted.
+		const minimalCard: AgentCard = {
 			name: "remote-agent",
+			description: "",
 			url,
 			version: "1.0.0",
+			protocolVersion: "0.2.2",
+			capabilities: {},
+			defaultInputModes: ["text/plain"],
+			defaultOutputModes: ["text/plain"],
 			skills: [],
 		};
 
-		const client = new Client(transport, minimalCard as never);
+		const client = new Client(transport, minimalCard);
 
 		// ── Build the A2A message ─────────────────────────────────
 		const metadata: Record<string, unknown> | undefined = sender
@@ -168,8 +186,9 @@ export async function sendA2AMessage(
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
 
-		// Detect 401 from SDK error messages
-		if (msg.includes("Status: 401")) {
+		// Use the auth handler's state flag rather than parsing SDK error
+		// messages, which are unstable in pre-1.0 @a2a-js/sdk.
+		if (sawUnauthorized) {
 			log("a2a_send_unauthorized", { url }, "ERROR");
 			return {
 				ok: false,

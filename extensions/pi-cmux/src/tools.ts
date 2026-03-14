@@ -31,21 +31,24 @@ function assertSafeUrl(url: string): void {
 	}
 }
 
-/** Extract a surface ID from a cmux RPC result object. */
+/** Extract a surface ID from a cmux RPC result object.
+ *  Prefers surface_ref (human-readable "surface:N") over UUID forms. */
 function extractSurfaceId(result: unknown): string | undefined {
 	if (result != null && typeof result === "object") {
 		const r = result as Record<string, unknown>;
-		// cmux returns surface_id (UUID) or surface_ref (surface:N)
-		const id = r.surface_id ?? r.surface_ref ?? r.id;
+		const id = r.surface_ref ?? r.surface_id ?? r.id;
 		if (typeof id === "string" && id.length > 0) return id;
 	}
 	return undefined;
 }
 
-export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn): void {
+export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn): { resetBrowserState: () => void } {
 
 	// Track the most recently opened browser surface so subsequent actions
 	// (screenshot, snapshot, click, etc.) can use it without a manual cmux_list call.
+	// NOTE: This is a single shared slot. Concurrent open calls race (last writer wins),
+	// but in practice tool calls are sequential. The surface ID is always returned in
+	// tool results, so callers can pass it explicitly for multi-browser workflows.
 	let lastBrowserSurfaceId: string | undefined;
 
 	// ── cmux_list ───────────────────────────────────────────────
@@ -192,6 +195,10 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		}),
 		async execute(_toolCallId, params) {
 			await client.closeSurface(params.surface);
+			// Clear tracked browser surface if it was the one closed
+			if (lastBrowserSurfaceId === params.surface) {
+				lastBrowserSurfaceId = undefined;
+			}
 			return txt(`Closed surface ${params.surface}`, { surface: params.surface });
 		},
 	});
@@ -321,4 +328,10 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			}
 		},
 	});
+
+	return {
+		resetBrowserState() {
+			lastBrowserSurfaceId = undefined;
+		},
+	};
 }

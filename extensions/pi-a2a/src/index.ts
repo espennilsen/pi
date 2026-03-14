@@ -88,6 +88,13 @@ export default function (pi: ExtensionAPI) {
 	let executor: PiAgentExecutor | null = null;
 	/** Captured from session_start for use in async callbacks. */
 	let sessionCtx: ExtensionContext | null = null;
+
+	// ── Powerbar segment ──────────────────────────────────────
+
+	pi.events.emit("powerbar:register-segment", {
+		id: "a2a",
+		label: "A2A",
+	});
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
@@ -257,6 +264,38 @@ export default function (pi: ExtensionAPI) {
 		} else {
 			sessionCtx.ui.setStatus("a2a", undefined);
 		}
+
+		updatePowerbar();
+	}
+
+	function updatePowerbar(): void {
+		if (!isRunning()) {
+			pi.events.emit("powerbar:update", { id: "a2a", text: undefined });
+			return;
+		}
+
+		const inbound = executor?.isBusy() ? 1 + (executor.queueDepth()) : 0;
+		const outbound = outboundPending;
+
+		const parts: string[] = ["A2A"];
+		if (inbound > 0) parts.push(`▸${inbound}`);
+		if (outbound > 0) parts.push(`◂${outbound}`);
+
+		let color: string;
+		if (inbound > 0) {
+			color = "warning";
+		} else if (outbound > 0) {
+			color = "accent";
+		} else {
+			color = "success";
+		}
+
+		pi.events.emit("powerbar:update", {
+			id: "a2a",
+			text: parts.join(" "),
+			icon: "●",
+			color,
+		});
 	}
 
 	/**
@@ -449,6 +488,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		cardEnriched = false;
 		sessionCtx?.ui.setStatus("a2a", undefined);
+		pi.events.emit("powerbar:update", { id: "a2a", text: undefined });
 		sessionCtx = null;
 		// Reject pending A2A request if any
 		if (pendingResolve) {

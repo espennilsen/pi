@@ -42,6 +42,51 @@ export default function (pi: ExtensionAPI) {
 	let scheduler: CronScheduler | null = null;
 	let cwd = process.cwd();
 
+	// ── Powerbar segment ──────────────────────────────────────
+
+	pi.events.emit("powerbar:register-segment", {
+		id: "cron",
+		label: "Cron",
+	});
+
+	function updatePowerbar(): void {
+		if (!scheduler) {
+			pi.events.emit("powerbar:update", { id: "cron", text: undefined });
+			return;
+		}
+		const jobs = scheduler.list();
+		const total = jobs.filter(j => !j.disabled).length;
+		const running = jobs.filter(j => j.running).length;
+
+		if (total === 0) {
+			pi.events.emit("powerbar:update", {
+				id: "cron",
+				text: "idle",
+				icon: "⏰",
+				color: "muted",
+			});
+			return;
+		}
+
+		if (running > 0) {
+			const queued = total - running;
+			const suffix = queued > 0 ? ` +${queued}` : "";
+			pi.events.emit("powerbar:update", {
+				id: "cron",
+				text: `${running} running${suffix}`,
+				icon: "⏰",
+				color: "accent",
+			});
+		} else {
+			pi.events.emit("powerbar:update", {
+				id: "cron",
+				text: `${total} jobs`,
+				icon: "⏰",
+				color: "muted",
+			});
+		}
+	}
+
 	// ── Flag: --cron ──────────────────────────────────────────
 
 	pi.registerFlag("cron", {
@@ -60,9 +105,13 @@ export default function (pi: ExtensionAPI) {
 		}
 		const settings = resolveSettings(cwd);
 		scheduler = new CronScheduler(cwd, settings, {
-			onJobStart: (event) => pi.events.emit("cron:job_start", event),
+			onJobStart: (event) => {
+				pi.events.emit("cron:job_start", event);
+				updatePowerbar();
+			},
 			onJobComplete: (event) => {
 				pi.events.emit("cron:job_complete", event);
+				updatePowerbar();
 
 				// Send results via channel
 				const s = resolveSettings(cwd);
@@ -77,11 +126,15 @@ export default function (pi: ExtensionAPI) {
 					source: "pi-cron",
 				});
 			},
-			onReload: (jobs) => pi.events.emit("cron:reload", jobs),
+			onReload: (jobs) => {
+				pi.events.emit("cron:reload", jobs);
+				updatePowerbar();
+			},
 			log,
 		});
 		scheduler.start();
 		log("start", { pid: process.pid });
+		updatePowerbar();
 		return `✓ Cron scheduler started (PID ${process.pid})`;
 	}
 
@@ -91,6 +144,7 @@ export default function (pi: ExtensionAPI) {
 		scheduler = null;
 		releaseLock();
 		log("stop", {});
+		updatePowerbar();
 		return "✓ Cron scheduler stopped";
 	}
 
@@ -131,6 +185,9 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// Update powerbar (shows state or hides if inactive)
+		updatePowerbar();
+
 		// Mount web routes (no-op if pi-webserver isn't loaded yet)
 		mountWeb();
 	});
@@ -147,6 +204,7 @@ export default function (pi: ExtensionAPI) {
 			scheduler = null;
 			releaseLock();
 		}
+		pi.events.emit("powerbar:update", { id: "cron", text: undefined });
 	});
 
 	// ── Event API for other extensions ────────────────────────

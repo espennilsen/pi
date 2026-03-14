@@ -54,9 +54,12 @@ export class CmuxClient {
 		return existsSync(this.socketPath);
 	}
 
-	/** Send a JSON-RPC request to cmux and return the result. */
-	async rpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+	/** Send a JSON-RPC request to cmux and return the result.
+	 *  @param timeoutMs Override the default RPC timeout (for long-running ops like wait/download).
+	 */
+	async rpc(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<unknown> {
 		const id = randomUUID();
+		const rpcTimeout = timeoutMs ?? RPC_TIMEOUT_MS;
 
 		return new Promise((resolve, reject) => {
 			let settled = false;
@@ -70,11 +73,11 @@ export class CmuxClient {
 			const timeout = setTimeout(() => {
 				settle(() => {
 					conn.destroy();
-					const err = new Error(`cmux RPC timeout (${RPC_TIMEOUT_MS}ms): ${method}`);
-					this.log("rpc_timeout", { method, id }, "WARN");
+					const err = new Error(`cmux RPC timeout (${rpcTimeout}ms): ${method}`);
+					this.log("rpc_timeout", { method, id, timeoutMs: rpcTimeout }, "WARN");
 					reject(err);
 				});
-			}, RPC_TIMEOUT_MS);
+			}, rpcTimeout);
 
 			const conn: Socket = createConnection({ path: this.socketPath });
 
@@ -489,7 +492,10 @@ export class CmuxClient {
 		if (opts?.load_state) params.load_state = opts.load_state;
 		if (opts?.function) params.function = opts.function;
 		if (opts?.timeout_ms !== undefined) params.timeout_ms = opts.timeout_ms;
-		await this.rpc("browser.wait", params);
+		// Use server timeout + 2s headroom as RPC deadline so the client
+		// doesn't kill the socket before the server-side wait completes.
+		const rpcTimeout = opts?.timeout_ms ? opts.timeout_ms + 2_000 : undefined;
+		await this.rpc("browser.wait", params, rpcTimeout);
 	}
 
 	/** Double-click an element. */
@@ -615,7 +621,8 @@ export class CmuxClient {
 		const params: Record<string, unknown> = { surface_id: surfaceId };
 		if (opts?.path) params.path = opts.path;
 		if (opts?.timeout_ms !== undefined) params.timeout_ms = opts.timeout_ms;
-		return await this.rpc("browser.download", params);
+		const rpcTimeout = opts?.timeout_ms ? opts.timeout_ms + 2_000 : undefined;
+		return await this.rpc("browser.download", params, rpcTimeout);
 	}
 
 	/** Manage cookies. */
@@ -628,8 +635,8 @@ export class CmuxClient {
 	/** Manage local or session storage. */
 	async browserStorage(surfaceId: string, storageType: string, action: string, key?: string, value?: string): Promise<unknown> {
 		const params: Record<string, unknown> = { surface_id: surfaceId, storage_type: storageType, action };
-		if (key) params.key = key;
-		if (value) params.value = value;
+		if (key !== undefined) params.key = key;
+		if (value !== undefined) params.value = value;
 		return await this.rpc("browser.storage", params);
 	}
 

@@ -451,7 +451,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 				case "type": {
 					if (!surface) throw new Error("surface is required for type (open a browser first)");
 					if (!params.selector) throw new Error("selector is required for type");
-					if (!params.text) throw new Error("text is required for type");
+					if (params.text === undefined) throw new Error("text is required for type");
 					await client.browserType(surface, params.selector, params.text);
 					const message = await maybeSnapshot(`Typed into ${params.selector}`);
 					return txt(message);
@@ -488,7 +488,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 				case "select": {
 					if (!surface) throw new Error("surface is required for select (open a browser first)");
 					if (!params.selector) throw new Error("selector is required for select");
-					if (!params.value) throw new Error("value is required for select");
+					if (params.value === undefined) throw new Error("value is required for select");
 					await client.browserSelect(surface, params.selector, params.value);
 					const message = await maybeSnapshot(`Selected ${params.value} in ${params.selector}`);
 					return txt(message);
@@ -650,7 +650,10 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 					if (!surface) throw new Error("surface is required for tab (open a browser first)");
 					if (!params.subaction) throw new Error("subaction (list/new/switch/close) is required for tab");
 					const tabOpts: Record<string, unknown> = {};
-					if (params.url) tabOpts.url = params.url;
+					if (params.url) {
+						assertSafeUrl(params.url);
+						tabOpts.url = params.url;
+					}
 					if (params.value) tabOpts.value = params.value;
 					const tabResult = await client.browserTab(surface, params.subaction, tabOpts);
 					return txt(JSON.stringify(tabResult, null, 2), { surface });

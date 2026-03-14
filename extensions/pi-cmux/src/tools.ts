@@ -31,7 +31,25 @@ function assertSafeUrl(url: string): void {
 	}
 }
 
-export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn): void {
+/** Extract a surface ID from a cmux RPC result object.
+ *  Prefers surface_ref (human-readable "surface:N") over UUID forms. */
+function extractSurfaceId(result: unknown): string | undefined {
+	if (result != null && typeof result === "object") {
+		const r = result as Record<string, unknown>;
+		const id = r.surface_ref ?? r.surface_id ?? r.id;
+		if (typeof id === "string" && id.length > 0) return id;
+	}
+	return undefined;
+}
+
+export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn): { resetBrowserState: () => void } {
+
+	// Track the most recently opened browser surface so subsequent actions
+	// (screenshot, snapshot, click, etc.) can use it without a manual cmux_list call.
+	// NOTE: This is a single shared slot. Concurrent open calls race (last writer wins),
+	// but in practice tool calls are sequential. The surface ID is always returned in
+	// tool results, so callers can pass it explicitly for multi-browser workflows.
+	let lastBrowserSurfaceId: string | undefined;
 
 	// ── cmux_list ───────────────────────────────────────────────
 
@@ -177,6 +195,10 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		}),
 		async execute(_toolCallId, params) {
 			await client.closeSurface(params.surface);
+			// Clear tracked browser surface if it was the one closed
+			if (lastBrowserSurfaceId === params.surface) {
+				lastBrowserSurfaceId = undefined;
+			}
 			return txt(`Closed surface ${params.surface}`, { surface: params.surface });
 		},
 	});
@@ -207,7 +229,8 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		label: "cmux Browser",
 		description:
 			"Interact with cmux's built-in browser. Actions: open (new browser pane), " +
-			"navigate (go to URL), snapshot (get DOM), screenshot, click, fill, eval (run JS).",
+			"navigate (go to URL), snapshot (get DOM), screenshot, click, fill, eval (run JS). " +
+			"After open, the surface is remembered — subsequent actions auto-target it without needing a surface ID.",
 		parameters: Type.Object({
 			action: Type.Union([
 				Type.Literal("open"),
@@ -219,58 +242,94 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 				Type.Literal("eval"),
 			], { description: "Browser action to perform" }),
 			url: Type.Optional(Type.String({ description: "URL for open/navigate actions" })),
-			surface: Type.Optional(Type.String({ description: "Browser surface ID (for all actions except open)" })),
+			surface: Type.Optional(Type.String({ description: "Browser surface ID (optional — auto-targets the last opened browser if omitted)" })),
 			selector: Type.Optional(Type.String({ description: "CSS selector for click/fill actions" })),
 			value: Type.Optional(Type.String({ description: "Value for fill action or JS expression for eval" })),
 			compact: Type.Optional(Type.Boolean({ description: "Return compact DOM snapshot (default: true)" })),
 		}),
 		async execute(_toolCallId, params) {
+			// Resolve surface: explicit param → tracked last browser → auto-discover via surface.list
+			let surface = params.surface || lastBrowserSurfaceId;
+
+			// For non-open actions, if we don't have a surface, try to discover one
+			if (!surface && params.action !== "open") {
+				const discovered = await client.discoverBrowserSurface();
+				if (discovered) {
+					lastBrowserSurfaceId = discovered;
+					surface = discovered;
+				}
+			}
+
 			switch (params.action) {
 				case "open": {
 					if (!params.url) throw new Error("url is required for open action");
 					assertSafeUrl(params.url);
 					const result = await client.browserOpen(params.url);
-					return txt(`Opened browser: ${params.url}`, { result });
+					const newSurfaceId = extractSurfaceId(result);
+					if (newSurfaceId) {
+						lastBrowserSurfaceId = newSurfaceId;
+					} else {
+						_log("browser_open_no_surface", { result }, "WARN");
+					}
+					const idInfo = lastBrowserSurfaceId ? ` (surface: ${lastBrowserSurfaceId})` : "";
+					return txt(`Opened browser: ${params.url}${idInfo}`, { result, surfaceId: lastBrowserSurfaceId });
 				}
 				case "navigate": {
-					if (!params.surface) throw new Error("surface is required for navigate");
+					if (!surface) throw new Error("surface is required for navigate (open a browser first)");
 					if (!params.url) throw new Error("url is required for navigate");
 					assertSafeUrl(params.url);
-					await client.browserNavigate(params.surface, params.url);
-					return txt(`Navigated ${params.surface} to ${params.url}`);
+					await client.browserNavigate(surface, params.url);
+					return txt(`Navigated ${surface} to ${params.url}`);
 				}
 				case "snapshot": {
-					if (!params.surface) throw new Error("surface is required for snapshot");
-					const html = await client.browserSnapshot(params.surface, params.compact ?? true);
-					return txt(html, { surface: params.surface });
+					if (!surface) throw new Error("surface is required for snapshot (open a browser first)");
+					const html = await client.browserSnapshot(surface, params.compact ?? true);
+					return txt(html, { surface });
 				}
 				case "screenshot": {
-					if (!params.surface) throw new Error("surface is required for screenshot");
-					const screenshot = await client.browserScreenshot(params.surface);
-					return txt(JSON.stringify(screenshot), { surface: params.surface });
+					if (!surface) throw new Error("surface is required for screenshot (open a browser first)");
+					const screenshot = await client.browserScreenshot(surface);
+					// Extract file path from screenshot result
+					const screenshotObj = (screenshot != null && typeof screenshot === "object")
+						? screenshot as Record<string, unknown>
+						: null;
+					const filePath = screenshotObj?.path as string | undefined;
+					if (filePath) {
+						return txt(
+							`Screenshot saved to: ${filePath}\nUse the read tool on this path to view the image.`,
+							{ surface, path: filePath },
+						);
+					}
+					return txt(JSON.stringify(screenshot), { surface });
 				}
 				case "click": {
-					if (!params.surface) throw new Error("surface is required for click");
+					if (!surface) throw new Error("surface is required for click (open a browser first)");
 					if (!params.selector) throw new Error("selector is required for click");
-					await client.browserClick(params.surface, params.selector);
+					await client.browserClick(surface, params.selector);
 					return txt(`Clicked: ${params.selector}`);
 				}
 				case "fill": {
-					if (!params.surface) throw new Error("surface is required for fill");
+					if (!surface) throw new Error("surface is required for fill (open a browser first)");
 					if (!params.selector) throw new Error("selector is required for fill");
 					if (params.value === undefined) throw new Error("value is required for fill");
-					await client.browserFill(params.surface, params.selector, params.value);
-					return txt(`Filled ${params.selector}`, { surface: params.surface });
+					await client.browserFill(surface, params.selector, params.value);
+					return txt(`Filled ${params.selector}`, { surface });
 				}
 				case "eval": {
-					if (!params.surface) throw new Error("surface is required for eval");
+					if (!surface) throw new Error("surface is required for eval (open a browser first)");
 					if (params.value === undefined) throw new Error("value (JS expression) is required for eval");
-					const evalResult = await client.browserEval(params.surface, params.value);
-					return txt(JSON.stringify(evalResult, null, 2), { surface: params.surface });
+					const evalResult = await client.browserEval(surface, params.value);
+					return txt(JSON.stringify(evalResult, null, 2), { surface });
 				}
 				default:
 					throw new Error(`Unknown browser action: ${params.action}`);
 			}
 		},
 	});
+
+	return {
+		resetBrowserState() {
+			lastBrowserSurfaceId = undefined;
+		},
+	};
 }

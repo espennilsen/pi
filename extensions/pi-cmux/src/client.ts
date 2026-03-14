@@ -116,7 +116,12 @@ export class CmuxClient {
 							this.log("rpc_ok", { method, id }, "DEBUG");
 							resolve(res.result);
 						} else {
-							const err = new Error(`cmux RPC error (${method}): ${res.error ?? "unknown"}`);
+							const errMsg = typeof res.error === "string"
+								? res.error
+								: res.error != null
+									? JSON.stringify(res.error)
+									: "unknown";
+							const err = new Error(`cmux RPC error (${method}): ${errMsg}`);
 							this.log("rpc_fail", { method, id, error: res.error }, "WARN");
 							reject(err);
 						}
@@ -324,15 +329,21 @@ export class CmuxClient {
 		return typeof result === "string" ? result : JSON.stringify(result);
 	}
 
-	/** List all surfaces. */
+	/** List all surfaces (scoped to the agent's workspace). */
 	async listSurfaces(): Promise<unknown[]> {
-		const result = await this.rpc("surface.list", {});
+		const params: Record<string, unknown> = {};
+		const workspaceId = process.env.CMUX_WORKSPACE_ID;
+		if (workspaceId) params.workspace_id = workspaceId;
+		const result = await this.rpc("surface.list", params);
 		return Array.isArray(result) ? result : (result as { surfaces?: unknown[] })?.surfaces ?? [];
 	}
 
-	/** Split a surface in a direction. */
+	/** Split a surface in a direction (in the agent's workspace). */
 	async splitSurface(direction: "right" | "down"): Promise<unknown> {
-		return await this.rpc("surface.split", { direction });
+		const params: Record<string, unknown> = { direction };
+		const workspaceId = process.env.CMUX_WORKSPACE_ID;
+		if (workspaceId) params.workspace_id = workspaceId;
+		return await this.rpc("surface.split", params);
 	}
 
 	/** Focus a surface. */
@@ -371,6 +382,30 @@ export class CmuxClient {
 	}
 
 	// ── Browser automation (JSON-RPC) ───────────────────────────
+
+	/**
+	 * Discover browser surfaces in the current workspace.
+	 * Queries surface.list and filters by type === "browser".
+	 * Returns the most recently added browser surface ID, or undefined.
+	 */
+	async discoverBrowserSurface(): Promise<string | undefined> {
+		const workspaceId = process.env.CMUX_WORKSPACE_ID;
+		const params: Record<string, unknown> = {};
+		if (workspaceId) params.workspace_id = workspaceId;
+		const result = await this.rpc("surface.list", params);
+		const surfaces = Array.isArray(result)
+			? result
+			: (result as { surfaces?: unknown[] })?.surfaces ?? [];
+		// Find browser surfaces, return the last one (most recently added)
+		const browsers = surfaces.filter(
+			(s) => s != null && typeof s === "object" && (s as Record<string, unknown>).type === "browser",
+		);
+		if (browsers.length === 0) return undefined;
+		const last = browsers[browsers.length - 1] as Record<string, unknown>;
+		// Use same field priority as extractSurfaceId: surface_ref > surface_id > id
+		const id = last.surface_ref ?? last.surface_id ?? last.id;
+		return typeof id === "string" && id.length > 0 ? id : undefined;
+	}
 
 	/** Open a URL in cmux's built-in browser (in the caller's workspace). */
 	async browserOpen(url: string): Promise<unknown> {

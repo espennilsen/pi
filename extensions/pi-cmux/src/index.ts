@@ -47,7 +47,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Layer 2: Agent tools ──────────────────────────────────
 
-	registerTools(pi, client, log);
+	const { resetBrowserState } = registerTools(pi, client, log);
 
 	// ── Layer 1: Passive lifecycle hooks ──────────────────────
 
@@ -66,6 +66,9 @@ export default function (pi: ExtensionAPI) {
 	const STATUS_KEY = "pi";
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Clear stale browser surface tracking from previous sessions
+		resetBrowserState();
+
 		// Set workspace name from session
 		const name = pi.getSessionName();
 		if (name) {

@@ -396,7 +396,141 @@ $('live-clear').addEventListener('click', () => {
   liveBuffer = '';
   liveParts = [];
   liveBody.innerHTML = '';
+  messageStore.clear();
 });
+
+// ── Message store ────────────────────────────────────────────────
+//
+// Accumulates structured SSE events into a typed message list.
+// Each entry represents a chat message (user, assistant, or system).
+// Tool calls are nested inside assistant messages.
+//
+// Message types:
+//   { role: 'user',      text, time }
+//   { role: 'assistant', blocks[], turn, toolCalls[], streaming }
+//   { role: 'system',    text, subtype }   (e.g. agent_start/end markers)
+//
+// Assistant blocks:
+//   { type: 'text',      text }
+//   { type: 'thinking',  text }
+//   { type: 'tool_use',  id, name }
+//
+// Tool calls (correlated by toolCallId):
+//   { toolCallId, toolName, input?, result? }
+//   result: { isError, content[] }
+
+const messageStore = {
+  messages: [],
+  /** Currently streaming assistant message (last one), or null */
+  _current: null,
+  /** Listeners notified on every mutation */
+  _listeners: [],
+
+  /** Subscribe to changes. Returns unsubscribe function. */
+  onChange(fn) {
+    this._listeners.push(fn);
+    return () => { this._listeners = this._listeners.filter(f => f !== fn); };
+  },
+
+  _notify() {
+    for (const fn of this._listeners) { try { fn(this.messages); } catch {} }
+  },
+
+  /** Clear all messages */
+  clear() {
+    this.messages = [];
+    this._current = null;
+    this._notify();
+  },
+
+  /** Add a user message */
+  addUserMessage(text, time) {
+    this._finishCurrent();
+    const msg = { role: 'user', text, time: time || new Date().toISOString() };
+    this.messages.push(msg);
+    this._notify();
+    return msg;
+  },
+
+  /** Add a system message (agent_start, agent_end, etc.) */
+  addSystemMessage(text, subtype) {
+    this._finishCurrent();
+    const msg = { role: 'system', text, subtype, time: new Date().toISOString() };
+    this.messages.push(msg);
+    this._notify();
+    return msg;
+  },
+
+  /** Start a new assistant message for a turn */
+  startAssistantMessage(turn) {
+    this._finishCurrent();
+    const msg = { role: 'assistant', blocks: [], turn, toolCalls: [], streaming: true };
+    this.messages.push(msg);
+    this._current = msg;
+    this._notify();
+    return msg;
+  },
+
+  /** End the current assistant turn with content blocks from turn_end */
+  endAssistantTurn(content, stopReason) {
+    const msg = this._current || this._ensureAssistant();
+    msg.blocks = (content || []).map(b => {
+      if (b.type === 'text') return { type: 'text', text: b.text || '' };
+      if (b.type === 'thinking') return { type: 'thinking', text: b.thinking || '' };
+      if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name };
+      return { type: b.type || 'unknown' };
+    });
+    if (stopReason) msg.stopReason = stopReason;
+    msg.streaming = false;
+    this._current = null;
+    this._notify();
+  },
+
+  /** Record a tool call starting */
+  addToolCall(toolCallId, toolName, input) {
+    const msg = this._current || this._ensureAssistant();
+    const call = { toolCallId, toolName, input: input || undefined, result: null };
+    msg.toolCalls.push(call);
+    this._notify();
+    return call;
+  },
+
+  /** Record a tool call result */
+  addToolResult(toolCallId, toolName, isError, content) {
+    // Find the tool call — walk backward through assistant messages
+    let call = null;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      if (m.role !== 'assistant') continue;
+      call = m.toolCalls.find(tc => tc.toolCallId === toolCallId);
+      if (call) break;
+      // Fallback: match by toolName if toolCallId is missing
+      if (!toolCallId) {
+        call = [...m.toolCalls].reverse().find(tc => tc.toolName === toolName && !tc.result);
+        if (call) break;
+      }
+    }
+    if (call) {
+      call.result = { isError, content: content || [] };
+    }
+    this._notify();
+  },
+
+  /** Ensure there's a current assistant message (create one if needed) */
+  _ensureAssistant() {
+    const last = this.messages[this.messages.length - 1];
+    if (last && last.role === 'assistant' && last.streaming) return last;
+    return this.startAssistantMessage(0);
+  },
+
+  /** Mark the current streaming message as finished */
+  _finishCurrent() {
+    if (this._current) {
+      this._current.streaming = false;
+      this._current = null;
+    }
+  },
+};
 
 // ── SSE event handler ────────────────────────────────────────────
 
@@ -407,6 +541,7 @@ function handleSSE(d) {
       liveBuffer = '';
       appendLiveDivider();
       addEvent('start', 'Agent started');
+      messageStore.addSystemMessage('Agent started', 'agent_start');
       break;
 
     case 'agent_end':
@@ -414,40 +549,61 @@ function handleSSE(d) {
       setLiveActive(false);
       renderLive();
       addEvent('done', 'Agent finished');
+      messageStore.addSystemMessage('Agent finished', 'agent_end');
       // Refresh stats after run
       setTimeout(refreshAll, 500);
       break;
 
+    case 'user_message':
+      messageStore.addUserMessage(d.text, d.time);
+      break;
+
     case 'turn_start':
+      messageStore.startAssistantMessage(d.turn);
       break;
 
     case 'turn_end':
-      if (d.text) {
+      // Feed structured content to message store
+      messageStore.endAssistantTurn(d.content, d.stopReason);
+      // Legacy live rendering (text fallback for existing UI)
+      if (d.content) {
+        const text = d.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
+        if (text) {
+          liveBuffer += text;
+          scheduleLiveRender();
+        }
+      } else if (d.text) {
         liveBuffer += d.text;
         scheduleLiveRender();
       }
       break;
 
     case 'tool_start':
+      messageStore.addToolCall(d.toolCallId, d.toolName, d.input);
       appendLiveTool(
         '<div class="tool-line">┌ <span class="tool-badge">' + esc(d.toolName) + '</span></div>'
       );
       addEvent('tool', esc(d.toolName));
       break;
 
-    case 'tool_end':
+    case 'tool_end': {
+      messageStore.addToolResult(d.toolCallId, d.toolName, d.isError, d.content);
+      // Legacy live rendering
+      const previewText = d.content
+        ? d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80)
+        : (d.preview || '').slice(0, 80);
       if (d.isError) {
         appendLiveTool(
           '<div class="tool-line">└ <span class="tool-badge error">error</span> ' + esc(d.toolName) + '</div>'
         );
         addEvent('error', esc(d.toolName) + ' failed');
       } else {
-        const preview = d.preview ? ' ' + esc(d.preview.slice(0, 80)) : '';
         appendLiveTool(
-          '<div class="tool-line">└ done' + (preview ? ' <span style="color:var(--fg3)">' + preview + '</span>' : '') + '</div>'
+          '<div class="tool-line">└ done' + (previewText ? ' <span style="color:var(--fg3)">' + esc(previewText) + '</span>' : '') + '</div>'
         );
       }
       break;
+    }
   }
 }
 

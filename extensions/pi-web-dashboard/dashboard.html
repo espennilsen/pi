@@ -532,6 +532,112 @@ const messageStore = {
   },
 };
 
+// ── Message rendering functions ──────────────────────────────────
+//
+// Render the messageStore into proper HTML with distinct styling
+// per message type. Called reactively via messageStore.onChange().
+
+function renderUserBubble(msg) {
+  return '<div class="chat-msg chat-user">' +
+    '<div class="chat-role">You</div>' +
+    '<div class="chat-bubble chat-bubble-user">' + esc(msg.text) + '</div>' +
+    '</div>';
+}
+
+function renderSystemMessage(msg) {
+  const icon = msg.subtype === 'agent_start' ? '▶' : msg.subtype === 'agent_end' ? '■' : '•';
+  return '<div class="chat-msg chat-system">' +
+    '<span class="chat-system-text">' + icon + ' ' + esc(msg.text) + '</span>' +
+    '</div>';
+}
+
+function renderToolCard(tc) {
+  let statusBadge, resultHtml = '';
+  if (!tc.result) {
+    statusBadge = '<span class="tool-status running">running…</span>';
+  } else if (tc.result.isError) {
+    statusBadge = '<span class="tool-status error">error</span>';
+    const errText = tc.result.content
+      .filter(c => c.type === 'text').map(c => c.text || '').join('');
+    if (errText) resultHtml = '<div class="tool-result-text tool-error-text">' + esc(errText.slice(0, 500)) + '</div>';
+  } else {
+    statusBadge = '<span class="tool-status done">done</span>';
+    const resText = tc.result.content
+      .filter(c => c.type === 'text').map(c => c.text || '').join('');
+    if (resText) {
+      const preview = resText.length > 300 ? resText.slice(0, 300) + '…' : resText;
+      resultHtml = '<div class="tool-result-text">' + esc(preview) + '</div>';
+    }
+  }
+
+  let inputHtml = '';
+  if (tc.input) {
+    try {
+      const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input, null, 2);
+      if (inputStr && inputStr !== '{}') {
+        const preview = inputStr.length > 200 ? inputStr.slice(0, 200) + '…' : inputStr;
+        inputHtml = '<div class="tool-input-text">' + esc(preview) + '</div>';
+      }
+    } catch {}
+  }
+
+  return '<div class="tool-card">' +
+    '<div class="tool-card-header">' +
+      '<span class="tool-card-name">' + esc(tc.toolName) + '</span>' +
+      statusBadge +
+    '</div>' +
+    inputHtml +
+    resultHtml +
+    '</div>';
+}
+
+function renderAssistantMessage(msg) {
+  let html = '<div class="chat-msg chat-assistant">';
+  html += '<div class="chat-role">Agent</div>';
+
+  // Render content blocks
+  for (const block of msg.blocks) {
+    if (block.type === 'text' && block.text) {
+      html += '<div class="chat-bubble chat-bubble-assistant live-md">' +
+        renderMarkdown(block.text) + '</div>';
+    } else if (block.type === 'thinking' && block.text) {
+      html += '<details class="chat-thinking">' +
+        '<summary>Thinking…</summary>' +
+        '<div class="chat-thinking-body">' + esc(block.text) + '</div>' +
+        '</details>';
+    }
+  }
+
+  // Render tool calls
+  if (msg.toolCalls.length > 0) {
+    html += '<div class="tool-cards">';
+    for (const tc of msg.toolCalls) {
+      html += renderToolCard(tc);
+    }
+    html += '</div>';
+  }
+
+  // Streaming indicator
+  if (msg.streaming) {
+    html += '<span class="live-cursor"></span>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderChatMessages(messages) {
+  let html = '';
+  for (const msg of messages) {
+    switch (msg.role) {
+      case 'user': html += renderUserBubble(msg); break;
+      case 'assistant': html += renderAssistantMessage(msg); break;
+      case 'system': html += renderSystemMessage(msg); break;
+    }
+  }
+  return html;
+}
+
 // ── SSE event handler ────────────────────────────────────────────
 
 function handleSSE(d) {

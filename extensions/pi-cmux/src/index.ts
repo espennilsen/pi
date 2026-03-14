@@ -62,6 +62,9 @@ export default function (pi: ExtensionAPI) {
 	// Track turn progress for multi-turn agents
 	let turnCount = 0;
 
+	/** Status pill key used for all Pi status updates. */
+	const STATUS_KEY = "pi";
+
 	pi.on("session_start", async (_event, ctx) => {
 		// Set workspace name from session
 		const name = pi.getSessionName();
@@ -70,7 +73,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Show initial idle status
-		safe(() => client.setStatus("Pi: idle"));
+		safe(() => client.setStatus(STATUS_KEY, "idle"));
 
 		// Set terminal title
 		if (ctx.hasUI) {
@@ -82,30 +85,29 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_start", () => {
 		turnCount = 0;
-		safe(() => client.setStatus("Pi: thinking..."));
+		safe(() => client.setStatus(STATUS_KEY, "thinking..."));
 	});
 
 	pi.on("agent_end", () => {
 		safe(() => client.clearProgress());
-		safe(() => client.setStatus("Pi: idle"));
+		safe(() => client.setStatus(STATUS_KEY, "idle"));
 
 		// Notify user that agent is done and needs attention
 		safe(() => client.notify("Pi", "Ready for input"));
 	});
 
 	pi.on("tool_execution_start", (event) => {
-		const label = `Pi: running ${event.toolName}...`;
-		safe(() => client.setStatus(label));
+		safe(() => client.setStatus(STATUS_KEY, `running ${event.toolName}...`));
 	});
 
 	pi.on("tool_execution_end", () => {
-		safe(() => client.setStatus("Pi: thinking..."));
+		safe(() => client.setStatus(STATUS_KEY, "thinking..."));
 	});
 
 	pi.on("turn_start", () => {
 		turnCount++;
 		if (turnCount > 1) {
-			safe(() => client.setStatus(`Pi: turn ${turnCount}...`));
+			safe(() => client.setStatus(STATUS_KEY, `turn ${turnCount}...`));
 		}
 	});
 
@@ -115,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		await Promise.allSettled([
-			client.clearStatus(),
+			client.clearStatus(STATUS_KEY),
 			client.clearProgress(),
 		]);
 		log("session_shutdown");

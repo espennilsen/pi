@@ -91,7 +91,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		async execute(_toolCallId, params) {
 			const raw = await client.splitSurface(params.direction);
 			const result = (raw != null && typeof raw === "object") ? raw as Record<string, unknown> : {};
-			const surfaceId = (result.surfaceId ?? result.id ?? "unknown") as string;
+			const surfaceId = (result.surface_ref ?? result.surface_id ?? result.id ?? "unknown") as string;
 
 			if (params.command) {
 				// Ensure command ends with newline to execute

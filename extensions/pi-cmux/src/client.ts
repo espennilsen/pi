@@ -122,6 +122,13 @@ export class CmuxClient {
 				});
 			});
 
+			conn.on("close", () => {
+				settle(() => {
+					clearTimeout(timeout);
+					reject(new Error(`cmux socket closed before response (${method})`));
+				});
+			});
+
 			conn.on("connect", () => {
 				conn.setTimeout(0); // disable idle timer — only guard the connect phase
 				const payload = JSON.stringify({ id, method, params }) + "\n";

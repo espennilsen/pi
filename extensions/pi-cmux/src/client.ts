@@ -240,15 +240,30 @@ export class CmuxClient {
 	// ── Sidebar metadata (text-based protocol) ──────────────────
 
 	/**
+	 * Quote a value for the text-based sidebar protocol.
+	 * Strips CR/LF (which would split into multiple socket messages)
+	 * and wraps in single quotes if the value contains spaces or quotes.
+	 */
+	private q(s: string): string {
+		// Strip newlines — they'd split the command on the wire
+		const clean = s.replace(/[\r\n]/g, " ");
+		// If it contains spaces or single quotes, shell-quote it
+		if (/[\s']/.test(clean)) {
+			return `'${clean.replace(/'/g, "'\\''")}'`;
+		}
+		return clean;
+	}
+
+	/**
 	 * Set a sidebar status pill.
 	 * Uses a unique key so different tools can manage their own entries.
 	 */
 	async setStatus(key: string, value: string, options?: { icon?: string; color?: string }): Promise<void> {
 		const workspaceId = process.env.CMUX_WORKSPACE_ID;
 		if (!workspaceId) return;
-		let cmd = `set_status ${key} ${value}`;
-		if (options?.icon) cmd += ` --icon=${options.icon}`;
-		if (options?.color) cmd += ` --color=${options.color}`;
+		let cmd = `set_status ${this.q(key)} ${this.q(value)}`;
+		if (options?.icon) cmd += ` --icon=${this.q(options.icon)}`;
+		if (options?.color) cmd += ` --color=${this.q(options.color)}`;
 		cmd += ` --tab=${workspaceId}`;
 		await this.textCmd(cmd);
 	}
@@ -257,7 +272,7 @@ export class CmuxClient {
 	async clearStatus(key: string): Promise<void> {
 		const workspaceId = process.env.CMUX_WORKSPACE_ID;
 		if (!workspaceId) return;
-		await this.textCmd(`clear_status ${key} --tab=${workspaceId}`);
+		await this.textCmd(`clear_status ${this.q(key)} --tab=${workspaceId}`);
 	}
 
 	/** Set progress bar (0.0–1.0) in the sidebar. */
@@ -265,7 +280,7 @@ export class CmuxClient {
 		const workspaceId = process.env.CMUX_WORKSPACE_ID;
 		if (!workspaceId) return;
 		let cmd = `set_progress ${value}`;
-		if (label) cmd += ` --label=${label}`;
+		if (label) cmd += ` --label=${this.q(label)}`;
 		cmd += ` --tab=${workspaceId}`;
 		await this.textCmd(cmd);
 	}
@@ -282,10 +297,10 @@ export class CmuxClient {
 		const workspaceId = process.env.CMUX_WORKSPACE_ID;
 		if (!workspaceId) return;
 		let cmd = "log";
-		if (options?.level) cmd += ` --level=${options.level}`;
-		if (options?.source) cmd += ` --source=${options.source}`;
+		if (options?.level) cmd += ` --level=${this.q(options.level)}`;
+		if (options?.source) cmd += ` --source=${this.q(options.source)}`;
 		cmd += ` --tab=${workspaceId}`;
-		cmd += ` -- ${message}`;
+		cmd += ` -- ${this.q(message)}`;
 		await this.textCmd(cmd);
 	}
 

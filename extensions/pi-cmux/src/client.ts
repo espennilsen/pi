@@ -116,7 +116,12 @@ export class CmuxClient {
 							this.log("rpc_ok", { method, id }, "DEBUG");
 							resolve(res.result);
 						} else {
-							const err = new Error(`cmux RPC error (${method}): ${res.error ?? "unknown"}`);
+							const errMsg = typeof res.error === "string"
+								? res.error
+								: res.error != null
+									? JSON.stringify(res.error)
+									: "unknown";
+							const err = new Error(`cmux RPC error (${method}): ${errMsg}`);
 							this.log("rpc_fail", { method, id, error: res.error }, "WARN");
 							reject(err);
 						}

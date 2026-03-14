@@ -433,7 +433,7 @@ const messageStore = {
   },
 
   _notify() {
-    for (const fn of this._listeners) { try { fn(this.messages); } catch {} }
+    for (const fn of this._listeners) { try { fn(this.messages); } catch (e) { console.error('[messageStore] listener error', e); } }
   },
 
   /** Clear all messages */
@@ -502,10 +502,12 @@ const messageStore = {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const m = this.messages[i];
       if (m.role !== 'assistant') continue;
-      call = m.toolCalls.find(tc => tc.toolCallId === toolCallId);
-      if (call) break;
-      // Fallback: match by toolName if toolCallId is missing
-      if (!toolCallId) {
+      if (toolCallId) {
+        // Match by ID (exact)
+        call = m.toolCalls.find(tc => tc.toolCallId === toolCallId);
+        if (call) break;
+      } else {
+        // Fallback: match by toolName — most recent unreported call
         call = [...m.toolCalls].reverse().find(tc => tc.toolName === toolName && !tc.result);
         if (call) break;
       }

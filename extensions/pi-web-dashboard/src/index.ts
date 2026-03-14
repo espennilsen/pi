@@ -24,25 +24,24 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { mountDashboard, unmountDashboard, broadcast } from "./web.ts";
 import { createLogger } from "./logger.ts";
 
-/** Max text size per content block in SSE payloads (8 KB). */
-const MAX_TEXT_BYTES = 8_192;
+/** Max characters per text content block in SSE payloads. */
+const MAX_TEXT_CHARS = 8_192;
 
-/** Max serialized size for tool input in SSE payloads (4 KB). */
-const MAX_INPUT_BYTES = 4_096;
+/** Max characters for serialized tool input in SSE payloads. */
+const MAX_INPUT_CHARS = 4_096;
 
-/** Truncate a string to a byte budget, appending "…" if clipped. */
-function truncate(s: string, maxBytes: number): string {
-	if (s.length <= maxBytes) return s;
-	return s.slice(0, maxBytes) + "…";
+/** Truncate a string to a character limit, appending "…" if clipped. */
+function truncate(s: string, maxChars: number): string {
+	if (s.length <= maxChars) return s;
+	return s.slice(0, maxChars) + "…";
 }
 
-/** Truncate a tool input object to a JSON-serialized byte budget. */
-function truncateInput(input: unknown, maxBytes: number): unknown {
+/** Serialize and truncate a tool input to a JSON string within a character limit. */
+function truncateInput(input: unknown, maxChars: number): string | undefined {
 	if (input == null) return undefined;
 	try {
 		const json = JSON.stringify(input);
-		if (json.length <= maxBytes) return input;
-		return json.slice(0, maxBytes) + "…";
+		return truncate(json, maxChars);
 	} catch {
 		return undefined;
 	}
@@ -85,9 +84,9 @@ export default function (pi: ExtensionAPI) {
 			for (const block of msg.content) {
 				const b = block as Record<string, unknown>;
 				if (b.type === "text") {
-					content.push({ type: "text", text: truncate(String(b.text ?? ""), MAX_TEXT_BYTES) });
+					content.push({ type: "text", text: truncate(String(b.text ?? ""), MAX_TEXT_CHARS) });
 				} else if (b.type === "thinking") {
-					content.push({ type: "thinking", thinking: truncate(String(b.thinking ?? ""), MAX_TEXT_BYTES) });
+					content.push({ type: "thinking", thinking: truncate(String(b.thinking ?? ""), MAX_TEXT_CHARS) });
 				} else if (b.type === "tool_use") {
 					content.push({
 						type: "tool_use",
@@ -114,7 +113,7 @@ export default function (pi: ExtensionAPI) {
 			type: "tool_start",
 			toolName: event.toolName,
 			toolCallId: event.toolCallId,
-			input: truncateInput(event.input, MAX_INPUT_BYTES),
+			input: truncateInput(event.input, MAX_INPUT_CHARS),
 		});
 	});
 
@@ -125,7 +124,7 @@ export default function (pi: ExtensionAPI) {
 		for (const c of event.content) {
 			const block = c as unknown as Record<string, unknown>;
 			if (block.type === "text") {
-				content.push({ type: "text", text: truncate(String(block.text ?? ""), MAX_TEXT_BYTES) });
+				content.push({ type: "text", text: truncate(String(block.text ?? ""), MAX_TEXT_CHARS) });
 			} else if (block.type === "image") {
 				content.push({ type: "image" }); // Don't send binary data over SSE
 			} else {

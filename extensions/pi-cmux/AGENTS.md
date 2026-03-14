@@ -33,12 +33,20 @@ cmux injects these env vars into every terminal it spawns:
 
 If any are missing or the socket doesn't exist, the extension does nothing.
 
-### Socket protocol
+### Socket protocols
 
-Newline-terminated JSON-RPC over Unix domain socket:
+Two protocols over the same Unix domain socket:
+
+**JSON-RPC** — for workspace, surface, notification, browser, and system commands:
 ```
 → {"id":"uuid","method":"surface.list","params":{}}\n
 ← {"id":"uuid","ok":true,"result":{"surfaces":[...]}}\n
+```
+
+**Text-based** — for sidebar metadata (status pills, progress bars, logs):
+```
+→ set_status pi thinking... --tab=<workspace-uuid>\n
+← OK\n
 ```
 
 ## Conventions

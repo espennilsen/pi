@@ -8,6 +8,16 @@
  *   API:  /api/dashboard/config  — Agent config/status
  *
  * Subscribes to agent lifecycle events and streams them to SSE clients.
+ *
+ * SSE event types (structured payloads):
+ *   connected     — { type, time }
+ *   agent_start   — { type, time }
+ *   agent_end     — { type, time }
+ *   user_message  — { type, text, time }
+ *   turn_start    — { type, turn }
+ *   turn_end      — { type, turn, content[], stopReason?, toolResults }
+ *   tool_start    — { type, toolName, toolCallId, input? }
+ *   tool_end      — { type, toolName, toolCallId, isError, content }
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -42,39 +52,69 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", async (event) => {
-		// Extract assistant text from the message
-		const msg = event.message as any;
-		let text = "";
+		// Send the full assistant content blocks so the frontend can render
+		// text, thinking, and tool_use blocks with proper styling.
+		const msg = event.message as { role?: string; content?: unknown[] } | undefined;
+		const content: unknown[] = [];
+
 		if (msg?.role === "assistant" && Array.isArray(msg.content)) {
-			text = msg.content
-				.filter((c: any) => c.type === "text")
-				.map((c: any) => c.text ?? "")
-				.join("");
+			for (const block of msg.content) {
+				const b = block as Record<string, unknown>;
+				if (b.type === "text") {
+					content.push({ type: "text", text: b.text ?? "" });
+				} else if (b.type === "thinking") {
+					content.push({ type: "thinking", thinking: b.thinking ?? "" });
+				} else if (b.type === "tool_use") {
+					content.push({
+						type: "tool_use",
+						id: b.id,
+						name: b.name,
+						// Omit input — tool_start/tool_end events carry that
+					});
+				}
+			}
 		}
+
 		broadcast({
 			type: "turn_end",
 			turn: event.turnIndex,
-			text: text || undefined,
+			content,
+			stopReason: (event as unknown as Record<string, unknown>).stopReason ?? undefined,
 			toolResults: event.toolResults.length,
 		});
 	});
 
-	// Tool calls
+	// Tool calls — include input params for the frontend to show what the tool received
 	pi.on("tool_call", async (event) => {
-		broadcast({ type: "tool_start", toolName: event.toolName, toolCallId: event.toolCallId });
+		broadcast({
+			type: "tool_start",
+			toolName: event.toolName,
+			toolCallId: event.toolCallId,
+			input: event.input ?? undefined,
+		});
 	});
 
+	// Tool results — send full content (not just a 200-char preview) and correlate with toolCallId
 	pi.on("tool_result", async (event) => {
-		// Send a preview of the result
-		const textContent = event.content
-			.filter((c: any) => c.type === "text")
-			.map((c: any) => c.text ?? "")
-			.join("");
+		// Build structured content array from the result
+		const content: unknown[] = [];
+		for (const c of event.content) {
+			const block = c as unknown as Record<string, unknown>;
+			if (block.type === "text") {
+				content.push({ type: "text", text: block.text ?? "" });
+			} else if (block.type === "image") {
+				content.push({ type: "image" }); // Don't send binary data over SSE
+			} else {
+				content.push({ type: block.type ?? "unknown" });
+			}
+		}
+
 		broadcast({
 			type: "tool_end",
 			toolName: event.toolName,
+			toolCallId: (event as unknown as Record<string, unknown>).toolCallId ?? undefined,
 			isError: event.isError,
-			preview: textContent.slice(0, 200) || undefined,
+			content,
 		});
 	});
 }

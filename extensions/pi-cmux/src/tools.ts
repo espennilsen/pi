@@ -241,8 +241,17 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			compact: Type.Optional(Type.Boolean({ description: "Return compact DOM snapshot (default: true)" })),
 		}),
 		async execute(_toolCallId, params) {
-			// Resolve surface: use explicit param, fall back to last opened browser surface
-			const surface = params.surface || lastBrowserSurfaceId;
+			// Resolve surface: explicit param → tracked last browser → auto-discover via surface.list
+			let surface = params.surface || lastBrowserSurfaceId;
+
+			// For non-open actions, if we don't have a surface, try to discover one
+			if (!surface && params.action !== "open") {
+				const discovered = await client.discoverBrowserSurface();
+				if (discovered) {
+					lastBrowserSurfaceId = discovered;
+					surface = discovered;
+				}
+			}
 
 			switch (params.action) {
 				case "open": {
@@ -250,9 +259,15 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 					assertSafeUrl(params.url);
 					const result = await client.browserOpen(params.url);
 					const newSurfaceId = extractSurfaceId(result);
-					if (newSurfaceId) lastBrowserSurfaceId = newSurfaceId;
-					const idInfo = newSurfaceId ? ` (surface: ${newSurfaceId})` : "";
-					return txt(`Opened browser: ${params.url}${idInfo}`, { result, surfaceId: newSurfaceId });
+					if (newSurfaceId) {
+						lastBrowserSurfaceId = newSurfaceId;
+					} else {
+						// Fallback: discover the browser surface that was just created
+						const discovered = await client.discoverBrowserSurface();
+						if (discovered) lastBrowserSurfaceId = discovered;
+					}
+					const idInfo = lastBrowserSurfaceId ? ` (surface: ${lastBrowserSurfaceId})` : "";
+					return txt(`Opened browser: ${params.url}${idInfo}`, { result, surfaceId: lastBrowserSurfaceId });
 				}
 				case "navigate": {
 					if (!surface) throw new Error("surface is required for navigate (open a browser first)");

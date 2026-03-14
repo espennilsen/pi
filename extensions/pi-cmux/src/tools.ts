@@ -269,9 +269,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 					if (newSurfaceId) {
 						lastBrowserSurfaceId = newSurfaceId;
 					} else {
-						// Fallback: discover the browser surface that was just created
-						const discovered = await client.discoverBrowserSurface();
-						if (discovered) lastBrowserSurfaceId = discovered;
+						_log("browser_open_no_surface", { result }, "WARN");
 					}
 					const idInfo = lastBrowserSurfaceId ? ` (surface: ${lastBrowserSurfaceId})` : "";
 					return txt(`Opened browser: ${params.url}${idInfo}`, { result, surfaceId: lastBrowserSurfaceId });

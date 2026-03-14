@@ -402,7 +402,9 @@ export class CmuxClient {
 		);
 		if (browsers.length === 0) return undefined;
 		const last = browsers[browsers.length - 1] as Record<string, unknown>;
-		return (last.id ?? last.surface_id ?? last.ref) as string | undefined;
+		// Use same field priority as extractSurfaceId: surface_ref > surface_id > id
+		const id = last.surface_ref ?? last.surface_id ?? last.id;
+		return typeof id === "string" && id.length > 0 ? id : undefined;
 	}
 
 	/** Open a URL in cmux's built-in browser (in the caller's workspace). */

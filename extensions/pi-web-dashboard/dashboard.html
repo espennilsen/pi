@@ -98,6 +98,87 @@
   .live-clear { background: none; border: 1px solid var(--border); color: var(--fg2); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
   .live-clear:hover { border-color: var(--fg2); color: var(--fg); }
 
+  /* ── Chat message styles ────────────────────────────── */
+  .chat-msg { margin: 8px 0; animation: chatFadeIn 0.2s ease-out; }
+  @keyframes chatFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .chat-role { font-size: 11px; font-weight: 600; color: var(--fg3); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  /* User bubble */
+  .chat-user { display: flex; flex-direction: column; align-items: flex-end; }
+  .chat-bubble-user {
+    background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px;
+    padding: 8px 14px; max-width: 80%; font-size: 13px; line-height: 1.5;
+    word-wrap: break-word; white-space: pre-wrap;
+  }
+
+  /* Assistant bubble */
+  .chat-assistant { display: flex; flex-direction: column; align-items: flex-start; }
+  .chat-bubble-assistant {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 2px 12px 12px 12px;
+    padding: 10px 14px; max-width: 95%; font-size: 14px; line-height: 1.6;
+    word-break: break-word;
+  }
+  .chat-bubble-assistant:not(:last-child) { margin-bottom: 6px; }
+
+  /* Thinking block (collapsible) */
+  .chat-thinking {
+    background: rgba(124,111,240,0.08); border: 1px solid rgba(124,111,240,0.2);
+    border-radius: 8px; padding: 0; margin: 6px 0; max-width: 95%;
+  }
+  .chat-thinking summary {
+    padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--accent2);
+    font-weight: 500; user-select: none; list-style: none;
+  }
+  .chat-thinking summary::before { content: '💭 '; }
+  .chat-thinking summary::-webkit-details-marker { display: none; }
+  .chat-thinking[open] summary { border-bottom: 1px solid rgba(124,111,240,0.15); }
+  .chat-thinking-body {
+    padding: 8px 12px; font-size: 12px; color: var(--fg2);
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+
+  /* System messages (agent start/end) */
+  .chat-system { display: flex; justify-content: center; margin: 12px 0; }
+  .chat-system-text {
+    font-size: 11px; color: var(--fg3); background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 2px 12px;
+  }
+
+  /* Tool cards */
+  .tool-cards { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; max-width: 95%; }
+  .tool-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 12px;
+  }
+  .tool-card-header { display: flex; align-items: center; gap: 8px; }
+  .tool-card-name {
+    font-family: "SF Mono", "Fira Code", monospace; font-weight: 600;
+    color: var(--yellow); font-size: 12px;
+  }
+  .tool-status {
+    padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase;
+  }
+  .tool-status.running { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .tool-status.done { background: rgba(74,222,128,0.15); color: var(--green); }
+  .tool-status.error { background: rgba(248,113,113,0.15); color: var(--red); }
+  .tool-input-text {
+    margin-top: 4px; padding: 4px 8px; background: var(--bg); border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+    color: var(--fg3); white-space: pre-wrap; word-break: break-all;
+    max-height: 80px; overflow-y: auto;
+  }
+  .tool-result-text {
+    margin-top: 4px; padding: 4px 8px; background: var(--bg); border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+    color: var(--fg2); white-space: pre-wrap; word-break: break-all;
+    max-height: 120px; overflow-y: auto;
+  }
+  .tool-error-text { color: var(--red); }
+
   /* ── Prompt bar ─────────────────────────────────────── */
   .prompt-bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
   .prompt-bar input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--fg); font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s; }

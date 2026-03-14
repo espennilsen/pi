@@ -14,6 +14,8 @@ export interface SenderIdentity {
 	name: string;
 	/** Agent description (optional). */
 	description?: string;
+	/** Agent's own A2A endpoint URL — allows the receiver to reply directly. */
+	url?: string;
 }
 
 export interface SendMessageOptions {
@@ -67,6 +69,7 @@ export async function sendA2AMessage(
 			"pi:sender": {
 				name: sender.name,
 				...(sender.description ? { description: sender.description } : {}),
+				...(sender.url ? { url: sender.url } : {}),
 			},
 		};
 	}

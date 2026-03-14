@@ -98,6 +98,8 @@ export default function (pi: ExtensionAPI) {
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
+	/** This agent's own public A2A URL — included in pi:sender for reply routing. */
+	let selfUrl: string | null = null;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -387,6 +389,7 @@ export default function (pi: ExtensionAPI) {
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+		selfUrl = publicUrl;
 		const agentCard = buildAgentCard(config, publicUrl);
 
 		// Set up executor with main-process callback
@@ -406,39 +409,77 @@ export default function (pi: ExtensionAPI) {
 		// When a long-running task completes, send the result back to the sender
 		// as a new A2A message. The initial HTTP response already returned a
 		// "working" ACK — this delivers the actual content.
+		// When a long-running task completes, send the result back to the sender
+		// as a new A2A message. The initial HTTP response already returned a
+		// "working" ACK — this delivers the actual content (or error).
 		executor.onAsyncResult = (asyncResult: AsyncTaskResult) => {
-			const { taskId, senderName, result } = asyncResult;
-			if (!result.ok) {
-				log("async_result_failed", { taskId, sender: senderName, error: result.error }, "WARN");
-				return;
-			}
+			const { taskId, senderName, senderUrl, result } = asyncResult;
 
-			// Find the sender in discovered agents (by name, case-insensitive)
-			const senderLower = senderName.toLowerCase();
-			const senderAgent = discoveredAgents.find((a) => a.name.toLowerCase() === senderLower);
-			if (!senderAgent) {
-				log("async_result_no_sender", { taskId, sender: senderName }, "WARN");
-				return;
-			}
+			// Build the message — include error info so the caller knows what happened
+			const messageText = result.ok
+				? result.response
+				: `❌ Task failed: ${result.error ?? "Unknown error"}`;
 
-			// Send the response back as a new A2A message
-			const sendOpts = {
-				url: senderAgent.url,
-				message: result.response,
-				credential: null as string | null,
-				timeoutMs: config.sendTimeoutMs,
-				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
-			};
-
-			// Get credential for the sender agent and send
-			const senderAgentId = senderAgent.id;
+			// Resolve sender's URL and credential using the same priority order as a2a_send:
+			// 1. senderUrl from pi:sender metadata (most reliable — set by the actual caller)
+			// 2. staticRegistry (locally configured agents)
+			// 3. discoveredAgents (cached from hub discovery)
+			// 4. Hub lookup by name (last resort)
 			(async () => {
-				if (config.hub?.apiKey && senderAgentId) {
-					sendOpts.credential = await getCachedCredential(senderAgentId, config.hub);
+				let replyUrl: string | null = senderUrl ?? null;
+				let credential: string | null = null;
+				let agentId: string | null = null;
+
+				if (!replyUrl) {
+					// Try static agents
+					const senderLower = senderName.toLowerCase();
+					if (staticRegistry) {
+						const staticMatch = staticRegistry.findByName(senderName);
+						if (staticMatch) {
+							replyUrl = staticMatch.config.url;
+							credential = staticMatch.config.apiKey ?? null;
+						}
+					}
+
+					// Try discovered hub agents
+					if (!replyUrl) {
+						const hubMatch = discoveredAgents.find((a) => a.name.toLowerCase() === senderLower);
+						if (hubMatch) {
+							replyUrl = hubMatch.url;
+							agentId = hubMatch.id;
+						}
+					}
+
+					// Try hub lookup by name
+					if (!replyUrl && config.hub) {
+						const detail = await getAgentFromHub(senderName, config.hub, log);
+						if (detail) {
+							replyUrl = (detail.agentCard as { url?: string }).url ?? null;
+							agentId = detail.id;
+						}
+					}
 				}
-				const sendResult = await sendA2AMessage(sendOpts, log);
+
+				if (!replyUrl) {
+					log("async_result_no_sender", { taskId, sender: senderName }, "WARN");
+					return;
+				}
+
+				// Get credential for hub agents
+				if (!credential && agentId && config.hub?.apiKey) {
+					credential = await getCachedCredential(agentId, config.hub);
+				}
+
+				const sendResult = await sendA2AMessage({
+					url: replyUrl,
+					message: messageText,
+					credential,
+					timeoutMs: config.sendTimeoutMs,
+					sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
+				}, log);
+
 				if (sendResult.ok) {
-					log("async_result_sent", { taskId, sender: senderName, responseLength: result.response.length });
+					log("async_result_sent", { taskId, sender: senderName, ok: result.ok, responseLength: messageText.length });
 				} else {
 					log("async_result_send_failed", { taskId, sender: senderName, error: sendResult.error }, "ERROR");
 				}
@@ -802,7 +843,7 @@ export default function (pi: ExtensionAPI) {
 				message: params.message,
 				credential,
 				timeoutMs: config.sendTimeoutMs,
-				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+				sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
 			};
 
 			(async () => {

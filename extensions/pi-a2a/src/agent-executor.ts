@@ -40,6 +40,8 @@ export interface ProcessResult {
 export interface AsyncTaskResult {
 	taskId: string;
 	senderName: string;
+	/** Sender's A2A endpoint URL, captured from the original request context. */
+	senderUrl?: string;
 	result: ProcessResult;
 }
 
@@ -147,11 +149,12 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// Extract sender identity
+		// Extract sender identity (name + URL for reply routing)
 		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
-			| { name?: string; description?: string }
+			| { name?: string; description?: string; url?: string }
 			| undefined;
 		const senderName = senderMeta?.name ?? "Unknown agent";
+		const senderUrl = senderMeta?.url;
 
 		// Extract text from all part types
 		const textSegments: string[] = [];
@@ -211,10 +214,9 @@ export class PiAgentExecutor implements AgentExecutor {
 		// The HTTP response has already been sent. The agent works on the
 		// task, and when done, the result is delivered via onAsyncResult
 		// which sends it back to the caller as a new A2A message.
-		this.processInBackground(taskId, prompt, senderName, releaseQueue!).catch((err) => {
+		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!).catch((err) => {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_bg_error", { taskId, error: msg }, "ERROR");
-			releaseQueue!();
 		});
 	}
 
@@ -275,6 +277,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		taskId: string,
 		prompt: string,
 		senderName: string,
+		senderUrl: string | undefined,
 		releaseQueue: () => void,
 	): Promise<void> {
 		try {
@@ -300,7 +303,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 
 			// Deliver the result to be sent back to the caller
-			this.onAsyncResult?.({ taskId, senderName, result });
+			this.onAsyncResult?.({ taskId, senderName, senderUrl, result });
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			const msg = err instanceof Error ? err.message : String(err);
@@ -314,6 +317,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.onAsyncResult?.({
 				taskId,
 				senderName,
+				senderUrl,
 				result: { ok: false, response: "", error: msg, durationMs: 0 },
 			});
 		} finally {

@@ -39,6 +39,8 @@ export interface SendMessageResult {
 	error?: string;
 	/** True when the remote agent returned HTTP 401 — credential may be stale. */
 	unauthorized?: boolean;
+	/** True when the remote agent ACKed with "working" — the real result will arrive later as a separate message. */
+	working?: boolean;
 }
 
 /**
@@ -118,6 +120,14 @@ export async function sendA2AMessage(
 
 		if (!data.result) {
 			return { ok: false, error: "Empty result from remote agent", raw: data };
+		}
+
+		// Detect "working" ACK — the remote agent accepted the task but hasn't finished yet.
+		// The actual result will arrive later as a separate A2A message.
+		const status = (data.result as { status?: { state?: string } }).status;
+		if (status?.state === "working") {
+			log("a2a_send_working", { url });
+			return { ok: true, response: "", raw: data.result, working: true };
 		}
 
 		// Extract response text from the A2A task result

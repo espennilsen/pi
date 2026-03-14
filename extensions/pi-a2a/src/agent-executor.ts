@@ -36,6 +36,13 @@ export interface ProcessResult {
 	durationMs: number;
 }
 
+/** Callback payload when a long-running task completes in the background. */
+export interface AsyncTaskResult {
+	taskId: string;
+	senderName: string;
+	result: ProcessResult;
+}
+
 /**
  * Callback to inject a message into the main agent conversation.
  * Returns a promise that resolves when the agent finishes processing.
@@ -63,6 +70,8 @@ export class PiAgentExecutor implements AgentExecutor {
 	private lastTaskStatus?: "completed" | "failed";
 	/** Optional callback invoked after each task completes or fails. */
 	onTaskFinished?: () => void;
+	/** Optional callback to deliver async task results (for sending responses back to callers). */
+	onAsyncResult?: (result: AsyncTaskResult) => void;
 
 	constructor(log: LogFn, processMessage: ProcessMessage) {
 		this.log = log;
@@ -144,114 +153,69 @@ export class PiAgentExecutor implements AgentExecutor {
 			| undefined;
 		const senderName = senderMeta?.name ?? "Unknown agent";
 
-		try {
-			// Extract text from all part types
-			const textSegments: string[] = [];
-			for (const part of userMessage.parts) {
-				if (part.kind === "text") {
-					textSegments.push((part as { kind: "text"; text: string }).text);
-				} else if (part.kind === "data") {
-					const dataPart = part as { kind: "data"; data: Record<string, unknown> };
-					textSegments.push(JSON.stringify(dataPart.data, null, 2));
-				} else if (part.kind === "file") {
-					const file = part.file as { uri?: string; name?: string; bytes?: string };
-					if (file?.uri) {
-						textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
-					} else if (file?.name) {
-						textSegments.push(`[File: ${file.name}]`);
-					}
-					this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
-				} else {
-					this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
+		// Extract text from all part types
+		const textSegments: string[] = [];
+		for (const part of userMessage.parts) {
+			if (part.kind === "text") {
+				textSegments.push((part as { kind: "text"; text: string }).text);
+			} else if (part.kind === "data") {
+				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
+				textSegments.push(JSON.stringify(dataPart.data, null, 2));
+			} else if (part.kind === "file") {
+				const file = part.file as { uri?: string; name?: string; bytes?: string };
+				if (file?.uri) {
+					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
+				} else if (file?.name) {
+					textSegments.push(`[File: ${file.name}]`);
 				}
-			}
-
-			if (textSegments.length === 0) {
-				this.publishError(taskId, contextId, eventBus, "No processable content in message");
-				eventBus.finished();
-				return;
-			}
-
-			// ── Publish "working" status ──
-			eventBus.publish({
-				kind: "status-update",
-				taskId,
-				contextId,
-				status: { state: "working", timestamp: new Date().toISOString() },
-				final: false,
-			} as TaskStatusUpdateEvent);
-
-			const prompt = textSegments.join("\n");
-			this.activeTaskId = taskId;
-			this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
-
-			// ── Delegate to main agent process ──
-			const result = await this.processMessage(prompt, senderName);
-
-			// Check if canceled while processing
-			if (this.activeTaskId !== taskId) {
-				this.log("executor_canceled_during_run", { taskId });
-				eventBus.finished();
-				return;
-			}
-
-			this.activeTaskId = null;
-
-			if (result.ok) {
-				// Publish artifact with response
-				eventBus.publish({
-					kind: "artifact-update",
-					taskId,
-					contextId,
-					artifact: {
-						artifactId: randomUUID(),
-						name: "response",
-						parts: [{ kind: "text", text: result.response } as Part],
-					},
-				} as TaskArtifactUpdateEvent);
-
-				// Publish "completed"
-				eventBus.publish({
-					kind: "status-update",
-					taskId,
-					contextId,
-					status: { state: "completed", timestamp: new Date().toISOString() },
-					final: true,
-				} as TaskStatusUpdateEvent);
-				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
-
-				// Record telemetry for hub reporting
-				this.lastTaskDurationMs = result.durationMs;
-				this.lastTaskStatus = "completed";
-				this.onTaskFinished?.();
+				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
 			} else {
-				this.publishError(taskId, contextId, eventBus, result.error ?? "Unknown error");
-				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
-
-				// Record telemetry for hub reporting
-				this.lastTaskDurationMs = result.durationMs;
-				this.lastTaskStatus = "failed";
-				this.onTaskFinished?.();
+				this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
 			}
-
-			eventBus.finished();
-		} catch (err: unknown) {
-			this.activeTaskId = null;
-			const msg = err instanceof Error ? err.message : String(err);
-			this.publishError(taskId, contextId, eventBus, msg);
-			this.log("executor_error", { taskId, error: msg }, "ERROR");
-
-			// Record telemetry for hub reporting — clear stale duration
-			// to avoid pairing a previous task's timing with this failure
-			this.lastTaskDurationMs = undefined;
-			this.lastTaskStatus = "failed";
-			this.onTaskFinished?.();
-
-			eventBus.finished();
-		} finally {
-			// Release the queue so the next task can proceed
-			releaseQueue!();
 		}
+
+		if (textSegments.length === 0) {
+			this.publishError(taskId, contextId, eventBus, "No processable content in message");
+			eventBus.finished();
+			releaseQueue!();
+			return;
+		}
+
+		const prompt = textSegments.join("\n");
+		this.activeTaskId = taskId;
+		this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
+
+		// ── ACK immediately: publish "working" and finish the event bus ──
+		// This unblocks the HTTP response so the sender gets a Task with
+		// state: "working" right away instead of waiting for the agent to
+		// finish (which can take minutes and causes timeout).
+		eventBus.publish({
+			kind: "status-update",
+			taskId,
+			contextId,
+			status: {
+				state: "working",
+				message: {
+					kind: "message",
+					messageId: randomUUID(),
+					role: "agent",
+					parts: [{ kind: "text", text: "Message received, working on it…" } as Part],
+				},
+				timestamp: new Date().toISOString(),
+			},
+			final: true,
+		} as TaskStatusUpdateEvent);
+		eventBus.finished();
+
+		// ── Process in the background ──────────────────────────────
+		// The HTTP response has already been sent. The agent works on the
+		// task, and when done, the result is delivered via onAsyncResult
+		// which sends it back to the caller as a new A2A message.
+		this.processInBackground(taskId, prompt, senderName, releaseQueue!).catch((err) => {
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("executor_bg_error", { taskId, error: msg }, "ERROR");
+			releaseQueue!();
+		});
 	}
 
 	async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
@@ -301,6 +265,60 @@ export class PiAgentExecutor implements AgentExecutor {
 	/** Number of tasks waiting in the queue (not including the active one). */
 	queueDepth(): number {
 		return this._queueDepth;
+	}
+
+	/**
+	 * Process a task in the background after the ACK has been sent.
+	 * When the agent finishes, delivers the result via onAsyncResult callback.
+	 */
+	private async processInBackground(
+		taskId: string,
+		prompt: string,
+		senderName: string,
+		releaseQueue: () => void,
+	): Promise<void> {
+		try {
+			const result = await this.processMessage(prompt, senderName);
+
+			// Check if canceled while processing
+			if (this.activeTaskId !== taskId) {
+				this.log("executor_canceled_during_run", { taskId });
+				return;
+			}
+
+			this.activeTaskId = null;
+
+			// Record telemetry
+			this.lastTaskDurationMs = result.durationMs;
+			this.lastTaskStatus = result.ok ? "completed" : "failed";
+			this.onTaskFinished?.();
+
+			if (result.ok) {
+				this.log("executor_completed", { taskId, responseLength: result.response.length, durationMs: result.durationMs });
+			} else {
+				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
+			}
+
+			// Deliver the result to be sent back to the caller
+			this.onAsyncResult?.({ taskId, senderName, result });
+		} catch (err: unknown) {
+			this.activeTaskId = null;
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("executor_error", { taskId, error: msg }, "ERROR");
+
+			this.lastTaskDurationMs = undefined;
+			this.lastTaskStatus = "failed";
+			this.onTaskFinished?.();
+
+			// Deliver error result
+			this.onAsyncResult?.({
+				taskId,
+				senderName,
+				result: { ok: false, response: "", error: msg, durationMs: 0 },
+			});
+		} finally {
+			releaseQueue();
+		}
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

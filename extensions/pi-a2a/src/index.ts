@@ -44,7 +44,7 @@ import {
 } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
-import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
+import { PiAgentExecutor, type ProcessResult, type AsyncTaskResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
@@ -401,6 +401,51 @@ export default function (pi: ExtensionAPI) {
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
 			}
+		};
+
+		// When a long-running task completes, send the result back to the sender
+		// as a new A2A message. The initial HTTP response already returned a
+		// "working" ACK — this delivers the actual content.
+		executor.onAsyncResult = (asyncResult: AsyncTaskResult) => {
+			const { taskId, senderName, result } = asyncResult;
+			if (!result.ok) {
+				log("async_result_failed", { taskId, sender: senderName, error: result.error }, "WARN");
+				return;
+			}
+
+			// Find the sender in discovered agents (by name, case-insensitive)
+			const senderLower = senderName.toLowerCase();
+			const senderAgent = discoveredAgents.find((a) => a.name.toLowerCase() === senderLower);
+			if (!senderAgent) {
+				log("async_result_no_sender", { taskId, sender: senderName }, "WARN");
+				return;
+			}
+
+			// Send the response back as a new A2A message
+			const sendOpts = {
+				url: senderAgent.url,
+				message: result.response,
+				credential: null as string | null,
+				timeoutMs: config.sendTimeoutMs,
+				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+			};
+
+			// Get credential for the sender agent and send
+			const senderAgentId = senderAgent.id;
+			(async () => {
+				if (config.hub?.apiKey && senderAgentId) {
+					sendOpts.credential = await getCachedCredential(senderAgentId, config.hub);
+				}
+				const sendResult = await sendA2AMessage(sendOpts, log);
+				if (sendResult.ok) {
+					log("async_result_sent", { taskId, sender: senderName, responseLength: result.response.length });
+				} else {
+					log("async_result_send_failed", { taskId, sender: senderName, error: sendResult.error }, "ERROR");
+				}
+			})().catch((err: unknown) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				log("async_result_send_error", { taskId, sender: senderName, error: msg }, "ERROR");
+			});
 		};
 
 		const taskStore = new InMemoryTaskStore();
@@ -782,7 +827,19 @@ export default function (pi: ExtensionAPI) {
 
 				const dur = fmtDuration(Date.now() - sendStart);
 
-				if (result.ok) {
+				if (result.ok && result.working) {
+					// ACK received — the remote agent is working on it.
+					// The actual result will arrive later as a separate inbound A2A message.
+					pi.sendMessage(
+						{
+							customType: "a2a-response-ack",
+							content:
+								`⏳ **${resolvedName}** acknowledged the request (${dur}) — working on it. Response will arrive when ready.`,
+							display: true,
+						},
+						{ triggerTurn: false },
+					);
+				} else if (result.ok) {
 					pi.sendMessage(
 						{
 							customType: "a2a-response-received",

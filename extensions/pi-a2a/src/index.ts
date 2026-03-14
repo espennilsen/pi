@@ -898,22 +898,19 @@ export default function (pi: ExtensionAPI) {
 				message: params.message,
 				credential,
 				timeoutMs: config.sendTimeoutMs,
-				sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
+				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+				// SDK auth handler retries on 401 — provide a callback to refresh the credential
+				onRefreshCredential: (!resolvedFromStatic && resolvedAgentId && hubConfig)
+					? async () => {
+						log("credential_retry", { agentId: resolvedAgentId });
+						credentialCache.delete(resolvedAgentId);
+						return getCachedCredential(resolvedAgentId, hubConfig);
+					}
+					: undefined,
 			};
 
 			(async () => {
-				let result = await sendA2AMessage(sendOpts, log);
-
-				// Retry once on 401 — evict cached credential, fetch fresh (hub agents only)
-				if (result.unauthorized && !resolvedFromStatic && resolvedAgentId && hubConfig) {
-					log("credential_retry", { agentId: resolvedAgentId });
-					credentialCache.delete(resolvedAgentId);
-					const freshCredential = await getCachedCredential(resolvedAgentId, hubConfig);
-					sendOpts.credential = freshCredential;
-					result = await sendA2AMessage(sendOpts, log);
-				}
-
-				return result;
+				return await sendA2AMessage(sendOpts, log);
 			})().then((result) => {
 				// Bail out if session restarted while we were waiting
 				if (sessionToken !== myToken) return;

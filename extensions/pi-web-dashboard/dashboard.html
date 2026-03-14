@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pi — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark-dimmed.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <style>
@@ -289,7 +290,11 @@ if (typeof marked !== 'undefined') {
 
 function renderMarkdown(text) {
   if (!text || !text.trim()) return '';
-  try { return marked.parse(text); }
+  try {
+    const html = marked.parse(text);
+    // Sanitize to prevent XSS from LLM-produced or injected content
+    return typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
+  }
   catch { return '<p>'+esc(text)+'</p>'; }
 }
 

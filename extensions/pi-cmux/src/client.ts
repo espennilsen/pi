@@ -372,9 +372,14 @@ export class CmuxClient {
 
 	// ── Browser automation (JSON-RPC) ───────────────────────────
 
-	/** Open a URL in cmux's built-in browser. */
+	/** Open a URL in cmux's built-in browser (in the caller's workspace). */
 	async browserOpen(url: string): Promise<unknown> {
-		return await this.rpc("browser.open_split", { url });
+		const params: Record<string, unknown> = { url };
+		const wsId = process.env.CMUX_WORKSPACE_ID;
+		if (wsId) params.workspace_id = wsId;
+		const surfaceId = process.env.CMUX_SURFACE_ID;
+		if (surfaceId) params.surface_id = surfaceId;
+		return await this.rpc("browser.open_split", params);
 	}
 
 	/** Navigate an existing browser surface to a URL. */

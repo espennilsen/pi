@@ -329,15 +329,21 @@ export class CmuxClient {
 		return typeof result === "string" ? result : JSON.stringify(result);
 	}
 
-	/** List all surfaces. */
+	/** List all surfaces (scoped to the agent's workspace). */
 	async listSurfaces(): Promise<unknown[]> {
-		const result = await this.rpc("surface.list", {});
+		const params: Record<string, unknown> = {};
+		const workspaceId = process.env.CMUX_WORKSPACE_ID;
+		if (workspaceId) params.workspace_id = workspaceId;
+		const result = await this.rpc("surface.list", params);
 		return Array.isArray(result) ? result : (result as { surfaces?: unknown[] })?.surfaces ?? [];
 	}
 
-	/** Split a surface in a direction. */
+	/** Split a surface in a direction (in the agent's workspace). */
 	async splitSurface(direction: "right" | "down"): Promise<unknown> {
-		return await this.rpc("surface.split", { direction });
+		const params: Record<string, unknown> = { direction };
+		const workspaceId = process.env.CMUX_WORKSPACE_ID;
+		if (workspaceId) params.workspace_id = workspaceId;
+		return await this.rpc("surface.split", params);
 	}
 
 	/** Focus a surface. */

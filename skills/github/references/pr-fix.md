@@ -83,7 +83,11 @@ All N threads resolved in <hash>:
 
 ## Rules
 
-- **Never fix without user confirmation** — present assessment first
+- **Interactive mode: confirm before fixing** — when working directly with a
+  user, present your assessment and wait for confirmation before changing code
+- **Parallel mode: auto-fix the obvious** — when running as a parallel worker,
+  auto-fix straightforward threads (suggestions, warnings, clear bugs) and
+  escalate ambiguous or risky ones. See [pr-fix-parallel.md](pr-fix-parallel.md).
 - **Surgical edits only** — don't refactor surrounding code
 - **Verify compilation** before committing
 - **One commit per fix round** — batch all fixes together

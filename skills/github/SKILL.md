@@ -63,6 +63,10 @@ For complex PR operations, see the reference docs:
 - **Fixing PR review threads** — [references/pr-fix.md](references/pr-fix.md)
   Read when fixing unresolved review feedback, resolving threads, or using `/gh-pr-fix`.
 
+- **Parallel PR fixes** — [references/pr-fix-parallel.md](references/pr-fix-parallel.md)
+  Read when fixing review feedback across multiple PRs simultaneously using
+  parallel subagents (pool or orchestrator mode).
+
 - **Merging PRs** — [references/pr-merge.md](references/pr-merge.md)
   Read when merging a PR, resolving merge conflicts, cleaning up branches/worktrees, or using `/gh-pr-merge`.
 

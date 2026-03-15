@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pi — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js" integrity="sha384-pcBjnGbkyKeOXaoFkmJiuR9E08/6gkmus6/Strimnxtl3uk0Hx23v345pWyC/MMr" crossorigin="anonymous"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark-dimmed.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <style>
@@ -756,7 +756,7 @@ function handleSSE(d) {
       // Feed structured content to message store
       messageStore.endAssistantTurn(d.content, d.stopReason);
       // Legacy live rendering (text fallback for existing UI)
-      if (d.content) {
+      if (Array.isArray(d.content)) {
         const text = d.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
         if (text) {
           liveBuffer += text;
@@ -779,7 +779,7 @@ function handleSSE(d) {
     case 'tool_end': {
       messageStore.addToolResult(d.toolCallId, d.toolName, d.isError, d.content);
       // Legacy live rendering
-      const previewText = d.content
+      const previewText = Array.isArray(d.content)
         ? d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80)
         : (d.preview || '').slice(0, 80);
       if (d.isError) {

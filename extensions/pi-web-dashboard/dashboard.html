@@ -54,6 +54,18 @@
   .section { margin-bottom: 24px; }
 
   /* ── Live session ───────────────────────────────────── */
+  /* ── View tabs ───────────────────────────────────────── */
+  .view-tabs { display: flex; gap: 2px; }
+  .view-tab {
+    padding: 4px 12px; border-radius: 4px 4px 0 0; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid transparent; background: transparent;
+    color: var(--fg3); transition: all 0.15s;
+  }
+  .view-tab:hover { color: var(--fg2); }
+  .view-tab.active { background: var(--bg2); border-color: var(--border); border-bottom-color: var(--bg2); color: var(--fg); }
+  .chat-body { padding: 16px; min-height: 400px; max-height: 400px; overflow-y: auto; }
+  .chat-body:empty::after { content: "Waiting for messages…"; color: var(--fg3); display: block; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; }
+
   .live-session { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; position: relative; }
   .live-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .live-header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg3); display: inline-block; margin-right: 8px; }
@@ -97,6 +109,87 @@
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   .live-clear { background: none; border: 1px solid var(--border); color: var(--fg2); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
   .live-clear:hover { border-color: var(--fg2); color: var(--fg); }
+
+  /* ── Chat message styles ────────────────────────────── */
+  .chat-msg { margin: 8px 0; animation: chatFadeIn 0.2s ease-out; }
+  @keyframes chatFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .chat-role { font-size: 11px; font-weight: 600; color: var(--fg3); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  /* User bubble */
+  .chat-user { display: flex; flex-direction: column; align-items: flex-end; }
+  .chat-bubble-user {
+    background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px;
+    padding: 8px 14px; max-width: 80%; font-size: 13px; line-height: 1.5;
+    word-wrap: break-word; white-space: pre-wrap;
+  }
+
+  /* Assistant bubble */
+  .chat-assistant { display: flex; flex-direction: column; align-items: flex-start; }
+  .chat-bubble-assistant {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 2px 12px 12px 12px;
+    padding: 10px 14px; max-width: 95%; font-size: 14px; line-height: 1.6;
+    word-break: break-word;
+  }
+  .chat-bubble-assistant:not(:last-child) { margin-bottom: 6px; }
+
+  /* Thinking block (collapsible) */
+  .chat-thinking {
+    background: rgba(124,111,240,0.08); border: 1px solid rgba(124,111,240,0.2);
+    border-radius: 8px; padding: 0; margin: 6px 0; max-width: 95%;
+  }
+  .chat-thinking summary {
+    padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--accent2);
+    font-weight: 500; user-select: none; list-style: none;
+  }
+  .chat-thinking summary::before { content: '💭 '; }
+  .chat-thinking summary::-webkit-details-marker { display: none; }
+  .chat-thinking[open] summary { border-bottom: 1px solid rgba(124,111,240,0.15); }
+  .chat-thinking-body {
+    padding: 8px 12px; font-size: 12px; color: var(--fg2);
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+
+  /* System messages (agent start/end) */
+  .chat-system { display: flex; justify-content: center; margin: 12px 0; }
+  .chat-system-text {
+    font-size: 11px; color: var(--fg3); background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 2px 12px;
+  }
+
+  /* Tool cards */
+  .tool-cards { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; max-width: 95%; }
+  .tool-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 12px;
+  }
+  .tool-card-header { display: flex; align-items: center; gap: 8px; }
+  .tool-card-name {
+    font-family: "SF Mono", "Fira Code", monospace; font-weight: 600;
+    color: var(--yellow); font-size: 12px;
+  }
+  .tool-status {
+    padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase;
+  }
+  .tool-status.running { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .tool-status.done { background: rgba(74,222,128,0.15); color: var(--green); }
+  .tool-status.error { background: rgba(248,113,113,0.15); color: var(--red); }
+  .tool-input-text {
+    margin-top: 4px; padding: 4px 8px; background: var(--bg); border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+    color: var(--fg3); white-space: pre-wrap; word-break: break-all;
+    max-height: 80px; overflow-y: auto;
+  }
+  .tool-result-text {
+    margin-top: 4px; padding: 4px 8px; background: var(--bg); border-radius: 4px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+    color: var(--fg2); white-space: pre-wrap; word-break: break-all;
+    max-height: 120px; overflow-y: auto;
+  }
+  .tool-error-text { color: var(--red); }
 
   /* ── Prompt bar ─────────────────────────────────────── */
   .prompt-bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
@@ -177,9 +270,14 @@
     <div class="live-session">
       <div class="live-header">
         <div><span class="live-dot" id="live-dot"></span><span class="live-label" id="live-label">Idle</span></div>
+        <div class="view-tabs">
+          <button class="view-tab active" data-view="chat">Chat</button>
+          <button class="view-tab" data-view="raw">Raw</button>
+        </div>
         <button class="live-clear" id="live-clear">Clear</button>
       </div>
-      <div class="live-body" id="live-body"></div>
+      <div class="chat-body" id="chat-body"></div>
+      <div class="live-body" id="live-body" style="display:none"></div>
       <div class="prompt-bar">
         <input type="text" id="prompt-input" placeholder="Send a prompt to the agent…" autocomplete="off" />
         <button id="prompt-send">Send</button>
@@ -403,6 +501,8 @@ $('live-clear').addEventListener('click', () => {
   liveBuffer = '';
   liveParts = [];
   liveBody.innerHTML = '';
+  const cb = $('chat-body');
+  if (cb) cb.innerHTML = '';
   messageStore.clear();
 });
 
@@ -440,7 +540,7 @@ const messageStore = {
   },
 
   _notify() {
-    for (const fn of this._listeners) { try { fn(this.messages); } catch {} }
+    for (const fn of this._listeners) { try { fn(this.messages); } catch (e) { console.error('[messageStore] listener error', e); } }
   },
 
   /** Clear all messages */
@@ -678,16 +778,13 @@ function handleSSE(d) {
     case 'turn_end':
       // Feed structured content to message store
       messageStore.endAssistantTurn(d.content, d.stopReason);
-      // Legacy live rendering (text fallback for existing UI)
+      // Legacy live rendering
       if (d.content) {
         const text = d.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
         if (text) {
           liveBuffer += text;
           scheduleLiveRender();
         }
-      } else if (d.text) {
-        liveBuffer += d.text;
-        scheduleLiveRender();
       }
       break;
 
@@ -702,9 +799,7 @@ function handleSSE(d) {
     case 'tool_end': {
       messageStore.addToolResult(d.toolCallId, d.toolName, d.isError, d.content);
       // Legacy live rendering
-      const previewText = d.content
-        ? d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80)
-        : (d.preview || '').slice(0, 80);
+      const previewText = d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80);
       if (d.isError) {
         appendLiveTool(
           '<div class="tool-line">└ <span class="tool-badge error">error</span> ' + esc(d.toolName) + '</div>'
@@ -792,6 +887,40 @@ async function sendPrompt() {
 promptSend.addEventListener('click', sendPrompt);
 promptInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+});
+
+// ── Chat view wiring ─────────────────────────────────────────────
+
+const chatBody = $('chat-body');
+let activeView = 'chat'; // 'chat' or 'raw'
+
+// View tab switching
+document.querySelector('.view-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.view-tab');
+  if (!tab) return;
+  const view = tab.dataset.view;
+  if (view === activeView) return;
+  activeView = view;
+  for (const t of document.querySelectorAll('.view-tab')) {
+    t.classList.toggle('active', t.dataset.view === view);
+  }
+  chatBody.style.display = view === 'chat' ? '' : 'none';
+  liveBody.style.display = view === 'raw' ? '' : 'none';
+  if (view === 'chat') {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+});
+
+// Reactive rendering: re-render chat view when messageStore changes
+let chatRenderTimer = null;
+messageStore.onChange(() => {
+  if (chatRenderTimer) return;
+  chatRenderTimer = setTimeout(() => {
+    chatRenderTimer = null;
+    const wasAtBottom = chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight < 40;
+    chatBody.innerHTML = renderChatMessages(messageStore.messages);
+    if (wasAtBottom) chatBody.scrollTop = chatBody.scrollHeight;
+  }, 50);
 });
 
 // ── Stats grid (from pi-jobs API) ────────────────────────────────

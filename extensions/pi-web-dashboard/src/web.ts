@@ -136,12 +136,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 				return;
 			}
 
-			// Broadcast user message so the frontend can render it immediately
 			const trimmed = prompt.trim();
-			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
 
+			// Send to agent first — only broadcast + respond if it doesn't throw.
+			// This avoids phantom user bubbles in the UI on delivery failure.
+			try {
+				_pi.sendUserMessage(trimmed);
+			} catch (sendErr: unknown) {
+				const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+				json(res, 500, { error: `Agent rejected message: ${msg}` });
+				return;
+			}
+
+			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
 			json(res, 202, { status: "accepted" });
-			_pi.sendUserMessage(trimmed);
 		} catch (err: any) {
 			if (err.message === "Body too large") {
 				json(res, 413, { error: "Request body too large (max 1MB)" });

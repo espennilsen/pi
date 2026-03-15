@@ -322,11 +322,17 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 				}
 			}
 
-			// Helper to take snapshot after action if requested
+			// Helper to take snapshot after action if requested.
+			// Failures are swallowed — the primary action already succeeded,
+			// so a snapshot error should not discard that result or trigger retries.
 			const maybeSnapshot = async (baseResult: string): Promise<string> => {
 				if (params.snapshotAfter && surface) {
-					const snapshot = await client.browserSnapshot(surface, true);
-					return baseResult + "\n\n" + snapshot;
+					try {
+						const snapshot = await client.browserSnapshot(surface, true);
+						return baseResult + "\n\n" + snapshot;
+					} catch {
+						return baseResult + "\n\n(snapshot unavailable after action)";
+					}
 				}
 				return baseResult;
 			};

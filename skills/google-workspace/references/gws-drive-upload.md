@@ -1,0 +1,33 @@
+# drive +upload
+
+Upload a file with automatic metadata.
+
+## Usage
+
+```bash
+gws drive +upload <file>
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `<file>` | ✓ | — | Path to file to upload |
+| `--parent` | — | — | Parent folder ID |
+| `--name` | — | — | Target filename (defaults to source filename) |
+
+## Examples
+
+```bash
+gws drive +upload ./report.pdf
+gws drive +upload ./report.pdf --parent FOLDER_ID
+gws drive +upload ./data.csv --name 'Sales Data.csv'
+```
+
+## Tips
+
+- MIME type is detected automatically.
+- Filename is inferred from the local path unless --name is given.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

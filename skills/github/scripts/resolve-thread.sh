@@ -1,39 +1,21 @@
 #!/usr/bin/env bash
-# Reply to and resolve a PR review thread in one step.
+# Resolve a PR review thread (mark as resolved).
 #
-# Usage: bash scripts/resolve-thread.sh <thread-id> <reply-body>
+# Usage: bash scripts/resolve-thread.sh <thread-id>
 #
 # Example:
-#   bash scripts/resolve-thread.sh PRRT_kwDOROE4Hs50bONT "Fixed — added null guard"
+#   bash scripts/resolve-thread.sh PRRT_kwDOROE4Hs50bONT
 #
-# Note: This script is NOT idempotent. If the reply succeeds but resolve fails,
-# re-running will post a duplicate reply. Callers that need retry logic should
-# check for an existing reply before invoking, or call the resolve step separately.
+# Idempotent: Resolving an already-resolved thread is a no-op.
+# Safe to retry on failure.
+#
+# To reply AND resolve, call reply-thread.sh first:
+#   bash scripts/reply-thread.sh THREAD_ID "Fixed — description"
+#   bash scripts/resolve-thread.sh THREAD_ID
 set -euo pipefail
 
-thread_id="${1:?Usage: resolve-thread.sh <thread-id> <reply-body>}"
-reply_body="${2:?Usage: resolve-thread.sh <thread-id> <reply-body>}"
+thread_id="${1:?Usage: resolve-thread.sh <thread-id>}"
 
-# Step 1: Reply to the thread
-echo "→ Replying to thread ${thread_id}..."
-reply_result=$(gh api graphql \
-  -f query='
-    mutation($threadId: ID!, $body: String!) {
-      addPullRequestReviewThreadReply(input: {
-        pullRequestReviewThreadId: $threadId,
-        body: $body
-      }) { comment { id } }
-    }' \
-  -f threadId="$thread_id" \
-  -f body="$reply_body")
-
-if echo "$reply_result" | jq -e '.errors' > /dev/null 2>&1; then
-  echo "❌ Failed to reply to thread ${thread_id}." >&2
-  echo "$reply_result" >&2
-  exit 1
-fi
-
-# Step 2: Resolve the thread
 echo "→ Resolving thread ${thread_id}..."
 result=$(gh api graphql \
   -f query='

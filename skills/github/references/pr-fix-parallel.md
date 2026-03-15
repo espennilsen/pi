@@ -86,7 +86,8 @@ Each worker follows this sequence:
      git commit -m "fix: address review feedback — <summary>"
      git push origin <branch>
 7. Resolve auto-fixed threads:
-     bash scripts/resolve-thread.sh "THREAD_ID" "Fixed — <description>"
+     bash scripts/reply-thread.sh "THREAD_ID" "Fixed — <description>"
+     bash scripts/resolve-thread.sh "THREAD_ID"
 8. Post summary comment:
      gh pr comment <N> -R <owner/repo> --body '<summary table>'
 9. Report back to orchestrator:

@@ -61,13 +61,15 @@ git push origin <branch>
 
 ### Step 6: Resolve threads
 
-For each fixed thread:
+For each fixed thread, reply then resolve:
 
 ```bash
-bash scripts/resolve-thread.sh "THREAD_ID" "Fixed — <description>"
+bash scripts/reply-thread.sh "THREAD_ID" "Fixed — <description>"
+bash scripts/resolve-thread.sh "THREAD_ID"
 ```
 
-Replies and resolves in one step. Exits non-zero if resolution fails.
+Split into two scripts for safe retries — if the reply succeeds but resolve
+fails, re-run only `resolve-thread.sh` (idempotent) without posting a duplicate.
 
 ### Step 7: Post summary comment
 

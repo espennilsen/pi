@@ -6,7 +6,7 @@ When enabled, requests to Anthropic, OpenAI, Google, xAI, OpenRouter, Groq, and 
 
 ## Setup
 
-Add to your global `~/.pi/agent/settings.json`:
+Add to your **global** `~/.pi/agent/settings.json`:
 
 ```json
 {
@@ -32,7 +32,7 @@ If `baseUrl` is not set or empty, the extension does nothing — requests go dir
 
 ## Custom Headers
 
-Add headers to all proxied requests:
+Add headers to all proxied requests (global settings only):
 
 ```json
 {
@@ -49,12 +49,11 @@ Header values can be environment variable names (resolved at request time by pi)
 
 ## Per-Provider Overrides
 
-Customize the path for specific providers, or disable proxying for a provider:
+Customize the path for specific providers, or disable proxying for a provider. This works in both global and project settings:
 
 ```json
 {
   "pi-proxy": {
-    "baseUrl": "https://proxy.example.com",
     "providers": {
       "anthropic": "/v1/anthropic",
       "google": false
@@ -66,14 +65,8 @@ Customize the path for specific providers, or disable proxying for a provider:
 - **String** — custom path suffix (e.g. `"/v1/anthropic"` → `https://proxy.example.com/v1/anthropic`)
 - **`false`** — skip proxying for that provider (requests go directly to the provider API)
 
-## Project Overrides
+## Security
 
-Project-level settings (`.pi/settings.json`) override global settings per-key:
-
-```json
-{
-  "pi-proxy": {
-    "baseUrl": "https://different-proxy.example.com"
-  }
-}
-```
+- **`baseUrl` and `headers` are global-only** — project-level `.pi/settings.json` cannot override them, preventing a malicious repo from redirecting LLM traffic
+- **HTTPS required** — `baseUrl` must use `https://`. `http://` is only allowed for `localhost` / `127.0.0.1` (local dev proxies)
+- Project settings can only configure `providers` (path overrides and exclusions)

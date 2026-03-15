@@ -1,7 +1,7 @@
 /**
  * pi-proxy — Route LLM API calls through a configurable proxy.
  *
- * Reads `pi-proxy.baseUrl` from settings.json (global or project).
+ * Reads `pi-proxy.baseUrl` from global settings.json.
  * When set, overrides the baseUrl for all known providers so requests
  * go through the proxy instead of directly to provider APIs.
  *
@@ -12,10 +12,14 @@
  * When `pi-proxy.baseUrl` is not set (or empty), the extension is
  * a no-op — requests go directly to provider APIs as usual.
  *
+ * Security:
+ *   - baseUrl and headers are global-only (project settings cannot override)
+ *   - baseUrl must use https:// (except localhost for local dev)
+ *   - Project settings can only configure per-provider path overrides
+ *
  * Optional per-provider path overrides via `pi-proxy.providers`:
  *   {
  *     "pi-proxy": {
- *       "baseUrl": "https://proxy.example.com",
  *       "providers": {
  *         "anthropic": "/v1/anthropic",
  *         "openai": false
@@ -43,11 +47,28 @@ const KNOWN_PROVIDERS = [
 	"mistral",
 ] as const;
 
+/** Check if a URL is a local address (localhost / 127.0.0.1 / [::1]). */
+function isLocalUrl(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		return parsed.hostname === "localhost"
+			|| parsed.hostname === "127.0.0.1"
+			|| parsed.hostname === "[::1]";
+	} catch {
+		return false;
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	const log = (event: string, data: unknown, level: string = "INFO") =>
 		pi.events.emit("log", { channel: CH, event, data, level });
 
-	const settings = resolveSettings();
+	const { settings, error } = resolveSettings();
+
+	if (error) {
+		log("error", { reason: "settings error", error }, "WARN");
+		return;
+	}
 
 	if (!settings.baseUrl) {
 		log("skip", { reason: "no baseUrl configured" });
@@ -55,6 +76,17 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	const baseUrl = settings.baseUrl.replace(/\/+$/, ""); // strip trailing slashes
+
+	// Validate URL scheme — require https:// unless it's a local dev proxy
+	if (!baseUrl.startsWith("https://") && !isLocalUrl(baseUrl)) {
+		log("error", {
+			reason: "baseUrl must use https:// (http:// allowed only for localhost)",
+			baseUrl,
+		}, "WARN");
+		return;
+	}
+
+	const hasHeaders = Object.keys(settings.headers).length > 0;
 	let proxiedCount = 0;
 
 	for (const provider of KNOWN_PROVIDERS) {
@@ -70,13 +102,21 @@ export default function (pi: ExtensionAPI) {
 		const path = typeof override === "string" ? override : `/${provider}`;
 		const providerUrl = `${baseUrl}${path}`;
 
-		pi.registerProvider(provider, {
-			baseUrl: providerUrl,
-			...(settings.headers ? { headers: settings.headers } : {}),
-		});
+		try {
+			pi.registerProvider(provider, {
+				baseUrl: providerUrl,
+				...(hasHeaders ? { headers: settings.headers } : {}),
+			});
 
-		log("proxied", { provider, url: providerUrl });
-		proxiedCount++;
+			log("proxied", { provider, url: providerUrl });
+			proxiedCount++;
+		} catch (err) {
+			log("register-error", {
+				provider,
+				url: providerUrl,
+				error: err instanceof Error ? err.message : String(err),
+			}, "WARN");
+		}
 	}
 
 	log("init", {

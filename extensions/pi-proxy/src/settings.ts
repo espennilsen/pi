@@ -3,13 +3,23 @@
  *
  * Reads from `pi-proxy` key in settings.json (global + project merge).
  *
- * Example settings.json:
+ * Security: `baseUrl` and `headers` are global-only settings. Project-level
+ * settings can only configure `providers` (path overrides / exclusions) to
+ * prevent a malicious repo from redirecting LLM traffic to an attacker server.
+ *
+ * Example global settings.json (~/.pi/agent/settings.json):
  *   {
  *     "pi-proxy": {
  *       "baseUrl": "https://proxy.example.com",
  *       "headers": {
  *         "X-Proxy-Auth": "MY_PROXY_TOKEN"
- *       },
+ *       }
+ *     }
+ *   }
+ *
+ * Example project settings.json (.pi/settings.json):
+ *   {
+ *     "pi-proxy": {
  *       "providers": {
  *         "openai": "/custom/openai/path",
  *         "google": false
@@ -21,14 +31,14 @@
 import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 export interface ProxySettings {
-	/** Base URL of the proxy server. Empty/undefined = no proxying. */
+	/** Base URL of the proxy server. Empty/undefined = no proxying. Global-only. */
 	baseUrl: string;
 
-	/** Optional headers to add to all proxied requests. Values can be env var names. */
+	/** Optional headers to add to all proxied requests. Values can be env var names. Global-only. */
 	headers: Record<string, string>;
 
 	/**
-	 * Per-provider overrides.
+	 * Per-provider overrides (global + project merged).
 	 * - string: custom path suffix (e.g. "/v1/anthropic")
 	 * - false: skip proxying for this provider
 	 * - undefined/missing: use default `/{provider}` path
@@ -36,7 +46,12 @@ export interface ProxySettings {
 	providers: Record<string, string | false>;
 }
 
-export function resolveSettings(): ProxySettings {
+export interface ResolveResult {
+	settings: ProxySettings;
+	error?: string;
+}
+
+export function resolveSettings(): ResolveResult {
 	const defaults: ProxySettings = {
 		baseUrl: "",
 		headers: {},
@@ -52,25 +67,18 @@ export function resolveSettings(): ProxySettings {
 		const g = global["pi-proxy"] ?? {};
 		const p = project["pi-proxy"] ?? {};
 
-		// Project settings override global
-		const baseUrl = typeof p.baseUrl === "string" ? p.baseUrl
-			: typeof g.baseUrl === "string" ? g.baseUrl
-			: "";
+		// baseUrl is global-only — project settings cannot override it
+		const baseUrl = typeof g.baseUrl === "string" ? g.baseUrl : "";
 
-		// Merge headers (project overrides global per-key)
+		// headers are global-only — project settings cannot override them
 		const headers: Record<string, string> = {};
 		if (g.headers && typeof g.headers === "object") {
 			for (const [k, v] of Object.entries(g.headers)) {
 				if (typeof v === "string") headers[k] = v;
 			}
 		}
-		if (p.headers && typeof p.headers === "object") {
-			for (const [k, v] of Object.entries(p.headers)) {
-				if (typeof v === "string") headers[k] = v;
-			}
-		}
 
-		// Merge provider overrides (project overrides global per-provider)
+		// Provider path overrides are merged (project overrides global per-provider)
 		const providers: Record<string, string | false> = {};
 		for (const src of [g.providers, p.providers]) {
 			if (src && typeof src === "object") {
@@ -82,8 +90,11 @@ export function resolveSettings(): ProxySettings {
 			}
 		}
 
-		return { baseUrl, headers, providers };
-	} catch {
-		return defaults;
+		return { settings: { baseUrl, headers, providers } };
+	} catch (err) {
+		return {
+			settings: defaults,
+			error: err instanceof Error ? err.message : String(err),
+		};
 	}
 }

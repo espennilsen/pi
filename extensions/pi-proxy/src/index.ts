@@ -88,6 +88,8 @@ export default function (pi: ExtensionAPI) {
 
 	const hasHeaders = Object.keys(settings.headers).length > 0;
 	let proxiedCount = 0;
+	let disabledCount = 0;
+	let errorCount = 0;
 
 	for (const provider of KNOWN_PROVIDERS) {
 		const override = settings.providers[provider];
@@ -95,11 +97,13 @@ export default function (pi: ExtensionAPI) {
 		// Explicitly disabled
 		if (override === false) {
 			log("skip-provider", { provider, reason: "disabled" });
+			disabledCount++;
 			continue;
 		}
 
-		// Build the provider URL
-		const path = typeof override === "string" ? override : `/${provider}`;
+		// Build the provider URL — normalize leading slash on custom paths
+		const rawPath = typeof override === "string" ? override : `/${provider}`;
+		const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
 		const providerUrl = `${baseUrl}${path}`;
 
 		try {
@@ -116,12 +120,14 @@ export default function (pi: ExtensionAPI) {
 				url: providerUrl,
 				error: err instanceof Error ? err.message : String(err),
 			}, "WARN");
+			errorCount++;
 		}
 	}
 
 	log("init", {
 		baseUrl,
 		proxied: proxiedCount,
-		skipped: KNOWN_PROVIDERS.length - proxiedCount,
+		disabled: disabledCount,
+		errors: errorCount,
 	});
 }

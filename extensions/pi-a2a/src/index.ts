@@ -178,6 +178,12 @@ export default function (pi: ExtensionAPI) {
 		// Wait for agent to finish any current turn
 		await waitForIdle();
 
+		// Re-check after the await — another caller may have slipped through
+		// while both were parked in waitForIdle().
+		if (pendingResolve) {
+			return { ok: false, response: "", error: "A2A request already in progress — concurrent invocation rejected", durationMs: 0 };
+		}
+
 		return new Promise<ProcessResult>((resolve) => {
 			const nonce = randomUUID();
 			pendingResolve = resolve;

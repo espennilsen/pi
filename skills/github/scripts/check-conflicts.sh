@@ -23,7 +23,7 @@ if [ ${#targets[@]} -eq 0 ]; then
 fi
 
 # Search for conflict markers (must be at start of line)
-matches=$(grep -Ern "^<<<<<<< |^=======$|^>>>>>>> " "${targets[@]}" 2>/dev/null || true)
+matches=$(grep -Ern "^<<<<<<< |^=======$|^>>>>>>> " -- "${targets[@]}" 2>/dev/null || true)
 
 if [ -z "$matches" ]; then
   echo "✅ No conflict markers found."

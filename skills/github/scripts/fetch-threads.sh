@@ -42,6 +42,7 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
 
 # Paginate through all review threads
 all_threads='[]'
+pr_meta=""
 cursor=""
 has_next="true"
 

@@ -136,12 +136,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 				return;
 			}
 
-			// Broadcast user message so the frontend can render it immediately
 			const trimmed = prompt.trim();
-			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
-
-			json(res, 202, { status: "accepted" });
 			_pi.sendUserMessage(trimmed);
+
+			// Broadcast only after sendUserMessage succeeds — avoids ghost bubbles on failure
+			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
+			json(res, 202, { status: "accepted" });
 		} catch (err: any) {
 			if (err.message === "Body too large") {
 				json(res, 413, { error: "Request body too large (max 1MB)" });

@@ -99,11 +99,22 @@ export async function sendA2AMessage(
 					if (!retried && onRefreshCredential) {
 						retried = true;
 						log("credential_retry_via_auth_handler", { url });
-						const fresh = await onRefreshCredential();
-						if (fresh) {
-							currentCredential = fresh;
-							sawUnauthorized = false; // reset — retry may succeed
-							return { Authorization: `Bearer ${fresh}` };
+						try {
+							const fresh = await onRefreshCredential();
+							if (fresh) {
+								currentCredential = fresh;
+								// Don't reset sawUnauthorized here — the retry hasn't
+								// fired yet. onSuccessfulRetry will clear it if the
+								// retry succeeds; if it fails, the flag stays true so
+								// the caller gets { unauthorized: true }.
+								return { Authorization: `Bearer ${fresh}` };
+							}
+						} catch (refreshErr) {
+							// Refresh failed (e.g. network error) — not an auth
+							// rejection from the remote agent. Reset the flag so
+							// the catch block doesn't misclassify this as a 401.
+							sawUnauthorized = false;
+							throw refreshErr;
 						}
 					}
 				}

@@ -12,8 +12,9 @@ set -euo pipefail
 if [ $# -gt 0 ]; then
   targets=("$@")
 else
-  # All tracked files, excluding node_modules
-  mapfile -t targets < <(git ls-files | grep -v node_modules)
+  # All tracked files, excluding node_modules (bash 3.2-compatible)
+  targets=()
+  while IFS= read -r f; do targets+=("$f"); done < <(git ls-files | grep -v node_modules)
 fi
 
 if [ ${#targets[@]} -eq 0 ]; then
@@ -22,7 +23,7 @@ if [ ${#targets[@]} -eq 0 ]; then
 fi
 
 # Search for conflict markers (must be at start of line)
-matches=$(grep -rn "^<<<<<<< \|^=======$\|^>>>>>>> " "${targets[@]}" 2>/dev/null || true)
+matches=$(grep -Ern "^<<<<<<< |^=======$|^>>>>>>> " "${targets[@]}" 2>/dev/null || true)
 
 if [ -z "$matches" ]; then
   echo "✅ No conflict markers found."

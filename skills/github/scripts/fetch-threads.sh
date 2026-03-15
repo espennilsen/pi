@@ -40,22 +40,48 @@ query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
   }
 }'
 
-response=$(gh api graphql \
-  -f query="$query" \
-  -F owner="$owner" \
-  -F repo="$repo" \
-  -F prNumber="$pr_number")
+# Paginate through all review threads
+all_threads='[]'
+cursor=""
+has_next="true"
+
+while [ "$has_next" = "true" ]; do
+  cursor_args=()
+  if [ -n "$cursor" ]; then
+    cursor_args=(-f cursor="$cursor")
+  fi
+
+  response=$(gh api graphql \
+    -f query="$query" \
+    -F owner="$owner" \
+    -F repo="$repo" \
+    -F prNumber="$pr_number" \
+    "${cursor_args[@]}")
+
+  # Extract PR metadata on first page
+  if [ -z "$pr_meta" ]; then
+    pr_meta=$(echo "$response" | jq '{
+      number: .data.repository.pullRequest.number,
+      title: .data.repository.pullRequest.title,
+      branch: .data.repository.pullRequest.headRefName,
+      url: .data.repository.pullRequest.url
+    }')
+  fi
+
+  # Append this page's thread nodes
+  page_threads=$(echo "$response" | jq '[.data.repository.pullRequest.reviewThreads.nodes[]]')
+  all_threads=$(jq -n --argjson existing "$all_threads" --argjson page "$page_threads" '$existing + $page')
+
+  # Check pagination
+  has_next=$(echo "$response" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
+  cursor=$(echo "$response" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+done
 
 # Filter to unresolved threads with at least one comment, output clean JSON
-echo "$response" | jq '{
-  pr: {
-    number: .data.repository.pullRequest.number,
-    title: .data.repository.pullRequest.title,
-    branch: .data.repository.pullRequest.headRefName,
-    url: .data.repository.pullRequest.url
-  },
+jq -n --argjson pr "$pr_meta" --argjson threads "$all_threads" '{
+  pr: $pr,
   threads: [
-    .data.repository.pullRequest.reviewThreads.nodes[]
+    $threads[]
     | select(.isResolved == false)
     | select(.comments.nodes | length > 0)
     | {

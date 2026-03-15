@@ -1,0 +1,25 @@
+{
+	"providers": {
+		"anthropic": {
+			"baseUrl": "http://ai-proxy.e9n.dev/anthropic"
+		},
+		"openai": {
+			"baseUrl": "http://ai-proxy.e9n.dev/openai"
+		},
+		"google": {
+			"baseUrl": "http://ai-proxy.e9n.dev/google"
+		},
+		"xai": {
+			"baseUrl": "http://ai-proxy.e9n.dev/xai"
+		},
+		"openrouter": {
+			"baseUrl": "http://ai-proxy.e9n.dev/openrouter"
+		},
+		"groq": {
+			"baseUrl": "http://ai-proxy.e9n.dev/groq"
+		},
+		"mistral": {
+			"baseUrl": "http://ai-proxy.e9n.dev/mistral"
+		}
+	}
+}

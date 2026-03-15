@@ -19,10 +19,12 @@ Orchestrator agent (root)
   └── pr-93-worker  (has: send_message to parent, full tool access)
 ```
 
-- **Orchestrator** — spawns workers, relays human questions via `ask_owner`,
-  collects results, reports summary
-- **Workers** — each owns one PR. Fetches threads, triages, auto-fixes what's
-  clear, escalates what's ambiguous, commits and pushes, resolves threads
+- **Orchestrator** — spawns workers with only PR identifiers (repo + number +
+  worktree path), relays human questions via `ask_owner`, collects results,
+  reports summary. Does NOT fetch threads — that's the worker's job.
+- **Workers** — each owns one PR end-to-end. Fetches its own threads via
+  `fetch-threads.sh`, triages, auto-fixes what's clear, escalates what's
+  ambiguous, commits and pushes, resolves threads. Fully self-contained.
 
 ## Worker Triage Protocol
 
@@ -94,13 +96,35 @@ Each worker follows this sequence:
 11. Final push + resolve remaining threads
 ```
 
+## What the orchestrator passes to workers
+
+The orchestrator (or main agent) passes **only identifiers** — never
+pre-fetched thread content. Each worker is self-contained and fetches its
+own data:
+
+```
+Worker receives:
+  - repo owner + name (e.g. espennilsen/pi)
+  - PR number (e.g. 97)
+  - worktree path (e.g. /path/to/worktrees/td-b0c03c/github-skills)
+  - skill reference (skills/github)
+
+Worker does everything else:
+  - Fetches threads via fetch-threads.sh
+  - Reads code, understands context
+  - Triages, fixes, commits, pushes, resolves
+```
+
+This keeps the orchestrator lightweight — it doesn't need to understand the
+review content, just route PR identifiers to workers and relay escalations.
+
 ## Spawning with orchestrator mode
 
 ```json
 {
   "orchestrator": {
     "agent": "worker",
-    "task": "Fix review feedback on these PRs in parallel. For each PR, spawn a worker agent. Workers should auto-fix straightforward threads (suggestions, warnings, obvious bugs) without asking. Escalate ambiguous or risky threads to me — I'll relay to the human via ask_owner. Each PR has its own worktree.\n\nPRs to fix:\n- PR #97: espennilsen/pi, worktree: /path/to/worktrees/td-b0c03c/github-skills\n- PR #95: espennilsen/pi, worktree: /path/to/worktrees/td-xyz/feature\n- PR #93: espennilsen/pi, worktree: /path/to/worktrees/td-abc/other",
+    "task": "Fix review feedback on these PRs in parallel. For each PR, spawn a worker agent with the repo, PR number, and worktree path. Workers fetch their own threads, auto-fix straightforward ones, and escalate ambiguous threads to me — I'll relay to the human via ask_owner.\n\nPRs to fix:\n- PR #97: espennilsen/pi, worktree: /path/to/worktrees/td-b0c03c/github-skills\n- PR #95: espennilsen/pi, worktree: /path/to/worktrees/td-xyz/feature\n- PR #93: espennilsen/pi, worktree: /path/to/worktrees/td-abc/other",
     "skills": ["skills/github"]
   }
 }
@@ -108,16 +132,17 @@ Each worker follows this sequence:
 
 ## Spawning with pool mode
 
-For more manual control, use pool actions:
+For more manual control, use pool actions. Pass only identifiers — workers
+pull their own threads:
 
 ```json
 { "action": "spawn", "id": "pr-97", "agent": "worker",
   "skills": ["skills/github"],
-  "task": "Fix review feedback on PR #97 (espennilsen/pi). Worktree: /path/to/worktrees/td-b0c03c/github-skills. Fetch unresolved threads, auto-fix straightforward ones, report back what you fixed and what needs human input." }
+  "task": "Fix review feedback on PR #97 (espennilsen/pi). Worktree: /path/to/worktrees/td-b0c03c/github-skills. Fetch unresolved threads yourself using fetch-threads.sh, auto-fix straightforward ones, report back what you fixed and what needs human input." }
 
 { "action": "spawn", "id": "pr-95", "agent": "worker",
   "skills": ["skills/github"],
-  "task": "Fix review feedback on PR #95 (espennilsen/pi). Worktree: /path/to/worktrees/td-xyz/feature. Fetch unresolved threads, auto-fix straightforward ones, report back what you fixed and what needs human input." }
+  "task": "Fix review feedback on PR #95 (espennilsen/pi). Worktree: /path/to/worktrees/td-xyz/feature. Fetch unresolved threads yourself using fetch-threads.sh, auto-fix straightforward ones, report back what you fixed and what needs human input." }
 ```
 
 Then review and follow up:
@@ -148,6 +173,8 @@ Clean up after merge:
 
 ## Rules
 
+- **Workers fetch their own threads** — the orchestrator passes only PR
+  identifiers (repo, number, worktree path), never pre-fetched thread data
 - **One worker per PR** — never share worktrees between workers
 - **Auto-fix the obvious** — don't block on threads that have clear fixes
 - **Escalate the ambiguous** — don't guess on architectural decisions or

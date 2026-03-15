@@ -95,7 +95,7 @@ For each conflicted file:
 
 ```bash
 # Check no conflict markers remain
-grep -rn "^<<<<<<< \|^=======\|^>>>>>>>" <files>
+bash scripts/check-conflicts.sh <files>
 
 # Typecheck
 npx tsc --noEmit

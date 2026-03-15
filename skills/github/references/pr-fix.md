@@ -18,27 +18,11 @@ Use when threads are already provided (pasted by user or from a review bot).
 ### Step 1: Get unresolved threads
 
 ```bash
-gh api graphql -f query='
-query($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $prNumber) {
-      reviewThreads(first: 100, after: $cursor) {
-        nodes {
-          id
-          isResolved
-          path
-          line
-          comments(first: 20) {
-            nodes { author { login } body createdAt }
-          }
-        }
-      }
-    }
-  }
-}' -F owner=OWNER -F repo=REPO -F prNumber=NUMBER
+bash scripts/fetch-threads.sh <owner> <repo> <pr-number>
 ```
 
-Filter to `isResolved: false` threads only.
+Returns JSON with PR info and unresolved threads (id, path, line, author, body).
+Only includes threads that are unresolved and have comments.
 
 ### Step 2: Present assessment
 
@@ -80,20 +64,10 @@ git push origin <branch>
 For each fixed thread:
 
 ```bash
-# Reply
-gh api graphql -f query='mutation {
-  addPullRequestReviewThreadReply(input: {
-    pullRequestReviewThreadId: "THREAD_ID",
-    body: "Fixed — <description>"
-  }) { comment { id } }
-}'
-
-# Resolve
-gh api graphql -f query='mutation {
-  resolveReviewThread(input: { threadId: "THREAD_ID" })
-  { thread { isResolved } }
-}'
+bash scripts/resolve-thread.sh "THREAD_ID" "Fixed — <description>"
 ```
+
+Replies and resolves in one step. Exits non-zero if resolution fails.
 
 ### Step 7: Post summary comment
 

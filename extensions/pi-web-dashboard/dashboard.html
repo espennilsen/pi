@@ -799,7 +799,7 @@ function handleSSE(d) {
     case 'tool_end': {
       messageStore.addToolResult(d.toolCallId, d.toolName, d.isError, d.content);
       // Legacy live rendering
-      const previewText = d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80);
+      const previewText = (d.content ?? []).filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80);
       if (d.isError) {
         appendLiveTool(
           '<div class="tool-line">└ <span class="tool-badge error">error</span> ' + esc(d.toolName) + '</div>'

@@ -64,7 +64,7 @@ For complex PR operations, see the reference docs:
   Read when fixing unresolved review feedback, resolving threads, or using `/gh-pr-fix`.
 
 - **Merging PRs** — [references/pr-merge.md](references/pr-merge.md)
-  Read when merging a PR, cleaning up branches/worktrees, or using `/gh-pr-merge`.
+  Read when merging a PR, resolving merge conflicts, cleaning up branches/worktrees, or using `/gh-pr-merge`.
 
 - **Creating PRs** — [references/pr-create.md](references/pr-create.md)
   Read when creating a PR with a generated summary, or using `/gh-pr-create`.

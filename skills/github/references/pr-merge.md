@@ -57,6 +57,57 @@ git branch -D <branch>
 git fetch --prune
 ```
 
+## Resolving Merge Conflicts
+
+When a PR has merge conflicts (GitHub shows "CONFLICTING" / "DIRTY"):
+
+### Step 1: Go to the PR's worktree
+
+```bash
+cd ../pi-worktrees/<task-id>/<name>
+```
+
+### Step 2: Fetch and merge main
+
+```bash
+git fetch origin main
+git merge origin/main
+```
+
+### Step 3: Resolve conflicts
+
+For each conflicted file:
+
+1. Read the file — look for `<<<<<<<`, `=======`, `>>>>>>>` markers
+2. Understand both sides: HEAD (PR branch) vs origin/main
+3. Decide which version to keep, or combine both
+4. Remove all conflict markers
+5. Repeat for all conflicted files
+
+**Resolution strategy:**
+- Take main's version for improvements that landed after the PR (bug fixes,
+  refactors, security hardening)
+- Keep the PR's version for the feature being added
+- Combine when both sides changed the same area for different reasons
+- Watch for duplicate code left after conflict blocks (git leaves both sides)
+
+### Step 4: Verify and commit
+
+```bash
+# Check no conflict markers remain
+grep -rn "^<<<<<<< \|^=======\|^>>>>>>>" <files>
+
+# Typecheck
+npx tsc --noEmit
+
+# Stage and commit
+git add <files>
+git commit -m "fix: resolve merge conflicts with main"
+git push origin <branch>
+```
+
+**Never merge without user confirmation** after resolving conflicts.
+
 ## Edge Cases
 
 | Situation | Behavior |

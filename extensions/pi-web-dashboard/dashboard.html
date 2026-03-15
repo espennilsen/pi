@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pi — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" integrity="sha384-JEyTNhjM6R1ElGoJns4U2Ln4ofPcqzSsynQkmEc/KGy6336qAZl70tDLufbkla+3" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.3/dist/purify.min.js" integrity="sha384-pcBjnGbkyKeOXaoFkmJiuR9E08/6gkmus6/Strimnxtl3uk0Hx23v345pWyC/MMr" crossorigin="anonymous"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/github-dark-dimmed.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <style>
@@ -115,7 +115,10 @@
   @keyframes chatFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   .chat-role { font-size: 11px; font-weight: 600; color: var(--fg3); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.4px; }
 
-  /* User bubble */
+  /* Shared bubble base */
+  .chat-bubble { word-break: break-word; }
+
+  /* User bubble — pre-wrap preserves whitespace in plain-text input */
   .chat-user { display: flex; flex-direction: column; align-items: flex-end; }
   .chat-bubble-user {
     background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px;
@@ -392,8 +395,9 @@ function renderMarkdown(text) {
     const html = marked.parse(text);
     // Sanitize to prevent XSS from LLM-produced or injected content
     if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
-    if (!renderMarkdown._warned) { console.warn('[dashboard] DOMPurify unavailable — markdown output is unsanitized'); renderMarkdown._warned = true; }
-    return html;
+    // Hard fallback: render as plain text rather than unsanitized HTML
+    if (!renderMarkdown._warned) { console.warn('[dashboard] DOMPurify unavailable — falling back to plain text'); renderMarkdown._warned = true; }
+    return '<pre>' + esc(text) + '</pre>';
   }
   catch { return '<p>'+esc(text)+'</p>'; }
 }

@@ -66,6 +66,43 @@ function fmtDuration(ms: number): string {
 	return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+/**
+ * Validate a reply URL for SSRF safety.
+ *
+ * Accepts https:// URLs unconditionally.
+ * Accepts http:// only for localhost (127.0.0.1, [::1], localhost).
+ * Rejects everything else: private/link-local IPs, non-http(s) schemes, invalid URLs.
+ *
+ * Returns the validated URL string, or null if rejected.
+ */
+function validateReplyUrl(url: string): string | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return null;
+	}
+
+	// Only allow http(s) schemes
+	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+		return null;
+	}
+
+	// https is always allowed
+	if (parsed.protocol === "https:") {
+		return url;
+	}
+
+	// http: only allowed for localhost
+	const hostname = parsed.hostname;
+	if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+		return url;
+	}
+
+	// Reject http to anything else (private IPs, link-local, public hosts)
+	return null;
+}
+
 /** Extract text content from the last assistant message. */
 function extractAssistantText(messages: AgentMessage[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -408,9 +445,6 @@ export default function (pi: ExtensionAPI) {
 
 		// When a long-running task completes, send the result back to the sender
 		// as a new A2A message. The initial HTTP response already returned a
-		// "working" ACK — this delivers the actual content.
-		// When a long-running task completes, send the result back to the sender
-		// as a new A2A message. The initial HTTP response already returned a
 		// "working" ACK — this delivers the actual content (or error).
 		executor.onAsyncResult = (asyncResult: AsyncTaskResult) => {
 			const { taskId, senderName, senderUrl, result } = asyncResult;
@@ -420,19 +454,40 @@ export default function (pi: ExtensionAPI) {
 				? result.response
 				: `❌ Task failed: ${result.error ?? "Unknown error"}`;
 
-			// Resolve sender's URL and credential using the same priority order as a2a_send:
-			// 1. senderUrl from pi:sender metadata (most reliable — set by the actual caller)
-			// 2. staticRegistry (locally configured agents)
-			// 3. discoveredAgents (cached from hub discovery)
-			// 4. Hub lookup by name (last resort)
+			// Resolve sender's URL and credential. Priority:
+			// 1. Match senderUrl against known agents (static registry + discovered hub agents)
+			// 2. Match senderName against known agents (static registry + discovered hub agents)
+			// 3. Fall back to validated senderUrl (SSRF-safe: https required, no private IPs)
 			(async () => {
-				let replyUrl: string | null = senderUrl ?? null;
+				let replyUrl: string | null = null;
 				let credential: string | null = null;
 				let agentId: string | null = null;
+				const senderLower = senderName.toLowerCase();
 
+				// If senderUrl is provided, try to match it against known agents first.
+				// This validates the URL is legitimate without trusting it blindly.
+				if (senderUrl) {
+					if (staticRegistry) {
+						const staticMatch = staticRegistry.findByUrl(senderUrl);
+						if (staticMatch) {
+							replyUrl = staticMatch.config.url;
+							credential = staticMatch.config.apiKey ?? null;
+						}
+					}
+					if (!replyUrl) {
+						const normalizedSender = senderUrl.replace(/\/+$/, "");
+						const hubMatch = discoveredAgents.find(
+							(a) => a.url.replace(/\/+$/, "") === normalizedSender,
+						);
+						if (hubMatch) {
+							replyUrl = hubMatch.url;
+							agentId = hubMatch.id;
+						}
+					}
+				}
+
+				// Fall back to name-based lookup in known agents
 				if (!replyUrl) {
-					// Try static agents
-					const senderLower = senderName.toLowerCase();
 					if (staticRegistry) {
 						const staticMatch = staticRegistry.findByName(senderName);
 						if (staticMatch) {
@@ -440,8 +495,6 @@ export default function (pi: ExtensionAPI) {
 							credential = staticMatch.config.apiKey ?? null;
 						}
 					}
-
-					// Try discovered hub agents
 					if (!replyUrl) {
 						const hubMatch = discoveredAgents.find((a) => a.name.toLowerCase() === senderLower);
 						if (hubMatch) {
@@ -449,14 +502,16 @@ export default function (pi: ExtensionAPI) {
 							agentId = hubMatch.id;
 						}
 					}
+				}
 
-					// Try hub lookup by name
-					if (!replyUrl && config.hub) {
-						const detail = await getAgentFromHub(senderName, config.hub, log);
-						if (detail) {
-							replyUrl = (detail.agentCard as { url?: string }).url ?? null;
-							agentId = detail.id;
-						}
+				// Last resort: use senderUrl directly, but only after SSRF validation.
+				// Require https in production; allow http only for localhost/127.0.0.1.
+				if (!replyUrl && senderUrl) {
+					const validated = validateReplyUrl(senderUrl);
+					if (validated) {
+						replyUrl = validated;
+					} else {
+						log("async_result_url_rejected", { taskId, sender: senderName, senderUrl }, "WARN");
 					}
 				}
 

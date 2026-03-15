@@ -65,9 +65,25 @@ export default function (pi: ExtensionAPI) {
 	/** Status pill key used for all Pi status updates. */
 	const STATUS_KEY = "pi";
 
+	/**
+	 * Debounce timer for "Ready for input" notification.
+	 * Prevents spurious notifications when agent loops restart quickly
+	 * (back-to-back prompts, A2A injections, rapid loop splits).
+	 */
+	let notifyTimer: ReturnType<typeof setTimeout> | null = null;
+	const NOTIFY_DEBOUNCE_MS = 2000;
+
+	function cancelPendingNotify(): void {
+		if (notifyTimer) {
+			clearTimeout(notifyTimer);
+			notifyTimer = null;
+		}
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		// Clear stale browser surface tracking from previous sessions
 		resetBrowserState();
+		cancelPendingNotify();
 
 		// Set workspace name from session
 		const name = pi.getSessionName();
@@ -87,6 +103,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", () => {
+		// Cancel any pending "Ready for input" notification — agent is working again
+		cancelPendingNotify();
 		turnCount = 0;
 		safe(() => client.setStatus(STATUS_KEY, "thinking..."));
 	});
@@ -95,8 +113,15 @@ export default function (pi: ExtensionAPI) {
 		safe(() => client.clearProgress());
 		safe(() => client.setStatus(STATUS_KEY, "idle"));
 
-		// Notify user that agent is done and needs attention
-		safe(() => client.notify("Pi", "Ready for input"));
+		// Debounce notification — only notify if agent stays idle.
+		// If agent_start fires again within the window (e.g. back-to-back
+		// prompts, A2A messages, sendMessage injections), the notification
+		// is cancelled and the user isn't interrupted.
+		cancelPendingNotify();
+		notifyTimer = setTimeout(() => {
+			notifyTimer = null;
+			safe(() => client.notify("Pi", "Ready for input"));
+		}, NOTIFY_DEBOUNCE_MS);
 	});
 
 	pi.on("tool_execution_start", (event) => {
@@ -119,6 +144,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		cancelPendingNotify();
 		await Promise.allSettled([
 			client.clearStatus(STATUS_KEY),
 			client.clearProgress(),

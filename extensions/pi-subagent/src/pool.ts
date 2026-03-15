@@ -294,6 +294,7 @@ export class AgentPool {
 			.catch(err => {
 				op.settled = true;
 				op.error = err instanceof Error ? err : new Error(String(err));
+				entry.node.state = "idle";
 			})
 			.finally(() => {
 				if (fromId) this.router.clearWaiting(fromId);
@@ -337,9 +338,10 @@ export class AgentPool {
 		const racePromises: Promise<void>[] = ops.map(op => op.promise);
 
 		if (timeout && timeout > 0) {
-			const timeoutPromise = new Promise<void>((_, reject) =>
-				setTimeout(() => reject(new Error(`Wait timed out after ${timeout}ms`)), timeout),
-			);
+			let timer: ReturnType<typeof setTimeout>;
+			const timeoutPromise = new Promise<void>((_, reject) => {
+				timer = setTimeout(() => reject(new Error(`Wait timed out after ${timeout}ms`)), timeout);
+			});
 			try {
 				await Promise.race([...racePromises, timeoutPromise]);
 			} catch (err: any) {
@@ -350,6 +352,8 @@ export class AgentPool {
 					throw err;
 				}
 				// Op failure — that's fine, it settled with an error
+			} finally {
+				clearTimeout(timer!);
 			}
 		} else {
 			try {

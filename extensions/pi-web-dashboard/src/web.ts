@@ -137,10 +137,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 			}
 
 			const trimmed = prompt.trim();
-			_pi.sendUserMessage(trimmed);
 
-			// Broadcast user message after sendUserMessage succeeds — avoids
-			// phantom messages in the UI if sendUserMessage throws.
+			// Send to agent first — only broadcast + respond if it doesn't throw.
+			// This avoids phantom user bubbles in the UI on delivery failure.
+			try {
+				_pi.sendUserMessage(trimmed);
+			} catch (sendErr: unknown) {
+				const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+				json(res, 500, { error: `Agent rejected message: ${msg}` });
+				return;
+			}
+
 			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
 			json(res, 202, { status: "accepted" });
 		} catch (err: any) {

@@ -15,7 +15,7 @@
  *   agent_end     — { type, time }
  *   user_message  — { type, text, time }
  *   turn_start    — { type, turn }
- *   turn_end      — { type, turn, content[], stopReason?, toolResults }
+ *   turn_end      — { type, turn, content[], toolResults }
  *   tool_start    — { type, toolName, toolCallId, input? }
  *   tool_end      — { type, toolName, toolCallId, isError, content }
  */
@@ -23,6 +23,29 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { mountDashboard, unmountDashboard, broadcast } from "./web.ts";
 import { createLogger } from "./logger.ts";
+
+/** Max characters per text content block in SSE payloads. */
+const MAX_TEXT_CHARS = 8_192;
+
+/** Max characters for serialized tool input in SSE payloads. */
+const MAX_INPUT_CHARS = 4_096;
+
+/** Truncate a string to a character limit, appending "…" if clipped. */
+function truncate(s: string, maxChars: number): string {
+	if (s.length <= maxChars) return s;
+	return s.slice(0, maxChars) + "…";
+}
+
+/** Serialize and truncate a tool input to a JSON string within a character limit. */
+function truncateInput(input: unknown, maxChars: number): string | undefined {
+	if (input == null) return undefined;
+	try {
+		const json = JSON.stringify(input);
+		return truncate(json, maxChars);
+	} catch {
+		return undefined;
+	}
+}
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -61,9 +84,9 @@ export default function (pi: ExtensionAPI) {
 			for (const block of msg.content) {
 				const b = block as Record<string, unknown>;
 				if (b.type === "text") {
-					content.push({ type: "text", text: b.text ?? "" });
+					content.push({ type: "text", text: truncate(String(b.text ?? ""), MAX_TEXT_CHARS) });
 				} else if (b.type === "thinking") {
-					content.push({ type: "thinking", thinking: b.thinking ?? "" });
+					content.push({ type: "thinking", thinking: truncate(String(b.thinking ?? ""), MAX_TEXT_CHARS) });
 				} else if (b.type === "tool_use") {
 					content.push({
 						type: "tool_use",
@@ -75,33 +98,33 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// Note: TurnEndEvent does not carry stopReason (verified against type def).
 		broadcast({
 			type: "turn_end",
 			turn: event.turnIndex,
 			content,
-			stopReason: (event as unknown as Record<string, unknown>).stopReason ?? undefined,
 			toolResults: event.toolResults.length,
 		});
 	});
 
-	// Tool calls — include input params for the frontend to show what the tool received
+	// Tool calls — include input params (capped) for debugging visibility
 	pi.on("tool_call", async (event) => {
 		broadcast({
 			type: "tool_start",
 			toolName: event.toolName,
 			toolCallId: event.toolCallId,
-			input: event.input ?? undefined,
+			input: truncateInput(event.input, MAX_INPUT_CHARS),
 		});
 	});
 
-	// Tool results — send full content (not just a 200-char preview) and correlate with toolCallId
+	// Tool results — send content (capped per block) and correlate with toolCallId
 	pi.on("tool_result", async (event) => {
 		// Build structured content array from the result
 		const content: unknown[] = [];
 		for (const c of event.content) {
 			const block = c as unknown as Record<string, unknown>;
 			if (block.type === "text") {
-				content.push({ type: "text", text: block.text ?? "" });
+				content.push({ type: "text", text: truncate(String(block.text ?? ""), MAX_TEXT_CHARS) });
 			} else if (block.type === "image") {
 				content.push({ type: "image" }); // Don't send binary data over SSE
 			} else {
@@ -112,7 +135,7 @@ export default function (pi: ExtensionAPI) {
 		broadcast({
 			type: "tool_end",
 			toolName: event.toolName,
-			toolCallId: (event as unknown as Record<string, unknown>).toolCallId ?? undefined,
+			toolCallId: event.toolCallId,
 			isError: event.isError,
 			content,
 		});

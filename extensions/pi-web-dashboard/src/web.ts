@@ -123,39 +123,39 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 			return;
 		}
 
-		let prompt: string;
 		try {
 			const body = await readBody(req, 1_048_576);
-			prompt = JSON.parse(body).prompt;
+			const { prompt } = JSON.parse(body);
+			if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+				json(res, 400, { error: "Missing prompt" });
+				return;
+			}
+
+			if (!_pi) {
+				json(res, 503, { error: "Agent not ready" });
+				return;
+			}
+
+			const trimmed = prompt.trim();
+
+			// Send to agent first — only broadcast + respond if it doesn't throw.
+			// This avoids phantom user bubbles in the UI on delivery failure.
+			try {
+				_pi.sendUserMessage(trimmed);
+			} catch (sendErr: unknown) {
+				const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+				json(res, 500, { error: `Agent rejected message: ${msg}` });
+				return;
+			}
+
+			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
+			json(res, 202, { status: "accepted" });
 		} catch (err: any) {
 			if (err.message === "Body too large") {
 				json(res, 413, { error: "Request body too large (max 1MB)" });
 			} else {
 				json(res, 400, { error: "Invalid JSON" });
 			}
-			return;
-		}
-
-		if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-			json(res, 400, { error: "Missing prompt" });
-			return;
-		}
-
-		if (!_pi) {
-			json(res, 503, { error: "Agent not ready" });
-			return;
-		}
-
-		try {
-			const trimmed = prompt.trim();
-			// sendUserMessage is synchronous (void) — it queues the message for the agent loop.
-			// Called before broadcast to avoid ghost bubbles if it throws.
-			_pi.sendUserMessage(trimmed);
-
-			broadcast({ type: "user_message", text: trimmed, time: new Date().toISOString() });
-			json(res, 202, { status: "accepted" });
-		} catch {
-			json(res, 500, { error: "Failed to send message" });
 		}
 		return;
 	}

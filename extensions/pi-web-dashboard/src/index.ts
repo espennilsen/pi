@@ -15,7 +15,7 @@
  *   agent_end     — { type, time }
  *   user_message  — { type, text, time }
  *   turn_start    — { type, turn }
- *   turn_end      — { type, turn, content[], stopReason?, toolResults }
+ *   turn_end      — { type, turn, content[], toolResults }
  *   tool_start    — { type, toolName, toolCallId, input? }
  *   tool_end      — { type, toolName, toolCallId, isError, content }
  */
@@ -24,15 +24,16 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { mountDashboard, unmountDashboard, broadcast } from "./web.ts";
 import { createLogger } from "./logger.ts";
 
-/** Cap for text content in SSE payloads (tool results, thinking blocks). */
+/** Max characters per text content block in SSE payloads. */
 const MAX_TEXT_CHARS = 8_192;
 
-/** Cap for serialized tool input JSON in SSE payloads. */
+/** Max characters for serialized tool input in SSE payloads. */
 const MAX_INPUT_CHARS = 4_096;
 
+/** Truncate a string to a character limit, appending "…" if clipped. */
 function truncate(s: string, maxChars: number): string {
 	if (s.length <= maxChars) return s;
-	return s.slice(0, maxChars) + `… [truncated, ${s.length - maxChars} more chars]`;
+	return s.slice(0, maxChars) + "…";
 }
 
 /** Serialize and truncate a tool input to a JSON string within a character limit. */
@@ -97,16 +98,16 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
+		// Note: TurnEndEvent does not carry stopReason (verified against type def).
 		broadcast({
 			type: "turn_end",
 			turn: event.turnIndex,
 			content,
-			stopReason: (event as unknown as Record<string, unknown>).stopReason ?? undefined,
 			toolResults: event.toolResults.length,
 		});
 	});
 
-	// Tool calls — include input params for the frontend to show what the tool received
+	// Tool calls — include input params (capped) for debugging visibility
 	pi.on("tool_call", async (event) => {
 		broadcast({
 			type: "tool_start",
@@ -134,7 +135,7 @@ export default function (pi: ExtensionAPI) {
 		broadcast({
 			type: "tool_end",
 			toolName: event.toolName,
-			toolCallId: (event as unknown as Record<string, unknown>).toolCallId ?? undefined,
+			toolCallId: event.toolCallId,
 			isError: event.isError,
 			content,
 		});

@@ -54,6 +54,18 @@
   .section { margin-bottom: 24px; }
 
   /* ── Live session ───────────────────────────────────── */
+  /* ── View tabs ───────────────────────────────────────── */
+  .view-tabs { display: flex; gap: 2px; }
+  .view-tab {
+    padding: 4px 12px; border-radius: 4px 4px 0 0; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid transparent; background: transparent;
+    color: var(--fg3); transition: all 0.15s;
+  }
+  .view-tab:hover { color: var(--fg2); }
+  .view-tab.active { background: var(--bg2); border-color: var(--border); border-bottom-color: var(--bg2); color: var(--fg); }
+  .chat-body { padding: 16px; min-height: 400px; max-height: 400px; overflow-y: auto; }
+  .chat-body:empty::after { content: "Waiting for messages…"; color: var(--fg3); display: block; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; }
+
   .live-session { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0; position: relative; }
   .live-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .live-header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg3); display: inline-block; margin-right: 8px; }
@@ -111,7 +123,7 @@
   .chat-bubble-user {
     background: var(--accent); color: #fff; border-radius: 12px 12px 2px 12px;
     padding: 8px 14px; max-width: 80%; font-size: 13px; line-height: 1.5;
-    white-space: pre-wrap;
+    word-wrap: break-word; white-space: pre-wrap;
   }
 
   /* Assistant bubble */
@@ -119,6 +131,7 @@
   .chat-bubble-assistant {
     background: var(--bg3); border: 1px solid var(--border); border-radius: 2px 12px 12px 12px;
     padding: 10px 14px; max-width: 95%; font-size: 14px; line-height: 1.6;
+    word-break: break-word;
   }
   .chat-bubble-assistant:not(:last-child) { margin-bottom: 6px; }
 
@@ -260,9 +273,14 @@
     <div class="live-session">
       <div class="live-header">
         <div><span class="live-dot" id="live-dot"></span><span class="live-label" id="live-label">Idle</span></div>
+        <div class="view-tabs">
+          <button class="view-tab active" data-view="chat">Chat</button>
+          <button class="view-tab" data-view="raw">Raw</button>
+        </div>
         <button class="live-clear" id="live-clear">Clear</button>
       </div>
-      <div class="live-body" id="live-body"></div>
+      <div class="chat-body" id="chat-body"></div>
+      <div class="live-body" id="live-body" style="display:none"></div>
       <div class="prompt-bar">
         <input type="text" id="prompt-input" placeholder="Send a prompt to the agent…" autocomplete="off" />
         <button id="prompt-send">Send</button>
@@ -373,7 +391,14 @@ if (typeof marked !== 'undefined') {
 
 function renderMarkdown(text) {
   if (!text || !text.trim()) return '';
-  try { return DOMPurify.sanitize(marked.parse(text)); }
+  try {
+    const html = marked.parse(text);
+    // Sanitize to prevent XSS from LLM-produced or injected content
+    if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
+    // Hard fallback: render as plain text rather than unsanitized HTML
+    if (!renderMarkdown._warned) { console.warn('[dashboard] DOMPurify unavailable — falling back to plain text'); renderMarkdown._warned = true; }
+    return '<pre>' + esc(text) + '</pre>';
+  }
   catch { return '<p>'+esc(text)+'</p>'; }
 }
 
@@ -480,6 +505,8 @@ $('live-clear').addEventListener('click', () => {
   liveBuffer = '';
   liveParts = [];
   liveBody.innerHTML = '';
+  const cb = $('chat-body');
+  if (cb) cb.innerHTML = '';
   messageStore.clear();
 });
 
@@ -517,7 +544,7 @@ const messageStore = {
   },
 
   _notify() {
-    for (const fn of this._listeners) { try { fn(this.messages); } catch {} }
+    for (const fn of this._listeners) { try { fn(this.messages); } catch (e) { console.error('[messageStore] listener error', e); } }
   },
 
   /** Clear all messages */
@@ -755,16 +782,13 @@ function handleSSE(d) {
     case 'turn_end':
       // Feed structured content to message store
       messageStore.endAssistantTurn(d.content, d.stopReason);
-      // Legacy live rendering (text fallback for existing UI)
-      if (Array.isArray(d.content)) {
+      // Legacy live rendering
+      if (d.content) {
         const text = d.content.filter(b => b.type === 'text').map(b => b.text || '').join('');
         if (text) {
           liveBuffer += text;
           scheduleLiveRender();
         }
-      } else if (d.text) {
-        liveBuffer += d.text;
-        scheduleLiveRender();
       }
       break;
 
@@ -779,9 +803,7 @@ function handleSSE(d) {
     case 'tool_end': {
       messageStore.addToolResult(d.toolCallId, d.toolName, d.isError, d.content);
       // Legacy live rendering
-      const previewText = Array.isArray(d.content)
-        ? d.content.filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80)
-        : (d.preview || '').slice(0, 80);
+      const previewText = (d.content ?? []).filter(c => c.type === 'text').map(c => c.text || '').join('').slice(0, 80);
       if (d.isError) {
         appendLiveTool(
           '<div class="tool-line">└ <span class="tool-badge error">error</span> ' + esc(d.toolName) + '</div>'
@@ -869,6 +891,40 @@ async function sendPrompt() {
 promptSend.addEventListener('click', sendPrompt);
 promptInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+});
+
+// ── Chat view wiring ─────────────────────────────────────────────
+
+const chatBody = $('chat-body');
+let activeView = 'chat'; // 'chat' or 'raw'
+
+// View tab switching
+document.querySelector('.view-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.view-tab');
+  if (!tab) return;
+  const view = tab.dataset.view;
+  if (view === activeView) return;
+  activeView = view;
+  for (const t of document.querySelectorAll('.view-tab')) {
+    t.classList.toggle('active', t.dataset.view === view);
+  }
+  chatBody.style.display = view === 'chat' ? '' : 'none';
+  liveBody.style.display = view === 'raw' ? '' : 'none';
+  if (view === 'chat') {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+});
+
+// Reactive rendering: re-render chat view when messageStore changes
+let chatRenderTimer = null;
+messageStore.onChange(() => {
+  if (chatRenderTimer) return;
+  chatRenderTimer = setTimeout(() => {
+    chatRenderTimer = null;
+    const wasAtBottom = chatBody.scrollHeight - chatBody.scrollTop - chatBody.clientHeight < 40;
+    chatBody.innerHTML = renderChatMessages(messageStore.messages);
+    if (wasAtBottom) chatBody.scrollTop = chatBody.scrollHeight;
+  }, 50);
 });
 
 // ── Stats grid (from pi-jobs API) ────────────────────────────────

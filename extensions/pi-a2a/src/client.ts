@@ -1,11 +1,21 @@
 /**
  * pi-a2a — A2A client for sending messages to remote agents.
  *
- * Sends A2A JSON-RPC `message/send` requests to remote agent endpoints.
- * Handles Bearer auth when a credential is provided.
+ * Uses @a2a-js/sdk Client for spec-compliant A2A messaging:
+ *   - Proper JSON-RPC 2.0 with A2A-Version header
+ *   - MessageSendParams with configuration (blocking, historyLength, etc.)
+ *   - Typed Message/Task responses
+ *   - Auth retry via SDK's AuthenticationHandler pattern
  */
 
 import { randomUUID } from "node:crypto";
+import {
+	Client,
+	JsonRpcTransport,
+	createAuthenticatingFetchWithRetry,
+	type AuthenticationHandler,
+} from "@a2a-js/sdk/client";
+import type { AgentCard, MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
 
 /** Sender identity to include in message metadata. */
@@ -14,6 +24,8 @@ export interface SenderIdentity {
 	name: string;
 	/** Agent description (optional). */
 	description?: string;
+	/** Agent's own A2A endpoint URL — allows the receiver to reply directly. */
+	url?: string;
 }
 
 export interface SendMessageOptions {
@@ -27,151 +39,223 @@ export interface SendMessageOptions {
 	timeoutMs?: number;
 	/** Local agent identity to include as sender metadata. */
 	sender?: SenderIdentity;
+	/**
+	 * Callback to refresh a stale credential on 401.
+	 * Called once on auth failure — should evict cache and return a fresh token.
+	 * If not provided, 401 is returned as-is.
+	 */
+	onRefreshCredential?: () => Promise<string | null>;
 }
 
 export interface SendMessageResult {
 	ok: boolean;
 	/** Extracted text from the agent's response artifacts/status. */
 	response?: string;
-	/** The raw JSON-RPC result for inspection. */
+	/** The raw SDK result for inspection. */
 	raw?: unknown;
 	/** Error message if the request failed. */
 	error?: string;
 	/** True when the remote agent returned HTTP 401 — credential may be stale. */
 	unauthorized?: boolean;
+	/** True when the remote agent ACKed with "working" — the real result will arrive later as a separate message. */
+	working?: boolean;
 }
 
 /**
- * Send a message to a remote A2A agent via `message/send`.
+ * Send a message to a remote A2A agent via the SDK Client.
  *
- * Returns the agent's response text extracted from artifacts,
- * or the status message if no artifacts are present.
+ * Creates a short-lived Client per call (agents may have different URLs/credentials).
+ * The SDK handles JSON-RPC framing, A2A-Version headers, and content negotiation.
  */
 export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender } = opts;
-
-	// Build the message object, optionally including sender identity in metadata
-	const msg: Record<string, unknown> = {
-		kind: "message",
-		messageId: randomUUID(),
-		role: "user",
-		parts: [{ kind: "text", text: message }],
-	};
-	if (sender) {
-		msg.metadata = {
-			"pi:sender": {
-				name: sender.name,
-				...(sender.description ? { description: sender.description } : {}),
-			},
-		};
-	}
-
-	const payload = {
-		jsonrpc: "2.0" as const,
-		method: "message/send",
-		params: { message: msg },
-		id: randomUUID(),
-	};
-
-	const headers: Record<string, string> = {
-		"Content-Type": "application/json",
-	};
-	if (credential) {
-		headers["Authorization"] = `Bearer ${credential}`;
-	}
+	const { url, message, credential, timeoutMs, sender, onRefreshCredential } = opts;
 
 	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
 
+	// Track auth state explicitly so we can set `unauthorized: true`
+	// without relying on SDK error message format (which is unstable
+	// in pre-1.0 @a2a-js/sdk). Declared outside try so catch can read it.
+	let sawUnauthorized = false;
+
 	try {
-		const res = await fetch(url, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(payload),
-			...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-		});
+		// ── Build auth-aware fetch ─────────────────────────────────
+		let currentCredential = credential ?? null;
+		let retried = false;
 
-		if (res.status === 401) {
-			log("a2a_send_unauthorized", { url }, "ERROR");
-			return { ok: false, error: "Unauthorized — the remote agent rejected the credential", unauthorized: true };
-		}
-
-		if (!res.ok) {
-			const text = await res.text();
-			log("a2a_send_http_error", { url, status: res.status, body: text.slice(0, 500) }, "ERROR");
-			return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
-		}
-
-		const data = await res.json() as {
-			jsonrpc: "2.0";
-			result?: Record<string, unknown>;
-			error?: { code: number; message: string; data?: unknown };
-			id: string;
+		const authHandler: AuthenticationHandler = {
+			async headers() {
+				const hdrs: Record<string, string> = {};
+				if (currentCredential) {
+					hdrs["Authorization"] = `Bearer ${currentCredential}`;
+				}
+				return hdrs;
+			},
+			async shouldRetryWithHeaders(_req, res) {
+				if (res.status === 401) {
+					sawUnauthorized = true;
+					if (!retried && onRefreshCredential) {
+						retried = true;
+						log("credential_retry_via_auth_handler", { url });
+						try {
+							const fresh = await onRefreshCredential();
+							if (fresh) {
+								currentCredential = fresh;
+								// Don't reset sawUnauthorized here — the retry hasn't
+								// fired yet. onSuccessfulRetry will clear it if the
+								// retry succeeds; if it fails, the flag stays true so
+								// the caller gets { unauthorized: true }.
+								return { Authorization: `Bearer ${fresh}` };
+							}
+						} catch (refreshErr) {
+							// Refresh failed (e.g. network error) — not an auth
+							// rejection from the remote agent. Reset the flag so
+							// the catch block doesn't misclassify this as a 401.
+							sawUnauthorized = false;
+							throw refreshErr;
+						}
+					}
+				}
+				return undefined;
+			},
+			async onSuccessfulRetry() {
+				// Retry succeeded — clear the unauthorized flag
+				sawUnauthorized = false;
+			},
 		};
 
-		if (data.error) {
-			log("a2a_send_rpc_error", { url, code: data.error.code, message: data.error.message }, "ERROR");
-			return { ok: false, error: `RPC error ${data.error.code}: ${data.error.message}`, raw: data };
+		const fetchImpl = createAuthenticatingFetchWithRetry(fetch, authHandler);
+
+		// ── Create SDK transport + client ──────────────────────────
+		const transport = new JsonRpcTransport({
+			endpoint: url,
+			fetchImpl,
+		});
+
+		// Minimal agent card for outbound messaging. We don't fetch the remote
+		// card since we already know the endpoint URL. All required AgentCard
+		// fields are provided; optional fields are omitted.
+		const minimalCard: AgentCard = {
+			name: "remote-agent",
+			description: "",
+			url,
+			version: "1.0.0",
+			protocolVersion: "0.2.2",
+			capabilities: {},
+			defaultInputModes: ["text/plain"],
+			defaultOutputModes: ["text/plain"],
+			skills: [],
+		};
+
+		const client = new Client(transport, minimalCard);
+
+		// ── Build the A2A message ─────────────────────────────────
+		const metadata: Record<string, unknown> | undefined = sender
+			? {
+				"pi:sender": {
+					name: sender.name,
+					...(sender.description ? { description: sender.description } : {}),
+				},
+			}
+			: undefined;
+
+		const params: MessageSendParams = {
+			message: {
+				kind: "message",
+				messageId: randomUUID(),
+				role: "user",
+				parts: [{ kind: "text", text: message }],
+				...(metadata ? { metadata } : {}),
+			},
+			configuration: {
+				blocking: true,
+			},
+		};
+
+		// ── Send via SDK ──────────────────────────────────────────
+		const requestOpts = timeoutMs
+			? { signal: AbortSignal.timeout(timeoutMs) }
+			: undefined;
+
+		const result = await client.sendMessage(params, requestOpts);
+
+		// Detect "working" ACK — the remote agent accepted the task but hasn't finished yet.
+		// The actual result will arrive later as a separate A2A message.
+		const status = (result as { status?: { state?: string } }).status;
+		if (status?.state === "working") {
+			log("a2a_send_working", { url });
+			return { ok: true, response: "", raw: result, working: true };
 		}
 
-		if (!data.result) {
-			return { ok: false, error: "Empty result from remote agent", raw: data };
-		}
-
-		// Extract response text from the A2A task result
-		const responseText = extractResponseText(data.result);
+		// ── Extract response text ─────────────────────────────────
+		const responseText = extractResponseText(result);
 		log("a2a_send_success", { url, responseLength: responseText.length });
 
-		return { ok: true, response: responseText, raw: data.result };
+		return { ok: true, response: responseText, raw: result };
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
+
+		// Use the auth handler's state flag rather than parsing SDK error
+		// messages, which are unstable in pre-1.0 @a2a-js/sdk.
+		if (sawUnauthorized) {
+			log("a2a_send_unauthorized", { url }, "ERROR");
+			return {
+				ok: false,
+				error: "Unauthorized — the remote agent rejected the credential",
+				unauthorized: true,
+			};
+		}
+
 		log("a2a_send_error", { url, error: msg }, "ERROR");
 		return { ok: false, error: msg };
 	}
 }
 
 /**
- * Extract readable text from an A2A task result.
+ * Extract readable text from an A2A SDK result (Task or Message).
  *
- * Looks for text in: artifacts → status.message → fallback to JSON.
+ * The SDK's sendMessage returns Task | Message:
+ *   - Task: check artifacts → status.message → fallback
+ *   - Message: check parts directly
  */
-function extractResponseText(result: Record<string, unknown>): string {
+function extractResponseText(result: Task | Message): string {
+	if (result.kind === "message") {
+		return extractPartsText(result.parts) || JSON.stringify(result, null, 2);
+	}
+
+	// Task response
+	const task = result;
 	const parts: string[] = [];
 
 	// Try artifacts first (primary response content)
-	const artifacts = result.artifacts as Array<{ parts?: Array<{ kind: string; text?: string }> }> | undefined;
-	if (artifacts?.length) {
-		for (const artifact of artifacts) {
-			if (artifact.parts) {
-				for (const part of artifact.parts) {
-					if (part.kind === "text" && part.text) {
-						parts.push(part.text);
-					}
-				}
-			}
+	if (task.artifacts?.length) {
+		for (const artifact of task.artifacts) {
+			const text = extractPartsText(artifact.parts);
+			if (text) parts.push(text);
 		}
 	}
 
-	if (parts.length > 0) {
-		return parts.join("\n");
-	}
+	if (parts.length > 0) return parts.join("\n");
 
 	// Fall back to status message
-	const status = result.status as { message?: { parts?: Array<{ kind: string; text?: string }> } } | undefined;
-	if (status?.message?.parts) {
-		for (const part of status.message.parts) {
-			if (part.kind === "text" && part.text) {
-				parts.push(part.text);
-			}
-		}
-	}
-
-	if (parts.length > 0) {
-		return parts.join("\n");
+	if (task.status?.message?.parts) {
+		const text = extractPartsText(task.status.message.parts as Part[]);
+		if (text) return text;
 	}
 
 	// Last resort: serialize the whole result
 	return JSON.stringify(result, null, 2);
+}
+
+/** Extract text from an array of A2A parts. */
+function extractPartsText(parts: Part[]): string {
+	const texts: string[] = [];
+	for (const part of parts) {
+		if (part.kind === "text" && "text" in part) {
+			texts.push((part as { kind: "text"; text: string }).text);
+		}
+	}
+	return texts.join("\n");
 }

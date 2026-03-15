@@ -54,9 +54,12 @@ export class CmuxClient {
 		return existsSync(this.socketPath);
 	}
 
-	/** Send a JSON-RPC request to cmux and return the result. */
-	async rpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+	/** Send a JSON-RPC request to cmux and return the result.
+	 *  @param timeoutMs Override the default RPC timeout (for long-running ops like wait/download).
+	 */
+	async rpc(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<unknown> {
 		const id = randomUUID();
+		const rpcTimeout = timeoutMs ?? RPC_TIMEOUT_MS;
 
 		return new Promise((resolve, reject) => {
 			let settled = false;
@@ -70,11 +73,11 @@ export class CmuxClient {
 			const timeout = setTimeout(() => {
 				settle(() => {
 					conn.destroy();
-					const err = new Error(`cmux RPC timeout (${RPC_TIMEOUT_MS}ms): ${method}`);
-					this.log("rpc_timeout", { method, id }, "WARN");
+					const err = new Error(`cmux RPC timeout (${rpcTimeout}ms): ${method}`);
+					this.log("rpc_timeout", { method, id, timeoutMs: rpcTimeout }, "WARN");
 					reject(err);
 				});
-			}, RPC_TIMEOUT_MS);
+			}, rpcTimeout);
 
 			const conn: Socket = createConnection({ path: this.socketPath });
 
@@ -423,9 +426,12 @@ export class CmuxClient {
 	}
 
 	/** Get a DOM snapshot of a browser surface. */
-	async browserSnapshot(surfaceId: string, compact?: boolean): Promise<string> {
+	async browserSnapshot(surfaceId: string, compact?: boolean, options?: { selector?: string; max_depth?: number; interactive?: boolean }): Promise<string> {
 		const params: Record<string, unknown> = { surface_id: surfaceId };
 		if (compact !== undefined) params.compact = compact;
+		if (options?.selector) params.selector = options.selector;
+		if (options?.max_depth !== undefined) params.max_depth = options.max_depth;
+		if (options?.interactive !== undefined) params.interactive = options.interactive;
 		const result = await this.rpc("browser.snapshot", params);
 		return typeof result === "string" ? result : JSON.stringify(result);
 	}
@@ -448,5 +454,211 @@ export class CmuxClient {
 	/** Evaluate JavaScript in a browser surface. */
 	async browserEval(surfaceId: string, expression: string): Promise<unknown> {
 		return await this.rpc("browser.eval", { surface_id: surfaceId, expression });
+	}
+
+	// ── Additional browser automation methods ───────────────────
+
+	/** Get browser surface IDs and metadata. */
+	async browserIdentify(surfaceId: string): Promise<unknown> {
+		return await this.rpc("browser.identify", { surface_id: surfaceId });
+	}
+
+	/** Navigate back in browser history. */
+	async browserBack(surfaceId: string): Promise<void> {
+		await this.rpc("browser.back", { surface_id: surfaceId });
+	}
+
+	/** Navigate forward in browser history. */
+	async browserForward(surfaceId: string): Promise<void> {
+		await this.rpc("browser.forward", { surface_id: surfaceId });
+	}
+
+	/** Reload the current page. */
+	async browserReload(surfaceId: string): Promise<void> {
+		await this.rpc("browser.reload", { surface_id: surfaceId });
+	}
+
+	/** Get the current URL. */
+	async browserUrl(surfaceId: string): Promise<unknown> {
+		return await this.rpc("browser.url", { surface_id: surfaceId });
+	}
+
+	/** Wait for a condition. */
+	async browserWait(surfaceId: string, opts?: { selector?: string; text?: string; url_contains?: string; load_state?: string; function?: string; timeout_ms?: number }): Promise<void> {
+		const params: Record<string, unknown> = { surface_id: surfaceId };
+		if (opts?.selector) params.selector = opts.selector;
+		if (opts?.text) params.text = opts.text;
+		if (opts?.url_contains) params.url_contains = opts.url_contains;
+		if (opts?.load_state) params.load_state = opts.load_state;
+		if (opts?.function) params.function = opts.function;
+		if (opts?.timeout_ms !== undefined) params.timeout_ms = opts.timeout_ms;
+		// Use server timeout + 2s headroom as RPC deadline so the client
+		// doesn't kill the socket before the server-side wait completes.
+		const rpcTimeout = opts?.timeout_ms ? opts.timeout_ms + 2_000 : undefined;
+		await this.rpc("browser.wait", params, rpcTimeout);
+	}
+
+	/** Double-click an element. */
+	async browserDblclick(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.dblclick", { surface_id: surfaceId, selector });
+	}
+
+	/** Hover over an element. */
+	async browserHover(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.hover", { surface_id: surfaceId, selector });
+	}
+
+	/** Focus an element. */
+	async browserFocus(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.focus", { surface_id: surfaceId, selector });
+	}
+
+	/** Check a checkbox or radio button. */
+	async browserCheck(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.check", { surface_id: surfaceId, selector });
+	}
+
+	/** Uncheck a checkbox. */
+	async browserUncheck(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.uncheck", { surface_id: surfaceId, selector });
+	}
+
+	/** Scroll an element into view. */
+	async browserScrollIntoView(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.scroll_into_view", { surface_id: surfaceId, selector });
+	}
+
+	/** Type text into an element. */
+	async browserType(surfaceId: string, selector: string, text: string): Promise<void> {
+		await this.rpc("browser.type", { surface_id: surfaceId, selector, text });
+	}
+
+	/** Press a key. */
+	async browserPress(surfaceId: string, key: string): Promise<void> {
+		await this.rpc("browser.press", { surface_id: surfaceId, key });
+	}
+
+	/** Press a key down (without releasing). */
+	async browserKeydown(surfaceId: string, key: string): Promise<void> {
+		await this.rpc("browser.keydown", { surface_id: surfaceId, key });
+	}
+
+	/** Release a key. */
+	async browserKeyup(surfaceId: string, key: string): Promise<void> {
+		await this.rpc("browser.keyup", { surface_id: surfaceId, key });
+	}
+
+	/** Select an option in a dropdown. */
+	async browserSelect(surfaceId: string, selector: string, value: string): Promise<void> {
+		await this.rpc("browser.select", { surface_id: surfaceId, selector, value });
+	}
+
+	/** Scroll the page or an element. */
+	async browserScroll(surfaceId: string, opts?: { selector?: string; dx?: number; dy?: number }): Promise<void> {
+		const params: Record<string, unknown> = { surface_id: surfaceId };
+		if (opts?.selector) params.selector = opts.selector;
+		if (opts?.dx !== undefined) params.dx = opts.dx;
+		if (opts?.dy !== undefined) params.dy = opts.dy;
+		await this.rpc("browser.scroll", params);
+	}
+
+	/** Get page or element information. */
+	async browserGet(surfaceId: string, what: string, opts?: { selector?: string; attr?: string; property?: string }): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, what };
+		if (opts?.selector) params.selector = opts.selector;
+		if (opts?.attr) params.attr = opts.attr;
+		if (opts?.property) params.property = opts.property;
+		return await this.rpc("browser.get", params);
+	}
+
+	/** Check element state. */
+	async browserIs(surfaceId: string, check: string, selector: string): Promise<unknown> {
+		return await this.rpc("browser.is", { surface_id: surfaceId, check, selector });
+	}
+
+	/** Find elements by various criteria. */
+	async browserFind(surfaceId: string, by: string, value: string, opts?: { name?: string; n?: number }): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, by, value };
+		if (opts?.name) params.name = opts.name;
+		if (opts?.n !== undefined) params.n = opts.n;
+		return await this.rpc("browser.find", params);
+	}
+
+	/** Highlight an element visually. */
+	async browserHighlight(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.highlight", { surface_id: surfaceId, selector });
+	}
+
+	/** Add a script that runs on page load. */
+	async browserAddInitScript(surfaceId: string, script: string): Promise<void> {
+		await this.rpc("browser.addinitscript", { surface_id: surfaceId, script });
+	}
+
+	/** Add a script to the page. */
+	async browserAddScript(surfaceId: string, script: string): Promise<void> {
+		await this.rpc("browser.addscript", { surface_id: surfaceId, script });
+	}
+
+	/** Add a stylesheet to the page. */
+	async browserAddStyle(surfaceId: string, css: string): Promise<void> {
+		await this.rpc("browser.addstyle", { surface_id: surfaceId, css });
+	}
+
+	/** Switch to a frame or return to main content. */
+	async browserFrame(surfaceId: string, selector: string): Promise<void> {
+		await this.rpc("browser.frame", { surface_id: surfaceId, selector });
+	}
+
+	/** Handle dialog boxes. */
+	async browserDialog(surfaceId: string, action: string, promptText?: string): Promise<void> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, action };
+		if (promptText) params.prompt_text = promptText;
+		await this.rpc("browser.dialog", params);
+	}
+
+	/** Trigger and handle downloads. */
+	async browserDownload(surfaceId: string, opts?: { path?: string; timeout_ms?: number }): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId };
+		if (opts?.path) params.path = opts.path;
+		if (opts?.timeout_ms !== undefined) params.timeout_ms = opts.timeout_ms;
+		const rpcTimeout = opts?.timeout_ms ? opts.timeout_ms + 2_000 : undefined;
+		return await this.rpc("browser.download", params, rpcTimeout);
+	}
+
+	/** Manage cookies. */
+	async browserCookies(surfaceId: string, action: string, opts?: Record<string, unknown>): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, action };
+		if (opts) Object.assign(params, opts);
+		return await this.rpc("browser.cookies", params);
+	}
+
+	/** Manage local or session storage. */
+	async browserStorage(surfaceId: string, storageType: string, action: string, key?: string, value?: string): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, storage_type: storageType, action };
+		if (key !== undefined) params.key = key;
+		if (value !== undefined) params.value = value;
+		return await this.rpc("browser.storage", params);
+	}
+
+	/** Save or load browser state. */
+	async browserState(surfaceId: string, action: string, path: string): Promise<void> {
+		await this.rpc("browser.state", { surface_id: surfaceId, action, path });
+	}
+
+	/** Manage browser tabs. */
+	async browserTab(surfaceId: string, action: string, opts?: Record<string, unknown>): Promise<unknown> {
+		const params: Record<string, unknown> = { surface_id: surfaceId, action };
+		if (opts) Object.assign(params, opts);
+		return await this.rpc("browser.tab", params);
+	}
+
+	/** Manage console logs. */
+	async browserConsole(surfaceId: string, action: string): Promise<unknown> {
+		return await this.rpc("browser.console", { surface_id: surfaceId, action });
+	}
+
+	/** Manage page errors. */
+	async browserErrors(surfaceId: string, action: string): Promise<unknown> {
+		return await this.rpc("browser.errors", { surface_id: surfaceId, action });
 	}
 }

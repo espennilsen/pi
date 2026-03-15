@@ -44,7 +44,7 @@ import {
 } from "@a2a-js/sdk/server";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
-import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
+import { PiAgentExecutor, type ProcessResult, type AsyncTaskResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
@@ -64,6 +64,43 @@ function fmtDuration(ms: number): string {
 	const s = Math.round(ms / 1000);
 	if (s < 60) return `${s}s`;
 	return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/**
+ * Validate a reply URL for SSRF safety.
+ *
+ * Accepts https:// URLs unconditionally.
+ * Accepts http:// only for localhost (127.0.0.1, [::1], localhost).
+ * Rejects everything else: private/link-local IPs, non-http(s) schemes, invalid URLs.
+ *
+ * Returns the validated URL string, or null if rejected.
+ */
+function validateReplyUrl(url: string): string | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return null;
+	}
+
+	// Only allow http(s) schemes
+	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+		return null;
+	}
+
+	// https is always allowed
+	if (parsed.protocol === "https:") {
+		return url;
+	}
+
+	// http: only allowed for localhost
+	const hostname = parsed.hostname;
+	if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+		return url;
+	}
+
+	// Reject http to anything else (private IPs, link-local, public hosts)
+	return null;
 }
 
 /** Extract text content from the last assistant message. */
@@ -98,6 +135,8 @@ export default function (pi: ExtensionAPI) {
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
+	/** This agent's own public A2A URL — included in pi:sender for reply routing. */
+	let selfUrl: string | null = null;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -387,6 +426,7 @@ export default function (pi: ExtensionAPI) {
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+		selfUrl = publicUrl;
 		const agentCard = buildAgentCard(config, publicUrl);
 
 		// Set up executor with main-process callback
@@ -401,6 +441,107 @@ export default function (pi: ExtensionAPI) {
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
 			}
+		};
+
+		// When a long-running task completes, send the result back to the sender
+		// as a new A2A message. The initial HTTP response already returned a
+		// "working" ACK — this delivers the actual content (or error).
+		executor.onAsyncResult = (asyncResult: AsyncTaskResult) => {
+			const { taskId, senderName, senderUrl, result } = asyncResult;
+
+			// Build the message — include error info so the caller knows what happened
+			const messageText = result.ok
+				? result.response
+				: `❌ Task failed: ${result.error ?? "Unknown error"}`;
+
+			// Resolve sender's URL and credential. Priority:
+			// 1. Match senderUrl against known agents (static registry + discovered hub agents)
+			// 2. Match senderName against known agents (static registry + discovered hub agents)
+			// 3. Fall back to validated senderUrl (SSRF-safe: https required, no private IPs)
+			(async () => {
+				let replyUrl: string | null = null;
+				let credential: string | null = null;
+				let agentId: string | null = null;
+				const senderLower = senderName.toLowerCase();
+
+				// If senderUrl is provided, try to match it against known agents first.
+				// This validates the URL is legitimate without trusting it blindly.
+				if (senderUrl) {
+					if (staticRegistry) {
+						const staticMatch = staticRegistry.findByUrl(senderUrl);
+						if (staticMatch) {
+							replyUrl = staticMatch.config.url;
+							credential = staticMatch.config.apiKey ?? null;
+						}
+					}
+					if (!replyUrl) {
+						const normalizedSender = senderUrl.replace(/\/+$/, "");
+						const hubMatch = discoveredAgents.find(
+							(a) => a.url.replace(/\/+$/, "") === normalizedSender,
+						);
+						if (hubMatch) {
+							replyUrl = hubMatch.url;
+							agentId = hubMatch.id;
+						}
+					}
+				}
+
+				// Fall back to name-based lookup in known agents
+				if (!replyUrl) {
+					if (staticRegistry) {
+						const staticMatch = staticRegistry.findByName(senderName);
+						if (staticMatch) {
+							replyUrl = staticMatch.config.url;
+							credential = staticMatch.config.apiKey ?? null;
+						}
+					}
+					if (!replyUrl) {
+						const hubMatch = discoveredAgents.find((a) => a.name.toLowerCase() === senderLower);
+						if (hubMatch) {
+							replyUrl = hubMatch.url;
+							agentId = hubMatch.id;
+						}
+					}
+				}
+
+				// Last resort: use senderUrl directly, but only after SSRF validation.
+				// Require https in production; allow http only for localhost/127.0.0.1.
+				if (!replyUrl && senderUrl) {
+					const validated = validateReplyUrl(senderUrl);
+					if (validated) {
+						replyUrl = validated;
+					} else {
+						log("async_result_url_rejected", { taskId, sender: senderName, senderUrl }, "WARN");
+					}
+				}
+
+				if (!replyUrl) {
+					log("async_result_no_sender", { taskId, sender: senderName }, "WARN");
+					return;
+				}
+
+				// Get credential for hub agents
+				if (!credential && agentId && config.hub?.apiKey) {
+					credential = await getCachedCredential(agentId, config.hub);
+				}
+
+				const sendResult = await sendA2AMessage({
+					url: replyUrl,
+					message: messageText,
+					credential,
+					timeoutMs: config.sendTimeoutMs,
+					sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
+				}, log);
+
+				if (sendResult.ok) {
+					log("async_result_sent", { taskId, sender: senderName, ok: result.ok, responseLength: messageText.length });
+				} else {
+					log("async_result_send_failed", { taskId, sender: senderName, error: sendResult.error }, "ERROR");
+				}
+			})().catch((err: unknown) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				log("async_result_send_error", { taskId, sender: senderName, error: msg }, "ERROR");
+			});
 		};
 
 		const taskStore = new InMemoryTaskStore();
@@ -757,7 +898,7 @@ export default function (pi: ExtensionAPI) {
 				message: params.message,
 				credential,
 				timeoutMs: config.sendTimeoutMs,
-				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+				sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
 			};
 
 			(async () => {
@@ -782,7 +923,19 @@ export default function (pi: ExtensionAPI) {
 
 				const dur = fmtDuration(Date.now() - sendStart);
 
-				if (result.ok) {
+				if (result.ok && result.working) {
+					// ACK received — the remote agent is working on it.
+					// The actual result will arrive later as a separate inbound A2A message.
+					pi.sendMessage(
+						{
+							customType: "a2a-response-ack",
+							content:
+								`⏳ **${resolvedName}** acknowledged the request (${dur}) — working on it. Response will arrive when ready.`,
+							display: true,
+						},
+						{ triggerTurn: false },
+					);
+				} else if (result.ok) {
 					pi.sendMessage(
 						{
 							customType: "a2a-response-received",

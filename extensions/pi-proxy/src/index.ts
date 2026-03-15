@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Build the provider URL — normalize leading slash on custom paths
 		const rawPath = typeof override === "string" ? override : `/${provider}`;
-		const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+		const path = `/${rawPath.replace(/^\/+/, "")}`;
 		const providerUrl = `${baseUrl}${path}`;
 
 		try {

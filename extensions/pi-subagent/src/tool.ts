@@ -1008,10 +1008,9 @@ async function handlePoolAction(
 
 		case "wait": {
 			if (!activePool) return text("No active pool.");
-			const pending = activePool.pendingCount;
-			if (pending === 0) return text("No pending background operations.");
 			try {
 				const results = await activePool.waitAny();
+				if (results.length === 0) return text("No pending background operations.");
 				const remaining = activePool.pendingCount;
 				const lines = results.map(r => {
 					if (r.error) return `### ${r.agentId} (${r.type}) ✗\nError: ${r.error}`;

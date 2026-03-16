@@ -36,3 +36,6 @@ gws gmail +watch --subscription projects/p/subscriptions/my-sub
 - Gmail watch expires after 7 days — re-run to renew.
 - Without --cleanup, Pub/Sub resources persist for reconnection.
 - Press Ctrl-C to stop gracefully.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

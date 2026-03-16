@@ -203,6 +203,22 @@ export interface PoolDetails {
 	totalUsage: UsageStats;
 }
 
+/** Result of a completed async pool operation (spawn or send) */
+export interface PendingOpResult {
+	/** Sequential operation ID */
+	opId: number;
+	/** Agent ID this operation was for */
+	agentId: string;
+	/** Whether this was a spawn or send */
+	type: "spawn" | "send";
+	/** When the operation was dispatched */
+	startedAt: number;
+	/** Agent response text (if successful) */
+	response?: string;
+	/** Error message (if failed) */
+	error?: string;
+}
+
 // ── Settings ────────────────────────────────────────────────────
 
 export interface SubagentSettings {

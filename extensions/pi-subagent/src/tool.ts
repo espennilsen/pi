@@ -405,11 +405,14 @@ const SubagentParams = Type.Object({
 	orchestrator: Type.Optional(OrchestratorItem),
 	// ── New: pool management actions ─────────────────
 	action: Type.Optional(StringEnum(
-		["spawn", "send", "list", "kill", "kill-all"] as const,
+		["spawn", "send", "list", "kill", "kill-all", "wait", "poll"] as const,
 		{ description: "Pool management action. Use with id/message params." },
 	)),
 	id: Type.Optional(Type.String({ description: "Agent ID (for spawn/send/kill pool actions)" })),
 	message: Type.Optional(Type.String({ description: "Message to send (for 'send' pool action)" })),
+	background: Type.Optional(Type.Boolean({
+		description: "Run spawn/send in background (non-blocking). Returns immediately — use wait/poll to collect results later. Enables parallel dispatch to multiple pool agents.",
+	})),
 	// ── Shared options ───────────────────────────────
 	agentScope: Type.Optional(StringEnum(["user", "project", "both"] as const, {
 		description: 'Agent discovery scope. Default: "user" (~/.pi/agent/agents). "both" includes project .pi/agents.',
@@ -466,6 +469,10 @@ export function registerSubagentTool(
 			"• Pool actions: Manual pool management for long-lived agents:",
 			'  - { action: "spawn", id: "worker-1", agent: "worker", task: "..." } — spawn a persistent agent',
 			'  - { action: "send", id: "worker-1", message: "..." } — send follow-up (agent keeps context)',
+			'  - { action: "spawn", ..., background: true } — spawn without waiting (non-blocking)',
+			'  - { action: "send", ..., background: true } — send without waiting (non-blocking)',
+			'  - { action: "wait" } — block until background ops complete, return results',
+			'  - { action: "poll" } — check for completed background ops (non-blocking)',
 			'  - { action: "list" } — show all pool agents',
 			'  - { action: "kill", id: "worker-1" } — kill agent and its children',
 			'  - { action: "kill-all" } — tear down entire pool',
@@ -725,8 +732,10 @@ export function registerSubagentTool(
 
 			// ── Pool action rendering ─────────────────────
 			if (args.action) {
+				const bgLabel = args.background ? " (background)" : "";
 				let t = theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `pool:${args.action}`);
+					theme.fg("accent", `pool:${args.action}`) +
+					(bgLabel ? theme.fg("warning", bgLabel) : "");
 				if (args.id) t += theme.fg("muted", ` ${args.id}`);
 				if (args.message) {
 					const preview = args.message.length > 50 ? `${args.message.slice(0, 50)}...` : args.message;
@@ -944,19 +953,27 @@ async function handlePoolAction(
 				return text(`Unknown agent: ${params.agent}. Available: ${agents.map(a => a.name).join(", ")}`);
 			}
 			const pool = await ensurePool();
+			const spawnOpts = {
+				id: params.id,
+				agent: agentConfig,
+				task: params.task,
+				cwd,
+				model: params.model,
+				thinking: params.thinking,
+				extensions: params.extensions,
+				skills: params.skills,
+				noTools: params.noTools,
+				noSkills: params.noSkills,
+			};
 			try {
-				const result = await pool.spawn({
-					id: params.id,
-					agent: agentConfig,
-					task: params.task,
-					cwd,
-					model: params.model,
-					thinking: params.thinking,
-					extensions: params.extensions,
-					skills: params.skills,
-					noTools: params.noTools,
-					noSkills: params.noSkills,
-				});
+				if (params.background) {
+					const opId = await pool.spawnAsync(spawnOpts);
+					return {
+						content: [{ type: "text" as const, text: `✓ Spawned "${params.id}" (${params.agent}) in background [op:${opId}]. Use { action: "wait" } or { action: "poll" } to collect results.` }],
+						details: makePoolDetails(pool),
+					};
+				}
+				const result = await pool.spawn(spawnOpts);
 				return {
 					content: [{ type: "text" as const, text: `✓ Spawned "${params.id}" (${params.agent}). Response:\n\n${result.response}` }],
 					details: makePoolDetails(pool),
@@ -972,6 +989,13 @@ async function handlePoolAction(
 			}
 			if (!activePool) return text("No active pool. Spawn an agent first.");
 			try {
+				if (params.background) {
+					const opId = await activePool.sendAsync(params.id, params.message);
+					return {
+						content: [{ type: "text" as const, text: `✓ Message dispatched to "${params.id}" in background [op:${opId}]. Use { action: "wait" } or { action: "poll" } to collect results.` }],
+						details: makePoolDetails(activePool),
+					};
+				}
 				const result = await activePool.send(params.id, params.message);
 				return {
 					content: [{ type: "text" as const, text: `Response from ${params.id}:\n\n${result.response}` }],
@@ -980,6 +1004,46 @@ async function handlePoolAction(
 			} catch (err: any) {
 				return { content: [{ type: "text" as const, text: `✗ Send failed: ${err.message}` }], details: makePoolDetails(activePool), isError: true };
 			}
+		}
+
+		case "wait": {
+			if (!activePool) return text("No active pool.");
+			try {
+				const results = await activePool.waitAny();
+				if (results.length === 0) return text("No pending background operations.");
+				const remaining = activePool.pendingCount;
+				const lines = results.map(r => {
+					if (r.error) return `### ${r.agentId} (${r.type}) ✗\nError: ${r.error}`;
+					return `### ${r.agentId} (${r.type}) ✓\n${r.response || "(no output)"}`;
+				});
+				const suffix = remaining > 0 ? `\n\n_${remaining} operation(s) still pending._` : "";
+				return {
+					content: [{ type: "text" as const, text: `## ${results.length} operation(s) completed\n\n${lines.join("\n\n")}${suffix}` }],
+					details: makePoolDetails(activePool),
+				};
+			} catch (err: any) {
+				return { content: [{ type: "text" as const, text: `✗ Wait failed: ${err.message}` }], details: makePoolDetails(activePool), isError: true };
+			}
+		}
+
+		case "poll": {
+			if (!activePool) return text("No active pool.");
+			const results = activePool.poll();
+			const remaining = activePool.pendingCount;
+			if (results.length === 0) {
+				return text(remaining > 0
+					? `No completed operations yet. ${remaining} still pending.`
+					: "No pending background operations.");
+			}
+			const lines = results.map(r => {
+				if (r.error) return `### ${r.agentId} (${r.type}) ✗\nError: ${r.error}`;
+				return `### ${r.agentId} (${r.type}) ✓\n${r.response || "(no output)"}`;
+			});
+			const suffix = remaining > 0 ? `\n\n_${remaining} operation(s) still pending._` : "";
+			return {
+				content: [{ type: "text" as const, text: `## ${results.length} completed\n\n${lines.join("\n\n")}${suffix}` }],
+				details: makePoolDetails(activePool),
+			};
 		}
 
 		case "list": {

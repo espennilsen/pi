@@ -16,6 +16,7 @@ import { PoolServer, type PoolRequestHandler } from "./pool-server.ts";
 import { MessageRouter } from "./router.ts";
 import type {
 	AgentConfig,
+	PendingOpResult,
 	PoolAgentNode,
 	PoolEntry,
 	PoolIpcRequest,
@@ -60,6 +61,18 @@ function isBlocked(ext: string, blocklist: Set<string>): boolean {
 	return ALWAYS_BLOCKED.has(name) || blocklist.has(name);
 }
 
+/** Internal tracking for async (background) operations */
+interface InternalPendingOp {
+	opId: number;
+	agentId: string;
+	type: "spawn" | "send";
+	startedAt: number;
+	settled: boolean;
+	result?: RpcPromptResult;
+	error?: Error;
+	promise: Promise<void>;
+}
+
 export class AgentPool {
 	private agents = new Map<string, { rpc: RpcAgent; node: PoolAgentNode }>();
 	private server: PoolServer | null = null;
@@ -70,6 +83,8 @@ export class AgentPool {
 	private log: PoolLogger;
 	private shimPath: string;
 	private disposed = false;
+	private pendingOps = new Map<number, InternalPendingOp>();
+	private nextOpId = 1;
 
 	constructor(settings: SubagentSettings, allAgentConfigs: AgentConfig[], cwd: string, log: PoolLogger) {
 		this.settings = settings;
@@ -90,8 +105,11 @@ export class AgentPool {
 		this.log("pool-server-started", { port: this.server.port });
 	}
 
-	/** Spawn a new agent in the pool. */
-	async spawn(opts: PoolSpawnOpts): Promise<RpcPromptResult> {
+	/**
+	 * Internal: validate, create RpcAgent, add to pool, and start subprocess.
+	 * Does NOT send the initial prompt — caller decides sync vs async.
+	 */
+	private async setupAgent(opts: PoolSpawnOpts): Promise<{ rpc: RpcAgent; node: PoolAgentNode }> {
 		if (this.disposed) throw new Error("Pool is disposed");
 		if (this.agents.has(opts.id)) throw new Error(`Agent "${opts.id}" already exists in pool`);
 		if (this.agents.size >= this.settings.maxPoolSize) {
@@ -163,11 +181,16 @@ export class AgentPool {
 
 		this.log("pool-spawn", { id: opts.id, agent: opts.agent.name, depth, parentId: opts.parentId ?? null });
 
-		try {
-			await rpc.start();
-			node.state = "idle";
+		await rpc.start();
+		node.state = "idle";
 
-			// Send initial task
+		return { rpc, node };
+	}
+
+	/** Spawn a new agent in the pool (blocking — waits for initial task to complete). */
+	async spawn(opts: PoolSpawnOpts): Promise<RpcPromptResult> {
+		const { rpc, node } = await this.setupAgent(opts);
+		try {
 			const result = await rpc.prompt(`Task: ${opts.task}`);
 			this.syncUsage(opts.id);
 			return result;
@@ -175,6 +198,38 @@ export class AgentPool {
 			node.state = "dead";
 			throw err;
 		}
+	}
+
+	/** Spawn a new agent in the background (non-blocking — returns immediately). */
+	async spawnAsync(opts: PoolSpawnOpts): Promise<number> {
+		const { rpc, node } = await this.setupAgent(opts);
+		node.state = "streaming";
+
+		const opId = this.nextOpId++;
+		const op: InternalPendingOp = {
+			opId,
+			agentId: opts.id,
+			type: "spawn",
+			startedAt: Date.now(),
+			settled: false,
+			promise: null!,
+		};
+
+		op.promise = rpc.prompt(`Task: ${opts.task}`)
+			.then(result => {
+				this.syncUsage(opts.id);
+				op.settled = true;
+				op.result = result;
+			})
+			.catch(err => {
+				op.settled = true;
+				op.error = err instanceof Error ? err : new Error(String(err));
+				node.state = "dead";
+			});
+
+		this.pendingOps.set(opId, op);
+		this.log("pool-spawn-async", { id: opts.id, opId });
+		return opId;
 	}
 
 	/** Send a message to an existing agent. Returns the agent's response. */
@@ -203,6 +258,122 @@ export class AgentPool {
 				this.router.clearWaiting(fromId);
 			}
 		}
+	}
+
+	/** Send a message to an agent in the background (non-blocking — returns immediately). */
+	async sendAsync(targetId: string, message: string, fromId?: string): Promise<number> {
+		const entry = this.agents.get(targetId);
+		if (!entry) throw new Error(`Agent "${targetId}" not found in pool`);
+		if (entry.node.state === "dead") throw new Error(`Agent "${targetId}" is dead`);
+		if (entry.node.state === "streaming") throw new Error(`Agent "${targetId}" is busy processing another prompt`);
+
+		if (fromId && this.router.wouldCycle(fromId, targetId)) {
+			throw new Error(`Deadlock detected: ${fromId} → ${targetId} would create a cycle.`);
+		}
+		if (fromId) this.router.markWaiting(fromId, targetId);
+
+		entry.node.state = "streaming";
+		const prefix = fromId ? `Message from ${fromId}: ` : "";
+
+		const opId = this.nextOpId++;
+		const op: InternalPendingOp = {
+			opId,
+			agentId: targetId,
+			type: "send",
+			startedAt: Date.now(),
+			settled: false,
+			promise: null!,
+		};
+
+		op.promise = entry.rpc.prompt(`${prefix}${message}`)
+			.then(result => {
+				this.syncUsage(targetId);
+				op.settled = true;
+				op.result = result;
+			})
+			.catch(err => {
+				op.settled = true;
+				op.error = err instanceof Error ? err : new Error(String(err));
+				entry.node.state = "idle";
+			})
+			.finally(() => {
+				if (fromId) this.router.clearWaiting(fromId);
+			});
+
+		this.pendingOps.set(opId, op);
+		this.log("pool-send-async", { targetId, opId });
+		return opId;
+	}
+
+	/** Return all completed async operations and remove them from the pending queue. */
+	poll(): PendingOpResult[] {
+		const settled: PendingOpResult[] = [];
+		for (const [id, op] of this.pendingOps) {
+			if (op.settled) {
+				settled.push({
+					opId: op.opId,
+					agentId: op.agentId,
+					type: op.type,
+					startedAt: op.startedAt,
+					response: op.result?.response,
+					error: op.error?.message,
+				});
+				this.pendingOps.delete(id);
+			}
+		}
+		return settled;
+	}
+
+	/** Wait until at least one async operation completes, then return all completed. */
+	async waitAny(timeout?: number): Promise<PendingOpResult[]> {
+		// Check already settled first
+		const alreadySettled = this.poll();
+		if (alreadySettled.length > 0) return alreadySettled;
+
+		// Nothing pending at all?
+		if (this.pendingOps.size === 0) return [];
+
+		// Wait for any one to settle
+		const ops = [...this.pendingOps.values()];
+		const racePromises: Promise<void>[] = ops.map(op => op.promise);
+
+		if (timeout && timeout > 0) {
+			let timer: ReturnType<typeof setTimeout>;
+			const timeoutPromise = new Promise<void>((_, reject) => {
+				timer = setTimeout(() => reject(new Error(`Wait timed out after ${timeout}ms`)), timeout);
+			});
+			try {
+				await Promise.race([...racePromises, timeoutPromise]);
+			} catch (err: any) {
+				if (err?.message?.startsWith("Wait timed out")) {
+					// Return whatever settled during the wait
+					const partial = this.poll();
+					if (partial.length > 0) return partial;
+					throw err;
+				}
+				// Op failure — that's fine, it settled with an error
+			} finally {
+				clearTimeout(timer!);
+			}
+		} else {
+			try {
+				await Promise.race(racePromises);
+			} catch {
+				// Op failure — that's fine, it settled with an error
+			}
+		}
+
+		// Collect everything that settled
+		return this.poll();
+	}
+
+	/** Number of async operations still in progress. */
+	get pendingCount(): number {
+		let count = 0;
+		for (const op of this.pendingOps.values()) {
+			if (!op.settled) count++;
+		}
+		return count;
 	}
 
 	/** List all agents in the pool. */

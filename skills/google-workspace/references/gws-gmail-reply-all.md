@@ -35,3 +35,6 @@ gws gmail +reply-all --message-id 18f1a2b3c4d --body '<i>Noted</i>' --html
 - Replies to sender and all original To/CC recipients.
 - Use --remove to exclude recipients from the reply.
 - Fails if no To recipient remains after exclusions.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

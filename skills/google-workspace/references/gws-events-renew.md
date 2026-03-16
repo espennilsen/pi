@@ -27,3 +27,6 @@ gws events +renew --all --within 2d
 
 - Subscriptions expire if not renewed periodically.
 - Use --all with a cron job to keep subscriptions alive.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

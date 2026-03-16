@@ -31,3 +31,6 @@ gws gmail +forward --message-id 18f1a2b3c4d --to dave@example.com --body 'FYI se
 ## Tips
 
 - Includes original message with sender, date, subject, and recipients.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

@@ -34,3 +34,6 @@ gws gmail +reply --message-id 18f1a2b3c4d --body '<b>Bold reply</b>' --html
 - Automatically sets In-Reply-To, References, and threadId headers.
 - Quotes the original message in the reply body.
 - For reply-all, use +reply-all instead.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

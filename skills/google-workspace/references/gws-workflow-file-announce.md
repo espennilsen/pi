@@ -29,3 +29,6 @@ gws workflow +file-announce --file-id FILE_ID --space spaces/ABC123 --message 'C
 - This is a write command — sends a Chat message.
 - Use `gws drive +upload` first to upload the file, then announce it here.
 - Fetches the file name from Drive to build the announcement.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

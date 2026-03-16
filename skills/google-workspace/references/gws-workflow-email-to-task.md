@@ -25,4 +25,7 @@ gws workflow +email-to-task --message-id MSG_ID --tasklist LIST_ID
 ## Tips
 
 - Reads the email subject as the task title and snippet as notes.
-- Creates a new task — confirm with the user before executing.
+- Creates a new task.
+
+> [!CAUTION]
+> This is a **write** command — confirm with the user before executing.

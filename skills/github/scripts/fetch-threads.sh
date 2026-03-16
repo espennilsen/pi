@@ -57,7 +57,7 @@ while [ "$has_next" = "true" ]; do
     -F owner="$owner" \
     -F repo="$repo" \
     -F prNumber="$pr_number" \
-    "${cursor_args[@]}")
+    ${cursor_args[@]+"${cursor_args[@]}"})
 
   # Extract PR metadata on first page
   if [ -z "$pr_meta" ]; then

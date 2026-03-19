@@ -33,6 +33,7 @@ gws events +subscribe --subscription projects/p/subscriptions/my-sub --once
 ## Tips
 
 - Without --cleanup, Pub/Sub resources persist for reconnection.
+- `--cleanup` only runs on graceful exit (Ctrl-C). Resources may persist after a crash or SIGKILL — use `gws events subscriptions delete` to recover orphaned resources.
 - Press Ctrl-C to stop gracefully.
 
 > [!CAUTION]

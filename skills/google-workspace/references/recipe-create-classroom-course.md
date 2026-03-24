@@ -2,6 +2,9 @@
 
 Create a course and invite students.
 
+> [!NOTE]
+> Classroom is not enabled by default. You must enable the Google Classroom API in your GCP project and authenticate with `gws auth login --full` to include the required scopes.
+
 ## Steps
 
 1. Create the course: `gws classroom courses create --json '{"name": "Introduction to CS", "section": "Period 1", "room": "Room 101", "ownerId": "me"}'`

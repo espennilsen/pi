@@ -80,16 +80,32 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	/**
+	 * Update the cmux workspace title.
+	 *
+	 * Priority: session name > workon project name > cwd basename.
+	 * Called on session_start, session_switch, session_fork, and workon:switch.
+	 */
+	let workonProjectName: string | undefined;
+
+	function updateWorkspaceName(): void {
+		const name = pi.getSessionName() ?? workonProjectName;
+		if (name) {
+			safe(() => client.renameWorkspace(name));
+			log("workspace_renamed", { name, source: pi.getSessionName() ? "session" : "workon" }, "DEBUG");
+		}
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		// Clear stale browser surface tracking from previous sessions
 		resetBrowserState();
 		cancelPendingNotify();
 
+		// Reset workon state — new session hasn't switched projects yet
+		workonProjectName = undefined;
+
 		// Set workspace name from session
-		const name = pi.getSessionName();
-		if (name) {
-			safe(() => client.renameWorkspace(name));
-		}
+		updateWorkspaceName();
 
 		// Show initial idle status
 		safe(() => client.setStatus(STATUS_KEY, "idle"));
@@ -100,6 +116,27 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		log("session_started", { workspaceId, surfaceId });
+	});
+
+	pi.on("session_switch", () => {
+		// Session changed — update workspace name for the new session
+		workonProjectName = undefined;
+		updateWorkspaceName();
+	});
+
+	pi.on("session_fork", () => {
+		// Forked session inherits the name — update workspace
+		updateWorkspaceName();
+	});
+
+	// Listen for workon:switch events from pi-workon extension.
+	// When the user switches project context, update the workspace name.
+	pi.events.on("workon:switch", (data: unknown) => {
+		const event = data as { name?: string; path?: string } | undefined;
+		if (event?.name) {
+			workonProjectName = event.name;
+			updateWorkspaceName();
+		}
 	});
 
 	pi.on("agent_start", () => {

@@ -15,6 +15,7 @@
  * the cmux socket at /tmp/cmux.sock. No-ops gracefully outside cmux.
  */
 
+import { basename } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { CmuxClient } from "./client.ts";
@@ -89,11 +90,9 @@ export default function (pi: ExtensionAPI) {
 	let workonProjectName: string | undefined;
 
 	function updateWorkspaceName(): void {
-		const name = pi.getSessionName() ?? workonProjectName;
-		if (name) {
-			safe(() => client.renameWorkspace(name));
-			log("workspace_renamed", { name, source: pi.getSessionName() ? "session" : "workon" }, "DEBUG");
-		}
+		const name = pi.getSessionName() ?? workonProjectName ?? basename(process.cwd());
+		safe(() => client.renameWorkspace(name));
+		log("workspace_renamed", { name, source: pi.getSessionName() ? "session" : workonProjectName ? "workon" : "cwd" }, "DEBUG");
 	}
 
 	pi.on("session_start", async (_event, ctx) => {

@@ -143,6 +143,14 @@ automatically processed:
 | `skills` | `[]` | Skill paths for spawned subprocesses |
 | `model` | (default) | Model override for spawned subprocesses |
 
+### Security Note
+
+The poller spawns `pi` subprocesses with full tool access, using prompts
+built entirely from hub-returned data (question, response, handoff context).
+**Hub compromise = arbitrary code execution on the agent host.** Use HTTPS
+for `hub.url` in production. The `handoff.project` path is validated (must
+exist and be a directory) before being used as the subprocess working directory.
+
 ---
 
 ## a2a_discover — Find Agents

@@ -424,7 +424,7 @@ export async function acknowledgeClarification(
 
 	const result = await hubRpc(rpcUrl, "clarification.acknowledge", { agentId, clarificationId }, hubConfig.apiKey, log, "hub_clarification_acknowledge");
 	if (result) {
-		const acknowledged = result.acknowledged as boolean ?? true;
+		const acknowledged = (result.acknowledged as boolean) ?? false;
 		log("hub_clarification_acknowledge_result", { clarificationId, acknowledged });
 		return acknowledged;
 	}

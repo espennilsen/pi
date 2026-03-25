@@ -33,6 +33,7 @@
 
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { statSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
@@ -420,6 +421,7 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(pollerInterval);
 			pollerInterval = null;
 		}
+		pollerRunning = false;
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
@@ -793,9 +795,23 @@ export default function (pi: ExtensionAPI) {
 	function spawnClarificationHandler(c: AnsweredClarification, pollerConfig: PollerConfig): void {
 		const prompt = buildClarificationPrompt(c);
 
-		// Determine working directory from handoff context
+		// Determine working directory from handoff context.
+		// Validate that the project path exists and is a directory —
+		// the handoff data comes from the hub and must not be trusted blindly.
+		let spawnCwd = cwd;
 		const projectPath = c.handoff?.project as string | undefined;
-		const spawnCwd = projectPath ?? cwd;
+		if (projectPath) {
+			try {
+				const stat = statSync(projectPath);
+				if (stat.isDirectory()) {
+					spawnCwd = projectPath;
+				} else {
+					log("poller_invalid_project_path", { clarificationId: c.clarificationId, projectPath, reason: "not a directory" }, "WARN");
+				}
+			} catch {
+				log("poller_invalid_project_path", { clarificationId: c.clarificationId, projectPath, reason: "does not exist" }, "WARN");
+			}
+		}
 
 		// Build pi command args
 		const args: string[] = ["-p", prompt];
@@ -866,20 +882,24 @@ export default function (pi: ExtensionAPI) {
 		if (pollerRunning || !hubAgentId) return;
 		pollerRunning = true;
 
+		// Snapshot hubAgentId — session_start can reset it to null between
+		// any await points. Using a local const avoids stale references.
+		const agentId = hubAgentId;
+
 		try {
 			const { config } = loadConfig(cwd);
 			const hubConfig = config.hub;
 			const pollerConfig = config.poller;
 			if (!hubConfig || !pollerConfig?.enabled) return;
 
-			const answered = await listAnsweredClarifications(hubAgentId, hubConfig, log);
+			const answered = await listAnsweredClarifications(agentId, hubConfig, log);
 			if (answered.length === 0) return;
 
 			log("poller_found_answers", { count: answered.length });
 
 			for (const c of answered) {
 				// Acknowledge first — atomic, prevents double-processing
-				const acked = await acknowledgeClarification(hubAgentId!, c.clarificationId, hubConfig, log);
+				const acked = await acknowledgeClarification(agentId, c.clarificationId, hubConfig, log);
 				if (!acked) {
 					log("poller_acknowledge_failed", { clarificationId: c.clarificationId }, "WARN");
 					continue;

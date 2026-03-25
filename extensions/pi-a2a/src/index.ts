@@ -996,10 +996,19 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			question: Type.String({ description: "The question to ask the owner (max 2000 chars)" }),
 			context: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional structured metadata to help the owner understand the context" })),
+			handoff: Type.Optional(Type.Object({
+				done: Type.Optional(Type.Array(Type.String(), { description: "What has been completed so far" })),
+				remaining: Type.Optional(Type.Array(Type.String(), { description: "What still needs to be done" })),
+				decisions: Type.Optional(Type.Array(Type.String(), { description: "Key decisions made during this session" })),
+				uncertain: Type.Optional(Type.Array(Type.String(), { description: "Open questions or areas of uncertainty" })),
+				project: Type.Optional(Type.String({ description: "Project name or path for context" })),
+				branch: Type.Optional(Type.String({ description: "Git branch being worked on" })),
+				taskId: Type.Optional(Type.String({ description: "td task ID if applicable" })),
+			}, { additionalProperties: true, description: "Structured handoff context so work can resume in a new session if the current one expires. Include what's done, what remains, key decisions, and open questions." })),
 			priority: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("normal"), Type.Literal("urgent")], { description: "Priority level. Default: normal" })),
 			timeoutMinutes: Type.Optional(Type.Number({ description: "How long to wait for a response in minutes. Default: 60, max: 4320 (72 hours)" })),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, signal) {
 			const { config } = loadConfig(cwd);
 			const hubConfig = config.hub;
 
@@ -1023,6 +1032,7 @@ export default function (pi: ExtensionAPI) {
 				log,
 				{
 					context: params.context,
+					handoff: params.handoff,
 					priority: params.priority,
 				},
 			);
@@ -1038,7 +1048,7 @@ export default function (pi: ExtensionAPI) {
 
 			log("ask_owner_waiting", { clarificationId, question: question.slice(0, 100), timeoutMinutes });
 
-			// Poll until answered, expired, cancelled, or timeout.
+			// Poll until answered, expired, cancelled, abort, or timeout.
 			// Capture hubAgentId now — session_start resets it to null,
 			// and we need the original value for cancel/poll calls.
 			// Safe to assert non-null: guarded by the hubAgentId check above.
@@ -1046,19 +1056,62 @@ export default function (pi: ExtensionAPI) {
 			const deadline = Date.now() + timeoutMs;
 			const myToken = sessionToken;
 
+			/**
+			 * Cancellable sleep that resolves on timeout OR when the abort
+			 * signal fires, whichever comes first.
+			 */
+			function cancellableSleep(ms: number): Promise<void> {
+				return new Promise((resolve) => {
+					const onAbort = () => {
+						clearTimeout(timer);
+						resolve();
+					};
+					const timer = setTimeout(() => {
+						signal?.removeEventListener("abort", onAbort);
+						resolve();
+					}, ms);
+					signal?.addEventListener("abort", onAbort, { once: true });
+				});
+			}
+
+			/** Cancel the hub request and return a result. */
+			async function cancelAndReturn(reason: string, logEvent: string): Promise<ReturnType<typeof txt>> {
+				await cancelClarification(capturedAgentId, clarificationId, hubConfig!, log);
+				log(logEvent, { clarificationId });
+				return txt(reason);
+			}
+
 			while (Date.now() < deadline) {
-				// Abort if session restarted while we were waiting
-				if (sessionToken !== myToken) {
-					await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
-					return txt("⚠️ Session restarted — clarification request cancelled.");
+				// Abort if user cancelled (Ctrl+C / Escape)
+				if (signal?.aborted) {
+					return cancelAndReturn(
+						"🚫 Cancelled — clarification request withdrawn.",
+						"ask_owner_aborted",
+					);
 				}
 
-				await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-
-				// Check again after sleep
+				// Abort if session restarted while we were waiting
 				if (sessionToken !== myToken) {
-					await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
-					return txt("⚠️ Session restarted — clarification request cancelled.");
+					return cancelAndReturn(
+						"⚠️ Session restarted — clarification request cancelled.",
+						"ask_owner_session_reset",
+					);
+				}
+
+				await cancellableSleep(pollIntervalMs);
+
+				// Re-check abort after sleep
+				if (signal?.aborted) {
+					return cancelAndReturn(
+						"🚫 Cancelled — clarification request withdrawn.",
+						"ask_owner_aborted",
+					);
+				}
+				if (sessionToken !== myToken) {
+					return cancelAndReturn(
+						"⚠️ Session restarted — clarification request cancelled.",
+						"ask_owner_session_reset",
+					);
 				}
 
 				const poll = await pollClarification(capturedAgentId, clarificationId, hubConfig, log);

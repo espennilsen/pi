@@ -97,11 +97,13 @@ export default function (pi: ExtensionAPI) {
 		const source = pi.getSessionName() ? "session"
 			: workonProjectName ? "workon"
 			: "cwd";
-		safe(() => client.renameWorkspace(name));
+		// Use the same "π - " prefix that Pi core's updateTerminalTitle() uses,
+		// so the cmux workspace name stays consistent with the terminal title.
+		safe(() => client.renameWorkspace(`π - ${name}`));
 		log("workspace_renamed", { name, source }, "DEBUG");
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event, _ctx) => {
 		// Clear stale browser surface tracking from previous sessions
 		resetBrowserState();
 		cancelPendingNotify();
@@ -115,10 +117,11 @@ export default function (pi: ExtensionAPI) {
 		// Show initial idle status
 		safe(() => client.setStatus(STATUS_KEY, "idle"));
 
-		// Set terminal title
-		if (ctx.hasUI) {
-			ctx.ui.setTitle(`Pi — cmux`);
-		}
+		// NOTE: We do NOT call ctx.ui.setTitle() here. Pi core's
+		// updateTerminalTitle() sets the terminal title after extensions
+		// init. We only use renameWorkspace() (with the π prefix) to keep
+		// the cmux workspace name in sync across lifecycle events that
+		// Pi core doesn't know about (session_switch, session_fork, workon:switch).
 
 		log("session_started", { workspaceId, surfaceId });
 	});

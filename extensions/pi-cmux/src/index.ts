@@ -15,6 +15,7 @@
  * the cmux socket at /tmp/cmux.sock. No-ops gracefully outside cmux.
  */
 
+import { basename } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { CmuxClient } from "./client.ts";
@@ -80,26 +81,75 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	/**
+	 * Update the cmux workspace title.
+	 *
+	 * Priority: session name > workon project name > cwd basename.
+	 * Called on session_start, session_switch, session_fork, and workon:switch.
+	 *
+	 * Note: `workonProjectName` is module-level but safe — Pi runs one
+	 * session at a time per process (session_switch is sequential, not concurrent).
+	 */
+	let workonProjectName: string | undefined;
+
+	function updateWorkspaceName(): void {
+		const name = pi.getSessionName() ?? workonProjectName ?? basename(process.cwd());
+		const source = pi.getSessionName() ? "session"
+			: workonProjectName ? "workon"
+			: "cwd";
+		// Use the same "π - " prefix that Pi core's updateTerminalTitle() uses,
+		// so the cmux workspace name stays consistent with the terminal title.
+		safe(() => client.renameWorkspace(`π - ${name}`));
+		log("workspace_renamed", { name, source }, "DEBUG");
+	}
+
+	pi.on("session_start", async (_event, _ctx) => {
 		// Clear stale browser surface tracking from previous sessions
 		resetBrowserState();
 		cancelPendingNotify();
 
+		// Reset workon state — new session hasn't switched projects yet
+		workonProjectName = undefined;
+
 		// Set workspace name from session
-		const name = pi.getSessionName();
-		if (name) {
-			safe(() => client.renameWorkspace(name));
-		}
+		updateWorkspaceName();
 
 		// Show initial idle status
 		safe(() => client.setStatus(STATUS_KEY, "idle"));
 
-		// Set terminal title
-		if (ctx.hasUI) {
-			ctx.ui.setTitle(`Pi — cmux`);
-		}
+		// NOTE: We do NOT call ctx.ui.setTitle() here. Pi core's
+		// updateTerminalTitle() sets the terminal title after extensions
+		// init. We only use renameWorkspace() (with the π prefix) to keep
+		// the cmux workspace name in sync across lifecycle events that
+		// Pi core doesn't know about (session_switch, session_fork, workon:switch).
 
 		log("session_started", { workspaceId, surfaceId });
+	});
+
+	pi.on("session_switch", () => {
+		// Session changed — update workspace name for the new session
+		workonProjectName = undefined;
+		updateWorkspaceName();
+	});
+
+	pi.on("session_fork", () => {
+		// Forked session continues from the same conversation, so inherit
+		// the workon project context. Session name is read fresh from the
+		// new session by getSessionName().
+		updateWorkspaceName();
+	});
+
+	// Listen for workon:switch events from pi-workon extension.
+	// Event shape: { name: string, path: string }
+	pi.events.on("workon:switch", (data: unknown) => {
+		const event = data as Record<string, unknown> | null | undefined;
+		const name = typeof event?.name === "string" ? event.name : undefined;
+		if (name) {
+			workonProjectName = name;
+			updateWorkspaceName();
+		} else {
+			log("workon_event_missing_name", { data }, "WARN");
+		}
 	});
 
 	pi.on("agent_start", () => {

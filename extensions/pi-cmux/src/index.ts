@@ -86,13 +86,19 @@ export default function (pi: ExtensionAPI) {
 	 *
 	 * Priority: session name > workon project name > cwd basename.
 	 * Called on session_start, session_switch, session_fork, and workon:switch.
+	 *
+	 * Note: `workonProjectName` is module-level but safe — Pi runs one
+	 * session at a time per process (session_switch is sequential, not concurrent).
 	 */
 	let workonProjectName: string | undefined;
 
 	function updateWorkspaceName(): void {
 		const name = pi.getSessionName() ?? workonProjectName ?? basename(process.cwd());
+		const source = pi.getSessionName() ? "session"
+			: workonProjectName ? "workon"
+			: "cwd";
 		safe(() => client.renameWorkspace(name));
-		log("workspace_renamed", { name, source: pi.getSessionName() ? "session" : workonProjectName ? "workon" : "cwd" }, "DEBUG");
+		log("workspace_renamed", { name, source }, "DEBUG");
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -124,17 +130,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_fork", () => {
-		// Forked session inherits the name — update workspace
+		// Forked session continues from the same conversation, so inherit
+		// the workon project context. Session name is read fresh from the
+		// new session by getSessionName().
 		updateWorkspaceName();
 	});
 
 	// Listen for workon:switch events from pi-workon extension.
-	// When the user switches project context, update the workspace name.
+	// Event shape: { name: string, path: string }
 	pi.events.on("workon:switch", (data: unknown) => {
-		const event = data as { name?: string; path?: string } | undefined;
-		if (event?.name) {
-			workonProjectName = event.name;
+		const event = data as Record<string, unknown> | null | undefined;
+		const name = typeof event?.name === "string" ? event.name : undefined;
+		if (name) {
+			workonProjectName = name;
 			updateWorkspaceName();
+		} else {
+			log("workon_event_missing_name", { data }, "WARN");
 		}
 	});
 

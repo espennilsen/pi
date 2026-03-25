@@ -22,14 +22,30 @@ description: >
 |------|---------|
 | `a2a_discover` | Find remote agents on the hub or static registry |
 | `a2a_send` | Send a message to a remote agent by name, ID, or URL |
-| `ask_owner` | Ask the human owner a question and wait for their response |
+| `ask_owner` | Ask the human owner a question (non-blocking) |
 
 ---
 
 ## ask_owner — Human-in-the-Loop
 
 Use `ask_owner` when you **genuinely cannot proceed** without human input.
-The tool blocks your turn until the owner responds through the hub's web UI.
+The tool submits your question to the hub and **returns immediately** — it
+does NOT block your session. When the owner responds, a **fresh pi
+subprocess** is automatically spawned with your handoff context + the
+owner's answer to continue the work.
+
+### How It Works
+
+1. You call `ask_owner` with a question + handoff context
+2. The question is submitted to the A2A Hub — you get an immediate confirmation
+3. You continue with other work or end your session
+4. The owner answers through the hub's web UI (could be minutes or hours later)
+5. A background poller detects the response
+6. A fresh `pi` subprocess is spawned with a self-contained prompt containing:
+   - The original question
+   - The owner's response
+   - Your full handoff context (done, remaining, decisions, etc.)
+7. The new session picks up where you left off — no prior conversation context needed
 
 ### When to Use
 
@@ -46,9 +62,9 @@ The tool blocks your turn until the owner responds through the hub's web UI.
 
 ### Always Include Handoff Context
 
-**Every `ask_owner` call MUST include the `handoff` parameter.** The owner
-may not respond before your session expires. Without handoff context, all
-progress is lost. The handoff enables a fresh agent to continue the work.
+**Every `ask_owner` call MUST include the `handoff` parameter.** The response
+will be handled by a completely fresh session with zero prior context. Without
+handoff context, the new session has no idea what to do.
 
 ```json
 {
@@ -76,8 +92,7 @@ progress is lost. The handoff enables a fresh agent to continue the work.
     "branch": "td-abc123/auth",
     "taskId": "td-abc123"
   },
-  "priority": "normal",
-  "timeoutMinutes": 120
+  "priority": "normal"
 }
 ```
 
@@ -89,7 +104,7 @@ progress is lost. The handoff enables a fresh agent to continue the work.
 | `remaining` | Yes | What still needs to be done — ordered by priority |
 | `decisions` | If any | Key choices made and why |
 | `uncertain` | If any | Open questions beyond the one being asked |
-| `project` | Yes | Project name or path |
+| `project` | Yes | Project name or absolute path to project root |
 | `branch` | If applicable | Git branch being worked on |
 | `taskId` | If applicable | td task ID |
 
@@ -101,12 +116,32 @@ progress is lost. The handoff enables a fresh agent to continue the work.
 | `normal` | Default — standard question |
 | `urgent` | Blocking critical work, needs fast response |
 
-### Timeout
+### Poller Configuration
 
-- Default: 60 minutes
-- Max: 4320 minutes (72 hours)
-- Set longer timeouts for questions the owner might not see immediately
-- The tool is cancellable — Ctrl+C aborts and cancels the hub request
+The background poller must be enabled in `settings.json` for responses to be
+automatically processed:
+
+```json
+{
+  "pi-a2a": {
+    "poller": {
+      "enabled": true,
+      "intervalSeconds": 60,
+      "extensions": ["extensions/pi-github", "extensions/pi-memory"],
+      "skills": ["td", "github", "code-review"],
+      "model": "claude-sonnet-4-5"
+    }
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `false` | Enable the poller |
+| `intervalSeconds` | `60` | Poll interval (15–600) |
+| `extensions` | `[]` | Extension paths for spawned subprocesses |
+| `skills` | `[]` | Skill paths for spawned subprocesses |
+| `model` | (default) | Model override for spawned subprocesses |
 
 ---
 

@@ -32,6 +32,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
@@ -46,11 +47,11 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult, type AsyncTaskResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification } from "./hub.ts";
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
-import type { HubConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -133,6 +134,7 @@ export default function (pi: ExtensionAPI) {
 		label: "A2A",
 	});
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
+	let pollerInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** This agent's own public A2A URL — included in pi:sender for reply routing. */
@@ -414,6 +416,10 @@ export default function (pi: ExtensionAPI) {
 		}
 		pendingResolve = null;
 		pendingNonce = null;
+		if (pollerInterval) {
+			clearInterval(pollerInterval);
+			pollerInterval = null;
+		}
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
@@ -621,6 +627,9 @@ export default function (pi: ExtensionAPI) {
 				sendTelemetry(config).catch(() => {});
 			}
 		}
+
+		// Start clarification response poller (if configured)
+		startPoller(config);
 	});
 
 	// Re-enrich on first agent turn to catch late-registering extension tools
@@ -642,6 +651,12 @@ export default function (pi: ExtensionAPI) {
 			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
 			pendingResolve = null;
 			pendingNonce = null;
+		}
+
+		// Stop poller interval
+		if (pollerInterval) {
+			clearInterval(pollerInterval);
+			pollerInterval = null;
 		}
 
 		// Stop telemetry interval
@@ -678,6 +693,233 @@ export default function (pi: ExtensionAPI) {
 			await stopServer(log);
 		}
 	});
+
+	// ── Clarification Response Poller ─────────────────────────
+	//
+	// Periodically checks the hub for owner responses to ask_owner questions.
+	// When a response is found, spawns a fresh pi subprocess with the handoff
+	// context + owner answer — completely independent of the current session.
+
+	/** Guard against concurrent poll cycles. */
+	let pollerRunning = false;
+
+	/**
+	 * Build a self-contained prompt for a fresh pi subprocess from an
+	 * answered clarification. Includes full handoff context + owner response.
+	 */
+	function buildClarificationPrompt(c: AnsweredClarification): string {
+		const lines: string[] = [];
+
+		lines.push("# Owner Response — Resume Work\n");
+		lines.push("You are a fresh agent session spawned to handle an owner's response to a previous question.");
+		lines.push("You have NO prior conversation context. Everything you need is below.\n");
+
+		// Owner's Q&A
+		lines.push("## Question Asked");
+		lines.push(`> ${c.question}\n`);
+		lines.push("## Owner's Response");
+		lines.push(c.response);
+		lines.push("");
+
+		// Handoff context
+		if (c.handoff) {
+			const h = c.handoff;
+
+			if (h.project || h.branch || h.taskId) {
+				lines.push("## Project Context");
+				if (h.project) lines.push(`- **Project:** ${h.project}`);
+				if (h.branch) lines.push(`- **Branch:** ${h.branch}`);
+				if (h.taskId) lines.push(`- **Task:** ${h.taskId}`);
+				lines.push("");
+			}
+
+			if (Array.isArray(h.done) && h.done.length > 0) {
+				lines.push("## What's Been Done");
+				for (const item of h.done) lines.push(`- ${item}`);
+				lines.push("");
+			}
+
+			if (Array.isArray(h.remaining) && h.remaining.length > 0) {
+				lines.push("## What's Left");
+				for (const item of h.remaining) lines.push(`- ${item}`);
+				lines.push("");
+			}
+
+			if (Array.isArray(h.decisions) && h.decisions.length > 0) {
+				lines.push("## Key Decisions");
+				for (const item of h.decisions) lines.push(`- ${item}`);
+				lines.push("");
+			}
+
+			if (Array.isArray(h.uncertain) && h.uncertain.length > 0) {
+				lines.push("## Open Questions");
+				for (const item of h.uncertain) lines.push(`- ${item}`);
+				lines.push("");
+			}
+
+			// Include any extra handoff fields not in the standard schema
+			const standardKeys = new Set(["done", "remaining", "decisions", "uncertain", "project", "branch", "taskId"]);
+			const extraKeys = Object.keys(h).filter((k) => !standardKeys.has(k));
+			if (extraKeys.length > 0) {
+				lines.push("## Additional Context");
+				for (const key of extraKeys) {
+					const val = typeof h[key] === "string" ? h[key] : JSON.stringify(h[key]);
+					lines.push(`- **${key}:** ${val}`);
+				}
+				lines.push("");
+			}
+		}
+
+		// Additional context metadata
+		if (c.context && Object.keys(c.context).length > 0) {
+			lines.push("## Metadata");
+			lines.push("```json");
+			lines.push(JSON.stringify(c.context, null, 2));
+			lines.push("```");
+			lines.push("");
+		}
+
+		lines.push("## Instructions");
+		lines.push("Use the owner's response and the handoff context above to continue the work.");
+		lines.push("Start by reading the relevant files and understanding the current state, then proceed with the remaining tasks.");
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Spawn a fresh pi subprocess to handle an answered clarification.
+	 * The subprocess runs in the project directory with configured extensions/skills.
+	 */
+	function spawnClarificationHandler(c: AnsweredClarification, pollerConfig: PollerConfig): void {
+		const prompt = buildClarificationPrompt(c);
+
+		// Determine working directory from handoff context
+		const projectPath = c.handoff?.project as string | undefined;
+		const spawnCwd = projectPath ?? cwd;
+
+		// Build pi command args
+		const args: string[] = ["-p", prompt];
+
+		// Disable extension/skill discovery — only load what's configured
+		args.push("-ne", "-ns");
+
+		// Add configured extensions
+		if (pollerConfig.extensions?.length) {
+			for (const ext of pollerConfig.extensions) {
+				args.push("-e", ext);
+			}
+		}
+
+		// Add configured skills
+		if (pollerConfig.skills?.length) {
+			for (const skill of pollerConfig.skills) {
+				args.push("--skill", skill);
+			}
+		}
+
+		// Model override
+		if (pollerConfig.model) {
+			args.push("--model", pollerConfig.model);
+		}
+
+		// Don't save session — these are ephemeral
+		args.push("--no-session");
+
+		log("poller_spawn", {
+			clarificationId: c.clarificationId,
+			cwd: spawnCwd,
+			extensions: pollerConfig.extensions ?? [],
+			skills: pollerConfig.skills ?? [],
+			model: pollerConfig.model ?? "default",
+			promptLength: prompt.length,
+		});
+
+		const child = spawn("pi", args, {
+			cwd: spawnCwd,
+			stdio: "ignore",
+			detached: true,
+			env: {
+				...process.env,
+				// Don't inherit cmux env — subprocess is independent
+				CMUX_WORKSPACE_ID: undefined,
+				CMUX_SURFACE_ID: undefined,
+			},
+		});
+
+		child.on("error", (err) => {
+			log("poller_spawn_error", { clarificationId: c.clarificationId, error: err.message }, "ERROR");
+		});
+
+		child.on("exit", (code) => {
+			log("poller_spawn_exit", { clarificationId: c.clarificationId, exitCode: code });
+		});
+
+		// Detach — don't let the child keep this process alive
+		child.unref();
+	}
+
+	/**
+	 * Run one poll cycle: check hub for answered clarifications,
+	 * spawn handlers, and acknowledge.
+	 */
+	async function pollForClarificationResponses(): Promise<void> {
+		if (pollerRunning || !hubAgentId) return;
+		pollerRunning = true;
+
+		try {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+			const pollerConfig = config.poller;
+			if (!hubConfig || !pollerConfig?.enabled) return;
+
+			const answered = await listAnsweredClarifications(hubAgentId, hubConfig, log);
+			if (answered.length === 0) return;
+
+			log("poller_found_answers", { count: answered.length });
+
+			for (const c of answered) {
+				// Acknowledge first — atomic, prevents double-processing
+				const acked = await acknowledgeClarification(hubAgentId!, c.clarificationId, hubConfig, log);
+				if (!acked) {
+					log("poller_acknowledge_failed", { clarificationId: c.clarificationId }, "WARN");
+					continue;
+				}
+
+				// Spawn a fresh pi subprocess
+				spawnClarificationHandler(c, pollerConfig);
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			log("poller_error", { error: msg }, "WARN");
+		} finally {
+			pollerRunning = false;
+		}
+	}
+
+	/**
+	 * Start the background poller if configured.
+	 * Called from session_start after hub registration.
+	 */
+	function startPoller(config: ReturnType<typeof loadConfig>["config"]): void {
+		if (pollerInterval) {
+			clearInterval(pollerInterval);
+			pollerInterval = null;
+		}
+
+		const pollerConfig = config.poller;
+		if (!pollerConfig?.enabled || !config.hub?.apiKey) return;
+
+		const intervalSec = Math.min(Math.max(pollerConfig.intervalSeconds ?? 60, 15), 600);
+		const intervalMs = intervalSec * 1000;
+
+		log("poller_started", { intervalSeconds: intervalSec, extensions: pollerConfig.extensions ?? [], skills: pollerConfig.skills ?? [] });
+
+		// Run an initial poll immediately, then on interval
+		pollForClarificationResponses().catch(() => {});
+		pollerInterval = setInterval(() => {
+			pollForClarificationResponses().catch(() => {});
+		}, intervalMs);
+	}
 
 	// ── Tools ─────────────────────────────────────────────────
 
@@ -991,8 +1233,11 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Ask your human owner a question via the A2A Hub when you need clarification, " +
 			"a decision, or approval to proceed. The owner answers through the hub's web UI. " +
-			"This tool blocks until the owner responds (or timeout/expiry). " +
-			"Use sparingly — only when you genuinely cannot proceed without human input.",
+			"This tool returns immediately — it does NOT block. When the owner responds, " +
+			"a fresh pi subprocess is automatically spawned with your handoff context and " +
+			"the owner's answer to continue the work. Include thorough handoff context " +
+			"(done, remaining, decisions, project, branch, taskId) so the new session " +
+			"can pick up where you left off.",
 		parameters: Type.Object({
 			question: Type.String({ description: "The question to ask the owner (max 2000 chars)" }),
 			context: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional structured metadata to help the owner understand the context" })),
@@ -1004,11 +1249,10 @@ export default function (pi: ExtensionAPI) {
 				project: Type.Optional(Type.String({ description: "Project name or path for context" })),
 				branch: Type.Optional(Type.String({ description: "Git branch being worked on" })),
 				taskId: Type.Optional(Type.String({ description: "td task ID if applicable" })),
-			}, { additionalProperties: true, description: "Structured handoff context so work can resume in a new session if the current one expires. Include what's done, what remains, key decisions, and open questions." })),
+			}, { additionalProperties: true, description: "Structured handoff context so work can resume in a fresh session. Include what's done, what remains, key decisions, and open questions. This is critical — the new session has no prior context." })),
 			priority: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("normal"), Type.Literal("urgent")], { description: "Priority level. Default: normal" })),
-			timeoutMinutes: Type.Optional(Type.Number({ description: "How long to wait for a response in minutes. Default: 60, max: 4320 (72 hours)" })),
 		}),
-		async execute(_toolCallId, params, signal) {
+		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
 			const hubConfig = config.hub;
 
@@ -1020,11 +1264,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const question = params.question.slice(0, 2000);
-			const timeoutMinutes = Math.min(Math.max(params.timeoutMinutes ?? 60, 1), 4320);
-			const timeoutMs = timeoutMinutes * 60 * 1000;
-			const pollIntervalMs = 15_000; // 15 seconds
 
-			// Submit the clarification request
+			// Submit the clarification request — non-blocking
 			const clarification = await requestClarification(
 				hubAgentId,
 				question,
@@ -1043,108 +1284,22 @@ export default function (pi: ExtensionAPI) {
 
 			const { clarificationId } = clarification;
 			const expiryNote = clarification.expiresAt
-				? ` (expires ${clarification.expiresAt})`
+				? ` Expires: ${clarification.expiresAt}.`
 				: "";
 
-			log("ask_owner_waiting", { clarificationId, question: question.slice(0, 100), timeoutMinutes });
+			log("ask_owner_submitted", { clarificationId, question: question.slice(0, 100) });
 
-			// Poll until answered, expired, cancelled, abort, or timeout.
-			// Capture hubAgentId now — session_start resets it to null,
-			// and we need the original value for cancel/poll calls.
-			// Safe to assert non-null: guarded by the hubAgentId check above.
-			const capturedAgentId = hubAgentId!;
-			const deadline = Date.now() + timeoutMs;
-			const myToken = sessionToken;
+			const pollerEnabled = config.poller?.enabled;
+			const pollerNote = pollerEnabled
+				? "The background poller will automatically spawn a fresh session when the owner responds."
+				: "⚠️ The poller is not enabled — set `pi-a2a.poller.enabled: true` in settings.json to auto-process responses.";
 
-			/**
-			 * Cancellable sleep that resolves on timeout OR when the abort
-			 * signal fires, whichever comes first.
-			 */
-			function cancellableSleep(ms: number): Promise<void> {
-				return new Promise((resolve) => {
-					const onAbort = () => {
-						clearTimeout(timer);
-						resolve();
-					};
-					const timer = setTimeout(() => {
-						signal?.removeEventListener("abort", onAbort);
-						resolve();
-					}, ms);
-					signal?.addEventListener("abort", onAbort, { once: true });
-				});
-			}
-
-			/** Cancel the hub request and return a result. */
-			async function cancelAndReturn(reason: string, logEvent: string): Promise<ReturnType<typeof txt>> {
-				await cancelClarification(capturedAgentId, clarificationId, hubConfig!, log);
-				log(logEvent, { clarificationId });
-				return txt(reason);
-			}
-
-			while (Date.now() < deadline) {
-				// Abort if user cancelled (Ctrl+C / Escape)
-				if (signal?.aborted) {
-					return cancelAndReturn(
-						"🚫 Cancelled — clarification request withdrawn.",
-						"ask_owner_aborted",
-					);
-				}
-
-				// Abort if session restarted while we were waiting
-				if (sessionToken !== myToken) {
-					return cancelAndReturn(
-						"⚠️ Session restarted — clarification request cancelled.",
-						"ask_owner_session_reset",
-					);
-				}
-
-				await cancellableSleep(pollIntervalMs);
-
-				// Re-check abort after sleep
-				if (signal?.aborted) {
-					return cancelAndReturn(
-						"🚫 Cancelled — clarification request withdrawn.",
-						"ask_owner_aborted",
-					);
-				}
-				if (sessionToken !== myToken) {
-					return cancelAndReturn(
-						"⚠️ Session restarted — clarification request cancelled.",
-						"ask_owner_session_reset",
-					);
-				}
-
-				const poll = await pollClarification(capturedAgentId, clarificationId, hubConfig, log);
-
-				if (!poll) {
-					// Network error — keep trying until timeout
-					log("ask_owner_poll_error", { clarificationId }, "WARN");
-					continue;
-				}
-
-				switch (poll.status) {
-					case "answered":
-						log("ask_owner_answered", { clarificationId, responseLength: poll.response?.length ?? 0 });
-						return txt(`✅ **Owner responded:**\n\n${poll.response}`);
-
-					case "expired":
-						log("ask_owner_expired", { clarificationId });
-						return txt(`⏰ Clarification request expired${expiryNote}. The owner did not respond in time. Proceed with your best judgment or try again.`);
-
-					case "cancelled":
-						log("ask_owner_cancelled", { clarificationId });
-						return txt("🚫 Clarification request was cancelled. Proceed with your best judgment or try again.");
-
-					case "pending":
-						// Still waiting — continue polling
-						break;
-				}
-			}
-
-			// Timeout reached — cancel the pending request
-			await cancelClarification(capturedAgentId, clarificationId, hubConfig, log);
-			log("ask_owner_timeout", { clarificationId, timeoutMinutes });
-			return txt(`⏰ Timed out after ${timeoutMinutes} minute(s) waiting for owner response. The clarification request has been cancelled. Proceed with your best judgment or try again with a longer timeout.`);
+			return txt(
+				`📤 **Question submitted to owner** (id: ${clarificationId})\n\n` +
+				`> ${question}\n\n` +
+				`${pollerNote}${expiryNote}\n\n` +
+				`You can continue with other work — this does not block.`,
+			);
 		},
 	});
 

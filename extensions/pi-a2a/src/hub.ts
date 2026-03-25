@@ -360,6 +360,77 @@ export async function cancelClarification(
 	return result !== null;
 }
 
+// ── Answered clarification types ─────────────────────────────
+
+export interface AnsweredClarification {
+	clarificationId: string;
+	question: string;
+	handoff: Record<string, unknown> | null;
+	context: Record<string, unknown> | null;
+	priority: "low" | "normal" | "urgent";
+	response: string;
+	answeredAt: string;
+	createdAt: string;
+}
+
+/**
+ * List all answered but unacknowledged clarifications for this agent.
+ *
+ * Returns the full payload for each (question, handoff context, owner
+ * response) so a fresh subprocess can resume work without local state.
+ */
+export async function listAnsweredClarifications(
+	agentId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<AnsweredClarification[]> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	log("hub_clarification_list_answered_start", { agentId });
+
+	const result = await hubRpc(rpcUrl, "clarification.list_answered", { agentId }, hubConfig.apiKey, log, "hub_clarification_list_answered");
+	if (result && Array.isArray(result.clarifications)) {
+		const items = (result.clarifications as Record<string, unknown>[]).map((c) => ({
+			clarificationId: c.clarificationId as string,
+			question: c.question as string,
+			handoff: (c.handoff as Record<string, unknown> | null) ?? null,
+			context: (c.context as Record<string, unknown> | null) ?? null,
+			priority: (c.priority as "low" | "normal" | "urgent") ?? "normal",
+			response: c.response as string,
+			answeredAt: c.answeredAt as string,
+			createdAt: c.createdAt as string,
+		}));
+		log("hub_clarification_list_answered_success", { agentId, count: items.length });
+		return items;
+	}
+	return [];
+}
+
+/**
+ * Acknowledge a clarification so it won't appear in future list_answered calls.
+ *
+ * Atomic: if two agents race, only the first acknowledgement succeeds
+ * (subsequent calls return ok but acknowledged=false).
+ */
+export async function acknowledgeClarification(
+	agentId: string,
+	clarificationId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	log("hub_clarification_acknowledge", { agentId, clarificationId });
+
+	const result = await hubRpc(rpcUrl, "clarification.acknowledge", { agentId, clarificationId }, hubConfig.apiKey, log, "hub_clarification_acknowledge");
+	if (result) {
+		const acknowledged = result.acknowledged as boolean ?? true;
+		log("hub_clarification_acknowledge_result", { clarificationId, acknowledged });
+		return acknowledged;
+	}
+	return false;
+}
+
 /**
  * Report telemetry to the A2A Hub.
  *

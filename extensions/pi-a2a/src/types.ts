@@ -34,6 +34,24 @@ export interface A2AConfig {
 	sendTimeoutMs?: number;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
+	/** Clarification response poller settings.
+	 *  When enabled, periodically checks the hub for answered owner clarifications
+	 *  and spawns a fresh pi subprocess to handle each response. */
+	poller?: PollerConfig;
+}
+
+/** Configuration for the background clarification poller. */
+export interface PollerConfig {
+	/** Enable the poller. Defaults to false. */
+	enabled?: boolean;
+	/** Poll interval in seconds. Defaults to 60. Min 15, max 600. */
+	intervalSeconds?: number;
+	/** Extension paths to load in spawned pi subprocesses. */
+	extensions?: string[];
+	/** Skill paths to load in spawned pi subprocesses. */
+	skills?: string[];
+	/** Model to use for spawned pi subprocesses. */
+	model?: string;
 }
 
 /** Configuration for a manually defined remote agent. */

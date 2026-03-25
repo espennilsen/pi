@@ -1062,11 +1062,15 @@ export default function (pi: ExtensionAPI) {
 			 */
 			function cancellableSleep(ms: number): Promise<void> {
 				return new Promise((resolve) => {
-					const timer = setTimeout(resolve, ms);
-					signal?.addEventListener("abort", () => {
+					const onAbort = () => {
 						clearTimeout(timer);
 						resolve();
-					}, { once: true });
+					};
+					const timer = setTimeout(() => {
+						signal?.removeEventListener("abort", onAbort);
+						resolve();
+					}, ms);
+					signal?.addEventListener("abort", onAbort, { once: true });
 				});
 			}
 

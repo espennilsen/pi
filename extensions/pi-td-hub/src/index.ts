@@ -126,7 +126,6 @@ function queryProject(project: ProjectInfo, where?: string, params?: unknown[]):
 	let db: Database.Database | null = null;
 	try {
 		db = new Database(project.dbPath, { readonly: true });
-		db.pragma("journal_mode = WAL");
 
 		const baseWhere = "deleted_at IS NULL";
 		const fullWhere = where ? `${baseWhere} AND (${where})` : baseWhere;
@@ -266,6 +265,7 @@ function actionPipeline(projects: ProjectInfo[]): ReturnType<typeof txt> {
 			if (pipeline[stage]) {
 				pipeline[stage].push(i);
 			} else {
+				// Unknown stage — still track it so it's rendered
 				pipeline[stage] = [i];
 			}
 		} else {
@@ -275,12 +275,17 @@ function actionPipeline(projects: ProjectInfo[]): ReturnType<typeof txt> {
 
 	const lines = ["# Pipeline View\n"];
 
-	for (const stage of stages) {
-		const items = pipeline[stage];
-		const emoji: Record<string, string> = {
-			queued: "📋", planning: "📐", building: "🔨",
-			reviewing: "👀", "pr-ready": "🚀", approved: "✅",
-		};
+	const emoji: Record<string, string> = {
+		queued: "📋", planning: "📐", building: "🔨",
+		reviewing: "👀", "pr-ready": "🚀", approved: "✅",
+	};
+
+	// Render known stages first, then any extra stages
+	const extraStages = Object.keys(pipeline).filter((s) => !stages.includes(s)).sort();
+	const allStages = [...stages, ...extraStages];
+
+	for (const stage of allStages) {
+		const items = pipeline[stage] ?? [];
 		lines.push(`## ${emoji[stage] ?? "📌"} ${stage} (${items.length})`);
 		if (items.length === 0) {
 			lines.push("_none_\n");
@@ -370,8 +375,10 @@ function actionSearch(projects: ProjectInfo[], query: string): ReturnType<typeof
 		return txt("Search query cannot be empty.");
 	}
 
-	const term = `%${query}%`;
-	const results = queryAll(projects, "status != 'closed' AND (title LIKE ? OR description LIKE ? OR id LIKE ?)", [term, term, term]);
+	// Escape LIKE wildcards so user input is treated as literal text
+	const escaped = query.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+	const term = `%${escaped}%`;
+	const results = queryAll(projects, "status != 'closed' AND (title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')", [term, term, term]);
 
 	if (results.length === 0) {
 		return txt(`No tasks matching "${query}".`);

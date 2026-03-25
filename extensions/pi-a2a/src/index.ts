@@ -996,6 +996,15 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			question: Type.String({ description: "The question to ask the owner (max 2000 chars)" }),
 			context: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Optional structured metadata to help the owner understand the context" })),
+			handoff: Type.Optional(Type.Object({
+				done: Type.Optional(Type.Array(Type.String(), { description: "What has been completed so far" })),
+				remaining: Type.Optional(Type.Array(Type.String(), { description: "What still needs to be done" })),
+				decisions: Type.Optional(Type.Array(Type.String(), { description: "Key decisions made during this session" })),
+				uncertain: Type.Optional(Type.Array(Type.String(), { description: "Open questions or areas of uncertainty" })),
+				project: Type.Optional(Type.String({ description: "Project name or path for context" })),
+				branch: Type.Optional(Type.String({ description: "Git branch being worked on" })),
+				taskId: Type.Optional(Type.String({ description: "td task ID if applicable" })),
+			}, { additionalProperties: true, description: "Structured handoff context so work can resume in a new session if the current one expires. Include what's done, what remains, key decisions, and open questions." })),
 			priority: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("normal"), Type.Literal("urgent")], { description: "Priority level. Default: normal" })),
 			timeoutMinutes: Type.Optional(Type.Number({ description: "How long to wait for a response in minutes. Default: 60, max: 4320 (72 hours)" })),
 		}),
@@ -1023,6 +1032,7 @@ export default function (pi: ExtensionAPI) {
 				log,
 				{
 					context: params.context,
+					handoff: params.handoff,
 					priority: params.priority,
 				},
 			);

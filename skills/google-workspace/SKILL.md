@@ -99,7 +99,7 @@ Core Google Workspace API skills. Read the reference file for full resource/meth
 | Admin Reports | Audit logs and usage reports | [references/gws-admin-reports.md](references/gws-admin-reports.md) |
 | Events | Subscribe to Workspace events | [references/gws-events.md](references/gws-events.md) |
 | Keep | Manage Google Keep notes | [references/gws-keep.md](references/gws-keep.md) |
-| Classroom | Manage courses, students, and invitations | [references/recipe-create-classroom-course.md](references/recipe-create-classroom-course.md) |
+| Classroom | Manage courses, students, and invitations | [references/gws-classroom.md](references/gws-classroom.md) |
 | Model Armor | Filter content for safety | [references/gws-modelarmor.md](references/gws-modelarmor.md) |
 | Workflow | Cross-service productivity workflows | [references/gws-workflow.md](references/gws-workflow.md) |
 

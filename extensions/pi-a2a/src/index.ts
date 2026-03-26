@@ -34,6 +34,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
@@ -796,17 +797,30 @@ export default function (pi: ExtensionAPI) {
 		const prompt = buildClarificationPrompt(c);
 
 		// Determine working directory from handoff context.
-		// Validate that the project path exists and is a directory —
-		// the handoff data comes from the hub and must not be trusted blindly.
+		// Validate that the project path exists, is a directory, and is
+		// under a safe root — the handoff data comes from the hub and must
+		// not be trusted blindly. Restrict to HOME subtree to limit blast
+		// radius even if the hub is compromised.
 		let spawnCwd = cwd;
 		const projectPath = c.handoff?.project as string | undefined;
 		if (projectPath) {
 			try {
-				const stat = statSync(projectPath);
-				if (stat.isDirectory()) {
-					spawnCwd = projectPath;
+				const resolved = resolve(projectPath);
+				const home = process.env.HOME ?? "";
+				const safeRoots = [home, cwd].filter(Boolean);
+				const isSafe = safeRoots.some((root) =>
+					resolved === root || resolved.startsWith(root + "/"),
+				);
+
+				if (!isSafe) {
+					log("poller_rejected_project_path", { clarificationId: c.clarificationId, projectPath, reason: "outside allowed roots" }, "WARN");
 				} else {
-					log("poller_invalid_project_path", { clarificationId: c.clarificationId, projectPath, reason: "not a directory" }, "WARN");
+					const stat = statSync(resolved);
+					if (stat.isDirectory()) {
+						spawnCwd = resolved;
+					} else {
+						log("poller_invalid_project_path", { clarificationId: c.clarificationId, projectPath, reason: "not a directory" }, "WARN");
+					}
 				}
 			} catch {
 				log("poller_invalid_project_path", { clarificationId: c.clarificationId, projectPath, reason: "does not exist" }, "WARN");

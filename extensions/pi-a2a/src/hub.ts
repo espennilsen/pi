@@ -390,16 +390,26 @@ export async function listAnsweredClarifications(
 
 	const result = await hubRpc(rpcUrl, "clarification.list_answered", { agentId }, hubConfig.apiKey, log, "hub_clarification_list_answered");
 	if (result && Array.isArray(result.clarifications)) {
-		const items = (result.clarifications as Record<string, unknown>[]).map((c) => ({
-			clarificationId: c.clarificationId as string,
-			question: c.question as string,
-			handoff: (c.handoff as Record<string, unknown> | null) ?? null,
-			context: (c.context as Record<string, unknown> | null) ?? null,
-			priority: (c.priority as "low" | "normal" | "urgent") ?? "normal",
-			response: c.response as string,
-			answeredAt: c.answeredAt as string,
-			createdAt: c.createdAt as string,
-		}));
+		const items: AnsweredClarification[] = [];
+		for (const c of result.clarifications as Record<string, unknown>[]) {
+			const clarificationId = (c.clarificationId as string) ?? "";
+			// Skip malformed items — without a clarificationId we can't
+			// acknowledge them, which would cause an infinite retry loop.
+			if (!clarificationId) {
+				log("hub_clarification_list_answered_skip_malformed", { raw: JSON.stringify(c).slice(0, 200) }, "WARN");
+				continue;
+			}
+			items.push({
+				clarificationId,
+				question: (c.question as string) ?? "",
+				handoff: (c.handoff as Record<string, unknown> | null) ?? null,
+				context: (c.context as Record<string, unknown> | null) ?? null,
+				priority: (c.priority as "low" | "normal" | "urgent") ?? "normal",
+				response: (c.response as string) ?? "",
+				answeredAt: (c.answeredAt as string) ?? "",
+				createdAt: (c.createdAt as string) ?? "",
+			});
+		}
 		log("hub_clarification_list_answered_success", { agentId, count: items.length });
 		return items;
 	}

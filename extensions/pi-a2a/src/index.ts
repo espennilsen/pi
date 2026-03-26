@@ -423,6 +423,7 @@ export default function (pi: ExtensionAPI) {
 			pollerInterval = null;
 		}
 		pollerRunning = false;
+		pollerSessionToken++;
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
@@ -703,8 +704,11 @@ export default function (pi: ExtensionAPI) {
 	// When a response is found, spawns a fresh pi subprocess with the handoff
 	// context + owner answer — completely independent of the current session.
 
-	/** Guard against concurrent poll cycles. */
+	/** Guard against concurrent poll cycles. Paired with pollerSessionToken
+	 *  so that a stale poll's finally block doesn't clear the guard for
+	 *  a new session's active poll. */
 	let pollerRunning = false;
+	let pollerSessionToken = 0;
 
 	/**
 	 * Build a self-contained prompt for a fresh pi subprocess from an
@@ -895,6 +899,7 @@ export default function (pi: ExtensionAPI) {
 	async function pollForClarificationResponses(): Promise<void> {
 		if (pollerRunning || !hubAgentId) return;
 		pollerRunning = true;
+		const myPollerToken = pollerSessionToken;
 
 		// Snapshot hubAgentId — session_start can reset it to null between
 		// any await points. Using a local const avoids stale references.
@@ -919,14 +924,31 @@ export default function (pi: ExtensionAPI) {
 					continue;
 				}
 
-				// Spawn a fresh pi subprocess
-				spawnClarificationHandler(c, pollerConfig);
+				// Spawn a fresh pi subprocess — wrapped in try/catch because
+				// spawn() can throw synchronously (e.g. ENOENT if pi binary
+				// is missing). After acknowledge the item is consumed, so a
+				// spawn failure means the work is lost. Log prominently.
+				try {
+					spawnClarificationHandler(c, pollerConfig);
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					log("poller_spawn_failed_after_ack", {
+						clarificationId: c.clarificationId,
+						error: msg,
+						question: c.question.slice(0, 100),
+					}, "ERROR");
+				}
 			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			log("poller_error", { error: msg }, "WARN");
 		} finally {
-			pollerRunning = false;
+			// Only clear the guard if this poll belongs to the current session.
+			// A stale poll from a previous session must not reset the flag for
+			// a new session's active poll.
+			if (pollerSessionToken === myPollerToken) {
+				pollerRunning = false;
+			}
 		}
 	}
 

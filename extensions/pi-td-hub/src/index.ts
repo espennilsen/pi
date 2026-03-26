@@ -16,7 +16,7 @@
  * }
  */
 
-import { readdirSync, existsSync, statSync } from "node:fs";
+import { readdirSync, existsSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
@@ -162,10 +162,6 @@ function queryAll(projects: ProjectInfo[], where?: string, params?: unknown[]): 
 
 function txt(s: string) {
 	return { content: [{ type: "text" as const, text: s }], details: {} };
-}
-
-function json(data: unknown) {
-	return txt(JSON.stringify(data, null, 2));
 }
 
 // ── Actions ──────────────────────────────────────────────────

@@ -121,6 +121,10 @@ function discoverProjects(root: string, maxDepth: number): ProjectInfo[] {
 /**
  * Query issues from a single project database.
  * Opens the db read-only for each query — no persistent handles.
+ *
+ * @param project  Project to query.
+ * @param where    SQL fragment with `?` placeholders only — never embed user data directly.
+ * @param params   Bound parameters for `?` placeholders in `where`.
  */
 function queryProject(project: ProjectInfo, where?: string, params?: unknown[]): Issue[] {
 	let db: Database.Database | null = null;
@@ -346,11 +350,14 @@ function actionQuery(
 	}
 
 	if (params.labels) {
-		// Match any of the comma-separated labels
+		// Match any of the comma-separated labels (escape LIKE wildcards)
 		const labelList = params.labels.split(",").map((l) => l.trim());
-		const labelConditions = labelList.map(() => "labels LIKE ?");
+		const labelConditions = labelList.map(() => "labels LIKE ? ESCAPE '\\'");
 		conditions.push(`(${labelConditions.join(" OR ")})`);
-		for (const l of labelList) sqlParams.push(`%${l}%`);
+		for (const l of labelList) {
+			const escaped = l.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+			sqlParams.push(`%${escaped}%`);
+		}
 	}
 
 	const where = conditions.join(" AND ");
@@ -430,7 +437,12 @@ export default function (pi: ExtensionAPI) {
 			query: Type.Optional(Type.String({ description: "Search term for full-text search across titles, descriptions, and IDs" })),
 		}),
 		async execute(_toolCallId, params) {
-			const config = loadConfig(cwd);
+			let config: Config;
+			try {
+				config = loadConfig(cwd);
+			} catch (e) {
+				return txt(`Failed to load config: ${e instanceof Error ? e.message : String(e)}`);
+			}
 			const projects = discoverProjects(config.root, config.maxDepth);
 
 			if (projects.length === 0) {

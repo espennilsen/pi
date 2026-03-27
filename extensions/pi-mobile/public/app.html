@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+	<title>Pi Agent</title>
+
+	<!-- PWA -->
+	<link rel="manifest" href="/mobile/manifest.json">
+	<meta name="theme-color" content="#6366f1">
+	<meta name="mobile-web-app-capable" content="yes">
+
+	<!-- iOS PWA support -->
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="Pi">
+
+	<style>
+		/* ── CSS Custom Properties ────────────────────────── */
+		:root {
+			--color-bg: #0a0a0f;
+			--color-bg-surface: #12121a;
+			--color-bg-elevated: #1a1a25;
+			--color-bg-hover: #22222f;
+			--color-border: #2a2a3a;
+			--color-text: #e4e4ed;
+			--color-text-dim: #8888a0;
+			--color-text-muted: #55556a;
+			--color-accent: #6366f1;
+			--color-accent-hover: #818cf8;
+			--color-accent-dim: #4f46e5;
+			--color-success: #22c55e;
+			--color-warning: #f59e0b;
+			--color-error: #ef4444;
+			--color-info: #3b82f6;
+			--radius: 12px;
+			--radius-sm: 8px;
+			--radius-xs: 4px;
+			--tab-height: 56px;
+			--safe-bottom: env(safe-area-inset-bottom, 0px);
+			--safe-top: env(safe-area-inset-top, 0px);
+		}
+
+		/* ── Reset ───────────────────────────────────────── */
+		*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+		html, body {
+			height: 100%;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+			background: var(--color-bg);
+			color: var(--color-text);
+			-webkit-font-smoothing: antialiased;
+			-webkit-tap-highlight-color: transparent;
+			overscroll-behavior: none;
+		}
+		body { display: flex; flex-direction: column; }
+
+		/* ── App layout ──────────────────────────────────── */
+		#app {
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+			width: 100%;
+			max-width: 480px;
+			margin: 0 auto;
+		}
+		@media (min-width: 768px) { #app { max-width: 600px; } }
+
+		/* ── Header ──────────────────────────────────────── */
+		.header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 8px 16px;
+			padding-top: calc(8px + var(--safe-top));
+			background: var(--color-bg-surface);
+			border-bottom: 1px solid var(--color-border);
+			min-height: 48px;
+			flex-shrink: 0;
+		}
+		.header-title { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+		.header-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-dim); }
+		.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); }
+		.status-dot.connected { background: var(--color-success); }
+		.status-dot.error { background: var(--color-error); }
+
+		/* ── Tab content ─────────────────────────────────── */
+		.tab-content {
+			flex: 1;
+			overflow-y: auto;
+			-webkit-overflow-scrolling: touch;
+			display: flex;
+			flex-direction: column;
+		}
+
+		/* ── Bottom tab bar ──────────────────────────────── */
+		.tab-bar {
+			display: flex;
+			align-items: stretch;
+			background: var(--color-bg-surface);
+			border-top: 1px solid var(--color-border);
+			height: var(--tab-height);
+			padding-bottom: var(--safe-bottom);
+			flex-shrink: 0;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			scrollbar-width: none;
+		}
+		.tab-bar::-webkit-scrollbar { display: none; }
+		.tab-item {
+			flex: 0 0 auto;
+			min-width: 56px;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			gap: 2px;
+			background: none;
+			border: none;
+			color: var(--color-text-muted);
+			font-size: 10px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: color 0.15s;
+			-webkit-tap-highlight-color: transparent;
+			padding: 4px 0;
+		}
+		.tab-item:active { opacity: 0.7; }
+		.tab-item.active { color: var(--color-accent); }
+		.tab-icon { font-size: 22px; line-height: 1; }
+		.tab-label { font-size: 10px; letter-spacing: 0.02em; }
+
+		/* ── Screen placeholder ──────────────────────────── */
+		.screen-placeholder {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			height: 100%;
+			gap: 12px;
+			color: var(--color-text-dim);
+			padding: 16px;
+		}
+		.screen-placeholder .icon { font-size: 48px; opacity: 0.4; }
+		.screen-placeholder .label { font-size: 15px; font-weight: 500; }
+		.screen-placeholder .hint { font-size: 13px; color: var(--color-text-muted); text-align: center; max-width: 260px; line-height: 1.5; }
+
+		/* ── Spinner ─────────────────────────────────────── */
+		.spinner { width: 32px; height: 32px; border: 3px solid var(--color-border); border-top-color: var(--color-accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+		@keyframes spin { to { transform: rotate(360deg); } }
+
+		/* ── Error boundary ──────────────────────────────── */
+		.error-boundary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px 16px; text-align: center; }
+		.error-boundary .error-icon { font-size: 36px; }
+		.error-boundary .error-message { font-size: 14px; color: var(--color-error); max-width: 300px; word-break: break-word; }
+		.error-boundary button { background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); padding: 8px 20px; font-size: 14px; font-weight: 500; cursor: pointer; }
+		.error-boundary button:active { opacity: 0.8; }
+
+		/* ── Chat screen ─────────────────────────────────── */
+		.chat-container { display: flex; flex-direction: column; height: 100%; }
+		.chat-messages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+		.chat-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 8px; color: var(--color-text-muted); }
+		.chat-empty .icon { font-size: 40px; opacity: 0.3; }
+		.chat-empty .text { font-size: 14px; }
+
+		.msg { max-width: 85%; padding: 10px 14px; border-radius: var(--radius); font-size: 15px; line-height: 1.5; word-wrap: break-word; }
+		.msg-user { align-self: flex-end; background: var(--color-accent); color: white; border-bottom-right-radius: var(--radius-xs); }
+		.msg-agent { align-self: flex-start; background: var(--color-bg-elevated); color: var(--color-text); border-bottom-left-radius: var(--radius-xs); }
+		.msg-agent pre { background: var(--color-bg); padding: 8px 10px; border-radius: var(--radius-xs); overflow-x: auto; font-size: 13px; margin: 6px 0; }
+		.msg-agent code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+		.msg-agent p { margin: 0 0 8px 0; }
+		.msg-agent p:last-child { margin-bottom: 0; }
+		.msg-agent ul, .msg-agent ol { margin: 4px 0; padding-left: 20px; }
+		.msg-agent strong { font-weight: 600; }
+		.msg-agent em { font-style: italic; color: var(--color-text-dim); }
+		.msg-agent a { color: var(--color-accent-hover); text-decoration: none; }
+
+		.msg-system { align-self: center; background: none; color: var(--color-text-muted); font-size: 12px; padding: 4px 8px; }
+
+		.msg-tool { align-self: flex-start; background: var(--color-bg-elevated); border-left: 3px solid var(--color-warning); padding: 6px 10px; font-size: 12px; color: var(--color-text-dim); border-radius: var(--radius-xs); max-width: 90%; }
+		.msg-tool .tool-name { font-weight: 600; color: var(--color-warning); }
+		.msg-tool.error { border-left-color: var(--color-error); }
+		.msg-tool.error .tool-name { color: var(--color-error); }
+
+		.typing-indicator { align-self: flex-start; padding: 8px 14px; display: flex; gap: 4px; align-items: center; }
+		.typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.4s infinite; }
+		.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+		.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+		@keyframes typing { 0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); } 30% { opacity: 1; transform: scale(1); } }
+
+		.chat-input-bar {
+			display: flex;
+			align-items: flex-end;
+			gap: 8px;
+			padding: 8px 12px;
+			padding-bottom: calc(8px + var(--safe-bottom));
+			background: var(--color-bg-surface);
+			border-top: 1px solid var(--color-border);
+			flex-shrink: 0;
+		}
+		.chat-input {
+			flex: 1;
+			background: var(--color-bg-elevated);
+			border: 1px solid var(--color-border);
+			border-radius: 20px;
+			padding: 8px 16px;
+			color: var(--color-text);
+			font-size: 15px;
+			font-family: inherit;
+			resize: none;
+			min-height: 38px;
+			max-height: 120px;
+			outline: none;
+			line-height: 1.4;
+		}
+		.chat-input:focus { border-color: var(--color-accent); }
+		.chat-input::placeholder { color: var(--color-text-muted); }
+		.chat-send {
+			width: 38px;
+			height: 38px;
+			border-radius: 50%;
+			background: var(--color-accent);
+			border: none;
+			color: white;
+			font-size: 18px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			flex-shrink: 0;
+			transition: opacity 0.15s;
+		}
+		.chat-send:disabled { opacity: 0.4; cursor: default; }
+		.chat-send:active:not(:disabled) { opacity: 0.8; }
+
+		/* ── Status screen ───────────────────────────────── */
+		.status-cards { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+		.status-card {
+			background: var(--color-bg-surface);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius);
+			padding: 14px 16px;
+		}
+		.status-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+		.status-card-title { font-size: 14px; font-weight: 600; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+		.status-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+		.status-badge.healthy { background: rgba(34,197,94,0.15); color: var(--color-success); }
+		.status-badge.degraded { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+		.status-badge.down { background: rgba(239,68,68,0.15); color: var(--color-error); }
+		.status-badge.unknown { background: rgba(85,85,106,0.15); color: var(--color-text-muted); }
+		.status-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--color-border); }
+		.status-row:last-child { border-bottom: none; }
+		.status-row-label { font-size: 13px; color: var(--color-text-dim); }
+		.status-row-value { font-size: 13px; font-weight: 500; }
+		.pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); animation: pulse-ring 2s infinite; }
+		@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+
+		/* ── Tasks screen ────────────────────────────────── */
+		.tasks-container { display: flex; flex-direction: column; height: 100%; }
+		.tasks-header { padding: 12px 16px; display: flex; gap: 8px; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+		.tasks-filter {
+			padding: 6px 14px;
+			border-radius: 16px;
+			border: 1px solid var(--color-border);
+			background: none;
+			color: var(--color-text-dim);
+			font-size: 13px;
+			font-weight: 500;
+			cursor: pointer;
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+		.tasks-filter.active { background: var(--color-accent); color: white; border-color: var(--color-accent); }
+		.tasks-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 16px; }
+		.task-item {
+			background: var(--color-bg-surface);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-sm);
+			padding: 12px 14px;
+			margin-bottom: 8px;
+			cursor: pointer;
+		}
+		.task-item:active { background: var(--color-bg-hover); }
+		.task-title { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+		.task-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+		.task-badge {
+			font-size: 11px;
+			font-weight: 600;
+			padding: 2px 7px;
+			border-radius: 4px;
+			text-transform: uppercase;
+			letter-spacing: 0.03em;
+		}
+		.task-badge.open { background: rgba(99,102,241,0.15); color: var(--color-accent); }
+		.task-badge.in_progress { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+		.task-badge.in_review { background: rgba(59,130,246,0.15); color: var(--color-info); }
+		.task-badge.blocked { background: rgba(239,68,68,0.15); color: var(--color-error); }
+		.task-badge.closed { background: rgba(85,85,106,0.15); color: var(--color-text-muted); }
+		.task-badge.P0, .task-badge.P1 { background: rgba(239,68,68,0.15); color: var(--color-error); }
+		.task-badge.P2 { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+		.task-badge.P3, .task-badge.P4 { background: rgba(85,85,106,0.15); color: var(--color-text-muted); }
+		.task-id { font-size: 11px; color: var(--color-text-muted); font-family: 'SF Mono', monospace; }
+		.task-points { font-size: 11px; color: var(--color-text-muted); }
+		.tasks-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 16px; color: var(--color-text-muted); gap: 8px; }
+		.task-fab {
+			position: fixed;
+			bottom: calc(var(--tab-height) + var(--safe-bottom) + 16px);
+			right: calc(50% - 210px);
+			width: 48px;
+			height: 48px;
+			border-radius: 50%;
+			background: var(--color-accent);
+			color: white;
+			border: none;
+			font-size: 24px;
+			cursor: pointer;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		@media (max-width: 479px) { .task-fab { right: 16px; } }
+		.task-fab:active { opacity: 0.8; }
+
+		/* ── Generic list styles ─────────────────────────── */
+		.list-container { display: flex; flex-direction: column; height: 100%; }
+		.list-header { padding: 12px 16px; flex-shrink: 0; }
+		.list-search {
+			width: 100%;
+			background: var(--color-bg-elevated);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-sm);
+			padding: 8px 12px;
+			color: var(--color-text);
+			font-size: 14px;
+			outline: none;
+		}
+		.list-search:focus { border-color: var(--color-accent); }
+		.list-search::placeholder { color: var(--color-text-muted); }
+		.list-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 16px; }
+		.list-item {
+			background: var(--color-bg-surface);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-sm);
+			padding: 12px 14px;
+			margin-bottom: 8px;
+		}
+		.list-item-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+		.list-item-desc { font-size: 12px; color: var(--color-text-dim); line-height: 1.4; }
+		.list-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 16px; color: var(--color-text-muted); gap: 8px; }
+
+		/* ── Files screen ────────────────────────────────── */
+		.file-breadcrumb { display: flex; align-items: center; gap: 4px; padding: 8px 16px; font-size: 13px; color: var(--color-text-dim); overflow-x: auto; flex-shrink: 0; }
+		.file-breadcrumb button { background: none; border: none; color: var(--color-accent); font-size: 13px; cursor: pointer; padding: 2px 4px; }
+		.file-breadcrumb span { color: var(--color-text-muted); }
+		.file-item { display: flex; align-items: center; gap: 10px; }
+		.file-item .file-icon { font-size: 18px; flex-shrink: 0; }
+		.file-item .file-info { flex: 1; min-width: 0; }
+		.file-item .file-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.file-item .file-meta { font-size: 11px; color: var(--color-text-muted); }
+		.file-viewer { flex: 1; overflow: auto; padding: 12px 16px; }
+		.file-viewer pre { background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px; font-size: 13px; font-family: 'SF Mono', monospace; overflow-x: auto; line-height: 1.5; white-space: pre; color: var(--color-text); }
+
+		/* ── Logs screen ─────────────────────────────────── */
+		.logs-container { display: flex; flex-direction: column; height: 100%; }
+		.logs-filters { display: flex; gap: 6px; padding: 8px 16px; flex-shrink: 0; overflow-x: auto; }
+		.log-filter { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--color-border); background: none; color: var(--color-text-dim); font-size: 12px; cursor: pointer; white-space: nowrap; }
+		.log-filter.active { background: var(--color-bg-elevated); color: var(--color-text); border-color: var(--color-accent); }
+		.logs-output { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 12px; font-family: 'SF Mono', monospace; font-size: 12px; line-height: 1.6; }
+		.log-entry { padding: 2px 4px; border-bottom: 1px solid rgba(42,42,58,0.5); }
+		.log-entry .log-time { color: var(--color-text-muted); margin-right: 8px; }
+		.log-entry .log-level { font-weight: 600; margin-right: 6px; }
+		.log-entry .log-level.info { color: var(--color-info); }
+		.log-entry .log-level.warn { color: var(--color-warning); }
+		.log-entry .log-level.error { color: var(--color-error); }
+		.log-entry .log-level.debug { color: var(--color-text-muted); }
+		.log-entry .log-source { color: var(--color-accent); margin-right: 6px; }
+		.log-entry .log-msg { color: var(--color-text); }
+
+		/* ── Cron screen ─────────────────────────────────── */
+		.cron-item .cron-schedule { font-size: 12px; font-family: 'SF Mono', monospace; color: var(--color-accent); margin-bottom: 4px; }
+		.cron-item .cron-meta { display: flex; gap: 8px; align-items: center; }
+		.cron-toggle { width: 42px; height: 24px; border-radius: 12px; border: none; cursor: pointer; position: relative; transition: background 0.2s; }
+		.cron-toggle.on { background: var(--color-success); }
+		.cron-toggle.off { background: var(--color-text-muted); }
+		.cron-toggle::after { content: ''; position: absolute; width: 20px; height: 20px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: transform 0.2s; }
+		.cron-toggle.on::after { transform: translateX(18px); }
+
+		/* ── Settings screen ─────────────────────────────── */
+		.settings-section { padding: 16px; }
+		.settings-section-title { font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+		.settings-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--color-border); }
+		.settings-row:last-child { border-bottom: none; }
+		.settings-row-label { font-size: 14px; }
+		.settings-row-value { font-size: 14px; color: var(--color-text-dim); }
+		.settings-input { background: var(--color-bg-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px 12px; color: var(--color-text); font-size: 14px; width: 100%; outline: none; margin-top: 6px; }
+		.settings-input:focus { border-color: var(--color-accent); }
+		.settings-btn { background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; width: 100%; margin-top: 8px; }
+		.settings-btn:active { opacity: 0.8; }
+		.settings-btn.danger { background: var(--color-error); }
+	</style>
+</head>
+<body>
+	<div id="app"></div>
+
+	<script type="module">
+		import { h, render, Component } from "https://esm.sh/preact@10.25.4";
+		import { useState, useCallback, useEffect, useRef, useMemo } from "https://esm.sh/preact@10.25.4/hooks";
+		import htm from "https://esm.sh/htm@3.1.1";
+
+		const html = htm.bind(h);
+
+		// ── Shared helpers ─────────────────────────────────
+
+		const api = (path, opts) => fetch("/api/mobile" + path, opts).then(r => r.json()).catch(() => ({ error: "Network error" }));
+		const apiPost = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+		// Minimal markdown → HTML (handles **bold**, *italic*, `code`, ```blocks```, links, lists)
+		function md(text) {
+			if (!text) return "";
+			return text
+				.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+				.replace(/`([^`]+)`/g, '<code>$1</code>')
+				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+				.replace(/\*(.+?)\*/g, '<em>$1</em>')
+				.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+				.replace(/^### (.+)$/gm, '<strong>$1</strong>')
+				.replace(/^## (.+)$/gm, '<strong>$1</strong>')
+				.replace(/^# (.+)$/gm, '<strong>$1</strong>')
+				.replace(/^[-*] (.+)$/gm, '• $1')
+				.replace(/\n/g, '<br>');
+		}
+
+		// ── Tab definitions ────────────────────────────────
+
+		const TABS = [
+			{ id: "chat",   icon: "💬", label: "Chat" },
+			{ id: "status", icon: "📊", label: "Status" },
+			{ id: "tasks",  icon: "📋", label: "Tasks" },
+			{ id: "files",  icon: "📁", label: "Files" },
+			{ id: "logs",   icon: "📜", label: "Logs" },
+			{ id: "cron",   icon: "⏰", label: "Cron" },
+			{ id: "skills", icon: "🧠", label: "Skills" },
+			{ id: "crm",      icon: "👥", label: "CRM" },
+			{ id: "calendar", icon: "📅", label: "Calendar" },
+			{ id: "extensions", icon: "🧩", label: "Extensions" },
+			{ id: "settings", icon: "⚙️", label: "Settings" },
+		];
+
+		// ── Chat Screen ────────────────────────────────────
+
+		function ChatScreen() {
+			const [messages, setMessages] = useState([]);
+			const [input, setInput] = useState("");
+			const [sending, setSending] = useState(false);
+			const [agentWorking, setAgentWorking] = useState(false);
+			const messagesRef = useRef(null);
+			const inputRef = useRef(null);
+
+			// Auto-scroll to bottom
+			useEffect(() => {
+				if (messagesRef.current) {
+					messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+				}
+			}, [messages, agentWorking]);
+
+			// SSE connection for agent events
+			useEffect(() => {
+				let es = null;
+				let reconnectTimer = null;
+
+				function connect() {
+					es = new EventSource("/api/mobile/chat/events");
+
+					es.onmessage = (e) => {
+						try {
+							const data = JSON.parse(e.data);
+							switch (data.type) {
+								case "connected":
+									break;
+								case "agent_start":
+									setAgentWorking(true);
+									break;
+								case "agent_end":
+									setAgentWorking(false);
+									break;
+								case "turn_end":
+									if (data.content) {
+										for (const block of data.content) {
+											if (block.type === "text" && block.text) {
+												setMessages(prev => [...prev, { type: "agent", text: block.text, time: Date.now() }]);
+											}
+										}
+									}
+									break;
+								case "tool_start":
+									setMessages(prev => [...prev, { type: "tool", name: data.toolName, status: "running", time: Date.now() }]);
+									break;
+								case "tool_end":
+									setMessages(prev => {
+										const updated = [...prev];
+										// Find the matching tool_start and update it
+										for (let i = updated.length - 1; i >= 0; i--) {
+											if (updated[i].type === "tool" && updated[i].name === data.toolName && updated[i].status === "running") {
+												updated[i] = { ...updated[i], status: data.isError ? "error" : "done" };
+												break;
+											}
+										}
+										return updated;
+									});
+									break;
+							}
+						} catch {}
+					};
+
+					es.onerror = () => {
+						es.close();
+						reconnectTimer = setTimeout(connect, 3000);
+					};
+				}
+
+				connect();
+				return () => {
+					if (es) es.close();
+					if (reconnectTimer) clearTimeout(reconnectTimer);
+				};
+			}, []);
+
+			const handleSend = useCallback(async () => {
+				const text = input.trim();
+				if (!text || sending) return;
+				setInput("");
+				setSending(true);
+				setMessages(prev => [...prev, { type: "user", text, time: Date.now() }]);
+
+				try {
+					await apiPost("/chat/prompt", { prompt: text });
+				} catch {}
+				setSending(false);
+			}, [input, sending]);
+
+			const handleKeyDown = useCallback((e) => {
+				if (e.key === "Enter" && !e.shiftKey) {
+					e.preventDefault();
+					handleSend();
+				}
+			}, [handleSend]);
+
+			// Auto-resize textarea
+			const handleInput = useCallback((e) => {
+				setInput(e.target.value);
+				e.target.style.height = "auto";
+				e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+			}, []);
+
+			return html`
+				<div class="chat-container">
+					<div class="chat-messages" ref=${messagesRef}>
+						${messages.length === 0 && !agentWorking && html`
+							<div class="chat-empty">
+								<div class="icon">💬</div>
+								<div class="text">Send a message to your Pi agent</div>
+							</div>
+						`}
+						${messages.map((msg, i) => {
+							if (msg.type === "user") {
+								return html`<div key=${i} class="msg msg-user">${msg.text}</div>`;
+							}
+							if (msg.type === "agent") {
+								return html`<div key=${i} class="msg msg-agent" dangerouslySetInnerHTML=${{ __html: md(msg.text) }} />`;
+							}
+							if (msg.type === "tool") {
+								return html`
+									<div key=${i} class="msg-tool ${msg.status === 'error' ? 'error' : ''}">
+										<span class="tool-name">${msg.status === 'running' ? '⏳' : msg.status === 'error' ? '❌' : '✅'} ${msg.name}</span>
+									</div>
+								`;
+							}
+							if (msg.type === "system") {
+								return html`<div key=${i} class="msg msg-system">${msg.text}</div>`;
+							}
+						})}
+						${agentWorking && html`
+							<div class="typing-indicator">
+								<div class="typing-dot"></div>
+								<div class="typing-dot"></div>
+								<div class="typing-dot"></div>
+							</div>
+						`}
+					</div>
+					<div class="chat-input-bar">
+						<textarea
+							ref=${inputRef}
+							class="chat-input"
+							placeholder="Message your agent..."
+							value=${input}
+							onInput=${handleInput}
+							onKeyDown=${handleKeyDown}
+							rows="1"
+						/>
+						<button class="chat-send" onClick=${handleSend} disabled=${!input.trim() || sending}>↑</button>
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Status Screen ──────────────────────────────────
+
+		function fmtUptime(seconds) {
+			if (!seconds) return "—";
+			const d = Math.floor(seconds / 86400);
+			const h = Math.floor((seconds % 86400) / 3600);
+			const m = Math.floor((seconds % 3600) / 60);
+			if (d > 0) return d + "d " + h + "h";
+			if (h > 0) return h + "h " + m + "m";
+			return m + "m";
+		}
+
+		function StatusScreen() {
+			const [data, setData] = useState(null);
+			const [loading, setLoading] = useState(true);
+
+			async function refresh() {
+				setLoading(true);
+				const result = await api("/status");
+				setData(result);
+				setLoading(false);
+			}
+
+			useEffect(() => { refresh(); const iv = setInterval(refresh, 30000); return () => clearInterval(iv); }, []);
+
+			if (loading && !data) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			const agent = data?.agent || {};
+			const sys = data?.system || {};
+			const tools = data?.tools || {};
+
+			return html`
+				<div class="status-cards">
+					<div class="status-card">
+						<div class="status-card-header">
+							<span class="status-card-title">Agent</span>
+							<span class="status-badge ${agent.status === 'healthy' ? 'healthy' : agent.status === 'degraded' ? 'degraded' : 'unknown'}">${agent.status || 'Unknown'}</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Heartbeat</span>
+							<span class="status-row-value"><span class="pulse" /> Live</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Version</span>
+							<span class="status-row-value">${agent.version || '—'}</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Uptime</span>
+							<span class="status-row-value">${fmtUptime(sys.uptimeSeconds)}</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Last Check</span>
+							<span class="status-row-value">${data?.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '—'}</span>
+						</div>
+					</div>
+
+					<div class="status-card">
+						<div class="status-card-header">
+							<span class="status-card-title">System</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Node</span>
+							<span class="status-row-value">${sys.nodeVersion || '—'}</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Platform</span>
+							<span class="status-row-value">${sys.platform || '—'} / ${sys.arch || '—'}</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Memory</span>
+							<span class="status-row-value">${sys.memoryMB || '—'} MB RSS</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">Heap</span>
+							<span class="status-row-value">${sys.heapUsedMB || '—'} / ${sys.heapTotalMB || '—'} MB</span>
+						</div>
+					</div>
+
+					<div class="status-card">
+						<div class="status-card-header">
+							<span class="status-card-title">Tools</span>
+							<span class="status-badge healthy">${tools.count || 0}</span>
+						</div>
+						${(tools.names || []).map(name => html`
+							<div class="status-row" key=${name}>
+								<span class="status-row-label">${name}</span>
+								<span class="status-row-value" style="color: var(--color-success)">●</span>
+							</div>
+						`)}
+					</div>
+
+					<div class="status-card">
+						<div class="status-card-header">
+							<span class="status-card-title">Connections</span>
+						</div>
+						<div class="status-row">
+							<span class="status-row-label">SSE Clients</span>
+							<span class="status-row-value">${data?.sseClients ?? 0}</span>
+						</div>
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Tasks Screen ───────────────────────────────────
+
+		const STATUS_ORDER = ["in_progress", "in_review", "blocked", "open", "closed"];
+		const STATUS_EMOJI = { open: "○", in_progress: "◉", in_review: "◎", blocked: "✕", closed: "✓" };
+
+		function TasksScreen() {
+			const [issues, setIssues] = useState([]);
+			const [filter, setFilter] = useState("active");
+			const [loading, setLoading] = useState(true);
+
+			async function refresh() {
+				setLoading(true);
+				const data = await api("/td/issues");
+				if (data.issues) {
+					setIssues(data.issues);
+				}
+				setLoading(false);
+			}
+
+			useEffect(() => { refresh(); }, []);
+
+			const filtered = useMemo(() => {
+				let list = issues;
+				if (filter === "active") list = issues.filter(i => i.status !== "closed");
+				else if (filter !== "all") list = issues.filter(i => i.status === filter);
+				return list.sort((a, b) => {
+					const sa = STATUS_ORDER.indexOf(a.status);
+					const sb = STATUS_ORDER.indexOf(b.status);
+					if (sa !== sb) return sa - sb;
+					const pa = parseInt(a.priority?.[1] || "5");
+					const pb = parseInt(b.priority?.[1] || "5");
+					return pa - pb;
+				});
+			}, [issues, filter]);
+
+			if (loading && issues.length === 0) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			return html`
+				<div class="tasks-container">
+					<div class="tasks-header">
+						${["active", "open", "in_progress", "in_review", "blocked", "closed", "all"].map(f => html`
+							<button key=${f} class="tasks-filter ${filter === f ? 'active' : ''}" onClick=${() => setFilter(f)}>
+								${f === "active" ? "Active" : f === "in_progress" ? "In Progress" : f === "in_review" ? "In Review" : f.charAt(0).toUpperCase() + f.slice(1)}
+							</button>
+						`)}
+					</div>
+					<div class="tasks-list">
+						${filtered.length === 0 && html`
+							<div class="tasks-empty">
+								<div style="font-size: 32px; opacity: 0.3">📋</div>
+								<div>No tasks match "${filter}"</div>
+							</div>
+						`}
+						${filtered.map(issue => html`
+							<div key=${issue.id} class="task-item">
+								<div class="task-title">${STATUS_EMOJI[issue.status] || "○"} ${issue.title}</div>
+								<div class="task-meta">
+									<span class="task-id">${issue.id}</span>
+									<span class="task-badge ${issue.status}">${issue.status}</span>
+									<span class="task-badge ${issue.priority}">${issue.priority}</span>
+									${issue.type && html`<span class="task-badge">${issue.type}</span>`}
+									${issue.points ? html`<span class="task-points">${issue.points}pt</span>` : null}
+								</div>
+							</div>
+						`)}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Files Screen ───────────────────────────────────
+
+		const FILE_ICONS = { directory: "📁", ts: "📘", js: "📒", json: "📋", md: "📝", html: "🌐", css: "🎨", default: "📄" };
+		function fileIcon(name, type) {
+			if (type === "directory") return FILE_ICONS.directory;
+			const ext = name.split(".").pop()?.toLowerCase();
+			return FILE_ICONS[ext] || FILE_ICONS.default;
+		}
+		function fmtSize(bytes) {
+			if (!bytes) return "";
+			if (bytes < 1024) return bytes + " B";
+			if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+			return (bytes/1024/1024).toFixed(1) + " MB";
+		}
+
+		function FilesScreen() {
+			const [currentPath, setCurrentPath] = useState(".");
+			const [items, setItems] = useState([]);
+			const [viewing, setViewing] = useState(null); // { path, content }
+			const [loading, setLoading] = useState(true);
+
+			async function loadDir(dirPath) {
+				setLoading(true);
+				setViewing(null);
+				const data = await api("/files/list?path=" + encodeURIComponent(dirPath));
+				if (data.items) {
+					setItems(data.items);
+					setCurrentPath(data.path || ".");
+				}
+				setLoading(false);
+			}
+
+			async function openFile(filePath) {
+				setLoading(true);
+				const data = await api("/files/read?path=" + encodeURIComponent(filePath));
+				if (data.content !== undefined) {
+					setViewing({ path: data.path, content: data.content, size: data.size });
+				}
+				setLoading(false);
+			}
+
+			useEffect(() => { loadDir("."); }, []);
+
+			const breadcrumbs = currentPath === "." ? ["root"] : ["root", ...currentPath.split("/")];
+
+			if (viewing) {
+				return html`
+					<div class="list-container">
+						<div class="file-breadcrumb">
+							<button onClick=${() => { setViewing(null); }}>← Back</button>
+							<span style="margin-left: 8px; color: var(--color-text-dim)">${viewing.path}</span>
+							<span style="margin-left: auto; color: var(--color-text-muted)">${fmtSize(viewing.size)}</span>
+						</div>
+						<div class="file-viewer">
+							<pre>${viewing.content}</pre>
+						</div>
+					</div>
+				`;
+			}
+
+			if (loading && items.length === 0) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			return html`
+				<div class="list-container">
+					<div class="file-breadcrumb">
+						${breadcrumbs.map((part, i) => html`
+							${i > 0 && html`<span>/</span>`}
+							<button key=${i} onClick=${() => {
+								if (i === 0) loadDir(".");
+								else loadDir(breadcrumbs.slice(1, i+1).join("/"));
+							}}>${part}</button>
+						`)}
+					</div>
+					<div class="list-body">
+						${currentPath !== "." && html`
+							<div class="list-item" onClick=${() => loadDir(currentPath.split("/").slice(0, -1).join("/") || ".")} style="cursor: pointer">
+								<div class="file-item">
+									<span class="file-icon">⬆️</span>
+									<div class="file-info"><div class="file-name">..</div></div>
+								</div>
+							</div>
+						`}
+						${items.map(item => html`
+							<div key=${item.name} class="list-item" style="cursor: pointer" onClick=${() => {
+								if (item.type === "directory") loadDir(item.path);
+								else openFile(item.path);
+							}}>
+								<div class="file-item">
+									<span class="file-icon">${fileIcon(item.name, item.type)}</span>
+									<div class="file-info">
+										<div class="file-name">${item.name}</div>
+										<div class="file-meta">${item.type === "directory" ? "Directory" : fmtSize(item.size)}</div>
+									</div>
+								</div>
+							</div>
+						`)}
+						${items.length === 0 && html`<div class="list-empty">Empty directory</div>`}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Logs Screen ────────────────────────────────────
+
+		const LOG_LEVELS = ["all", "info", "warn", "error", "debug"];
+
+		function LogsScreen() {
+			const [entries, setEntries] = useState([]);
+			const [filter, setFilter] = useState("all");
+			const [pinned, setPinned] = useState(true);
+			const outputRef = useRef(null);
+
+			useEffect(() => {
+				let es = null;
+				let reconnectTimer = null;
+
+				function connect() {
+					es = new EventSource("/api/mobile/logs/events");
+					es.onmessage = (e) => {
+						try {
+							const data = JSON.parse(e.data);
+							if (data.type === "connected") return;
+							setEntries(prev => {
+								const next = [...prev, data];
+								return next.length > 500 ? next.slice(-500) : next;
+							});
+						} catch {}
+					};
+					es.onerror = () => { es.close(); reconnectTimer = setTimeout(connect, 3000); };
+				}
+
+				connect();
+				return () => { if (es) es.close(); if (reconnectTimer) clearTimeout(reconnectTimer); };
+			}, []);
+
+			// Auto-scroll when pinned
+			useEffect(() => {
+				if (pinned && outputRef.current) {
+					outputRef.current.scrollTop = outputRef.current.scrollHeight;
+				}
+			}, [entries, pinned]);
+
+			const filtered = filter === "all" ? entries : entries.filter(e => e.level === filter);
+
+			return html`
+				<div class="logs-container">
+					<div class="logs-filters">
+						${LOG_LEVELS.map(l => html`
+							<button key=${l} class="log-filter ${filter === l ? 'active' : ''}" onClick=${() => setFilter(l)}>
+								${l.charAt(0).toUpperCase() + l.slice(1)}
+							</button>
+						`)}
+						<button class="log-filter ${pinned ? 'active' : ''}" onClick=${() => setPinned(!pinned)} style="margin-left: auto">
+							${pinned ? "📌 Pinned" : "📌 Unpin"}
+						</button>
+						<button class="log-filter" onClick=${() => setEntries([])}>Clear</button>
+					</div>
+					<div class="logs-output" ref=${outputRef}>
+						${filtered.length === 0 && html`
+							<div style="color: var(--color-text-muted); text-align: center; padding: 20px">Waiting for log events...</div>
+						`}
+						${filtered.map((entry, i) => html`
+							<div key=${i} class="log-entry">
+								<span class="log-time">${entry.time ? new Date(entry.time).toLocaleTimeString() : ""}</span>
+								<span class="log-level ${entry.level}">${(entry.level || "info").toUpperCase()}</span>
+								<span class="log-source">${entry.source || ""}</span>
+								<span class="log-msg">${entry.msg}</span>
+							</div>
+						`)}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Cron Screen ────────────────────────────────────
+
+		function CronScreen() {
+			const [jobs, setJobs] = useState([]);
+			const [loading, setLoading] = useState(true);
+
+			async function refresh() {
+				setLoading(true);
+				const data = await api("/cron/jobs");
+				if (data.jobs) setJobs(data.jobs);
+				else if (Array.isArray(data)) setJobs(data);
+				setLoading(false);
+			}
+
+			useEffect(() => { refresh(); }, []);
+
+			async function toggleJob(name, enabled) {
+				await apiPost("/cron/jobs/" + encodeURIComponent(name) + "/toggle", { enabled: !enabled });
+				refresh();
+			}
+
+			async function runJob(name) {
+				await apiPost("/cron/jobs/" + encodeURIComponent(name) + "/run", {});
+			}
+
+			if (loading && jobs.length === 0) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			if (jobs.length === 0) return html`
+				<div class="screen-placeholder">
+					<div class="icon">⏰</div>
+					<div class="label">No Cron Jobs</div>
+					<div class="hint">No scheduled jobs found. Configure pi-cron to add automated tasks.</div>
+				</div>
+			`;
+
+			return html`
+				<div class="list-container">
+					<div class="list-body" style="padding-top: 12px">
+						${jobs.map(job => html`
+							<div key=${job.name} class="list-item cron-item">
+								<div style="display: flex; justify-content: space-between; align-items: center">
+									<div class="list-item-title">${job.name}</div>
+									<button class="cron-toggle ${job.enabled !== false ? 'on' : 'off'}" onClick=${() => toggleJob(job.name, job.enabled !== false)} />
+								</div>
+								<div class="cron-schedule">${job.schedule || job.cron || "—"}</div>
+								<div class="cron-meta">
+									${job.lastRun && html`<span style="font-size: 11px; color: var(--color-text-muted)">Last: ${new Date(job.lastRun).toLocaleString()}</span>`}
+									${job.nextRun && html`<span style="font-size: 11px; color: var(--color-text-dim)">Next: ${new Date(job.nextRun).toLocaleString()}</span>`}
+									<button class="log-filter" style="margin-left: auto; font-size: 11px" onClick=${() => runJob(job.name)}>▶ Run</button>
+								</div>
+							</div>
+						`)}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Skills Screen ──────────────────────────────────
+
+		function SkillsScreen() {
+			const [skills, setSkills] = useState([]);
+			const [search, setSearch] = useState("");
+			const [loading, setLoading] = useState(true);
+
+			useEffect(() => {
+				(async () => {
+					const data = await api("/skills");
+					if (data.skills) setSkills(data.skills);
+					setLoading(false);
+				})();
+			}, []);
+
+			const filtered = search
+				? skills.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.description.toLowerCase().includes(search.toLowerCase()))
+				: skills;
+
+			if (loading) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			return html`
+				<div class="list-container">
+					<div class="list-header">
+						<input class="list-search" placeholder="Search skills..." value=${search} onInput=${e => setSearch(e.target.value)} />
+					</div>
+					<div class="list-body">
+						${filtered.length === 0 && html`<div class="list-empty">No skills match "${search}"</div>`}
+						${filtered.map(s => html`
+							<div key=${s.name} class="list-item">
+								<div class="list-item-title">🧠 ${s.label || s.name}</div>
+								<div class="list-item-desc">${s.description || "No description"}</div>
+							</div>
+						`)}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── CRM Screen ─────────────────────────────────────
+
+		function CrmScreen() {
+			const [contacts, setContacts] = useState([]);
+			const [search, setSearch] = useState("");
+			const [loading, setLoading] = useState(true);
+
+			useEffect(() => {
+				(async () => {
+					const data = await api("/crm/contacts");
+					if (data.contacts) setContacts(data.contacts);
+					else if (Array.isArray(data)) setContacts(data);
+					setLoading(false);
+				})();
+			}, []);
+
+			const filtered = search
+				? contacts.filter(c => {
+					const s = search.toLowerCase();
+					return (c.name || "").toLowerCase().includes(s) || (c.email || "").toLowerCase().includes(s) || (c.company || "").toLowerCase().includes(s);
+				})
+				: contacts;
+
+			if (loading) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			if (contacts.length === 0) return html`
+				<div class="screen-placeholder">
+					<div class="icon">👥</div>
+					<div class="label">No Contacts</div>
+					<div class="hint">No contacts found. The CRM extension may not be installed or has no data.</div>
+				</div>
+			`;
+
+			return html`
+				<div class="list-container">
+					<div class="list-header">
+						<input class="list-search" placeholder="Search contacts..." value=${search} onInput=${e => setSearch(e.target.value)} />
+					</div>
+					<div class="list-body">
+						${filtered.map(c => html`
+							<div key=${c.id || c.name} class="list-item">
+								<div class="list-item-title">👤 ${c.name}</div>
+								<div class="list-item-desc">
+									${c.company ? c.company + " • " : ""}${c.email || ""}
+									${c.phone ? html`<br/><a href="tel:${c.phone}" style="color: var(--color-accent)">${c.phone}</a>` : ""}
+								</div>
+							</div>
+						`)}
+						${filtered.length === 0 && html`<div class="list-empty">No contacts match "${search}"</div>`}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Calendar Screen ────────────────────────────────
+
+		function CalendarScreen() {
+			const [events, setEvents] = useState([]);
+			const [loading, setLoading] = useState(true);
+
+			useEffect(() => {
+				(async () => {
+					const data = await api("/calendar/events");
+					if (data.events) setEvents(data.events);
+					else if (Array.isArray(data)) setEvents(data);
+					setLoading(false);
+				})();
+			}, []);
+
+			if (loading) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			if (events.length === 0) return html`
+				<div class="screen-placeholder">
+					<div class="icon">📅</div>
+					<div class="label">No Events</div>
+					<div class="hint">No upcoming events found. The calendar extension may not be installed.</div>
+				</div>
+			`;
+
+			return html`
+				<div class="list-container">
+					<div class="list-body" style="padding-top: 12px">
+						${events.map((ev, i) => html`
+							<div key=${ev.id || i} class="list-item">
+								<div class="list-item-title">📅 ${ev.title || ev.name || "Untitled"}</div>
+								<div class="list-item-desc">
+									${ev.date || ev.start || ""} ${ev.time || ""}
+									${ev.description ? html`<br/>${ev.description}` : ""}
+								</div>
+							</div>
+						`)}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Extensions Screen ──────────────────────────────
+
+		function ExtensionsScreen() {
+			const [extensions, setExtensions] = useState([]);
+			const [loading, setLoading] = useState(true);
+
+			useEffect(() => {
+				(async () => {
+					const data = await api("/extensions");
+					if (data.extensions) setExtensions(data.extensions);
+					setLoading(false);
+				})();
+			}, []);
+
+			if (loading) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;
+
+			return html`
+				<div class="list-container">
+					<div class="list-body" style="padding-top: 12px">
+						${extensions.map(ext => html`
+							<div key=${ext.name} class="list-item">
+								<div style="display: flex; justify-content: space-between; align-items: center">
+									<div class="list-item-title">🧩 ${ext.name}</div>
+									<span class="status-badge healthy">${ext.toolCount} tools</span>
+								</div>
+								<div class="list-item-desc">${ext.tools.join(", ")}</div>
+							</div>
+						`)}
+						${extensions.length === 0 && html`<div class="list-empty">No extensions found</div>`}
+					</div>
+				</div>
+			`;
+		}
+
+		// ── Settings Screen ────────────────────────────────
+
+		function SettingsScreen() {
+			const [agentUrl, setAgentUrl] = useState(() => localStorage.getItem("pi-mobile-agent-url") || "");
+			const [apiKey, setApiKey] = useState(() => localStorage.getItem("pi-mobile-api-key") || "");
+			const [testResult, setTestResult] = useState(null);
+			const [theme, setTheme] = useState(() => localStorage.getItem("pi-mobile-theme") || "dark");
+
+			function saveUrl() {
+				localStorage.setItem("pi-mobile-agent-url", agentUrl);
+				setTestResult("saved");
+				setTimeout(() => setTestResult(null), 2000);
+			}
+
+			function saveApiKey() {
+				localStorage.setItem("pi-mobile-api-key", apiKey);
+				setTestResult("saved");
+				setTimeout(() => setTestResult(null), 2000);
+			}
+
+			async function testConnection() {
+				setTestResult("testing...");
+				try {
+					const url = agentUrl || "";
+					const res = await fetch((url ? url : "") + "/api/mobile/health", { signal: AbortSignal.timeout(5000) });
+					setTestResult(res.ok ? "✅ Connected" : "❌ HTTP " + res.status);
+				} catch (e) {
+					setTestResult("❌ " + (e.message || "Failed"));
+				}
+			}
+
+			function clearData() {
+				if (confirm("Clear all local data and settings?")) {
+					localStorage.clear();
+					location.reload();
+				}
+			}
+
+			return html`
+				<div style="overflow-y: auto; -webkit-overflow-scrolling: touch; height: 100%">
+					<div class="settings-section">
+						<div class="settings-section-title">Connection</div>
+						<div class="settings-row" style="flex-direction: column; align-items: stretch">
+							<div class="settings-row-label">Agent URL</div>
+							<input class="settings-input" placeholder="http://macbook.local:3000" value=${agentUrl} onInput=${e => setAgentUrl(e.target.value)} onBlur=${saveUrl} />
+						</div>
+						<div class="settings-row" style="flex-direction: column; align-items: stretch">
+							<div class="settings-row-label">API Key</div>
+							<input class="settings-input" type="password" placeholder="Optional — for remote access" value=${apiKey} onInput=${e => setApiKey(e.target.value)} onBlur=${saveApiKey} />
+						</div>
+						<button class="settings-btn" onClick=${testConnection}>
+							${testResult || "Test Connection"}
+						</button>
+					</div>
+
+					<div class="settings-section">
+						<div class="settings-section-title">Appearance</div>
+						<div class="settings-row">
+							<span class="settings-row-label">Theme</span>
+							<span class="settings-row-value">${theme === "dark" ? "🌙 Dark" : "☀️ Light"}</span>
+						</div>
+					</div>
+
+					<div class="settings-section">
+						<div class="settings-section-title">About</div>
+						<div class="settings-row">
+							<span class="settings-row-label">Version</span>
+							<span class="settings-row-value">0.1.0</span>
+						</div>
+						<div class="settings-row">
+							<span class="settings-row-label">Build</span>
+							<span class="settings-row-value">Preact + HTM</span>
+						</div>
+					</div>
+
+					<div class="settings-section">
+						<div class="settings-section-title">Data</div>
+						<button class="settings-btn danger" onClick=${clearData}>Clear All Local Data</button>
+					</div>
+				</div>
+			`;
+		}
+
+		const SCREENS = { chat: ChatScreen, status: StatusScreen, tasks: TasksScreen, files: FilesScreen, logs: LogsScreen, cron: CronScreen, skills: SkillsScreen, crm: CrmScreen, calendar: CalendarScreen, extensions: ExtensionsScreen, settings: SettingsScreen };
+
+		// ── Error Boundary ─────────────────────────────────
+
+		class ErrorBoundary extends Component {
+			constructor(props) { super(props); this.state = { error: null }; }
+			static getDerivedStateFromError(error) { return { error: error.message || "Something went wrong" }; }
+			render() {
+				if (this.state.error) {
+					return html`
+						<div class="error-boundary">
+							<div class="error-icon">⚠️</div>
+							<div class="error-message">${this.state.error}</div>
+							<button onClick=${() => this.setState({ error: null })}>Retry</button>
+						</div>
+					`;
+				}
+				return this.props.children;
+			}
+		}
+
+		// ── Header ─────────────────────────────────────────
+
+		function Header({ connected }) {
+			return html`
+				<header class="header">
+					<div class="header-title">π Agent</div>
+					<div class="header-status">
+						<div class="status-dot ${connected ? 'connected' : ''}" />
+						<span>${connected ? "Connected" : "Offline"}</span>
+					</div>
+				</header>
+			`;
+		}
+
+		// ── Tab Bar ────────────────────────────────────────
+
+		function TabBar({ activeTab, onTabChange }) {
+			return html`
+				<nav class="tab-bar">
+					${TABS.map(tab => html`
+						<button key=${tab.id} class="tab-item ${activeTab === tab.id ? 'active' : ''}" onClick=${() => onTabChange(tab.id)}>
+							<span class="tab-icon">${tab.icon}</span>
+							<span class="tab-label">${tab.label}</span>
+						</button>
+					`)}
+				</nav>
+			`;
+		}
+
+		// ── App ────────────────────────────────────────────
+
+		function App() {
+			const [activeTab, setActiveTab] = useState("chat");
+			const [connected, setConnected] = useState(false);
+
+			useEffect(() => {
+				let mounted = true;
+				async function check() {
+					try {
+						const res = await fetch("/api/mobile/health");
+						if (mounted) setConnected(res.ok);
+					} catch { if (mounted) setConnected(false); }
+				}
+				check();
+				const iv = setInterval(check, 30000);
+				return () => { mounted = false; clearInterval(iv); };
+			}, []);
+
+			const Screen = SCREENS[activeTab] || ChatScreen;
+
+			return html`
+				<${Header} connected=${connected} />
+				<main class="tab-content">
+					<${ErrorBoundary} key=${activeTab}><${Screen} /></${ErrorBoundary}>
+				</main>
+				<${TabBar} activeTab=${activeTab} onTabChange=${setActiveTab} />
+			`;
+		}
+
+		// ── Boot ───────────────────────────────────────────
+
+		render(html`<${App} />`, document.getElementById("app"));
+		if ("serviceWorker" in navigator) navigator.serviceWorker.register("/mobile/sw.js").catch(() => {});
+	</script>
+</body>
+</html>

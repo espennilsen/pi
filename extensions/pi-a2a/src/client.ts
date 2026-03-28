@@ -357,6 +357,15 @@ export async function getRemoteTask(
 			return { state, error: errorText, raw: task };
 		}
 
+		if (state === "input-required") {
+			// Extract the question from the status message
+			const questionText = task.status?.message?.parts
+				? extractPartsText(task.status.message.parts as Part[])
+				: undefined;
+			log("a2a_poll_input_required", { url, taskId, hasQuestion: !!questionText });
+			return { state, response: questionText, raw: task };
+		}
+
 		// Still working/submitted/canceled
 		return { state, raw: task };
 	} catch (err: unknown) {

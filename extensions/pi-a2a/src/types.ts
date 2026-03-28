@@ -48,6 +48,14 @@ export interface A2AConfig {
 	 *  If the main agent doesn't respond within this time, the task is marked failed
 	 *  and the queue is unblocked. Defaults to 600000 (10 minutes). Set to 0 to disable. */
 	taskTimeoutMs?: number;
+	/** Timeout in milliseconds for waiting for follow-up input when a task is in
+	 *  input-required state. If the caller doesn't respond within this time, the
+	 *  a2a_request_input tool returns an error and the task fails.
+	 *  Defaults to 600000 (10 minutes). */
+	inputRequiredTimeoutMs?: number;
+	/** Maximum number of input-required rounds allowed per task.
+	 *  Prevents infinite input loops. Defaults to 5. */
+	maxInputRounds?: number;
 }
 
 /** Configuration for a manually defined remote agent. */

@@ -31,6 +31,7 @@ src/
 - **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `SQLiteTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific main-process delegation.
 - **Async-first task lifecycle** — Inbound: the executor ACKs with "working" immediately (unblocking the HTTP response), then processes in the background. On completion, results are saved directly to the SQLite TaskStore (artifact + completed/failed status). Outbound: `a2a_send` sends with `blocking: false` (fire-and-forget), gets back a taskId, then polls `tasks/get` every 5s until completed/failed/timeout. A sliding-window rate limiter (10 triggers/60s) prevents response injection storms. No result messages are sent back — this eliminates bidirectional loops.
 - **Multi-turn conversations** — `a2a_send` tracks `contextId` and `taskId` per remote agent. Follow-up messages to the same agent automatically continue the previous conversation (reusing contextId/taskId). Use `newConversation: true` to start fresh. Context is in-memory and resets on session restart.
+- **Input-required multi-turn** — Full support for the A2A `input-required` task state. **Inbound**: the `a2a_request_input` tool allows the agent to pause mid-turn and ask the caller for more information. The tool's `execute()` parks on a promise; when the follow-up `message/send` arrives with the same taskId, the executor bypasses the serial queue, resolves the parked promise, and the agent turn continues with full context. **Outbound**: when polling sees `input-required`, the question is injected into the local chat (triggering a turn), the agent's response is captured, and a follow-up is sent automatically. Configurable via `inputRequiredTimeoutMs` (default 10min) and `maxInputRounds` (default 5).
 - **Persistent SQLite TaskStore** — Tasks survive restarts. Schema: `a2a_tasks` with extracted `status`, `hop_count`, and `visited_agents` columns for efficient querying and loop control. WAL mode for concurrent reads during processing. DB at `{agentDir}/db/a2a.db`.
 - **Loop control supervisor** — Prevents infinite A2A loops (A→B→A→B...) via spec-compliant metadata under `pi:` prefix. The supervisor runs before `execute()` and checks: (1) cycle detection — rejects if this agent already appears in `pi:visitedAgents`, (2) hop count — rejects if `pi:hopCount` exceeds `maxHops` (configurable, default 10). Metadata propagates on outbound messages so downstream agents inherit the chain. Pure-function design in `supervisor.ts` — testable and independent of the executor.
 - **Streaming support** — Capabilities declare `streaming: true`. The SDK's `sendMessageStream` returns an `AsyncGenerator`; the HTTP server detects this and responds with SSE (`text/event-stream`).
@@ -46,7 +47,7 @@ src/
 
 Settings key: `pi-a2a` in `~/.pi/agent/settings.json` or `.pi/settings.json`.
 
-Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `iconUrl` (URL to agent icon for hub/discovery UIs), `documentationUrl` (URL to agent documentation), `skills[]`, `maxHops` (default 10 — loop control hop limit), `taskTtlMs` (default 86400000/24h — task expiry TTL, 0 to disable), `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
+Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `iconUrl` (URL to agent icon for hub/discovery UIs), `documentationUrl` (URL to agent documentation), `skills[]`, `maxHops` (default 10 — loop control hop limit), `taskTtlMs` (default 86400000/24h — task expiry TTL, 0 to disable), `inputRequiredTimeoutMs` (default 600000/10min — how long to wait for follow-up input), `maxInputRounds` (default 5 — max input-required rounds per task), `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
 
 ### Static Agents (no hub required)
 
@@ -74,7 +75,7 @@ Agent cards are fetched at session start and cached in memory. Use `/a2a agents 
 Implements A2A Protocol Specification v0.3.0 via @a2a-js/sdk v0.3.10.
 
 ### Supported methods (via DefaultRequestHandler):
-- `message/send` — Synchronous message processing via subprocess
+- `message/send` — Message processing via main agent process (supports input-required multi-turn)
 - `message/send` (streaming) — SSE streaming with real-time status/artifact updates
 - `tasks/get` — Task retrieval by ID with history
 - `tasks/cancel` — Task cancellation with subprocess kill

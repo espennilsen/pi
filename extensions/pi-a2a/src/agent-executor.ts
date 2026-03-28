@@ -13,6 +13,16 @@
  *   4. On completion: update task in TaskStore with artifact + completed/failed status
  *   5. Callers retrieve results via tasks/get polling or SSE resubscribe
  *
+ * Multi-turn (input-required) support:
+ *   - The a2a_request_input tool calls parkForInput(), which saves the task
+ *     as "input-required" and parks the tool's execute() promise.
+ *   - When a follow-up message/send arrives with the same taskId, the SDK
+ *     calls execute() again. The executor detects the parked resolver,
+ *     delivers the follow-up text, ACKs the SDK, and exits.
+ *   - The original tool promise resolves with the answer, and the agent
+ *     turn continues — full reasoning context preserved.
+ *   - Follow-up execute() calls bypass the serial queue to prevent deadlock.
+ *
  * This eliminates the old onAsyncResult→sendA2AMessage pattern that caused
  * bidirectional infinite loops (A→B→A→B...). Results are now stored in the
  * task store and retrieved through the A2A protocol's native task lifecycle.
@@ -37,6 +47,12 @@ import {
 
 /** Max concurrent tasks (1 for main-process delegation). */
 const MAX_CONCURRENT = 1;
+
+/** Default timeout for waiting for input-required follow-ups: 10 minutes. */
+const DEFAULT_INPUT_REQUIRED_TIMEOUT_MS = 600_000;
+
+/** Default maximum input-required rounds per task. */
+const DEFAULT_MAX_INPUT_ROUNDS = 5;
 
 /** Result returned by the main agent process. */
 export interface ProcessResult {
@@ -87,6 +103,19 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * instead of being stuck on "working" forever.
 	 */
 	private fallbackStatuses = new Map<string, { state: "completed" | "failed"; response: string }>();
+	/**
+	 * Parked input resolvers — keyed by taskId.
+	 * When a2a_request_input parks, the resolver is stored here. When a
+	 * follow-up message/send arrives for the same taskId, execute() looks
+	 * up the resolver and delivers the follow-up text.
+	 */
+	private parkedInputResolvers = new Map<string, (text: string) => void>();
+	/** Track how many input-required rounds each task has used (keyed by taskId). */
+	private inputRoundCounts = new Map<string, number>();
+	/** Timeout for waiting for input-required follow-ups. */
+	private inputRequiredTimeoutMs: number;
+	/** Maximum input-required rounds allowed per task. */
+	private maxInputRounds: number;
 	/** Number of tasks waiting in the queue (not yet active). */
 	private _queueDepth = 0;
 	/** Last completed/failed task duration for telemetry reporting. */
@@ -102,12 +131,16 @@ export class PiAgentExecutor implements AgentExecutor {
 		taskStore: TaskStore,
 		supervisorConfig: SupervisorConfig,
 		taskTimeoutMs?: number,
+		inputRequiredTimeoutMs?: number,
+		maxInputRounds?: number,
 	) {
 		this.log = log;
 		this.processMessage = processMessage;
 		this.taskStore = taskStore;
 		this.supervisorConfig = supervisorConfig;
 		this.taskTimeoutMs = taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
+		this.inputRequiredTimeoutMs = inputRequiredTimeoutMs ?? DEFAULT_INPUT_REQUIRED_TIMEOUT_MS;
+		this.maxInputRounds = maxInputRounds ?? DEFAULT_MAX_INPUT_ROUNDS;
 	}
 
 	/**
@@ -117,6 +150,98 @@ export class PiAgentExecutor implements AgentExecutor {
 	 */
 	getActiveLoopMetadata(): LoopMetadata | null {
 		return this.activeLoopMetadata;
+	}
+
+	/**
+	 * Get the taskId of the currently active inbound task.
+	 * Returns null if no task is active.
+	 * Used by a2a_request_input to guard against calls outside A2A context.
+	 */
+	getActiveTaskId(): string | null {
+		return this.activeTaskId;
+	}
+
+	/**
+	 * Park the current task waiting for follow-up input from the caller.
+	 *
+	 * Called by the a2a_request_input tool during an active agent turn:
+	 *   1. Checks the input-round count against maxInputRounds
+	 *   2. Saves the task as "input-required" in the TaskStore with the question
+	 *   3. Creates a promise and parks — the tool's execute() awaits this
+	 *   4. When a follow-up message/send arrives, execute() resolves the promise
+	 *   5. The tool returns the answer, and the agent turn continues
+	 *
+	 * @param taskId The active task's ID
+	 * @param question The question to ask the caller
+	 * @param signal AbortSignal for cancellation (Ctrl+C, session restart)
+	 * @returns The follow-up text from the caller
+	 * @throws If max rounds exceeded, timeout, or abort
+	 */
+	async parkForInput(taskId: string, question: string, signal?: AbortSignal): Promise<string> {
+		// ── Round limit check ───────────────────────────────────────
+		const roundCount = (this.inputRoundCounts.get(taskId) ?? 0) + 1;
+		if (roundCount > this.maxInputRounds) {
+			throw new Error(
+				`Input-required round limit exceeded: ${roundCount} > ${this.maxInputRounds} (max). ` +
+				`Provide the information needed or rephrase the original request.`,
+			);
+		}
+		this.inputRoundCounts.set(taskId, roundCount);
+
+		this.log("park_for_input", { taskId, question: question.slice(0, 200), round: roundCount });
+
+		// ── Save task as input-required ─────────────────────────────
+		const contextId = this.taskContexts.get(taskId) ?? taskId;
+		const now = new Date().toISOString();
+		const existing = await this.taskStore.load(taskId);
+
+		const inputRequiredTask: Task = {
+			kind: "task",
+			id: taskId,
+			contextId,
+			...(existing?.history ? { history: existing.history } : {}),
+			...(existing?.metadata ? { metadata: existing.metadata } : {}),
+			status: {
+				state: "input-required",
+				message: {
+					kind: "message",
+					messageId: randomUUID(),
+					role: "agent",
+					parts: [{ kind: "text", text: question } as Part],
+				},
+				timestamp: now,
+			},
+		};
+		await this.taskStore.save(inputRequiredTask);
+
+		// ── Park: create promise and wait for follow-up ─────────────
+		return new Promise<string>((resolve, reject) => {
+			// Timeout handler
+			const timeoutId = this.inputRequiredTimeoutMs > 0
+				? setTimeout(() => {
+					this.parkedInputResolvers.delete(taskId);
+					reject(new Error(
+						`Input-required timeout: caller did not respond within ${this.inputRequiredTimeoutMs}ms`,
+					));
+				}, this.inputRequiredTimeoutMs)
+				: null;
+
+			// Abort handler (Ctrl+C, session restart)
+			const onAbort = () => {
+				if (timeoutId) clearTimeout(timeoutId);
+				this.parkedInputResolvers.delete(taskId);
+				reject(new Error("Input-required aborted"));
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+
+			// Store resolver — execute() will call this when follow-up arrives
+			this.parkedInputResolvers.set(taskId, (text: string) => {
+				if (timeoutId) clearTimeout(timeoutId);
+				signal?.removeEventListener("abort", onAbort);
+				this.parkedInputResolvers.delete(taskId);
+				resolve(text);
+			});
+		});
 	}
 
 	/** Return a snapshot of current telemetry state for hub reporting. */
@@ -147,6 +272,11 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.taskContexts.clear();
 		this.fallbackStatuses.clear();
 
+		// Clear parked input resolvers — the parked promises will reject
+		// when their AbortSignal fires (session restart triggers abort)
+		this.parkedInputResolvers.clear();
+		this.inputRoundCounts.clear();
+
 		if (this.activeTaskId) {
 			this.log("executor_abort_all", { taskId: this.activeTaskId });
 			this.activeTaskId = null;
@@ -155,13 +285,57 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
+		const { userMessage, taskId, contextId, task } = requestContext;
+
+		// ── Follow-up for input-required: bypass queue and deliver ───
+		// When a2a_request_input has parked a task waiting for input, a
+		// follow-up message/send arrives with the same taskId. The SDK
+		// calls execute() again — we detect the parked resolver, deliver
+		// the follow-up text, ACK the caller, and exit. The original
+		// processMessage continues (the tool promise resolves).
+		// This MUST bypass the serial queue — otherwise deadlock.
+		const parkedResolver = this.parkedInputResolvers.get(taskId);
+		if (parkedResolver) {
+			// Extract text from the follow-up message
+			const textParts: string[] = [];
+			for (const part of userMessage.parts) {
+				if (part.kind === "text") {
+					textParts.push((part as { kind: "text"; text: string }).text);
+				}
+			}
+			const followUpText = textParts.join("\n") || "(empty response)";
+
+			this.log("input_followup_delivered", { taskId, textLength: followUpText.length });
+
+			// Resolve the parked promise — a2a_request_input returns the answer
+			parkedResolver(followUpText);
+
+			// ACK the caller: publish "working" (resumed) and finish
+			eventBus.publish({
+				kind: "status-update",
+				taskId,
+				contextId,
+				status: {
+					state: "working",
+					message: {
+						kind: "message",
+						messageId: randomUUID(),
+						role: "agent",
+						parts: [{ kind: "text", text: "Input received, resuming…" } as Part],
+					},
+					timestamp: new Date().toISOString(),
+				},
+				final: true,
+			} as TaskStatusUpdateEvent);
+			eventBus.finished();
+			return;
+		}
+
+		// ── Normal flow: serialize and process ──────────────────────
 		// Serialize: queue behind any active task, process in arrival order
 		let releaseQueue: () => void;
 		const myTurn = this.queue;
 		this.queue = new Promise<void>((resolve) => { releaseQueue = resolve; });
-
-		// Publish submitted immediately so the caller sees progress
-		const { userMessage, taskId, contextId, task } = requestContext;
 		if (!task) {
 			eventBus.publish({
 				kind: "task",
@@ -437,6 +611,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			// Update the task in the store — callers poll via tasks/get
 			await this.saveTaskResult(taskId, contextId, result, loopMetadata);
 			this.taskContexts.delete(taskId);
+			this.inputRoundCounts.delete(taskId);
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			this.activeLoopMetadata = null;
@@ -455,6 +630,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				durationMs: 0,
 			}, loopMetadata);
 			this.taskContexts.delete(taskId);
+			this.inputRoundCounts.delete(taskId);
 		} finally {
 			releaseQueue();
 		}

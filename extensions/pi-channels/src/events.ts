@@ -31,15 +31,12 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 	// ── Incoming messages → channel:receive (+ bridge) ──────
 
 	registry.setOnIncoming((message: IncomingMessage) => {
-		console.log(`[pi-channels DEBUG] setOnIncoming called: adapter=${message.adapter}, sender=${message.sender}, text=${message.text?.slice(0, 50)}...`);
 		pi.events.emit("channel:receive", message);
 
 		// Route to bridge if active
 		if (activeBridge?.isActive()) {
-			console.log(`[pi-channels DEBUG] Routing to bridge: ${message.sender}`);
 			activeBridge.handleMessage(message);
 		} else {
-			console.log(`[pi-channels DEBUG] Bridge not active, message dropped`);
 		}
 	});
 

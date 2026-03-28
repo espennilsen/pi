@@ -46,7 +46,6 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 
 		args.push(prompt);
 
-		console.log(`[pi-channels DEBUG] runPrompt spawning: pi ${args.join(' ').slice(0,100)}...`);
 		let child: ChildProcess;
 		try {
 			child = spawn("pi", args, {
@@ -55,9 +54,7 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 				env: { ...process.env },
 				timeout: timeoutMs,
 			});
-			console.log(`[pi-channels DEBUG] Spawned child PID: ${child.pid}`);
 		} catch (err: any) {
-			console.log(`[pi-channels DEBUG] Failed to spawn: ${err.message}`);
 			resolve({
 				ok: false, response: "", error: `Failed to spawn: ${err.message}`,
 				durationMs: Date.now() - startTime, exitCode: 1,
@@ -69,11 +66,9 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 		let stderr = "";
 		child.stdout?.on("data", (chunk: Buffer) => { 
 			stdout += chunk.toString(); 
-			console.log(`[pi-channels DEBUG] stdout: ${chunk.toString().slice(0, 100)}...`);
 		});
 		child.stderr?.on("data", (chunk: Buffer) => { 
 			stderr += chunk.toString(); 
-			console.log(`[pi-channels DEBUG] stderr: ${chunk.toString().slice(0, 100)}...`);
 		});
 
 		const onAbort = () => {
@@ -91,7 +86,6 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 			const durationMs = Date.now() - startTime;
 			const response = stdout.trim();
 			const exitCode = code ?? 1;
-			console.log(`[pi-channels DEBUG] Child closed: exitCode=${exitCode}, stdout=${response.slice(0,50)}..., stderr=${stderr.slice(0,50)}...`);
 
 			if (signal?.aborted) {
 				resolve({ ok: false, response: response || "(aborted)", error: "Aborted by user", durationMs, exitCode: 130 });

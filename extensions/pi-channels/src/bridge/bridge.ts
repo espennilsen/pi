@@ -107,43 +107,34 @@ export class ChatBridge {
 	// ── Main entry point ──────────────────────────────────────
 
 	handleMessage(message: IncomingMessage): void {
-		console.log(`[pi-channels DEBUG] Bridge.handleMessage: running=${this.running}, sender=${message.sender}, text=${message.text?.slice(0,30)}..., attachments=${message.attachments?.length ?? 0}`);
 		if (!this.running) {
-			console.log(`[pi-channels DEBUG] Bridge not running, returning`);
 			return;
 		}
 
 		const text = message.text?.trim();
 		const hasAttachments = message.attachments && message.attachments.length > 0;
-		console.log(`[pi-channels DEBUG] text=${text?.slice(0,30)}..., hasAttachments=${hasAttachments}`);
 		if (!text && !hasAttachments) {
-			console.log(`[pi-channels DEBUG] No text and no attachments, returning`);
 			return;
 		}
 
 		// Rejected messages (too large, unsupported type) — send back directly
 		if (message.metadata?.rejected) {
-			console.log(`[pi-channels DEBUG] Message rejected, returning`);
 			this.sendReply(message.adapter, message.sender, text || "⚠️ Unsupported message.");
 			return;
 		}
 
 		const senderKey = `${message.adapter}:${message.sender}`;
-		console.log(`[pi-channels DEBUG] senderKey=${senderKey}`);
 
 		// Get or create session
 		let session = this.sessions.get(senderKey);
 		if (!session) {
-			console.log(`[pi-channels DEBUG] Creating new session`);
 			session = this.createSession(message);
 			this.sessions.set(senderKey, session);
 		} else {
-			console.log(`[pi-channels DEBUG] Using existing session`);
 		}
 
 		// Bot commands (only for text-only messages)
 		if (text && !hasAttachments && this.config.commands && isCommand(text)) {
-			console.log(`[pi-channels DEBUG] Handling command: ${text}`);
 			const reply = handleCommand(text, session, this.commandContext());
 			if (reply !== null) {
 				this.sendReply(message.adapter, message.sender, reply);
@@ -154,7 +145,6 @@ export class ChatBridge {
 
 		// Queue depth check
 		if (session.queue.length >= this.config.maxQueuePerSender) {
-			console.log(`[pi-channels DEBUG] Queue full, returning`);
 			this.sendReply(
 				message.adapter,
 				message.sender,
@@ -163,7 +153,6 @@ export class ChatBridge {
 			);
 			return;
 		}
-		console.log(`[pi-channels DEBUG] Queue OK, enqueuing message`);
 
 		// Enqueue
 		const queued: QueuedPrompt = {
@@ -177,39 +166,31 @@ export class ChatBridge {
 		};
 		session.queue.push(queued);
 		session.messageCount++;
-		console.log(`[pi-channels DEBUG] Enqueued, queueDepth=${session.queue.length}`);
 
 		this.events.emit("bridge:enqueue", {
 			id: queued.id, adapter: message.adapter, sender: message.sender,
 			queueDepth: session.queue.length,
 		});
 
-		console.log(`[pi-channels DEBUG] Calling processNext(${senderKey})`);
 		this.processNext(senderKey);
 	}
 
 	// ── Processing ────────────────────────────────────────────
 
 	private async processNext(senderKey: string): Promise<void> {
-		console.log(`[pi-channels DEBUG] processNext called: ${senderKey}`);
 		const session = this.sessions.get(senderKey);
 		if (!session) {
-			console.log(`[pi-channels DEBUG] No session found, returning`);
 			return;
 		}
 		if (session.processing) {
-			console.log(`[pi-channels DEBUG] Session already processing, returning`);
 			return;
 		}
 		if (session.queue.length === 0) {
-			console.log(`[pi-channels DEBUG] Queue empty, returning`);
 			return;
 		}
 		if (this.activeCount >= this.config.maxConcurrent) {
-			console.log(`[pi-channels DEBUG] Max concurrent reached, returning`);
 			return;
 		}
-		console.log(`[pi-channels DEBUG] Processing prompt: ${session.queue[0]?.text?.slice(0,30)}...`);
 
 		session.processing = true;
 		this.activeCount++;
@@ -228,7 +209,6 @@ export class ChatBridge {
 		let usePersistent = this.shouldUsePersistent(senderKey);
 		// Force stateless mode for documents (RPC doesn't support document type)
 		if (hasDocuments) usePersistent = false;
-		console.log(`[pi-channels DEBUG] usePersistent=${usePersistent}, hasDocuments=${hasDocuments}`);
 
 		this.events.emit("bridge:start", {
 			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
@@ -240,11 +220,9 @@ export class ChatBridge {
 			let result;
 
 			if (usePersistent && this.rpcManager) {
-				console.log(`[pi-channels DEBUG] Using RPC mode`);
 				// Persistent mode: use RPC session
 				result = await this.runWithRpc(senderKey, prompt, ac.signal);
 			} else {
-				console.log(`[pi-channels DEBUG] Using stateless mode (runPrompt)`);
 				// Stateless mode: spawn subprocess
 				result = await runPrompt({
 					prompt: prompt.text,

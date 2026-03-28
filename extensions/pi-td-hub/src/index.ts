@@ -265,8 +265,8 @@ function actionPipeline(projects: ProjectInfo[]): ReturnType<typeof txt> {
 			if (pipeline[stage]) {
 				pipeline[stage].push(i);
 			} else {
-				// Unknown stage — still track it so it's rendered
-				pipeline[stage] = [i];
+				// Unknown stage — treat as unpipelined
+				unpipelined.push(i);
 			}
 		} else {
 			unpipelined.push(i);
@@ -280,12 +280,8 @@ function actionPipeline(projects: ProjectInfo[]): ReturnType<typeof txt> {
 		reviewing: "👀", "pr-ready": "🚀", approved: "✅",
 	};
 
-	// Render known stages first, then any extra stages
-	const extraStages = Object.keys(pipeline).filter((s) => !stages.includes(s)).sort();
-	const allStages = [...stages, ...extraStages];
-
-	for (const stage of allStages) {
-		const items = pipeline[stage] ?? [];
+	for (const stage of stages) {
+		const items = pipeline[stage];
 		lines.push(`## ${emoji[stage] ?? "📌"} ${stage} (${items.length})`);
 		if (items.length === 0) {
 			lines.push("_none_\n");

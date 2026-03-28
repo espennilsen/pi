@@ -224,8 +224,11 @@ export class ChatBridge {
 		const ac = new AbortController();
 		session.abortController = ac;
 
-		const usePersistent = this.shouldUsePersistent(senderKey);
-			console.log(`[pi-channels DEBUG] usePersistent=${usePersistent}`);
+		const hasDocuments = prompt.attachments?.some(att => att.type === "document") ?? false;
+		let usePersistent = this.shouldUsePersistent(senderKey);
+		// Force stateless mode for documents (RPC doesn't support document type)
+		if (hasDocuments) usePersistent = false;
+		console.log(`[pi-channels DEBUG] usePersistent=${usePersistent}, hasDocuments=${hasDocuments}`);
 
 		this.events.emit("bridge:start", {
 			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,

@@ -186,25 +186,26 @@ export class RpcSession {
 				message: prompt,
 			};
 
-			// Attach images as base64
+			// Attach images and documents as base64
 			if (options?.attachments?.length) {
-				const images: Array<Record<string, string>> = [];
+				const attachments: Array<Record<string, string>> = [];
 				for (const att of options.attachments) {
-					if (att.type === "image") {
+					if (att.type === "image" || att.type === "document") {
 						try {
 							const fs = await import("node:fs");
 							const data = fs.readFileSync(att.path).toString("base64");
-							images.push({
-								type: "image",
+							attachments.push({
+								type: att.type,
 								data,
-								mimeType: att.mimeType || "image/jpeg",
+								mimeType: att.mimeType || (att.type === "image" ? "image/jpeg" : "application/octet-stream"),
+								filename: att.filename || "file",
 							});
 						} catch {
 							// Skip unreadable attachments
 						}
 					}
 				}
-				if (images.length > 0) cmd.images = images;
+				if (attachments.length > 0) cmd.attachments = attachments;
 			}
 
 			this.sendCommand(cmd);

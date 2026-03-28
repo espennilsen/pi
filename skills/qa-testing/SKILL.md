@@ -235,7 +235,7 @@ If you started a dev server or Docker container in Step 1, clean up:
 cmux_close({ surface: "surface:N" })
 
 # Or stop Docker containers
-bash cd /path/to/project && docker compose down
+cd /path/to/project && docker compose down
 ```
 
 This prevents orphaned processes and keeps the environment clean for the next test run.

@@ -90,7 +90,7 @@ Score each dimension 1-10:
 ## Verdict Rules
 
 - **PASS** — All dimensions ≥ 6 AND no critical functionality failures
-- **FAIL** — Any dimension < 5 OR any acceptance criterion not met
+- **FAIL** — Any dimension ≤ 5 OR any acceptance criterion not met
   - Always include specific, actionable feedback for the builder
 
 ## Report Format

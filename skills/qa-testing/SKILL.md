@@ -175,6 +175,12 @@ cmux_browser({ action: "eval", value: `
 ` })
 ```
 
+**CDN fallback:** If the CDN is unreachable (air-gapped CI, network restriction, outage), the script injection will fail. In that case, fall back to:
+- `npx axe-cli http://localhost:3000 --save axe-report.json` (CLI-based audit)
+- or skip the accessibility audit and note "A11y audit skipped — axe-core CDN unavailable" in the report
+
+**Security note:** For production use, add Subresource Integrity (SRI) verification to the script tag: `script.integrity = "sha384-..."; script.crossOrigin = "anonymous";` (hash available on cdnjs.com).
+
 **Interpreting axe-core results:**
 - **critical** impact — Must fix. Screen readers can't use the page.
 - **serious** impact — Should fix. Major barrier for some users.
@@ -219,6 +225,20 @@ Produce a structured QA report. Always include:
 5. **Edge cases tested** — what you tried and what happened
 6. **Accessibility results** — axe-core violation count and details
 7. **Screenshots** — numbered, referenced in bug descriptions
+
+### Step 8: Cleanup
+
+If you started a dev server or Docker container in Step 1, clean up:
+
+```
+# Stop a dev server running in a cmux pane
+cmux_close({ surface: "surface:N" })
+
+# Or stop Docker containers
+bash cd /path/to/project && docker compose down
+```
+
+This prevents orphaned processes and keeps the environment clean for the next test run.
 
 ## Report Template
 
@@ -290,17 +310,17 @@ Produce a structured QA report. Always include:
 
 ## Grading Rubric Reference
 
-| Dimension | 10 (Exceptional) | 7 (Good) | 5 (Acceptable) | 3 (Poor) |
-|-----------|-------------------|----------|-----------------|----------|
-| **Functionality** | All criteria pass, flows smooth | Most pass, minor issues | Some criteria fail | Core flows broken |
-| **Completeness** | Everything built and working | Minor features missing | Significant gaps | Mostly stubs |
-| **UX** | Polished, delightful | Good, minor rough edges | Functional but clunky | Confusing/broken |
-| **Robustness** | Handles everything gracefully | Handles common cases | Some edge cases crash | Fragile |
-| **Accessibility** | 0 violations, keyboard nav works | 1-3 minor violations | 4-10 violations | 10+ violations |
+| Dimension | 10 (Exceptional) | 8-9 (Very Good) | 6-7 (Good) | 4-5 (Acceptable) | 2-3 (Poor) |
+|-----------|-------------------|-----------------|------------|------------------|------------|
+| **Functionality** | All criteria pass, flows smooth | — | Most pass, minor issues | Some criteria fail | Core flows broken |
+| **Completeness** | Everything built and working | — | Minor features missing | Significant gaps | Mostly stubs |
+| **UX** | Polished, delightful | — | Good, minor rough edges | Functional but clunky | Confusing/broken |
+| **Robustness** | Handles everything gracefully | — | Handles common cases | Some edge cases crash | Fragile |
+| **Accessibility** | 0 violations, keyboard nav works | 1-3 minor violations | 1-3 serious violations | 4-10 mixed violations | 10+ or any critical |
 
 ## Verdict Rules
 
 - **PASS** = All dimensions ≥ 6 AND no critical functionality failures
-- **FAIL** = Any dimension < 5 OR acceptance criteria not met
+- **FAIL** = Any dimension ≤ 5 OR acceptance criteria not met
 
 When reporting FAIL, always provide specific, actionable feedback the builder can use to fix the issues. Reference exact elements, URLs, and steps.

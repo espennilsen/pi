@@ -445,9 +445,10 @@
 				.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
 					// Security: only allow http(s) URLs to prevent javascript: protocol XSS
 					const isHttpUrl = /^https?:\/\//i.test(url);
-					return isHttpUrl 
-						? `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>` 
-						: text;
+					if (!isHttpUrl) return text;
+					// Escape quotes to prevent attribute-injection XSS
+					const safeUrl = url.replace(/"/g, '%22').replace(/'/g, '%27');
+					return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 				})
 				.replace(/^### (.+)$/gm, '<strong>$1</strong>')
 				.replace(/^## (.+)$/gm, '<strong>$1</strong>')

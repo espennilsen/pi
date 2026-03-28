@@ -566,7 +566,16 @@ export default function (pi: ExtensionAPI) {
 		const bind = config.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
 		if (!isLocalhost && !config.apiKey) {
-			ctx.ui.notify("pi-a2a: WARNING — binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.", "warning");
+		// Security: refuse to start when binding to external interfaces without authentication
+		const msg = "Refusing to start A2A server: binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.";
+		ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
+		log("server_start_rejected", { bind, reason: "no_api_key_on_external_interface" }, "ERROR");
+		// Clean up resources allocated before server start
+		if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+		executor = null;
+		pushNotificationStore = null;
+		taskStore.close(); taskStore = null;
+		return;
 		}
 		try {
 			await startServer({ port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });

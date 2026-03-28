@@ -110,6 +110,8 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * up the resolver and delivers the follow-up text.
 	 */
 	private parkedInputResolvers = new Map<string, (text: string) => void>();
+	/** Track timeout handles for parked input resolvers (keyed by taskId). */
+	private parkedInputTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 	/** Track how many input-required rounds each task has used (keyed by taskId). */
 	private inputRoundCounts = new Map<string, number>();
 	/** Timeout for waiting for input-required follow-ups. */
@@ -219,16 +221,23 @@ export class PiAgentExecutor implements AgentExecutor {
 			// Timeout handler
 			const timeoutId = this.inputRequiredTimeoutMs > 0
 				? setTimeout(() => {
+					this.parkedInputTimeouts.delete(taskId);
 					this.parkedInputResolvers.delete(taskId);
 					reject(new Error(
 						`Input-required timeout: caller did not respond within ${this.inputRequiredTimeoutMs}ms`,
 					));
 				}, this.inputRequiredTimeoutMs)
 				: null;
+			
+			// Track the timeout handle so abortAll() can clear it
+			if (timeoutId) this.parkedInputTimeouts.set(taskId, timeoutId);
 
 			// Abort handler (Ctrl+C, session restart)
 			const onAbort = () => {
-				if (timeoutId) clearTimeout(timeoutId);
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+					this.parkedInputTimeouts.delete(taskId);
+				}
 				this.parkedInputResolvers.delete(taskId);
 				reject(new Error("Input-required aborted"));
 			};
@@ -236,7 +245,10 @@ export class PiAgentExecutor implements AgentExecutor {
 
 			// Store resolver — execute() will call this when follow-up arrives
 			this.parkedInputResolvers.set(taskId, (text: string) => {
-				if (timeoutId) clearTimeout(timeoutId);
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+					this.parkedInputTimeouts.delete(taskId);
+				}
 				signal?.removeEventListener("abort", onAbort);
 				this.parkedInputResolvers.delete(taskId);
 				resolve(text);
@@ -274,6 +286,11 @@ export class PiAgentExecutor implements AgentExecutor {
 
 		// Clear parked input resolvers — the parked promises will reject
 		// when their AbortSignal fires (session restart triggers abort)
+		// Clear all parked input timeout handles
+		for (const timeoutId of this.parkedInputTimeouts.values()) {
+			clearTimeout(timeoutId);
+		}
+		this.parkedInputTimeouts.clear();
 		this.parkedInputResolvers.clear();
 		this.inputRoundCounts.clear();
 
@@ -427,7 +444,9 @@ export class PiAgentExecutor implements AgentExecutor {
 		const senderMeta = messageMeta?.["pi:sender"] as
 			| { name?: string; description?: string }
 			| undefined;
-		const senderName = senderMeta?.name ?? "Unknown agent";
+		// Sanitize sender name: max 64 chars, strip newlines to prevent injection
+		const rawSenderName = senderMeta?.name ?? "Unknown agent";
+		const senderName = rawSenderName.slice(0, 64).replace(/[\r\n]/g, " ");
 
 		// Extract text from all part types
 		const textSegments: string[] = [];

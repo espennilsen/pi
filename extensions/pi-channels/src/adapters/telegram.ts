@@ -301,6 +301,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 	 * Handles text, photos, and documents.
 	 */
 	async function processMessage(msg: TelegramMessage, chatId: string): Promise<IncomingMessage | null> {
+		console.log(`[pi-channels DEBUG] processMessage called: ${msg.message_id}, hasDocument: ${!!msg.document}, hasPhoto: ${!!msg.photo}, hasText: ${!!msg.text}`);
 		const metadata = buildBaseMetadata(msg);
 		const caption = msg.caption || "";
 
@@ -432,7 +433,9 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 			}
 
 			// PDF/Office documents — 20MB limit
+			console.log(`[pi-channels DEBUG] Checking document: ${filename}, mime: ${mimeType}, size: ${doc.file_size}`);
 			if (isDocumentFile(mimeType, filename)) {
+				console.log(`[pi-channels DEBUG] Document recognized as PDF/Office: ${filename}`);
 				// Size check for documents (20MB limit)
 				if (doc.file_size && doc.file_size > MAX_DOCUMENT_SIZE) {
 					return {
@@ -463,6 +466,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 					size: downloaded.size,
 				};
 
+				console.log(`[pi-channels DEBUG] Returning document message: ${filename}, attachment: ${attachment.path}`);
 				return {
 					adapter: "telegram",
 					sender: chatId,

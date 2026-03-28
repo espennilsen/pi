@@ -32,16 +32,17 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { join } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
-	InMemoryTaskStore,
 	InMemoryPushNotificationStore,
 	DefaultPushNotificationSender,
 	JsonRpcTransportHandler,
 } from "@a2a-js/sdk/server";
+import { SQLiteTaskStore } from "./task-store.ts";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult, type AsyncTaskResult } from "./agent-executor.ts";
@@ -135,6 +136,8 @@ export default function (pi: ExtensionAPI) {
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
+	/** Active SQLite task store — closed on session restart/shutdown. */
+	let taskStore: SQLiteTaskStore | null = null;
 	/** This agent's own public A2A URL — included in pi:sender for reply routing. */
 	let selfUrl: string | null = null;
 
@@ -424,6 +427,10 @@ export default function (pi: ExtensionAPI) {
 			executor.abortAll();
 			executor = null;
 		}
+		if (taskStore) {
+			taskStore.close();
+			taskStore = null;
+		}
 		if (isRunning()) {
 			await stopServer(log);
 		}
@@ -550,7 +557,8 @@ export default function (pi: ExtensionAPI) {
 			});
 		};
 
-		const taskStore = new InMemoryTaskStore();
+		const dbPath = join(getAgentDir(), "db", "a2a.db");
+		taskStore = new SQLiteTaskStore(dbPath, log);
 		const pushNotificationStore = new InMemoryPushNotificationStore();
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
 
@@ -673,6 +681,10 @@ export default function (pi: ExtensionAPI) {
 		if (executor) {
 			executor.abortAll();
 			executor = null;
+		}
+		if (taskStore) {
+			taskStore.close();
+			taskStore = null;
 		}
 		if (isRunning()) {
 			await stopServer(log);

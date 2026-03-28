@@ -1021,6 +1021,8 @@ export default function (pi: ExtensionAPI) {
 						credential,
 						onRefreshCredential: sendOpts.onRefreshCredential,
 					};
+					const maxOutboundInputRounds = config.maxInputRounds ?? 5;
+					let outboundInputRounds = 0;
 
 					while (Date.now() < pollDeadline) {
 						if (sessionToken !== myToken) return;
@@ -1055,8 +1057,16 @@ export default function (pi: ExtensionAPI) {
 
 							if (poll.state === "input-required") {
 								// Remote agent needs more information — ask the local agent
+								outboundInputRounds++;
+								if (outboundInputRounds > maxOutboundInputRounds) {
+									const dur = fmtDuration(Date.now() - sendStart);
+									log("a2a_poll_input_round_limit", { agent: resolvedName, taskId, rounds: outboundInputRounds, max: maxOutboundInputRounds }, "WARN");
+									pi.sendMessage({ customType: "a2a-response-error", content: `⚠️ **${resolvedName}** asked for input too many times (${outboundInputRounds - 1}/${maxOutboundInputRounds} rounds). Stopping. (${dur})`, display: true }, { triggerTurn: false });
+									return;
+								}
+
 								const question = poll.response ?? "(agent needs more information)";
-								log("a2a_poll_input_required", { agent: resolvedName, taskId, questionLength: question.length });
+								log("a2a_poll_input_required", { agent: resolvedName, taskId, questionLength: question.length, round: outboundInputRounds });
 
 								try {
 									// Get the local agent's answer (injects question, captures response)

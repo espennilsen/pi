@@ -316,11 +316,11 @@ This prevents orphaned processes and keeps the environment clean for the next te
 | **Completeness** | Everything built and working | — | Minor features missing | Significant gaps | Mostly stubs |
 | **UX** | Polished, delightful | — | Good, minor rough edges | Functional but clunky | Confusing/broken |
 | **Robustness** | Handles everything gracefully | — | Handles common cases | Some edge cases crash | Fragile |
-| **Accessibility** | 0 violations, keyboard nav works | 1-3 minor violations | 1-3 serious violations | 4-10 mixed violations | 10+ or any critical |
+| **Accessibility** | 0 violations | 1-3 minor violations | 1-3 serious violations | 4-10 mixed violations | 10+ or any critical |
 
 ## Verdict Rules
 
 - **PASS** = All dimensions ≥ 6 AND no critical functionality failures
-- **FAIL** = Any dimension ≤ 5 OR acceptance criteria not met
+- **FAIL** = Any dimension < 6 OR acceptance criteria not met
 
 When reporting FAIL, always provide specific, actionable feedback the builder can use to fix the issues. Reference exact elements, URLs, and steps.

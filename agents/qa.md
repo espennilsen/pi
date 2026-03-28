@@ -85,12 +85,12 @@ Score each dimension 1-10:
 | **Completeness** | All features implemented (not stubbed/placeholder)? | Everything built and working | Minor features missing | Significant gaps | Mostly placeholders |
 | **UX** | Intuitive? Error states? Loading indicators? Responsive? | Polished, delightful | Good, minor rough edges | Functional but clunky | Confusing or broken |
 | **Robustness** | Edge cases handled? Empty states? Error recovery? | Handles everything gracefully | Handles common cases | Some edge cases crash | Fragile, breaks easily |
-| **Accessibility** | axe-core violations, keyboard nav, ARIA labels | 0 violations, full keyboard nav | 1-3 minor violations | 4-10 violations | 10+ or critical violations |
+| **Accessibility** | axe-core violations, keyboard nav, ARIA labels | 0 violations | 1-3 serious violations | 4-10 violations | 10+ or critical violations |
 
 ## Verdict Rules
 
 - **PASS** — All dimensions ≥ 6 AND no critical functionality failures
-- **FAIL** — Any dimension ≤ 5 OR any acceptance criterion not met
+- **FAIL** — Any dimension < 6 OR any acceptance criterion not met
   - Always include specific, actionable feedback for the builder
 
 ## Report Format

@@ -43,13 +43,15 @@ export interface AsyncTaskResult {
 	/** Sender's A2A endpoint URL, captured from the original request context. */
 	senderUrl?: string;
 	result: ProcessResult;
+	/** When true, don't send the result back to the sender (this was a response to a response — no reply-to-reply). */
+	skipReply?: boolean;
 }
 
 /**
  * Callback to inject a message into the main agent conversation.
  * Returns a promise that resolves when the agent finishes processing.
  */
-export type ProcessMessage = (prompt: string, sender: string) => Promise<ProcessResult>;
+export type ProcessMessage = (prompt: string, sender: string, options?: { isResponse?: boolean }) => Promise<ProcessResult>;
 
 export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
@@ -149,6 +151,24 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
+		// ── Check if this is a response to a message we sent (not a new request) ──
+		// When Agent A sends to Agent B, B processes and sends the result back
+		// as a new message/send with pi:isResponse metadata. We still process it
+		// through the agent (so it can act on the response), but we set skipReply
+		// so onAsyncResult won't send the result back — no reply-to-reply.
+		// This breaks the bidirectional loop while still letting the agent reason
+		// about the response.
+		const msgMetadata = userMessage.metadata as Record<string, unknown> | undefined;
+		const isResponse = msgMetadata?.["pi:isResponse"] === true;
+
+		if (isResponse) {
+			this.log("executor_received_response", {
+				taskId,
+				replyToTaskId: msgMetadata?.["pi:replyToTaskId"],
+				from: (msgMetadata?.["pi:sender"] as { name?: string } | undefined)?.name ?? "Unknown",
+			});
+		}
+
 		// Extract sender identity (name + URL for reply routing)
 		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
 			| { name?: string; description?: string; url?: string }
@@ -214,7 +234,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		// The HTTP response has already been sent. The agent works on the
 		// task, and when done, the result is delivered via onAsyncResult
 		// which sends it back to the caller as a new A2A message.
-		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!).catch((err) => {
+		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!, isResponse).catch((err) => {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_bg_error", { taskId, error: msg }, "ERROR");
 		});
@@ -279,9 +299,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		senderName: string,
 		senderUrl: string | undefined,
 		releaseQueue: () => void,
+		skipReply: boolean = false,
 	): Promise<void> {
 		try {
-			const result = await this.processMessage(prompt, senderName);
+			const result = await this.processMessage(prompt, senderName, { isResponse: skipReply });
 
 			// Check if canceled while processing
 			if (this.activeTaskId !== taskId) {
@@ -303,7 +324,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 
 			// Deliver the result to be sent back to the caller
-			this.onAsyncResult?.({ taskId, senderName, senderUrl, result });
+			this.onAsyncResult?.({ taskId, senderName, senderUrl, result, skipReply });
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			const msg = err instanceof Error ? err.message : String(err);
@@ -319,6 +340,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				senderName,
 				senderUrl,
 				result: { ok: false, response: "", error: msg, durationMs: 0 },
+				skipReply,
 			});
 		} finally {
 			releaseQueue();

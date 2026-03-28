@@ -39,6 +39,8 @@ export interface SendMessageOptions {
 	timeoutMs?: number;
 	/** Local agent identity to include as sender metadata. */
 	sender?: SenderIdentity;
+	/** Additional metadata to merge into the A2A message metadata. */
+	metadata?: Record<string, unknown>;
 	/**
 	 * Callback to refresh a stale credential on 401.
 	 * Called once on auth failure — should evict cache and return a fresh token.
@@ -71,7 +73,7 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender, onRefreshCredential } = opts;
+	const { url, message, credential, timeoutMs, sender, metadata: extraMetadata, onRefreshCredential } = opts;
 
 	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
 
@@ -152,14 +154,19 @@ export async function sendA2AMessage(
 		const client = new Client(transport, minimalCard);
 
 		// ── Build the A2A message ─────────────────────────────────
-		const metadata: Record<string, unknown> | undefined = sender
+		const senderMeta = sender
 			? {
 				"pi:sender": {
 					name: sender.name,
 					...(sender.description ? { description: sender.description } : {}),
 				},
 			}
-			: undefined;
+			: {};
+
+		const metadata: Record<string, unknown> | undefined =
+			(Object.keys(senderMeta).length > 0 || extraMetadata)
+				? { ...senderMeta, ...extraMetadata }
+				: undefined;
 
 		const params: MessageSendParams = {
 			message: {

@@ -150,6 +150,8 @@ export default function (pi: ExtensionAPI) {
 	let pendingStartTime = 0;
 	/** Nonce embedded in the injected message to correlate with agent_end. */
 	let pendingNonce: string | null = null;
+	/** Whether the current pending request is a response (affects the completion message). */
+	let pendingIsResponse = false;
 
 	/** Wait for agent to be idle before injecting an A2A message. */
 	let agentBusy = false;
@@ -166,7 +168,7 @@ export default function (pi: ExtensionAPI) {
 	 * Process an incoming A2A message via the main agent.
 	 * Called by the executor — blocks until the agent responds.
 	 */
-	async function processMessage(prompt: string, sender: string): Promise<ProcessResult> {
+	async function processMessage(prompt: string, sender: string, options?: { isResponse?: boolean }): Promise<ProcessResult> {
 		const start = Date.now();
 
 		// Guard against concurrent invocations — singleton pendingResolve
@@ -190,15 +192,25 @@ export default function (pi: ExtensionAPI) {
 			pendingStartTime = start;
 			pendingNonce = nonce;
 
+			const isResponse = options?.isResponse ?? false;
+			pendingIsResponse = isResponse;
+
 			// Inject into the main conversation — triggers a full agent turn.
 			// The nonce in details lets agent_end correlate this turn's response.
+			// For responses (pi:isResponse), we use different framing so the agent
+			// knows this is a reply to an earlier request, not a new one. The agent's
+			// output won't be sent back automatically — use a2a_send to follow up.
 			pi.sendMessage(
 				{
-					customType: "a2a-request",
-					content:
-						`📨 **A2A request from ${sender}**\n\n` +
-						`> ${prompt.split("\n").join("\n> ")}\n\n` +
-						`*Process this request. Your full response will be sent back to ${sender} via A2A.*`,
+					customType: isResponse ? "a2a-response-inbound" : "a2a-request",
+					content: isResponse
+						? `📨 **A2A response from ${sender}**\n\n` +
+						  `> ${prompt.split("\n").join("\n> ")}\n\n` +
+						  `*This is a response to an earlier A2A request. Process the information and take any needed action. ` +
+						  `Your reply will NOT be sent back automatically — use a2a_send explicitly if you need to follow up.*`
+						: `📨 **A2A request from ${sender}**\n\n` +
+						  `> ${prompt.split("\n").join("\n> ")}\n\n` +
+						  `*Process this request. Your full response will be sent back to ${sender} via A2A.*`,
 					display: true,
 					details: { nonce },
 				},
@@ -242,7 +254,7 @@ export default function (pi: ExtensionAPI) {
 		if (pendingResolve && pendingNonce) {
 			const hasMatchingRequest = event.messages.some((m) =>
 				"customType" in m &&
-				m.customType === "a2a-request" &&
+				(m.customType === "a2a-request" || m.customType === "a2a-response-inbound") &&
 				(m as { details?: { nonce?: string } }).details?.nonce === pendingNonce
 			);
 
@@ -250,15 +262,19 @@ export default function (pi: ExtensionAPI) {
 				const response = extractAssistantText(event.messages);
 				const durationMs = Date.now() - pendingStartTime;
 				const resolve = pendingResolve;
+				const isResponse = pendingIsResponse;
 				pendingResolve = null;
 				pendingNonce = null;
+				pendingIsResponse = false;
 
 				if (response) {
-					// Show completion in chat
+					// Show completion in chat — different message for responses vs requests
 					pi.sendMessage(
 						{
-							customType: "a2a-response-sent",
-							content: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
+							customType: isResponse ? "a2a-response-processed" : "a2a-response-sent",
+							content: isResponse
+								? `✅ **A2A response processed** (${fmtDuration(durationMs)})`
+								: `📤 **A2A response sent** (${fmtDuration(durationMs)})`,
 							display: true,
 						},
 						{ triggerTurn: false },
@@ -285,6 +301,35 @@ export default function (pi: ExtensionAPI) {
 	let outboundPending = 0;
 	/** Monotonic token incremented on each session_start. Stale closures bail out when mismatched. */
 	let sessionToken = 0;
+
+	// ── Outbound response rate limiter ────────────────────────
+	// Prevents outbound loops where the agent keeps calling a2a_send
+	// after processing each response, creating an ever-growing chain.
+	/** Timestamps of recent outbound A2A response-triggered turns. */
+	const a2aResponseTriggerTimestamps: number[] = [];
+	/** Rolling window size (1 minute). */
+	const A2A_RESPONSE_WINDOW_MS = 60_000;
+	/** Max auto-triggered turns per window before pausing. */
+	const MAX_A2A_RESPONSE_TRIGGERS = 10;
+
+	/** Check if we should trigger a turn for an outbound A2A response. */
+	function shouldTriggerA2AResponse(): boolean {
+		const now = Date.now();
+		// Evict expired entries
+		while (a2aResponseTriggerTimestamps.length > 0 &&
+			   (now - a2aResponseTriggerTimestamps[0]) > A2A_RESPONSE_WINDOW_MS) {
+			a2aResponseTriggerTimestamps.shift();
+		}
+		if (a2aResponseTriggerTimestamps.length >= MAX_A2A_RESPONSE_TRIGGERS) {
+			log("a2a_response_rate_limited", {
+				count: a2aResponseTriggerTimestamps.length,
+				windowMs: A2A_RESPONSE_WINDOW_MS,
+			}, "WARN");
+			return false;
+		}
+		a2aResponseTriggerTimestamps.push(now);
+		return true;
+	}
 
 	// ── TUI: status line ──────────────────────────────────────
 
@@ -404,6 +449,7 @@ export default function (pi: ExtensionAPI) {
 		// Clean restart — reset all async state from previous session
 		outboundPending = 0;
 		sessionToken++;
+		a2aResponseTriggerTimestamps.length = 0;
 		credentialCache.clear();
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
@@ -414,6 +460,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		pendingResolve = null;
 		pendingNonce = null;
+		pendingIsResponse = false;
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
@@ -452,8 +499,16 @@ export default function (pi: ExtensionAPI) {
 		// When a long-running task completes, send the result back to the sender
 		// as a new A2A message. The initial HTTP response already returned a
 		// "working" ACK — this delivers the actual content (or error).
+		//
+		// If skipReply is set, the original message was itself a response
+		// (pi:isResponse) — don't reply to a reply, or we'd loop forever.
 		executor.onAsyncResult = (asyncResult: AsyncTaskResult) => {
-			const { taskId, senderName, senderUrl, result } = asyncResult;
+			const { taskId, senderName, senderUrl, result, skipReply } = asyncResult;
+
+			if (skipReply) {
+				log("async_result_skip_reply", { taskId, sender: senderName, ok: result.ok });
+				return;
+			}
 
 			// Build the message — include error info so the caller knows what happened
 			const messageText = result.ok
@@ -537,6 +592,10 @@ export default function (pi: ExtensionAPI) {
 					credential,
 					timeoutMs: config.sendTimeoutMs,
 					sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
+					metadata: {
+						"pi:isResponse": true,
+						"pi:replyToTaskId": taskId,
+					},
 				}, log);
 
 				if (sendResult.ok) {
@@ -939,14 +998,16 @@ export default function (pi: ExtensionAPI) {
 						{ triggerTurn: false },
 					);
 				} else if (result.ok) {
+					const trigger = shouldTriggerA2AResponse();
 					pi.sendMessage(
 						{
 							customType: "a2a-response-received",
 							content:
-								`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`,
+								`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}` +
+								(!trigger ? `\n\n⚠️ *Automatic processing paused — too many consecutive A2A responses. Review and respond manually if needed.*` : ""),
 							display: true,
 						},
-						{ triggerTurn: true },
+						{ triggerTurn: trigger },
 					);
 				} else {
 					pi.sendMessage(

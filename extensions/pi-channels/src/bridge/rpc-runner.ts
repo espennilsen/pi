@@ -208,6 +208,7 @@ export class RpcSession {
 				if (attachments.length > 0) cmd.attachments = attachments;
 			}
 
+			console.log(`[pi-channels DEBUG] RPC sending command: ${JSON.stringify(cmd).slice(0, 200)}...`);
 			this.sendCommand(cmd);
 		});
 	}

@@ -17,6 +17,7 @@ src/
 ├── logger.ts         # Structured logger via pi-logger event bus
 ├── agent-card.ts     # Agent Card builder from config, dynamic tool enrichment
 ├── agent-executor.ts # AgentExecutor — inline main-process delegation + TaskStore persistence
+├── supervisor.ts     # Loop control supervisor — cycle detection, hop limits, budget enforcement
 ├── task-store.ts     # SQLite-backed TaskStore (persistent tasks, WAL mode)
 ├── server.ts         # Self-contained HTTP server (node:http) + SDK RPC handler
 ├── client.ts         # Outbound A2A messaging via SDK Client
@@ -29,7 +30,8 @@ src/
 
 - **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `SQLiteTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific main-process delegation.
 - **Async-first task lifecycle** — The executor ACKs with "working" immediately (unblocking the HTTP response), then processes in the background. On completion, results are saved directly to the SQLite TaskStore (artifact + completed/failed status). Callers retrieve results via `tasks/get` polling or SSE `resubscribe`. No result messages are sent back — this eliminates bidirectional loops.
-- **Persistent SQLite TaskStore** — Tasks survive restarts. Schema: `a2a_tasks` with extracted `status`, `hop_count`, and `visited_agents` columns for efficient querying and future loop control. WAL mode for concurrent reads during processing. DB at `{agentDir}/db/a2a.db`.
+- **Persistent SQLite TaskStore** — Tasks survive restarts. Schema: `a2a_tasks` with extracted `status`, `hop_count`, and `visited_agents` columns for efficient querying and loop control. WAL mode for concurrent reads during processing. DB at `{agentDir}/db/a2a.db`.
+- **Loop control supervisor** — Prevents infinite A2A loops (A→B→A→B...) via spec-compliant metadata under `pi:` prefix. The supervisor runs before `execute()` and checks: (1) cycle detection — rejects if this agent already appears in `pi:visitedAgents`, (2) hop count — rejects if `pi:hopCount` exceeds `maxHops` (configurable, default 10). Metadata propagates on outbound messages so downstream agents inherit the chain. Pure-function design in `supervisor.ts` — testable and independent of the executor.
 - **Streaming support** — Capabilities declare `streaming: true`. The SDK's `sendMessageStream` returns an `AsyncGenerator`; the HTTP server detects this and responds with SSE (`text/event-stream`).
 - **Push notifications** — Capabilities declare `pushNotifications: true`. `InMemoryPushNotificationStore` and `DefaultPushNotificationSender` are wired into the `DefaultRequestHandler`, enabling clients to register webhook URLs for async task updates.
 - **Self-contained HTTP server** — Uses `node:http` directly. No dependency on pi-webserver, pi-kysely, or any other extension. Binds to `127.0.0.1` by default; optional API key auth for external access.
@@ -42,7 +44,7 @@ src/
 
 Settings key: `pi-a2a` in `~/.pi/agent/settings.json` or `.pi/settings.json`.
 
-Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `skills[]`, `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
+Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `skills[]`, `maxHops` (default 10 — loop control hop limit), `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
 
 ### Static Agents (no hub required)
 

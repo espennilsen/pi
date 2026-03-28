@@ -27,6 +27,13 @@ import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from
 import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
 import type { TelemetrySnapshot } from "./types.ts";
+import {
+	extractLoopMetadata,
+	injectLoopMetadata,
+	supervise,
+	type LoopMetadata,
+	type SupervisorConfig,
+} from "./supervisor.ts";
 
 /** Max concurrent tasks (1 for main-process delegation). */
 const MAX_CONCURRENT = 1;
@@ -49,12 +56,20 @@ export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
 	private processMessage: ProcessMessage;
 	private taskStore: TaskStore;
+	private supervisorConfig: SupervisorConfig;
 	/**
 	 * Track the single active task for cancellation.
 	 * Note: cancellation only prevents result dispatch — the underlying
 	 * agent turn cannot be interrupted mid-execution at this layer.
 	 */
 	private activeTaskId: string | null = null;
+	/**
+	 * Loop metadata for the currently active task (set by supervisor).
+	 * Used by the outbound client to propagate loop control on a2a_send
+	 * calls made during this task's processing. Null when no active task
+	 * or for tasks without loop metadata.
+	 */
+	private activeLoopMetadata: LoopMetadata | null = null;
 	/** Serializing queue — tasks run one at a time in arrival order. */
 	private queue: Promise<void> = Promise.resolve();
 	/** Cancel callbacks for queued (not yet active) tasks. */
@@ -68,10 +83,25 @@ export class PiAgentExecutor implements AgentExecutor {
 	/** Optional callback invoked after each task completes or fails. */
 	onTaskFinished?: () => void;
 
-	constructor(log: LogFn, processMessage: ProcessMessage, taskStore: TaskStore) {
+	constructor(
+		log: LogFn,
+		processMessage: ProcessMessage,
+		taskStore: TaskStore,
+		supervisorConfig: SupervisorConfig,
+	) {
 		this.log = log;
 		this.processMessage = processMessage;
 		this.taskStore = taskStore;
+		this.supervisorConfig = supervisorConfig;
+	}
+
+	/**
+	 * Get the loop metadata for the currently active inbound task.
+	 * Returns null if no task is active or the task had no loop metadata.
+	 * Used by the outbound client (a2a_send) to propagate loop control.
+	 */
+	getActiveLoopMetadata(): LoopMetadata | null {
+		return this.activeLoopMetadata;
 	}
 
 	/** Return a snapshot of current telemetry state for hub reporting. */
@@ -103,6 +133,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		if (this.activeTaskId) {
 			this.log("executor_abort_all", { taskId: this.activeTaskId });
 			this.activeTaskId = null;
+			this.activeLoopMetadata = null;
 		}
 	}
 
@@ -143,8 +174,61 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
+		// ── Supervisor: loop control check ──────────────────────────
+		// Extract loop metadata from the incoming message and run supervisor
+		// checks (cycle detection, hop count limit) BEFORE processing.
+		const messageMeta = userMessage.metadata as Record<string, unknown> | undefined;
+		const incomingLoop = extractLoopMetadata(messageMeta);
+		const supervisorResult = supervise(incomingLoop, this.supervisorConfig);
+
+		if (!supervisorResult.approved) {
+			this.log("supervisor_rejected", {
+				taskId,
+				reason: supervisorResult.reason,
+				hopCount: supervisorResult.metadata.hopCount,
+				visitedAgents: supervisorResult.metadata.visitedAgents,
+			}, "WARN");
+
+			// Publish failed status with clear rejection reason and finish
+			this.publishError(taskId, contextId, eventBus,
+				`Loop control: ${supervisorResult.reason}`);
+			eventBus.finished();
+
+			// Save the rejected task with metadata so it shows up in task store
+			const rejectedMeta = injectLoopMetadata(messageMeta, supervisorResult.metadata);
+			const rejectedTask: Task = {
+				kind: "task",
+				id: taskId,
+				contextId,
+				metadata: rejectedMeta,
+				status: {
+					state: "failed",
+					message: {
+						kind: "message",
+						messageId: randomUUID(),
+						role: "agent",
+						parts: [{ kind: "text", text: `Loop control: ${supervisorResult.reason}` } as Part],
+					},
+					timestamp: new Date().toISOString(),
+				},
+			};
+			await this.taskStore.save(rejectedTask);
+
+			releaseQueue!();
+			return;
+		}
+
+		// Supervisor approved — store the updated metadata for this task.
+		// This is used by a2a_send for outbound metadata propagation.
+		this.activeLoopMetadata = supervisorResult.metadata;
+		this.log("supervisor_approved", {
+			taskId,
+			hopCount: supervisorResult.metadata.hopCount,
+			visitedAgents: supervisorResult.metadata.visitedAgents,
+		});
+
 		// Extract sender identity for logging
-		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
+		const senderMeta = messageMeta?.["pi:sender"] as
 			| { name?: string; description?: string }
 			| undefined;
 		const senderName = senderMeta?.name ?? "Unknown agent";
@@ -185,6 +269,8 @@ export class PiAgentExecutor implements AgentExecutor {
 		// This unblocks the HTTP response so the sender gets a Task with
 		// state: "working" right away instead of waiting for the agent to
 		// finish (which can take minutes and causes timeout).
+		// Include loop metadata so the caller can inspect it.
+		const ackMetadata = injectLoopMetadata(messageMeta, supervisorResult.metadata);
 		eventBus.publish({
 			kind: "status-update",
 			taskId,
@@ -199,6 +285,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				},
 				timestamp: new Date().toISOString(),
 			},
+			metadata: ackMetadata,
 			final: true,
 		} as TaskStatusUpdateEvent);
 		eventBus.finished();
@@ -277,6 +364,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		senderName: string,
 		releaseQueue: () => void,
 	): Promise<void> {
+		// Capture loop metadata before processing — it's cleared when the task
+		// finishes, but we need it for the saved task result.
+		const loopMetadata = this.activeLoopMetadata;
+
 		try {
 			const result = await this.processMessage(prompt, senderName);
 
@@ -287,6 +378,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 
 			this.activeTaskId = null;
+			this.activeLoopMetadata = null;
 
 			// Record telemetry
 			this.lastTaskDurationMs = result.durationMs;
@@ -300,9 +392,10 @@ export class PiAgentExecutor implements AgentExecutor {
 			}
 
 			// Update the task in the store — callers poll via tasks/get
-			await this.saveTaskResult(taskId, contextId, result);
+			await this.saveTaskResult(taskId, contextId, result, loopMetadata);
 		} catch (err: unknown) {
 			this.activeTaskId = null;
+			this.activeLoopMetadata = null;
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
 
@@ -316,7 +409,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				response: "",
 				error: msg,
 				durationMs: 0,
-			});
+			}, loopMetadata);
 		} finally {
 			releaseQueue();
 		}
@@ -333,6 +426,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		taskId: string,
 		contextId: string,
 		result: ProcessResult,
+		loopMetadata?: LoopMetadata | null,
 	): Promise<void> {
 		try {
 			const existing = await this.taskStore.load(taskId);
@@ -350,14 +444,20 @@ export class PiAgentExecutor implements AgentExecutor {
 				} as Part],
 			};
 
+			// Merge existing metadata with loop-control metadata
+			const existingMeta = existing?.metadata as Record<string, unknown> | undefined;
+			const mergedMeta = loopMetadata
+				? injectLoopMetadata(existingMeta, loopMetadata)
+				: existingMeta;
+
 			const updatedTask: Task = {
 				kind: "task",
 				id: taskId,
 				contextId,
 				// Preserve history from the existing task
 				...(existing?.history ? { history: existing.history } : {}),
-				// Preserve existing metadata
-				...(existing?.metadata ? { metadata: existing.metadata } : {}),
+				// Include merged metadata (existing + loop control)
+				...(mergedMeta ? { metadata: mergedMeta } : {}),
 				status: {
 					state: result.ok ? "completed" : "failed",
 					message: statusMessage,

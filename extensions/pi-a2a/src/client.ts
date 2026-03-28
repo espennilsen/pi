@@ -17,6 +17,8 @@ import {
 } from "@a2a-js/sdk/client";
 import type { AgentCard, MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
+import type { LoopMetadata } from "./supervisor.ts";
+import { injectLoopMetadata } from "./supervisor.ts";
 
 /** Sender identity to include in message metadata. */
 export interface SenderIdentity {
@@ -45,6 +47,12 @@ export interface SendMessageOptions {
 	 * If not provided, 401 is returned as-is.
 	 */
 	onRefreshCredential?: () => Promise<string | null>;
+	/**
+	 * Loop-control metadata to propagate on the outbound message.
+	 * When set, pi:hopCount, pi:visitedAgents, and pi:budgets are injected
+	 * into the message metadata for downstream loop prevention.
+	 */
+	loopMetadata?: LoopMetadata | null;
 }
 
 export interface SendMessageResult {
@@ -71,9 +79,9 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender, onRefreshCredential } = opts;
+	const { url, message, credential, timeoutMs, sender, onRefreshCredential, loopMetadata } = opts;
 
-	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
+	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential, hopCount: loopMetadata?.hopCount });
 
 	// Track auth state explicitly so we can set `unauthorized: true`
 	// without relying on SDK error message format (which is unstable
@@ -152,7 +160,8 @@ export async function sendA2AMessage(
 		const client = new Client(transport, minimalCard);
 
 		// ── Build the A2A message ─────────────────────────────────
-		const metadata: Record<string, unknown> | undefined = sender
+		// Start with sender identity, then layer in loop-control metadata
+		let metadata: Record<string, unknown> | undefined = sender
 			? {
 				"pi:sender": {
 					name: sender.name,
@@ -160,6 +169,11 @@ export async function sendA2AMessage(
 				},
 			}
 			: undefined;
+
+		// Inject loop-control metadata for downstream loop prevention
+		if (loopMetadata) {
+			metadata = injectLoopMetadata(metadata, loopMetadata);
+		}
 
 		const params: MessageSendParams = {
 			message: {

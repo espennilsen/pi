@@ -51,6 +51,7 @@ import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromH
 import { sendA2AMessage, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
+import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import type { HubConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
@@ -101,6 +102,10 @@ export default function (pi: ExtensionAPI) {
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
+	/** Agent's canonical public URL (set on session_start, used for loop metadata). */
+	let agentPublicUrl: string = "http://localhost:3100";
+	/** Configured max hops (set on session_start, used for seeding outbound metadata). */
+	let configuredMaxHops: number = DEFAULT_MAX_HOPS;
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -401,6 +406,8 @@ export default function (pi: ExtensionAPI) {
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		const port = config.port ?? DEFAULT_PORT;
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+		agentPublicUrl = publicUrl;
+		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		const agentCard = buildAgentCard(config, publicUrl);
 
 		// Initialize persistent task store (must be created before executor)
@@ -409,7 +416,12 @@ export default function (pi: ExtensionAPI) {
 
 		// Set up executor — uses taskStore to persist results after background processing.
 		// No onAsyncResult callback — results go into the store, callers poll via tasks/get.
-		executor = new PiAgentExecutor(log, processMessage, taskStore);
+		// Supervisor config provides agent identity and hop limit for loop control.
+		const maxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
+		executor = new PiAgentExecutor(log, processMessage, taskStore, {
+			agentId: publicUrl,
+			defaultMaxHops: maxHops,
+		});
 
 		// When the executor finishes an A2A task, refresh TUI status and
 		// send telemetry so the hub sees "idle" immediately — agent_end
@@ -772,6 +784,12 @@ export default function (pi: ExtensionAPI) {
 			outboundPending++;
 			updateStatusLine();
 
+			// Resolve loop metadata: propagate from active inbound task, or seed fresh
+			const activeLoop = executor?.getActiveLoopMetadata() ?? null;
+			const outboundLoop = activeLoop
+				? activeLoop  // Propagate inbound chain (already incremented by supervisor)
+				: seedLoopMetadata(agentPublicUrl, configuredMaxHops);
+
 			const resolvedFromStatic = fromStatic;
 			const sendOpts = {
 				url: resolvedUrl,
@@ -779,6 +797,7 @@ export default function (pi: ExtensionAPI) {
 				credential,
 				timeoutMs: config.sendTimeoutMs,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
+				loopMetadata: outboundLoop,
 				// SDK auth handler retries on 401 — provide a callback to refresh the credential
 				onRefreshCredential: (!resolvedFromStatic && resolvedAgentId && hubConfig)
 					? async () => {
@@ -1044,7 +1063,8 @@ export default function (pi: ExtensionAPI) {
 						`A2A server running on port ${port}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
 						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
-						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓`;
+						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓\n` +
+						`Loop control: maxHops=${configuredMaxHops} | Agent ID: ${agentPublicUrl}`;
 
 					if (hubAgentId) {
 						const snap = buildTelemetrySnapshot();

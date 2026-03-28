@@ -32,6 +32,9 @@ export interface A2AConfig {
 	hub?: HubConfig;
 	/** Timeout in milliseconds for outbound a2a_send requests. No timeout by default. */
 	sendTimeoutMs?: number;
+	/** Default maximum hop count for loop control. Defaults to 10.
+	 *  Messages exceeding this many agent-to-agent hops are rejected. */
+	maxHops?: number;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
 }

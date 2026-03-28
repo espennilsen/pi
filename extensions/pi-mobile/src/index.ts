@@ -45,7 +45,7 @@ function getScreenJs(name: string): string | null {
 	const screensDir = path.join(PUBLIC_DIR, "screens");
 	const filePath = path.join(screensDir, `${name}.js`);
 	// Prevent path traversal — must stay within screens directory
-	if (!filePath.startsWith(screensDir + path.sep)) return null;
+	if (!filePath.startsWith(screensDir + path.sep) && filePath !== screensDir) return null;
 	if (!fs.existsSync(filePath)) return null;
 	const content = fs.readFileSync(filePath, "utf-8");
 	screenCache.set(name, content);

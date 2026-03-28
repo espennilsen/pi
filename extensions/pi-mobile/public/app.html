@@ -422,17 +422,41 @@
 		// Minimal markdown → HTML (handles **bold**, *italic*, `code`, ```blocks```, links, lists)
 		function md(text) {
 			if (!text) return "";
-			return esc(text)
-				.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-				.replace(/`([^`]+)`/g, '<code>$1</code>')
+			
+			// Escape HTML first
+			const escaped = esc(text);
+			
+			// Extract code blocks and inline code into placeholders to prevent subsequent transforms from affecting them
+			const codeBlocks = [];
+			const withPlaceholders = escaped
+				.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+					codeBlocks.push(`<pre><code>${code}</code></pre>`);
+					return `\x00CODE_BLOCK_${codeBlocks.length - 1}\x00`;
+				})
+				.replace(/`([^`]+)`/g, (match, code) => {
+					codeBlocks.push(`<code>${code}</code>`);
+					return `\x00CODE_BLOCK_${codeBlocks.length - 1}\x00`;
+				});
+			
+			// Apply inline transforms (bold, italic, links, headings) on non-code text
+			const transformed = withPlaceholders
 				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 				.replace(/\*(.+?)\*/g, '<em>$1</em>')
-				.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+				.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+					// Security: only allow http(s) URLs to prevent javascript: protocol XSS
+					const isHttpUrl = /^https?:\/\//i.test(url);
+					return isHttpUrl 
+						? `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>` 
+						: text;
+				})
 				.replace(/^### (.+)$/gm, '<strong>$1</strong>')
 				.replace(/^## (.+)$/gm, '<strong>$1</strong>')
 				.replace(/^# (.+)$/gm, '<strong>$1</strong>')
 				.replace(/^[-*] (.+)$/gm, '• $1')
 				.replace(/\n/g, '<br>');
+			
+			// Restore code blocks
+			return transformed.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (match, index) => codeBlocks[parseInt(index)]);
 		}
 
 		// ── Tab definitions ────────────────────────────────
@@ -979,6 +1003,7 @@
 
 			async function runJob(name) {
 				await apiPost("/cron/jobs/" + encodeURIComponent(name) + "/run", {});
+				refresh();
 			}
 
 			if (loading && jobs.length === 0) return html`<div class="screen-placeholder"><div class="spinner" /></div>`;

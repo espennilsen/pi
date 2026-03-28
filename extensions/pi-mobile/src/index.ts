@@ -151,7 +151,7 @@ async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath:
 		// Keepalive ping every 15s
 		const keepalive = setInterval(() => {
 			if (!res.writable) { clearInterval(keepalive); return; }
-			try { res.write(": ping\n\n"); } catch { clearInterval(keepalive); }
+			try { res.write(": ping\n\n"); } catch { clearInterval(keepalive); sseClients.delete(res); }
 		}, 15_000);
 
 		req.on("close", () => {
@@ -594,7 +594,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 		logClients.add(res);
 		const keepalive = setInterval(() => {
 			if (!res.writable) { clearInterval(keepalive); return; }
-			try { res.write(": ping\n\n"); } catch { clearInterval(keepalive); }
+			try { res.write(": ping\n\n"); } catch { clearInterval(keepalive); logClients.delete(res); }
 		}, 15_000);
 		req.on("close", () => { clearInterval(keepalive); logClients.delete(res); });
 		return;

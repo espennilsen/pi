@@ -14,9 +14,15 @@
 
 import * as http from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { AgentCard } from "@a2a-js/sdk";
-import type { JsonRpcTransportHandler } from "@a2a-js/sdk/server";
+import { Extensions, HTTP_EXTENSION_HEADER, type AgentCard } from "@a2a-js/sdk";
+import { ServerCallContext, type JsonRpcTransportHandler, type User } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
+
+/** Authenticated user — created when API key auth succeeds. */
+class AuthenticatedUser implements User {
+	get isAuthenticated(): boolean { return true; }
+	get userName(): string { return "a2a-client"; }
+}
 
 const MAX_BODY = 1_048_576; // 1 MB
 
@@ -131,7 +137,18 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						return;
 					}
 
-					const result = await opts.rpcHandler.handle(parsed);
+					// Build ServerCallContext with extensions and auth info.
+					// The SDK threads this through to RequestContext.context
+					// so the executor can inspect caller identity and extensions.
+					const extensionsHeader = req.headers[HTTP_EXTENSION_HEADER.toLowerCase()] as string | undefined;
+					const requestedExtensions = Extensions.parseServiceParameter(extensionsHeader);
+					const user: User | undefined = opts.apiKey ? new AuthenticatedUser() : undefined;
+					const callContext = new ServerCallContext(
+						requestedExtensions.length > 0 ? requestedExtensions : undefined,
+						user,
+					);
+
+					const result = await opts.rpcHandler.handle(parsed, callContext);
 
 					// Check if result is an async generator (streaming)
 					if (result && typeof result === "object" && Symbol.asyncIterator in result) {

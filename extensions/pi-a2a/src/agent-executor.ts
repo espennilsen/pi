@@ -281,7 +281,16 @@ export class PiAgentExecutor implements AgentExecutor {
 
 		const prompt = textSegments.join("\n");
 		this.activeTaskId = taskId;
-		this.log("executor_start", { taskId, sender: senderName, promptLength: prompt.length });
+		const callContext = requestContext.context;
+		this.log("executor_start", {
+			taskId,
+			sender: senderName,
+			promptLength: prompt.length,
+			authenticated: callContext?.user?.isAuthenticated ?? false,
+			...(callContext?.requestedExtensions?.length
+				? { requestedExtensions: callContext.requestedExtensions.length }
+				: {}),
+		});
 
 		// ── ACK immediately: publish "working" and finish the event bus ──
 		// This unblocks the HTTP response so the sender gets a Task with

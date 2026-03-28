@@ -303,7 +303,11 @@ export class PiAgentExecutor implements AgentExecutor {
 					textParts.push((part as { kind: "text"; text: string }).text);
 				}
 			}
-			const followUpText = textParts.join("\n") || "(empty response)";
+			const MAX_FOLLOWUP_LENGTH = 100_000;
+			let followUpText = textParts.join("\n") || "(empty response)";
+			if (followUpText.length > MAX_FOLLOWUP_LENGTH) {
+				followUpText = followUpText.slice(0, MAX_FOLLOWUP_LENGTH) + "\n\n[truncated]";
+			}
 
 			this.log("input_followup_delivered", { taskId, textLength: followUpText.length });
 
@@ -631,6 +635,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			}, loopMetadata);
 			this.taskContexts.delete(taskId);
 			this.inputRoundCounts.delete(taskId);
+			this.parkedInputResolvers.delete(taskId);
 		} finally {
 			releaseQueue();
 		}
@@ -743,7 +748,9 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * Returns undefined if no fallback exists (normal path — DB worked fine).
 	 */
 	getFallbackStatus(taskId: string): { state: "completed" | "failed"; response: string } | undefined {
-		return this.fallbackStatuses.get(taskId);
+		const status = this.fallbackStatuses.get(taskId);
+		if (status) this.fallbackStatuses.delete(taskId);
+		return status;
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

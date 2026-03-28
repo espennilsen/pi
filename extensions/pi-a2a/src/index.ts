@@ -166,23 +166,30 @@ export default function (pi: ExtensionAPI) {
 		// Wait for agent to be idle
 		await waitForIdle();
 
-		return new Promise<string>((resolve) => {
-			const nonce = randomUUID();
-			pendingInputResolvers.set(nonce, { resolve, startTime: Date.now() });
+		const INPUT_ANSWER_TIMEOUT_MS = 300_000;
+		const answer = await Promise.race([
+			new Promise<string>((resolve) => {
+				const nonce = randomUUID();
+				pendingInputResolvers.set(nonce, { resolve, startTime: Date.now() });
 
-			pi.sendMessage(
-				{
-					customType: "a2a-input-question",
-					content:
-						`❓ **${agentName} needs more information:**\n\n` +
-						`> ${question.split("\n").join("\n> ")}\n\n` +
-						`*Please answer this question. Your response will be sent back to ${agentName}.*`,
-					display: true,
-					details: { nonce },
-				},
-				{ triggerTurn: true },
-			);
-		});
+				pi.sendMessage(
+					{
+						customType: "a2a-input-question",
+						content:
+							`❓ **${agentName} needs more information:**\n\n` +
+							`> ${question.split("\n").join("\n> ")}\n\n` +
+							`*Please answer this question. Your response will be sent back to ${agentName}.*`,
+						display: true,
+						details: { nonce },
+					},
+					{ triggerTurn: true },
+				);
+			}),
+			new Promise<string>((_, reject) =>
+				setTimeout(() => reject(new Error("Local agent failed to answer within 5 minutes")), INPUT_ANSWER_TIMEOUT_MS)
+			),
+		]);
+		return answer;
 	}
 
 	/**
@@ -1061,7 +1068,7 @@ export default function (pi: ExtensionAPI) {
 								if (outboundInputRounds > maxOutboundInputRounds) {
 									const dur = fmtDuration(Date.now() - sendStart);
 									log("a2a_poll_input_round_limit", { agent: resolvedName, taskId, rounds: outboundInputRounds, max: maxOutboundInputRounds }, "WARN");
-									pi.sendMessage({ customType: "a2a-response-error", content: `⚠️ **${resolvedName}** asked for input too many times (${outboundInputRounds - 1}/${maxOutboundInputRounds} rounds). Stopping. (${dur})`, display: true }, { triggerTurn: false });
+									pi.sendMessage({ customType: "a2a-response-error", content: `⚠️ **${resolvedName}** asked for input too many times (${outboundInputRounds}/${maxOutboundInputRounds} rounds). Stopping. (${dur})`, display: true }, { triggerTurn: false });
 									return;
 								}
 

@@ -141,7 +141,12 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					// The SDK threads this through to RequestContext.context
 					// so the executor can inspect caller identity and extensions.
 					const extensionsHeader = req.headers[HTTP_EXTENSION_HEADER.toLowerCase()] as string | undefined;
-					const requestedExtensions = Extensions.parseServiceParameter(extensionsHeader);
+					let requestedExtensions: string[] = [];
+					try {
+						requestedExtensions = Extensions.parseServiceParameter(extensionsHeader);
+					} catch (err) {
+						opts.log("extensions_parse_error", { header: extensionsHeader, error: err instanceof Error ? err.message : String(err) }, "WARN");
+					}
 					const user: User | undefined = opts.apiKey ? new AuthenticatedUser() : undefined;
 					const callContext = new ServerCallContext(
 						requestedExtensions.length > 0 ? requestedExtensions : undefined,

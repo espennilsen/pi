@@ -394,6 +394,7 @@ export default function (pi: ExtensionAPI) {
 		sessionToken++;
 		responseLimiter.reset();
 		credentialCache.clear();
+		conversationContexts.clear();
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
@@ -620,6 +621,18 @@ export default function (pi: ExtensionAPI) {
 	/** In-memory cache of discovered agents from the hub. */
 	let discoveredAgents: RemoteAgentSummary[] = [];
 
+	/**
+	 * Conversation context per remote agent — keyed by normalized agent URL.
+	 * Tracks the last contextId and taskId so follow-up messages to the
+	 * same agent automatically continue the conversation.
+	 */
+	const conversationContexts = new Map<string, { contextId: string; taskId?: string }>();
+
+	/** Normalize an agent URL for use as conversation context key. */
+	function normalizeAgentUrl(url: string): string {
+		return url.replace(/\/+$/, "").toLowerCase();
+	}
+
 	/** Credential cache: agentId → { credential, fetchedAt }. TTL = 1 hour. */
 	const CREDENTIAL_TTL_MS = 60 * 60 * 1000; // 1 hour
 	const credentialCache = new Map<string, { credential: string | null; fetchedAt: number }>();
@@ -746,12 +759,23 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Send a message to a remote A2A agent. " +
 			"Specify the agent by name (from a2a_discover results) or by agentId/URL. " +
-			"The hub provides the agent's URL and credential automatically.",
+			"The hub provides the agent's URL and credential automatically. " +
+			"Follow-up messages to the same agent automatically continue the previous conversation " +
+			"(contextId/taskId are tracked per agent). Use newConversation to start fresh.",
 		parameters: Type.Object({
 			agent: Type.String({
 				description: "Agent name, agent ID (UUID), or direct URL. Names are matched against discovered agents.",
 			}),
 			message: Type.String({ description: "Message to send to the remote agent" }),
+			contextId: Type.Optional(Type.String({
+				description: "Context ID to group related messages. Auto-filled from previous conversation with the same agent if omitted.",
+			})),
+			taskId: Type.Optional(Type.String({
+				description: "Task ID to continue an existing task. Auto-filled from previous conversation with the same agent if omitted.",
+			})),
+			newConversation: Type.Optional(Type.Boolean({
+				description: "Start a new conversation — ignore any stored contextId/taskId for this agent. Defaults to false.",
+			})),
 		}),
 		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
@@ -834,6 +858,28 @@ export default function (pi: ExtensionAPI) {
 			outboundPending++;
 			updateStatusLine();
 
+			// ── Resolve conversation context (contextId / taskId) ───
+			// Auto-fill from previous conversation unless starting fresh.
+			const agentKey = normalizeAgentUrl(agentUrl);
+			let resolvedContextId = params.contextId;
+			let resolvedTaskId = params.taskId;
+
+			if (!params.newConversation && !resolvedContextId && !resolvedTaskId) {
+				const prev = conversationContexts.get(agentKey);
+				if (prev) {
+					resolvedContextId = prev.contextId;
+					resolvedTaskId = prev.taskId;
+					log("conversation_context_reused", { agent: agentName, contextId: prev.contextId, taskId: prev.taskId });
+				}
+			}
+			// Generate a fresh contextId for new conversations (or first contact)
+			if (!resolvedContextId) {
+				resolvedContextId = randomUUID();
+			}
+			if (params.newConversation) {
+				resolvedTaskId = undefined;
+			}
+
 			// Resolve loop metadata: propagate from active inbound task, or seed fresh
 			const activeLoop = executor?.getActiveLoopMetadata() ?? null;
 			const outboundLoop = activeLoop
@@ -848,6 +894,8 @@ export default function (pi: ExtensionAPI) {
 				timeoutMs: config.sendTimeoutMs,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
 				loopMetadata: outboundLoop,
+				contextId: resolvedContextId,
+				taskId: resolvedTaskId,
 				// SDK auth handler retries on 401 — provide a callback to refresh the credential
 				onRefreshCredential: (!resolvedFromStatic && resolvedAgentId && hubConfig)
 					? async () => {
@@ -864,6 +912,14 @@ export default function (pi: ExtensionAPI) {
 
 					// Bail out if session restarted while we were waiting
 					if (sessionToken !== myToken) return;
+
+					// Store conversation context for follow-up messages
+					if (result.ok) {
+						conversationContexts.set(agentKey, {
+							contextId: result.contextId ?? resolvedContextId!,
+							taskId: result.taskId,
+						});
+					}
 
 					// ── Immediate completion (remote responded inline) ──────
 					if (result.ok && !result.working && result.response) {
@@ -957,7 +1013,10 @@ export default function (pi: ExtensionAPI) {
 				}
 			})();
 
-			return txt(`📤 Message sent to **${agentName}** — waiting for response in the background. You'll see it when it arrives.`);
+			const contextNote = resolvedTaskId
+				? ` (continuing task ${resolvedTaskId.slice(0, 8)}…)`
+				: params.newConversation ? " (new conversation)" : "";
+			return txt(`📤 Message sent to **${agentName}**${contextNote} — waiting for response in the background. You'll see it when it arrives.`);
 		},
 	});
 

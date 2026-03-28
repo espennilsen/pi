@@ -20,6 +20,12 @@ import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
 import { isCommand, handleCommand, type CommandContext } from "./commands.ts";
 import { startTyping } from "./typing.ts";
+import { 
+	saveIncomingMessage, 
+	saveAssistantResponse, 
+	getRecentContext, 
+	formatContextForPrompt 
+} from "../chat-history.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,
@@ -154,6 +160,9 @@ export class ChatBridge {
 			return;
 		}
 
+		// Save to chat history
+		saveIncomingMessage(message);
+
 		// Enqueue
 		const queued: QueuedPrompt = {
 			id: nextId(),
@@ -210,14 +219,22 @@ export class ChatBridge {
 		// Force stateless mode for documents (RPC doesn't support document type)
 		if (hasDocuments) usePersistent = false;
 
+		// Get chat context for this sender
+		const recentContext = getRecentContext(prompt.sender);
+		const contextText = formatContextForPrompt(recentContext);
+		const promptWithContext = contextText + "\n" + prompt.text;
+
 		this.events.emit("bridge:start", {
 			id: prompt.id, adapter: prompt.adapter, sender: prompt.sender,
-			text: prompt.text.slice(0, 100),
+			text: promptWithContext.slice(0, 100),
 			persistent: usePersistent,
 		});
 
-		try {
 			let result;
+
+			// Update prompt text with context for both modes
+			const originalText = prompt.text;
+			prompt.text = promptWithContext;
 
 			if (usePersistent && this.rpcManager) {
 				// Persistent mode: use RPC session
@@ -225,7 +242,7 @@ export class ChatBridge {
 			} else {
 				// Stateless mode: spawn subprocess
 				result = await runPrompt({
-					prompt: prompt.text,
+					prompt: promptWithContext,
 					cwd: this.cwd,
 					timeoutMs: this.config.timeoutMs,
 					model: this.config.model,
@@ -238,6 +255,8 @@ export class ChatBridge {
 			typing.stop();
 
 			if (result.ok) {
+				// Save assistant response to history
+				saveAssistantResponse(prompt.sender, result.response);
 				this.sendReply(prompt.adapter, prompt.sender, result.response);
 			} else if (result.error === "Aborted by user") {
 				this.sendReply(prompt.adapter, prompt.sender, "⏹ Aborted.");

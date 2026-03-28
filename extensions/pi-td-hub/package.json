@@ -1,7 +1,7 @@
 {
-  "name": "@e9n/pi-a2a",
+  "name": "@e9n/pi-td-hub",
   "version": "0.1.0",
-  "description": "A2A protocol extension for pi — serves an Agent Card, handles JSON-RPC requests, and optionally registers with an A2A Hub",
+  "description": "Cross-project task aggregator — reads td databases across ~/Dev for PM coordination",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -19,6 +19,10 @@
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*"
   },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.33",
+    "better-sqlite3": "^11.9.1"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.9.3"
@@ -32,10 +36,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/espennilsen/pi.git",
-    "directory": "extensions/pi-a2a"
-  },
-  "dependencies": {
-    "@a2a-js/sdk": "^0.3.10",
-    "better-sqlite3": "^12.8.0"
+    "directory": "extensions/pi-td-hub"
   }
 }

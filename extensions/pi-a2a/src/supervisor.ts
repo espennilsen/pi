@@ -78,7 +78,7 @@ export function extractLoopMetadata(
 
 	const hopCount =
 		typeof metadata["pi:hopCount"] === "number"
-			? (metadata["pi:hopCount"] as number)
+			? Math.max(0, metadata["pi:hopCount"] as number)
 			: 0;
 
 	const visitedAgents = Array.isArray(metadata["pi:visitedAgents"])

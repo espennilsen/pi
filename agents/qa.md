@@ -79,12 +79,12 @@ Produce a structured report with:
 
 Score each dimension 1-10:
 
-| Dimension | What to evaluate | 10 | 7 | 5 | 3 |
-|-----------|-----------------|----|----|---|---|
-| **Functionality** | Do acceptance criteria pass? Core flows work? | All criteria pass, flows are smooth | Most criteria pass, minor issues | Some criteria fail | Core flows broken |
-| **Completeness** | All features implemented (not stubbed/placeholder)? | Everything built and working | Minor features missing | Significant gaps | Mostly placeholders |
-| **UX** | Intuitive? Error states? Loading indicators? Responsive? | Polished, delightful | Good, minor rough edges | Functional but clunky | Confusing or broken |
-| **Robustness** | Edge cases handled? Empty states? Error recovery? | Handles everything gracefully | Handles common cases | Some edge cases crash | Fragile, breaks easily |
+| Dimension | What to evaluate | 10 | 8-9 | 6-7 | 4-5 | 2-3 |
+|-----------|-----------------|----|----|---|---|---|
+| **Functionality** | Do acceptance criteria pass? Core flows work? | All criteria pass, flows are smooth | Most criteria pass, minor issues | Some criteria fail | Core flows broken | Completely non-functional |
+| **Completeness** | All features implemented (not stubbed/placeholder)? | Everything built and working | Minor features missing | Significant gaps | Mostly placeholders | Nothing implemented |
+| **UX** | Intuitive? Error states? Loading indicators? Responsive? | Polished, delightful | Good, minor rough edges | Functional but clunky | Confusing or broken | Unusable |
+| **Robustness** | Edge cases handled? Empty states? Error recovery? | Handles everything gracefully | Handles common cases | Some edge cases crash | Fragile, breaks easily | Crashes on basic usage |
 | **Accessibility** | axe-core violations, keyboard nav, ARIA labels | 0 violations | 1-3 minor violations | 1-3 serious violations | 4-10 violations | 10+ or critical violations |
 
 ## Verdict Rules

@@ -45,7 +45,7 @@ src/
 
 Settings key: `pi-a2a` in `~/.pi/agent/settings.json` or `.pi/settings.json`.
 
-Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `skills[]`, `maxHops` (default 10 — loop control hop limit), `taskTtlMs` (default 86400000/24h — task expiry TTL, 0 to disable), `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
+Key fields: `port` (default 3100), `bind` (default "127.0.0.1"), `apiKey`, `publicUrl`, `name`, `description`, `version`, `organization`, `iconUrl` (URL to agent icon for hub/discovery UIs), `documentationUrl` (URL to agent documentation), `skills[]`, `maxHops` (default 10 — loop control hop limit), `taskTtlMs` (default 86400000/24h — task expiry TTL, 0 to disable), `hub` (url, apiKey, categories, tags, visibility, autoRegister), `staticAgents[]` (name, url, apiKey, description).
 
 ### Static Agents (no hub required)
 

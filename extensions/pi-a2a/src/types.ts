@@ -35,6 +35,10 @@ export interface A2AConfig {
 	/** Default maximum hop count for loop control. Defaults to 10.
 	 *  Messages exceeding this many agent-to-agent hops are rejected. */
 	maxHops?: number;
+	/** URL to an icon for the agent (displayed in hub UIs and agent discovery). */
+	iconUrl?: string;
+	/** URL to the agent's documentation page. */
+	documentationUrl?: string;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
 	/** Task time-to-live in milliseconds. Tasks older than this are pruned periodically.

@@ -42,7 +42,10 @@ const screenCache = new Map<string, string>();
 
 function getScreenJs(name: string): string | null {
 	if (screenCache.has(name)) return screenCache.get(name)!;
-	const filePath = path.join(PUBLIC_DIR, "screens", `${name}.js`);
+	const screensDir = path.join(PUBLIC_DIR, "screens");
+	const filePath = path.join(screensDir, `${name}.js`);
+	// Prevent path traversal — must stay within screens directory
+	if (!filePath.startsWith(screensDir + path.sep)) return null;
 	if (!fs.existsSync(filePath)) return null;
 	const content = fs.readFileSync(filePath, "utf-8");
 	screenCache.set(name, content);
@@ -61,9 +64,19 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
+	const MAX_SIZE = 1024 * 1024; // 1 MB
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = [];
-		req.on("data", (c: Buffer) => chunks.push(c));
+		let totalSize = 0;
+		req.on("data", (c: Buffer) => {
+			totalSize += c.length;
+			if (totalSize > MAX_SIZE) {
+				req.destroy();
+				reject(new Error("Request body too large"));
+				return;
+			}
+			chunks.push(c);
+		});
 		req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
 		req.on("error", reject);
 	});
@@ -331,7 +344,7 @@ async function handleCronApi(req: IncomingMessage, res: ServerResponse, subPath:
 	// POST /jobs/:name/toggle — enable/disable
 	if (subPath.match(/^\/jobs\/[^/]+\/toggle$/) && req.method === "POST") {
 		if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
-		const name = subPath.split("/")[2];
+		const name = decodeURIComponent(subPath.split("/")[2]);
 		try {
 			const body = JSON.parse(await readBody(req));
 			const action = body.enabled ? "enable" : "disable";
@@ -346,7 +359,7 @@ async function handleCronApi(req: IncomingMessage, res: ServerResponse, subPath:
 	// POST /jobs/:name/run — trigger manual run
 	if (subPath.match(/^\/jobs\/[^/]+\/run$/) && req.method === "POST") {
 		if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
-		const name = subPath.split("/")[2];
+		const name = decodeURIComponent(subPath.split("/")[2]);
 		try {
 			const result = await _pi.exec("pi-cron", ["run", name], { timeout: 30_000 });
 			json(res, 200, { ok: result.code === 0, output: result.stdout?.trim() });
@@ -368,7 +381,7 @@ const SKIP_DIRS = new Set(["node_modules", ".git", ".todos", "dist", "build", ".
 function safeResolvePath(requestedPath: string): string | null {
 	const resolved = path.resolve(_cwd, requestedPath);
 	// Prevent path traversal — must stay within cwd
-	if (!resolved.startsWith(_cwd)) return null;
+	if (!resolved.startsWith(_cwd + path.sep) && resolved !== _cwd) return null;
 	return resolved;
 }
 
@@ -455,6 +468,11 @@ function handlePage(_req: IncomingMessage, res: ServerResponse, subPath: string)
 			// Screen JS modules: /mobile/screens/chat.js → public/screens/chat.js
 			if (p.startsWith("/screens/") && p.endsWith(".js")) {
 				const screenName = p.slice("/screens/".length, -3);
+				// Reject screen names with path traversal attempts
+				if (screenName.includes("/") || screenName.startsWith("..")) {
+					send(res, 404, "text/plain", "Not found");
+					return;
+				}
 				const content = getScreenJs(screenName);
 				if (content) {
 					send(res, 200, "application/javascript; charset=utf-8", content);
@@ -611,7 +629,6 @@ export default function (pi: ExtensionAPI) {
 	pi.events.on("web:ready", mount);
 	pi.on("session_start", async (_event, ctx) => {
 		_cwd = ctx.cwd;
-		mount();
 	});
 
 	// ── SSE event forwarding ──────────────────────────────

@@ -414,10 +414,15 @@
 		const api = (path, opts) => fetch("/api/mobile" + path, opts).then(r => r.json()).catch(() => ({ error: "Network error" }));
 		const apiPost = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+		// HTML escape helper
+		function esc(s) {
+			return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		}
+
 		// Minimal markdown → HTML (handles **bold**, *italic*, `code`, ```blocks```, links, lists)
 		function md(text) {
 			if (!text) return "";
-			return text
+			return esc(text)
 				.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
 				.replace(/`([^`]+)`/g, '<code>$1</code>')
 				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -639,7 +644,7 @@
 					<div class="status-card">
 						<div class="status-card-header">
 							<span class="status-card-title">Agent</span>
-							<span class="status-badge ${agent.status === 'healthy' ? 'healthy' : agent.status === 'degraded' ? 'degraded' : 'unknown'}">${agent.status || 'Unknown'}</span>
+							<span class="status-badge ${agent.status === 'healthy' ? 'healthy' : agent.status === 'degraded' ? 'degraded' : agent.status === 'down' ? 'down' : 'unknown'}">${agent.status || 'Unknown'}</span>
 						</div>
 						<div class="status-row">
 							<span class="status-row-label">Heartbeat</span>

@@ -62,6 +62,8 @@ export interface SupervisorResult {
 // ── Default ─────────────────────────────────────────────────────
 
 export const DEFAULT_MAX_HOPS = 10;
+/** Cap on visitedAgents array length to bound memory from untrusted input. */
+const MAX_VISITED_AGENTS = 64;
 
 // ── Extract / Inject ────────────────────────────────────────────
 
@@ -80,7 +82,7 @@ export function extractLoopMetadata(
 			: 0;
 
 	const visitedAgents = Array.isArray(metadata["pi:visitedAgents"])
-		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string")
+		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string").slice(0, MAX_VISITED_AGENTS)
 		: [];
 
 	const rawBudgets = metadata["pi:budgets"];

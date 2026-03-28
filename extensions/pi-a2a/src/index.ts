@@ -491,6 +491,10 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${port}`, "info");
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
+			// Clean up resources allocated before server start
+			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+			executor = null;
+			taskStore.close(); taskStore = null;
 			ctx.ui.notify(`pi-a2a: Failed to start server — ${msg}`, "warning");
 			return;
 		}

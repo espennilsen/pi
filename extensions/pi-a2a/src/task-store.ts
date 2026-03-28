@@ -65,9 +65,8 @@ export class SQLiteTaskStore implements TaskStore {
 	private log: LogFn;
 
 	// Prepared statements (initialized after migrations)
-	private stmtSave!: Statement;
+	private stmtUpsert!: Statement;
 	private stmtLoad!: Statement;
-	private stmtExists!: Statement;
 
 	constructor(dbPath: string, log: LogFn) {
 		this.log = log;
@@ -103,24 +102,8 @@ export class SQLiteTaskStore implements TaskStore {
 
 		const now = new Date().toISOString();
 
-		// UPSERT: insert or replace on conflict
-		const exists = this.stmtExists.get(task.id) as { cnt: number } | undefined;
-		if (exists && exists.cnt > 0) {
-			this.stmtSave.run(
-				task.contextId,
-				status,
-				data,
-				hopCount,
-				visitedAgents,
-				now,
-				task.id,
-			);
-		} else {
-			this.db.prepare(
-				`INSERT INTO a2a_tasks (id, context_id, status, data, hop_count, visited_agents, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			).run(task.id, task.contextId, status, data, hopCount, visitedAgents, now, now);
-		}
+		// Atomic UPSERT — single statement, no race window
+		this.stmtUpsert.run(task.id, task.contextId, status, data, hopCount, visitedAgents, now, now);
 
 		this.log("task_store_save", { taskId: task.id, status });
 	}
@@ -260,18 +243,20 @@ export class SQLiteTaskStore implements TaskStore {
 	// ── Prepared Statements ───────────────────────────────────
 
 	private prepareStatements(): void {
-		this.stmtSave = this.db.prepare(
-			`UPDATE a2a_tasks
-			 SET context_id = ?, status = ?, data = ?, hop_count = ?, visited_agents = ?, updated_at = ?
-			 WHERE id = ?`,
+		this.stmtUpsert = this.db.prepare(
+			`INSERT INTO a2a_tasks (id, context_id, status, data, hop_count, visited_agents, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   context_id = excluded.context_id,
+			   status = excluded.status,
+			   data = excluded.data,
+			   hop_count = excluded.hop_count,
+			   visited_agents = excluded.visited_agents,
+			   updated_at = excluded.updated_at`,
 		);
 
 		this.stmtLoad = this.db.prepare(
 			`SELECT data FROM a2a_tasks WHERE id = ?`,
-		);
-
-		this.stmtExists = this.db.prepare(
-			`SELECT COUNT(*) as cnt FROM a2a_tasks WHERE id = ?`,
 		);
 	}
 }

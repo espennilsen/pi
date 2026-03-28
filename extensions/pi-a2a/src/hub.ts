@@ -391,23 +391,29 @@ export async function listAnsweredClarifications(
 	const result = await hubRpc(rpcUrl, "clarification.list_answered", { agentId }, hubConfig.apiKey, log, "hub_clarification_list_answered");
 	if (result && Array.isArray(result.clarifications)) {
 		const items: AnsweredClarification[] = [];
-		for (const c of result.clarifications as Record<string, unknown>[]) {
-			const clarificationId = (c.clarificationId as string) ?? "";
+		for (const c of result.clarifications as unknown[]) {
+			// Guard against null or non-object elements from hub
+			if (!c || typeof c !== "object") {
+				log("hub_clarification_list_answered_skip_non_object", { raw: JSON.stringify(c).slice(0, 100) }, "WARN");
+				continue;
+			}
+			const rec = c as Record<string, unknown>;
+			const clarificationId = (rec.clarificationId as string) ?? "";
 			// Skip malformed items — without a clarificationId we can't
 			// acknowledge them, which would cause an infinite retry loop.
 			if (!clarificationId) {
-				log("hub_clarification_list_answered_skip_malformed", { raw: JSON.stringify(c).slice(0, 200) }, "WARN");
+				log("hub_clarification_list_answered_skip_malformed", { raw: JSON.stringify(rec).slice(0, 200) }, "WARN");
 				continue;
 			}
 			items.push({
 				clarificationId,
-				question: (c.question as string) ?? "",
-				handoff: (c.handoff as Record<string, unknown> | null) ?? null,
-				context: (c.context as Record<string, unknown> | null) ?? null,
-				priority: (c.priority as "low" | "normal" | "urgent") ?? "normal",
-				response: (c.response as string) ?? "",
-				answeredAt: (c.answeredAt as string) ?? "",
-				createdAt: (c.createdAt as string) ?? "",
+				question: (rec.question as string) ?? "",
+				handoff: (rec.handoff as Record<string, unknown> | null) ?? null,
+				context: (rec.context as Record<string, unknown> | null) ?? null,
+				priority: (rec.priority as "low" | "normal" | "urgent") ?? "normal",
+				response: (rec.response as string) ?? "",
+				answeredAt: (rec.answeredAt as string) ?? "",
+				createdAt: (rec.createdAt as string) ?? "",
 			});
 		}
 		log("hub_clarification_list_answered_success", { agentId, count: items.length });

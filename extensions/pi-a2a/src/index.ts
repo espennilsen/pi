@@ -38,23 +38,36 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
 	DefaultRequestHandler,
-	InMemoryPushNotificationStore,
 	DefaultPushNotificationSender,
 	JsonRpcTransportHandler,
 } from "@a2a-js/sdk/server";
-import { SQLiteTaskStore } from "./task-store.ts";
+import { SQLiteTaskStore, SQLitePushNotificationStore } from "./task-store.ts";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification } from "./hub.ts";
-import { sendA2AMessage, type SenderIdentity } from "./client.ts";
+import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import type { HubConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
+
+/** Sliding-window rate limiter for outbound response injection. */
+class RateLimiter {
+	private timestamps: number[] = [];
+	constructor(private maxCalls: number, private windowMs: number) {}
+	tryAcquire(): boolean {
+		const now = Date.now();
+		this.timestamps = this.timestamps.filter(t => now - t < this.windowMs);
+		if (this.timestamps.length >= this.maxCalls) return false;
+		this.timestamps.push(now);
+		return true;
+	}
+	reset(): void { this.timestamps = []; }
+}
 
 function txt(s: string) {
 	return { content: [{ type: "text" as const, text: s }], details: {} };
@@ -98,6 +111,7 @@ export default function (pi: ExtensionAPI) {
 		label: "A2A",
 	});
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
+	let expiryInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
@@ -106,6 +120,8 @@ export default function (pi: ExtensionAPI) {
 	let agentPublicUrl: string = "http://localhost:3100";
 	/** Configured max hops (set on session_start, used for seeding outbound metadata). */
 	let configuredMaxHops: number = DEFAULT_MAX_HOPS;
+	/** Rate limiter for outbound response injection — 10 triggers per 60s window. */
+	const responseLimiter = new RateLimiter(10, 60_000);
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -374,6 +390,7 @@ export default function (pi: ExtensionAPI) {
 		// Clean restart — reset all async state from previous session
 		outboundPending = 0;
 		sessionToken++;
+		responseLimiter.reset();
 		credentialCache.clear();
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
@@ -387,6 +404,10 @@ export default function (pi: ExtensionAPI) {
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
+		}
+		if (expiryInterval) {
+			clearInterval(expiryInterval);
+			expiryInterval = null;
 		}
 		hubAgentId = null;
 		staticRegistry = null;
@@ -433,8 +454,20 @@ export default function (pi: ExtensionAPI) {
 				sendTelemetry(config).catch(() => {});
 			}
 		};
-		const pushNotificationStore = new InMemoryPushNotificationStore();
+		const pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
+
+		// Set up task expiry interval
+		const taskTtlMs = config.taskTtlMs ?? 86_400_000; // 24h default
+		if (taskTtlMs > 0) {
+			expiryInterval = setInterval(() => {
+				if (!taskStore) return;
+				const pruned = taskStore.pruneOlderThan(taskTtlMs);
+				if (pruned > 0) {
+					log("task_expiry_pruned", { pruned, taskTtlMs });
+				}
+			}, 300_000); // every 5 minutes
+		}
 
 		const requestHandler = new DefaultRequestHandler(
 			agentCard,
@@ -530,6 +563,12 @@ export default function (pi: ExtensionAPI) {
 		if (telemetryInterval) {
 			clearInterval(telemetryInterval);
 			telemetryInterval = null;
+		}
+
+		// Stop expiry interval
+		if (expiryInterval) {
+			clearInterval(expiryInterval);
+			expiryInterval = null;
 		}
 
 		// Send final "idle" telemetry report before shutting down
@@ -809,67 +848,114 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			(async () => {
-				return await sendA2AMessage(sendOpts, log);
-			})().then((result) => {
-				// Bail out if session restarted while we were waiting
-				if (sessionToken !== myToken) return;
+				const result = await sendA2AMessage(sendOpts, log);
 
+				// Bail out if session restarted while we were waiting
+				if (sessionToken !== myToken) { outboundPending--; return; }
+
+				// ── Immediate completion (remote responded inline) ──────
+				if (result.ok && !result.working && result.response) {
+					outboundPending--;
+					updateStatusLine();
+					const dur = fmtDuration(Date.now() - sendStart);
+					if (!responseLimiter.tryAcquire()) {
+						log("rate_limit_response", { agent: resolvedName }, "WARN");
+						pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed (too many responses in 60s)`, display: true }, { triggerTurn: false });
+						return;
+					}
+					pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: true });
+					return;
+				}
+
+				// ── Send error ──────────────────────────────────────────
+				if (!result.ok) {
+					outboundPending--;
+					updateStatusLine();
+					const dur = fmtDuration(Date.now() - sendStart);
+					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: true });
+					return;
+				}
+
+				// ── Working — poll for completion ───────────────────────
+				const taskId = result.taskId;
+				if (!taskId) {
+					outboundPending--;
+					updateStatusLine();
+					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: true });
+					return;
+				}
+
+				log("a2a_poll_start", { agent: resolvedName, taskId });
+				const POLL_INTERVAL_MS = 5_000;
+				const maxPollMs = config.sendTimeoutMs ?? 600_000; // 10 min default
+				const pollDeadline = Date.now() + maxPollMs;
+				const pollOpts = {
+					url: resolvedUrl,
+					taskId,
+					credential,
+					onRefreshCredential: sendOpts.onRefreshCredential,
+				};
+
+				while (Date.now() < pollDeadline) {
+					if (sessionToken !== myToken) { outboundPending--; return; }
+					await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+					if (sessionToken !== myToken) { outboundPending--; return; }
+
+					try {
+						const poll = await getRemoteTask(pollOpts, log);
+
+						if (poll.state === "completed") {
+							outboundPending--;
+							updateStatusLine();
+							const dur = fmtDuration(Date.now() - sendStart);
+							if (!responseLimiter.tryAcquire()) {
+								log("rate_limit_response", { agent: resolvedName, taskId }, "WARN");
+								pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed`, display: true }, { triggerTurn: false });
+								return;
+							}
+							pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: true });
+							return;
+						}
+
+						if (poll.state === "failed") {
+							outboundPending--;
+							updateStatusLine();
+							const dur = fmtDuration(Date.now() - sendStart);
+							pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: true });
+							return;
+						}
+
+						if (poll.state === "canceled") {
+							outboundPending--;
+							updateStatusLine();
+							const dur = fmtDuration(Date.now() - sendStart);
+							pi.sendMessage({ customType: "a2a-response-error", content: `🚫 **${resolvedName}** cancelled the task (${dur})`, display: true }, { triggerTurn: false });
+							return;
+						}
+
+						// Still working/submitted — continue polling
+					} catch (pollErr) {
+						const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+						log("a2a_poll_network_error", { agent: resolvedName, taskId, error: msg }, "WARN");
+						// Continue polling — transient network errors are expected
+					}
+				}
+
+				// Poll timeout
 				outboundPending--;
 				updateStatusLine();
-
 				const dur = fmtDuration(Date.now() - sendStart);
-
-				if (result.ok && result.working) {
-					// ACK received — the remote agent is working on it.
-					// The actual result will arrive later as a separate inbound A2A message.
-					pi.sendMessage(
-						{
-							customType: "a2a-response-ack",
-							content:
-								`⏳ **${resolvedName}** acknowledged the request (${dur}) — working on it. Response will arrive when ready.`,
-							display: true,
-						},
-						{ triggerTurn: false },
-					);
-				} else if (result.ok) {
-					pi.sendMessage(
-						{
-							customType: "a2a-response-received",
-							content:
-								`📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`,
-							display: true,
-						},
-						{ triggerTurn: true },
-					);
-				} else {
-					pi.sendMessage(
-						{
-							customType: "a2a-response-error",
-							content:
-								`❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`,
-							display: true,
-						},
-						{ triggerTurn: true },
-					);
-				}
-			}).catch((err: unknown) => {
+				pi.sendMessage({ customType: "a2a-response-error", content: `⏰ **${resolvedName}** did not complete within ${fmtDuration(maxPollMs)} (${dur}). Task ID: ${taskId}`, display: true }, { triggerTurn: false });
+			})().catch((err: unknown) => {
 				// Bail out if session restarted while we were waiting
-				if (sessionToken !== myToken) return;
+				if (sessionToken !== myToken) { outboundPending--; return; }
 
 				outboundPending--;
 				updateStatusLine();
 
 				const msg = err instanceof Error ? err.message : String(err);
 				const dur = fmtDuration(Date.now() - sendStart);
-				pi.sendMessage(
-					{
-						customType: "a2a-response-error",
-						content:
-							`❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`,
-						display: true,
-					},
-					{ triggerTurn: true },
-				);
+				pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
 			});
 
 			return txt(`📤 Message sent to **${agentName}** — waiting for response in the background. You'll see it when it arrives.`);

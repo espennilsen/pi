@@ -37,6 +37,9 @@ export interface A2AConfig {
 	maxHops?: number;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
+	/** Task time-to-live in milliseconds. Tasks older than this are pruned periodically.
+	 *  Defaults to 86400000 (24 hours). Set to 0 to disable expiry. */
+	taskTtlMs?: number;
 }
 
 /** Configuration for a manually defined remote agent. */

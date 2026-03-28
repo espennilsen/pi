@@ -18,13 +18,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement } from "better-sqlite3";
-import type { TaskStore, ServerCallContext } from "@a2a-js/sdk/server";
-import type { Task } from "@a2a-js/sdk";
+import type { TaskStore, ServerCallContext, PushNotificationStore } from "@a2a-js/sdk/server";
+import type { Task, PushNotificationConfig } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
+import { randomUUID } from "node:crypto";
 
 // ── Schema version ──────────────────────────────────────────────
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 const MIGRATIONS: Record<number, string[]> = {
 	1: [
@@ -41,6 +42,19 @@ const MIGRATIONS: Record<number, string[]> = {
 		`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_context_id ON a2a_tasks(context_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_status ON a2a_tasks(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_updated_at ON a2a_tasks(updated_at)`,
+	],
+	2: [
+		`CREATE TABLE IF NOT EXISTS a2a_push_configs (
+			task_id TEXT NOT NULL,
+			config_id TEXT NOT NULL,
+			url TEXT NOT NULL,
+			token TEXT,
+			auth_schemes TEXT,
+			auth_credentials TEXT,
+			created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+			PRIMARY KEY (task_id, config_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_a2a_push_configs_task_id ON a2a_push_configs(task_id)`,
 	],
 };
 
@@ -189,6 +203,13 @@ export class SQLiteTaskStore implements TaskStore {
 	}
 
 	/**
+	 * Get the underlying Database instance for sharing with other stores.
+	 */
+	getDb(): DatabaseType {
+		return this.db;
+	}
+
+	/**
 	 * Close the database connection. Call on shutdown.
 	 */
 	close(): void {
@@ -251,6 +272,138 @@ export class SQLiteTaskStore implements TaskStore {
 
 		this.stmtExists = this.db.prepare(
 			`SELECT COUNT(*) as cnt FROM a2a_tasks WHERE id = ?`,
+		);
+	}
+}
+
+// ── SQLitePushNotificationStore ─────────────────────────────
+
+export class SQLitePushNotificationStore implements PushNotificationStore {
+	private db: DatabaseType;
+	private log: LogFn;
+
+	// Prepared statements
+	private stmtSave!: Statement;
+	private stmtLoad!: Statement;
+	private stmtDelete!: Statement;
+	private stmtDeleteAll!: Statement;
+
+	constructor(db: DatabaseType, log: LogFn) {
+		this.db = db;
+		this.log = log;
+		this.prepareStatements();
+	}
+
+	async save(taskId: string, pushNotificationConfig: PushNotificationConfig): Promise<void> {
+		const configId = pushNotificationConfig.id ?? randomUUID();
+		const authSchemes = pushNotificationConfig.authentication?.schemes
+			? JSON.stringify(pushNotificationConfig.authentication.schemes)
+			: null;
+		const authCredentials = pushNotificationConfig.authentication?.credentials ?? null;
+
+		this.stmtSave.run(
+			taskId,
+			configId,
+			pushNotificationConfig.url,
+			pushNotificationConfig.token ?? null,
+			authSchemes,
+			authCredentials,
+		);
+
+		this.log("push_config_save", { taskId, configId });
+	}
+
+	async load(taskId: string): Promise<PushNotificationConfig[]> {
+		const rows = this.stmtLoad.all(taskId) as Array<{
+			config_id: string;
+			url: string;
+			token: string | null;
+			auth_schemes: string | null;
+			auth_credentials: string | null;
+		}>;
+
+		const configs: PushNotificationConfig[] = [];
+		for (const row of rows) {
+			const config: PushNotificationConfig = {
+				id: row.config_id,
+				url: row.url,
+			};
+			if (row.token) config.token = row.token;
+			if (row.auth_schemes) {
+				try {
+					const schemes = JSON.parse(row.auth_schemes) as string[];
+					config.authentication = { schemes };
+					if (row.auth_credentials) {
+						config.authentication.credentials = row.auth_credentials;
+					}
+				} catch {
+					// Skip invalid auth data
+				}
+			}
+			configs.push(config);
+		}
+
+		return configs;
+	}
+
+	async delete(taskId: string, configId?: string): Promise<void> {
+		if (configId) {
+			this.stmtDelete.run(taskId, configId);
+			this.log("push_config_delete", { taskId, configId });
+		} else {
+			this.stmtDeleteAll.run(taskId);
+			this.log("push_config_delete_all", { taskId });
+		}
+	}
+
+	/**
+	 * Clean up push notification configs for expired tasks.
+	 * Called after task pruning to maintain referential consistency.
+	 */
+	pruneForTasks(taskIds: string[]): number {
+		if (taskIds.length === 0) return 0;
+
+		const placeholders = taskIds.map(() => "?").join(",");
+		const result = this.db.prepare(
+			`DELETE FROM a2a_push_configs WHERE task_id NOT IN (${placeholders})`,
+		).run(...taskIds);
+
+		if (result.changes > 0) {
+			this.log("push_config_prune", { deleted: result.changes });
+		}
+		return result.changes;
+	}
+
+	/**
+	 * No-op close — we share the DB instance with SQLiteTaskStore.
+	 */
+	close(): void {
+		// No-op
+	}
+
+	private prepareStatements(): void {
+		this.stmtSave = this.db.prepare(
+			`INSERT INTO a2a_push_configs (task_id, config_id, url, token, auth_schemes, auth_credentials)
+			 VALUES (?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(task_id, config_id) DO UPDATE SET
+			   url = excluded.url,
+			   token = excluded.token,
+			   auth_schemes = excluded.auth_schemes,
+			   auth_credentials = excluded.auth_credentials`,
+		);
+
+		this.stmtLoad = this.db.prepare(
+			`SELECT config_id, url, token, auth_schemes, auth_credentials
+			 FROM a2a_push_configs
+			 WHERE task_id = ?`,
+		);
+
+		this.stmtDelete = this.db.prepare(
+			`DELETE FROM a2a_push_configs WHERE task_id = ? AND config_id = ?`,
+		);
+
+		this.stmtDeleteAll = this.db.prepare(
+			`DELETE FROM a2a_push_configs WHERE task_id = ?`,
 		);
 	}
 }

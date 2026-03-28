@@ -25,6 +25,9 @@
     "@slack/socket-mode": "^2.0.5",
     "@slack/web-api": "^7.14.1"
   },
+  "optionalDependencies": {
+    "markitdown": "github:microsoft/markitdown"
+  },
   "files": [
     "CHANGELOG.md",
     "README.md",

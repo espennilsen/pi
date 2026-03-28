@@ -86,6 +86,39 @@ The Telegram adapter supports transcribing voice messages and audio files. Add t
 - `model` — Model name, e.g. `"whisper-1"` (OpenAI), `"scribe_v1"` (ElevenLabs)
 - `language` — ISO 639-1 code, e.g. `"en"`, `"no"` (optional)
 
+### Document Support (PDF, Office)
+
+The Telegram adapter supports PDF and Office documents:
+
+**Supported formats:**
+- PDF (.pdf)
+- Microsoft Word (.docx, .doc)
+- Microsoft Excel (.xlsx, .xls)
+- Microsoft PowerPoint (.pptx, .ppt)
+- OpenDocument (.odt, .ods, .odp)
+- Rich Text (.rtf)
+
+**Size limits:**
+- Text files: 1MB
+- Documents (PDF, Office): 20MB
+- Images: 1MB
+- Audio: 10MB
+
+**Configuration:**
+```json
+{
+  "telegram": {
+    "type": "telegram",
+    "botToken": "your-token",
+    "markitdown": {
+      "enabled": true
+    }
+  }
+}
+```
+
+Documents are downloaded and passed as attachments. With `markitdown` installed, text content is extracted and included in the message.
+
 ### Bridge settings
 
 | Key | Default | Description |

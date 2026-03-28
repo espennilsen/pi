@@ -43,6 +43,7 @@ import { createTranscriptionProvider, type TranscriptionProvider } from "./trans
 const MAX_LENGTH = 4096;
 const MAX_FILE_SIZE = 1_048_576; // 1MB
 const MAX_AUDIO_SIZE = 10_485_760; // 10MB — voice/audio files are larger
+const MAX_DOCUMENT_SIZE = 20_971_520; // 20MB — for PDF/Office documents
 
 /** MIME types we treat as text documents (content inlined into the prompt). */
 const TEXT_MIME_TYPES = new Set([
@@ -72,6 +73,28 @@ const TEXT_EXTENSIONS = new Set([
 	".gitignore", ".dockerignore", ".editorconfig",
 ]);
 
+/** MIME types for documents requiring markitdown conversion (PDF, Office). */
+const DOCUMENT_MIME_TYPES = new Set([
+	"application/pdf",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // XLSX
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation", // PPTX
+	"application/msword", // DOC (legacy)
+	"application/vnd.ms-excel", // XLS (legacy)
+	"application/vnd.ms-powerpoint", // PPT (legacy)
+	"application/vnd.oasis.opendocument.text", // ODT
+	"application/vnd.oasis.opendocument.spreadsheet", // ODS
+	"application/vnd.oasis.opendocument.presentation", // ODP
+	"application/rtf",
+	"text/rtf",
+]);
+
+/** File extensions for documents requiring markitdown conversion. */
+const DOCUMENT_EXTENSIONS = new Set([
+	".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
+	".odt", ".ods", ".odp", ".rtf",
+]);
+
 /** Image MIME prefixes. */
 function isImageMime(mime: string | undefined): boolean {
 	if (!mime) return false;
@@ -97,6 +120,16 @@ function isTextDocument(mimeType: string | undefined, filename: string | undefin
 	if (filename) {
 		const ext = path.extname(filename).toLowerCase();
 		if (TEXT_EXTENSIONS.has(ext)) return true;
+	}
+	return false;
+}
+
+/** Check if a file is a document requiring markitdown conversion. */
+function isDocumentFile(mimeType: string | undefined, filename: string | undefined): boolean {
+	if (mimeType && DOCUMENT_MIME_TYPES.has(mimeType)) return true;
+	if (filename) {
+		const ext = path.extname(filename).toLowerCase();
+		if (DOCUMENT_EXTENSIONS.has(ext)) return true;
 	}
 	return false;
 }
@@ -319,18 +352,18 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 			const mimeType = doc.mime_type;
 			const filename = doc.file_name;
 
-			// Size check
-			if (doc.file_size && doc.file_size > MAX_FILE_SIZE) {
-				return {
-					adapter: "telegram",
-					sender: chatId,
-					text: `⚠️ File too large: ${filename || "document"} (${formatSize(doc.file_size)}, max 1MB).`,
-					metadata: { ...metadata, rejected: true },
-				};
-			}
-
-			// Image documents (e.g. uncompressed photos sent as files)
+			// Image documents — 1MB limit (e.g. uncompressed photos sent as files)
 			if (isImageMime(mimeType)) {
+				// Size check for images
+				if (doc.file_size && doc.file_size > MAX_FILE_SIZE) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ Image too large: ${filename || "image"} (${formatSize(doc.file_size)}, max 1MB).`,
+						metadata: { ...metadata, rejected: true },
+					};
+				}
+
 				const downloaded = await downloadFile(doc.file_id, filename);
 				if (!downloaded) {
 					return {
@@ -359,8 +392,18 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				};
 			}
 
-			// Text documents — download and inline content
+			// Text documents — 1MB limit
 			if (isTextDocument(mimeType, filename)) {
+				// Size check for text files
+				if (doc.file_size && doc.file_size > MAX_FILE_SIZE) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ File too large: ${filename || "document"} (${formatSize(doc.file_size)}, max 1MB).`,
+						metadata: { ...metadata, rejected: true },
+					};
+				}
+
 				const downloaded = await downloadFile(doc.file_id, filename);
 				if (!downloaded) {
 					return {
@@ -388,7 +431,48 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				};
 			}
 
-			// Audio documents — route through transcription
+			// PDF/Office documents — 20MB limit
+			if (isDocumentFile(mimeType, filename)) {
+				// Size check for documents (20MB limit)
+				if (doc.file_size && doc.file_size > MAX_DOCUMENT_SIZE) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: `⚠️ Document too large: ${filename || "document"} (${formatSize(doc.file_size)}, max ${formatSize(MAX_DOCUMENT_SIZE)}).`,
+						metadata: { ...metadata, rejected: true, reason: "file_too_large" },
+					};
+				}
+
+				// Download document
+				const downloaded = await downloadFile(doc.file_id, filename, MAX_DOCUMENT_SIZE);
+				if (!downloaded) {
+					return {
+						adapter: "telegram",
+						sender: chatId,
+						text: caption || `📄 ${filename || "document"} (download failed)`,
+						metadata: { ...metadata, hasDocument: true, documentType: "binary" },
+					};
+				}
+
+				// Build attachment
+				const attachment: IncomingAttachment = {
+					type: "document",
+					path: downloaded.localPath,
+					filename: filename || "document",
+					mimeType: mimeType || "application/octet-stream",
+					size: downloaded.size,
+				};
+
+				return {
+					adapter: "telegram",
+					sender: chatId,
+					text: caption || `📄 Document: ${filename || "document"}`,
+					attachments: [attachment],
+					metadata: { ...metadata, hasDocument: true, documentType: "converted" },
+				};
+			}
+
+			// Audio documents — 10MB limit
 			if (isAudioMime(mimeType)) {
 				if (!transcriber) {
 					return {
@@ -443,7 +527,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 			return {
 				adapter: "telegram",
 				sender: chatId,
-				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files, images, and audio.`,
+				text: `⚠️ Unsupported file type: ${filename || "document"} (${mimeType || "unknown"}). I can handle text files, images, documents (PDF, DOCX, XLSX, PPTX), and audio.`,
 				metadata: { ...metadata, rejected: true },
 			};
 		}

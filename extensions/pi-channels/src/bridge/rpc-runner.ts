@@ -188,13 +188,13 @@ export class RpcSession {
 
 			// Attach images and documents as base64
 			if (options?.attachments?.length) {
-				const attachments: Array<Record<string, string>> = [];
+				const images: Array<Record<string, string>> = [];
 				for (const att of options.attachments) {
 					if (att.type === "image" || att.type === "document") {
 						try {
 							const fs = await import("node:fs");
 							const data = fs.readFileSync(att.path).toString("base64");
-							attachments.push({
+							images.push({
 								type: att.type,
 								data,
 								mimeType: att.mimeType || (att.type === "image" ? "image/jpeg" : "application/octet-stream"),
@@ -205,7 +205,7 @@ export class RpcSession {
 						}
 					}
 				}
-				if (attachments.length > 0) cmd.attachments = attachments;
+				if (images.length > 0) cmd.images = images;
 			}
 
 			console.log(`[pi-channels DEBUG] RPC sending command: ${JSON.stringify(cmd).slice(0, 200)}...`);

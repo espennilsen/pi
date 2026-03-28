@@ -53,13 +53,12 @@ self.addEventListener("fetch", (event) => {
 		caches.match(event.request).then((cached) => {
 			if (cached) {
 				// Return cached version, but update cache in background
-				fetch(event.request).then((response) => {
+				const bgUpdate = fetch(event.request).then((response) => {
 					if (response.ok) {
-						caches.open(CACHE_NAME).then((cache) => {
-							cache.put(event.request, response);
-						});
+						return caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response));
 					}
 				}).catch(() => {});
+				event.waitUntil(bgUpdate);
 				return cached;
 			}
 			return fetch(event.request);

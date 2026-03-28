@@ -212,7 +212,10 @@ async function handleTdApi(req: IncomingMessage, res: ServerResponse, subPath: s
 			const args = ["create", body.title || "Untitled"];
 			if (body.type) args.push("--type", body.type);
 			if (body.priority) args.push("--priority", body.priority);
-			if (body.labels) args.push("--label", body.labels);
+			if (body.labels) {
+				const labels = Array.isArray(body.labels) ? body.labels.join(",") : body.labels;
+				args.push("--label", labels);
+			}
 			if (body.minor) args.push("--minor");
 			const result = await runTd(args);
 			if (!result.ok) { json(res, 500, { error: result.error }); return; }

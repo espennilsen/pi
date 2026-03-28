@@ -1121,7 +1121,7 @@
 								<div class="list-item-title">👤 ${c.name}</div>
 								<div class="list-item-desc">
 									${c.company ? c.company + " • " : ""}${c.email || ""}
-									${c.phone ? html`<br/><a href="tel:${c.phone}" style="color: var(--color-accent)">${c.phone}</a>` : ""}
+									${c.phone && /^[+\d\s()\-\.]+$/.test(c.phone) ? html`<br/><a href="tel:${c.phone}" style="color: var(--color-accent)">${c.phone}</a>` : c.phone ? html`<br/><span>${c.phone}</span>` : ""}
 								</div>
 							</div>
 						`)}

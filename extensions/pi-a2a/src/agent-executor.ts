@@ -151,21 +151,21 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// ── Check if this is a response to a message we sent (not a new request) ──
-		// When Agent A sends to Agent B, B processes and sends the result back
-		// as a new message/send with pi:isResponse metadata. We still process it
-		// through the agent (so it can act on the response), but we set skipReply
-		// so onAsyncResult won't send the result back — no reply-to-reply.
-		// This breaks the bidirectional loop while still letting the agent reason
-		// about the response.
-		const msgMetadata = userMessage.metadata as Record<string, unknown> | undefined;
-		const isResponse = msgMetadata?.["pi:isResponse"] === true;
+		// ── Check if this is a follow-up to a previous task (not a cold new request) ──
+		// The A2A protocol's referenceTaskIds field links a message to tasks it
+		// relates to. When Agent B sends an async result back to Agent A, B
+		// includes the original taskId in referenceTaskIds. When A receives this,
+		// it knows it's a follow-up — process it (so the agent can act on the
+		// response) but set skipReply so onAsyncResult won't bounce the result
+		// back to B. This breaks the bidirectional A→B→A→B loop.
+		const refTaskIds = (userMessage as { referenceTaskIds?: string[] }).referenceTaskIds;
+		const isFollowUp = Array.isArray(refTaskIds) && refTaskIds.length > 0;
 
-		if (isResponse) {
-			this.log("executor_received_response", {
+		if (isFollowUp) {
+			this.log("executor_received_followup", {
 				taskId,
-				replyToTaskId: msgMetadata?.["pi:replyToTaskId"],
-				from: (msgMetadata?.["pi:sender"] as { name?: string } | undefined)?.name ?? "Unknown",
+				referenceTaskIds: refTaskIds,
+				from: ((userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as { name?: string } | undefined)?.name ?? "Unknown",
 			});
 		}
 
@@ -234,7 +234,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		// The HTTP response has already been sent. The agent works on the
 		// task, and when done, the result is delivered via onAsyncResult
 		// which sends it back to the caller as a new A2A message.
-		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!, isResponse).catch((err) => {
+		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!, isFollowUp).catch((err) => {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_bg_error", { taskId, error: msg }, "ERROR");
 		});

@@ -41,6 +41,8 @@ export interface SendMessageOptions {
 	sender?: SenderIdentity;
 	/** Additional metadata to merge into the A2A message metadata. */
 	metadata?: Record<string, unknown>;
+	/** Task IDs this message references (A2A protocol field for linking follow-ups to originating tasks). */
+	referenceTaskIds?: string[];
 	/**
 	 * Callback to refresh a stale credential on 401.
 	 * Called once on auth failure — should evict cache and return a fresh token.
@@ -73,7 +75,7 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender, metadata: extraMetadata, onRefreshCredential } = opts;
+	const { url, message, credential, timeoutMs, sender, metadata: extraMetadata, referenceTaskIds, onRefreshCredential } = opts;
 
 	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
 
@@ -175,6 +177,7 @@ export async function sendA2AMessage(
 				role: "user",
 				parts: [{ kind: "text", text: message }],
 				...(metadata ? { metadata } : {}),
+				...(referenceTaskIds?.length ? { referenceTaskIds } : {}),
 			},
 			configuration: {
 				blocking: true,

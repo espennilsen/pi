@@ -592,10 +592,7 @@ export default function (pi: ExtensionAPI) {
 					credential,
 					timeoutMs: config.sendTimeoutMs,
 					sender: { name: config.name ?? "Pi Agent", description: config.description, url: selfUrl ?? undefined } as SenderIdentity,
-					metadata: {
-						"pi:isResponse": true,
-						"pi:replyToTaskId": taskId,
-					},
+					referenceTaskIds: [taskId],
 				}, log);
 
 				if (sendResult.ok) {

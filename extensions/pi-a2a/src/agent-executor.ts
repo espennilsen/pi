@@ -6,13 +6,16 @@
  * TUI visibility — tool calls, file edits, thinking — all visible in
  * the chat, just like normal user messages.
  *
- * Task lifecycle (unchanged from the SDK's perspective):
+ * Task lifecycle:
  *   1. Publish initial Task (state: submitted) if new
- *   2. Publish status-update (state: working)
- *   3. Delegate to main agent process via processMessage callback
- *   4. Publish artifact-update with the response
- *   5. Publish final status-update (state: completed) with final=true
- *   6. Call eventBus.finished()
+ *   2. Publish status-update (state: working) + finish event bus → HTTP response
+ *   3. Delegate to main agent process via processMessage callback (background)
+ *   4. On completion: update task in TaskStore with artifact + completed/failed status
+ *   5. Callers retrieve results via tasks/get polling or SSE resubscribe
+ *
+ * This eliminates the old onAsyncResult→sendA2AMessage pattern that caused
+ * bidirectional infinite loops (A→B→A→B...). Results are now stored in the
+ * task store and retrieved through the A2A protocol's native task lifecycle.
  *
  * Concurrency: max 1 (blocks — the main agent handles one request at a
  * time). Additional requests are queued and processed in arrival order.
@@ -20,7 +23,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
+import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
 import type { TelemetrySnapshot } from "./types.ts";
@@ -36,15 +39,6 @@ export interface ProcessResult {
 	durationMs: number;
 }
 
-/** Callback payload when a long-running task completes in the background. */
-export interface AsyncTaskResult {
-	taskId: string;
-	senderName: string;
-	/** Sender's A2A endpoint URL, captured from the original request context. */
-	senderUrl?: string;
-	result: ProcessResult;
-}
-
 /**
  * Callback to inject a message into the main agent conversation.
  * Returns a promise that resolves when the agent finishes processing.
@@ -54,6 +48,7 @@ export type ProcessMessage = (prompt: string, sender: string) => Promise<Process
 export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
 	private processMessage: ProcessMessage;
+	private taskStore: TaskStore;
 	/**
 	 * Track the single active task for cancellation.
 	 * Note: cancellation only prevents result dispatch — the underlying
@@ -72,12 +67,11 @@ export class PiAgentExecutor implements AgentExecutor {
 	private lastTaskStatus?: "completed" | "failed";
 	/** Optional callback invoked after each task completes or fails. */
 	onTaskFinished?: () => void;
-	/** Optional callback to deliver async task results (for sending responses back to callers). */
-	onAsyncResult?: (result: AsyncTaskResult) => void;
 
-	constructor(log: LogFn, processMessage: ProcessMessage) {
+	constructor(log: LogFn, processMessage: ProcessMessage, taskStore: TaskStore) {
 		this.log = log;
 		this.processMessage = processMessage;
+		this.taskStore = taskStore;
 	}
 
 	/** Return a snapshot of current telemetry state for hub reporting. */
@@ -149,12 +143,11 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// Extract sender identity (name + URL for reply routing)
+		// Extract sender identity for logging
 		const senderMeta = (userMessage.metadata as Record<string, unknown> | undefined)?.["pi:sender"] as
-			| { name?: string; description?: string; url?: string }
+			| { name?: string; description?: string }
 			| undefined;
 		const senderName = senderMeta?.name ?? "Unknown agent";
-		const senderUrl = senderMeta?.url;
 
 		// Extract text from all part types
 		const textSegments: string[] = [];
@@ -211,10 +204,10 @@ export class PiAgentExecutor implements AgentExecutor {
 		eventBus.finished();
 
 		// ── Process in the background ──────────────────────────────
-		// The HTTP response has already been sent. The agent works on the
-		// task, and when done, the result is delivered via onAsyncResult
-		// which sends it back to the caller as a new A2A message.
-		this.processInBackground(taskId, prompt, senderName, senderUrl, releaseQueue!).catch((err) => {
+		// The HTTP response has already been sent with "working" status.
+		// When the agent finishes, the result is saved to the TaskStore.
+		// Callers retrieve it via tasks/get polling or SSE resubscribe.
+		this.processInBackground(taskId, contextId, prompt, senderName, releaseQueue!).catch((err) => {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_bg_error", { taskId, error: msg }, "ERROR");
 		});
@@ -270,14 +263,18 @@ export class PiAgentExecutor implements AgentExecutor {
 	}
 
 	/**
-	 * Process a task in the background after the ACK has been sent.
-	 * When the agent finishes, delivers the result via onAsyncResult callback.
+	 * Process a task in the background after the HTTP ACK has been sent.
+	 *
+	 * When the agent finishes, updates the task in the TaskStore with the
+	 * result artifact and final status (completed/failed). Callers retrieve
+	 * results via tasks/get polling or SSE resubscribe — no new A2A message
+	 * is sent back, eliminating bidirectional loops.
 	 */
 	private async processInBackground(
 		taskId: string,
+		contextId: string,
 		prompt: string,
 		senderName: string,
-		senderUrl: string | undefined,
 		releaseQueue: () => void,
 	): Promise<void> {
 		try {
@@ -302,8 +299,8 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.log("executor_failed", { taskId, error: result.error ?? "Unknown", durationMs: result.durationMs }, "ERROR");
 			}
 
-			// Deliver the result to be sent back to the caller
-			this.onAsyncResult?.({ taskId, senderName, senderUrl, result });
+			// Update the task in the store — callers poll via tasks/get
+			await this.saveTaskResult(taskId, contextId, result);
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			const msg = err instanceof Error ? err.message : String(err);
@@ -313,15 +310,78 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.lastTaskStatus = "failed";
 			this.onTaskFinished?.();
 
-			// Deliver error result
-			this.onAsyncResult?.({
-				taskId,
-				senderName,
-				senderUrl,
-				result: { ok: false, response: "", error: msg, durationMs: 0 },
+			// Save failure to the store so callers can see the error
+			await this.saveTaskResult(taskId, contextId, {
+				ok: false,
+				response: "",
+				error: msg,
+				durationMs: 0,
 			});
 		} finally {
 			releaseQueue();
+		}
+	}
+
+	/**
+	 * Save the completed/failed task result to the TaskStore.
+	 *
+	 * Loads the existing task (saved by the SDK during the "working" ACK phase),
+	 * updates it with the result artifact and final status, and saves it back.
+	 * If the task isn't found (shouldn't happen), constructs a minimal one.
+	 */
+	private async saveTaskResult(
+		taskId: string,
+		contextId: string,
+		result: ProcessResult,
+	): Promise<void> {
+		try {
+			const existing = await this.taskStore.load(taskId);
+			const now = new Date().toISOString();
+
+			const statusMessage = {
+				kind: "message" as const,
+				messageId: randomUUID(),
+				role: "agent" as const,
+				parts: [{
+					kind: "text" as const,
+					text: result.ok
+						? result.response
+						: `Error: ${result.error ?? "Unknown error"}`,
+				} as Part],
+			};
+
+			const updatedTask: Task = {
+				kind: "task",
+				id: taskId,
+				contextId,
+				// Preserve history from the existing task
+				...(existing?.history ? { history: existing.history } : {}),
+				// Preserve existing metadata
+				...(existing?.metadata ? { metadata: existing.metadata } : {}),
+				status: {
+					state: result.ok ? "completed" : "failed",
+					message: statusMessage,
+					timestamp: now,
+				},
+				// Add artifact with response on success
+				...(result.ok ? {
+					artifacts: [{
+						artifactId: randomUUID(),
+						name: "response",
+						parts: [{ kind: "text" as const, text: result.response } as Part],
+					}],
+				} : {}),
+			};
+
+			await this.taskStore.save(updatedTask);
+			this.log("task_result_saved", {
+				taskId,
+				state: result.ok ? "completed" : "failed",
+				hadExisting: !!existing,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("task_result_save_error", { taskId, error: msg }, "ERROR");
 		}
 	}
 

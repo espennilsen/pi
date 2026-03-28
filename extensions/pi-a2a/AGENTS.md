@@ -16,8 +16,10 @@ src/
 ├── config.ts         # Settings.json loader via SettingsManager
 ├── logger.ts         # Structured logger via pi-logger event bus
 ├── agent-card.ts     # Agent Card builder from config, dynamic tool enrichment
-├── agent-executor.ts # AgentExecutor implementation — spawns pi subprocesses
+├── agent-executor.ts # AgentExecutor — inline main-process delegation + TaskStore persistence
+├── task-store.ts     # SQLite-backed TaskStore (persistent tasks, WAL mode)
 ├── server.ts         # Self-contained HTTP server (node:http) + SDK RPC handler
+├── client.ts         # Outbound A2A messaging via SDK Client
 ├── static-agents.ts  # Static agent registry — fetch/cache remote agent cards
 ├── subprocess.ts     # Isolated pi subprocess runner (pi --mode rpc)
 └── hub.ts            # A2A Hub registration client
@@ -25,13 +27,14 @@ src/
 
 ## Key Design Decisions
 
-- **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `InMemoryTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific subprocess logic.
-- **Full task lifecycle** — The executor follows the SDK's canonical pattern: publish initial Task (submitted) → status-update (working) → artifact-update → status-update (completed, final=true) → finished. This ensures `tasks/get` returns proper state and streaming/push notifications work.
+- **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `SQLiteTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific main-process delegation.
+- **Async-first task lifecycle** — The executor ACKs with "working" immediately (unblocking the HTTP response), then processes in the background. On completion, results are saved directly to the SQLite TaskStore (artifact + completed/failed status). Callers retrieve results via `tasks/get` polling or SSE `resubscribe`. No result messages are sent back — this eliminates bidirectional loops.
+- **Persistent SQLite TaskStore** — Tasks survive restarts. Schema: `a2a_tasks` with extracted `status`, `hop_count`, and `visited_agents` columns for efficient querying and future loop control. WAL mode for concurrent reads during processing. DB at `{agentDir}/db/a2a.db`.
 - **Streaming support** — Capabilities declare `streaming: true`. The SDK's `sendMessageStream` returns an `AsyncGenerator`; the HTTP server detects this and responds with SSE (`text/event-stream`).
 - **Push notifications** — Capabilities declare `pushNotifications: true`. `InMemoryPushNotificationStore` and `DefaultPushNotificationSender` are wired into the `DefaultRequestHandler`, enabling clients to register webhook URLs for async task updates.
 - **Self-contained HTTP server** — Uses `node:http` directly. No dependency on pi-webserver, pi-kysely, or any other extension. Binds to `127.0.0.1` by default; optional API key auth for external access.
 - **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
-- **Subprocess isolation** — Each `message/send` spawns a fresh `pi --mode rpc -ne` process. No shared state, no extension leakage. Cancellation kills the subprocess via `AbortController`.
+- **Inline main-process delegation** — Incoming A2A messages are injected into the main pi conversation via `pi.sendMessage({ triggerTurn: true })`. Full TUI visibility — tool calls, file edits, thinking — all visible in the chat. Serial queue (max 1 concurrent), additional requests queued in arrival order.
 - **Settings-driven** — All config via `pi-a2a` key in settings.json. No env vars.
 - **Static agent registry** — Manually configured remote agents in `staticAgents[]`. Agent cards are fetched from `/.well-known/agent-card.json` on session start and cached in memory. No hub required. Refresh via `/a2a agents refresh` command. Static agents are resolved first in `a2a_send`, before hub lookup.
 

@@ -342,19 +342,17 @@ export class SQLitePushNotificationStore implements PushNotificationStore {
 	}
 
 	/**
-	 * Clean up push notification configs for expired tasks.
-	 * Called after task pruning to maintain referential consistency.
+	 * Delete push notification configs whose task no longer exists in a2a_tasks.
+	 * Call after taskStore.pruneOlderThan() to clean up orphaned rows.
 	 */
-	pruneForTasks(taskIds: string[]): number {
-		if (taskIds.length === 0) return 0;
-
-		const placeholders = taskIds.map(() => "?").join(",");
+	pruneOrphaned(): number {
 		const result = this.db.prepare(
-			`DELETE FROM a2a_push_configs WHERE task_id NOT IN (${placeholders})`,
-		).run(...taskIds);
+			`DELETE FROM a2a_push_configs
+			 WHERE task_id NOT IN (SELECT id FROM a2a_tasks)`,
+		).run();
 
 		if (result.changes > 0) {
-			this.log("push_config_prune", { deleted: result.changes });
+			this.log("push_config_prune_orphaned", { deleted: result.changes });
 		}
 		return result.changes;
 	}

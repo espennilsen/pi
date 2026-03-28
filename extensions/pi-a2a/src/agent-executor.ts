@@ -52,11 +52,16 @@ export interface ProcessResult {
  */
 export type ProcessMessage = (prompt: string, sender: string) => Promise<ProcessResult>;
 
+/** Default task processing timeout: 10 minutes. */
+const DEFAULT_TASK_TIMEOUT_MS = 600_000;
+
 export class PiAgentExecutor implements AgentExecutor {
 	private log: LogFn;
 	private processMessage: ProcessMessage;
 	private taskStore: TaskStore;
 	private supervisorConfig: SupervisorConfig;
+	/** Timeout for a single task's processMessage call. 0 = no timeout. */
+	private taskTimeoutMs: number;
 	/**
 	 * Track the single active task for cancellation.
 	 * Note: cancellation only prevents result dispatch — the underlying
@@ -76,6 +81,12 @@ export class PiAgentExecutor implements AgentExecutor {
 	private cancelCallbacks = new Map<string, () => void>();
 	/** Map taskId → contextId for protocol-correct cancel events. */
 	private taskContexts = new Map<string, string>();
+	/**
+	 * Fallback status map for tasks whose final state couldn't be persisted
+	 * to the DB (e.g. disk full). Allows tasks/get to return a terminal state
+	 * instead of being stuck on "working" forever.
+	 */
+	private fallbackStatuses = new Map<string, { state: "completed" | "failed"; response: string }>();
 	/** Number of tasks waiting in the queue (not yet active). */
 	private _queueDepth = 0;
 	/** Last completed/failed task duration for telemetry reporting. */
@@ -90,11 +101,13 @@ export class PiAgentExecutor implements AgentExecutor {
 		processMessage: ProcessMessage,
 		taskStore: TaskStore,
 		supervisorConfig: SupervisorConfig,
+		taskTimeoutMs?: number,
 	) {
 		this.log = log;
 		this.processMessage = processMessage;
 		this.taskStore = taskStore;
 		this.supervisorConfig = supervisorConfig;
+		this.taskTimeoutMs = taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
 	}
 
 	/**
@@ -132,6 +145,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		}
 		this.cancelCallbacks.clear();
 		this.taskContexts.clear();
+		this.fallbackStatuses.clear();
 
 		if (this.activeTaskId) {
 			this.log("executor_abort_all", { taskId: this.activeTaskId });
@@ -378,7 +392,17 @@ export class PiAgentExecutor implements AgentExecutor {
 		const loopMetadata = this.activeLoopMetadata;
 
 		try {
-			const result = await this.processMessage(prompt, senderName);
+			// Wrap processMessage with a timeout to prevent one stuck task
+			// from blocking the entire inbound queue indefinitely.
+			let result: ProcessResult;
+			if (this.taskTimeoutMs > 0) {
+				const timeoutPromise = new Promise<ProcessResult>((_, reject) =>
+					setTimeout(() => reject(new Error(`Task timeout: agent did not respond within ${this.taskTimeoutMs}ms`)), this.taskTimeoutMs),
+				);
+				result = await Promise.race([this.processMessage(prompt, senderName), timeoutPromise]);
+			} else {
+				result = await this.processMessage(prompt, senderName);
+			}
 
 			// Check if canceled while processing
 			if (this.activeTaskId !== taskId) {
@@ -493,8 +517,48 @@ export class PiAgentExecutor implements AgentExecutor {
 			});
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
-			this.log("task_result_save_error", { taskId, error: msg }, "ERROR");
+			this.log("task_result_save_error", { taskId, error: msg, attempt: 1 }, "ERROR");
+
+			// Retry once after a short delay
+			try {
+				await new Promise(r => setTimeout(r, 500));
+				const fallbackTask: Task = {
+					kind: "task",
+					id: taskId,
+					contextId,
+					status: {
+						state: result.ok ? "completed" : "failed",
+						message: {
+							kind: "message",
+							messageId: randomUUID(),
+							role: "agent",
+							parts: [{ kind: "text", text: result.ok ? result.response : `Error: ${result.error ?? "Unknown error"}` } as Part],
+						},
+						timestamp: new Date().toISOString(),
+					},
+				};
+				await this.taskStore.save(fallbackTask);
+				this.log("task_result_saved_retry", { taskId, state: result.ok ? "completed" : "failed" });
+			} catch (retryErr: unknown) {
+				const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+				this.log("task_result_save_error", { taskId, error: retryMsg, attempt: 2 }, "ERROR");
+
+				// Last resort: store in memory so tasks/get doesn't return "working" forever
+				this.fallbackStatuses.set(taskId, {
+					state: result.ok ? "completed" : "failed",
+					response: result.ok ? result.response : `Error: ${result.error ?? "Unknown error"}`,
+				});
+				this.log("task_result_fallback_stored", { taskId });
+			}
 		}
+	}
+
+	/**
+	 * Get fallback status for a task whose result couldn't be persisted.
+	 * Returns undefined if no fallback exists (normal path — DB worked fine).
+	 */
+	getFallbackStatus(taskId: string): { state: "completed" | "failed"; response: string } | undefined {
+		return this.fallbackStatuses.get(taskId);
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

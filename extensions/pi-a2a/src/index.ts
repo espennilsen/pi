@@ -116,6 +116,8 @@ export default function (pi: ExtensionAPI) {
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
+	/** Active push notification store — shares DB with taskStore. */
+	let pushNotificationStore: SQLitePushNotificationStore | null = null;
 	/** Agent's canonical public URL (set on session_start, used for loop metadata). */
 	let agentPublicUrl: string = "http://localhost:3100";
 	/** Configured max hops (set on session_start, used for seeding outbound metadata). */
@@ -415,6 +417,7 @@ export default function (pi: ExtensionAPI) {
 			executor.abortAll();
 			executor = null;
 		}
+		pushNotificationStore = null;
 		if (taskStore) {
 			taskStore.close();
 			taskStore = null;
@@ -442,7 +445,7 @@ export default function (pi: ExtensionAPI) {
 		executor = new PiAgentExecutor(log, processMessage, taskStore, {
 			agentId: publicUrl,
 			defaultMaxHops: maxHops,
-		});
+		}, config.taskTimeoutMs);
 
 		// When the executor finishes an A2A task, refresh TUI status and
 		// send telemetry so the hub sees "idle" immediately — agent_end
@@ -454,7 +457,7 @@ export default function (pi: ExtensionAPI) {
 				sendTelemetry(config).catch(() => {});
 			}
 		};
-		const pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
+		pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
 
 		// Set up task expiry interval
@@ -465,6 +468,8 @@ export default function (pi: ExtensionAPI) {
 				const pruned = taskStore.pruneOlderThan(taskTtlMs);
 				if (pruned > 0) {
 					log("task_expiry_pruned", { pruned, taskTtlMs });
+					// Clean up orphaned push notification configs for pruned tasks
+					pushNotificationStore?.pruneOrphaned();
 				}
 			}, 300_000); // every 5 minutes
 		}
@@ -494,6 +499,7 @@ export default function (pi: ExtensionAPI) {
 			// Clean up resources allocated before server start
 			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 			executor = null;
+			pushNotificationStore = null;
 			taskStore.close(); taskStore = null;
 			ctx.ui.notify(`pi-a2a: Failed to start server — ${msg}`, "warning");
 			return;
@@ -599,6 +605,7 @@ export default function (pi: ExtensionAPI) {
 			executor.abortAll();
 			executor = null;
 		}
+		pushNotificationStore = null;
 		if (taskStore) {
 			taskStore.close();
 			taskStore = null;

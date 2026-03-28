@@ -132,7 +132,11 @@ export function supervise(
 	incoming: LoopMetadata,
 	config: SupervisorConfig,
 ): SupervisorResult {
-	const maxHops = incoming.budgets?.maxHops ?? config.defaultMaxHops;
+	// Cap incoming budget at the server's own limit — untrusted callers
+	// must not be able to override the configured hop ceiling.
+	const maxHops = incoming.budgets?.maxHops !== undefined
+		? Math.min(incoming.budgets.maxHops, config.defaultMaxHops)
+		: config.defaultMaxHops;
 
 	// ── 1. Cycle detection ──────────────────────────────────────
 	// Check BEFORE incrementing — if we've been visited before, it's a cycle

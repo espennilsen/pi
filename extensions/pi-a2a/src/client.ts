@@ -17,6 +17,8 @@ import {
 } from "@a2a-js/sdk/client";
 import type { AgentCard, MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
+import type { LoopMetadata } from "./supervisor.ts";
+import { injectLoopMetadata } from "./supervisor.ts";
 
 /** Sender identity to include in message metadata. */
 export interface SenderIdentity {
@@ -45,6 +47,12 @@ export interface SendMessageOptions {
 	 * If not provided, 401 is returned as-is.
 	 */
 	onRefreshCredential?: () => Promise<string | null>;
+	/**
+	 * Loop-control metadata to propagate on the outbound message.
+	 * When set, pi:hopCount, pi:visitedAgents, and pi:budgets are injected
+	 * into the message metadata for downstream loop prevention.
+	 */
+	loopMetadata?: LoopMetadata | null;
 }
 
 export interface SendMessageResult {
@@ -57,8 +65,34 @@ export interface SendMessageResult {
 	error?: string;
 	/** True when the remote agent returned HTTP 401 — credential may be stale. */
 	unauthorized?: boolean;
-	/** True when the remote agent ACKed with "working" — the real result will arrive later as a separate message. */
+	/** True when the remote agent ACKed with "working" — poll via getRemoteTask(). */
 	working?: boolean;
+	/** Task ID from the remote agent — use with getRemoteTask() to poll for completion. */
+	taskId?: string;
+}
+
+/** Options for polling a remote task's status. */
+export interface GetRemoteTaskOptions {
+	/** Remote agent's A2A endpoint URL. */
+	url: string;
+	/** Task ID to poll. */
+	taskId: string;
+	/** Bearer token for authenticating with the remote agent. */
+	credential?: string | null;
+	/** Callback to refresh a stale credential on 401. */
+	onRefreshCredential?: () => Promise<string | null>;
+}
+
+/** Result of polling a remote task. */
+export interface GetRemoteTaskResult {
+	/** Task state: submitted, working, completed, failed, canceled. */
+	state: string;
+	/** Extracted text if completed. */
+	response?: string;
+	/** Error message if failed. */
+	error?: string;
+	/** Raw task object for inspection. */
+	raw?: unknown;
 }
 
 /**
@@ -71,9 +105,9 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender, onRefreshCredential } = opts;
+	const { url, message, credential, timeoutMs, sender, onRefreshCredential, loopMetadata } = opts;
 
-	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential });
+	log("a2a_send_start", { url, messageLength: message.length, hasCredential: !!credential, hopCount: loopMetadata?.hopCount });
 
 	// Track auth state explicitly so we can set `unauthorized: true`
 	// without relying on SDK error message format (which is unstable
@@ -152,7 +186,8 @@ export async function sendA2AMessage(
 		const client = new Client(transport, minimalCard);
 
 		// ── Build the A2A message ─────────────────────────────────
-		const metadata: Record<string, unknown> | undefined = sender
+		// Start with sender identity, then layer in loop-control metadata
+		let metadata: Record<string, unknown> | undefined = sender
 			? {
 				"pi:sender": {
 					name: sender.name,
@@ -160,6 +195,11 @@ export async function sendA2AMessage(
 				},
 			}
 			: undefined;
+
+		// Inject loop-control metadata for downstream loop prevention
+		if (loopMetadata) {
+			metadata = injectLoopMetadata(metadata, loopMetadata);
+		}
 
 		const params: MessageSendParams = {
 			message: {
@@ -170,30 +210,42 @@ export async function sendA2AMessage(
 				...(metadata ? { metadata } : {}),
 			},
 			configuration: {
-				blocking: true,
+				blocking: false,
 			},
 		};
 
-		// ── Send via SDK ──────────────────────────────────────────
+		// ── Send via SDK (non-blocking) ───────────────────────────
+		// With blocking: false, the remote agent returns a Task immediately
+		// with submitted/working status. We return the taskId for polling.
 		const requestOpts = timeoutMs
 			? { signal: AbortSignal.timeout(timeoutMs) }
 			: undefined;
 
 		const result = await client.sendMessage(params, requestOpts);
 
-		// Detect "working" ACK — the remote agent accepted the task but hasn't finished yet.
-		// The actual result will arrive later as a separate A2A message.
+		// Extract task ID from the result
+		const taskId = (result as { id?: string }).id;
+
+		// Check if the remote returned a completed result immediately
+		// (possible if the task was trivial or already cached)
 		const status = (result as { status?: { state?: string } }).status;
-		if (status?.state === "working") {
-			log("a2a_send_working", { url });
-			return { ok: true, response: "", raw: result, working: true };
+		const state = status?.state;
+
+		if (state === "completed") {
+			const responseText = extractResponseText(result);
+			log("a2a_send_completed_immediately", { url, taskId, responseLength: responseText.length });
+			return { ok: true, response: responseText, raw: result, taskId: taskId ?? undefined };
 		}
 
-		// ── Extract response text ─────────────────────────────────
-		const responseText = extractResponseText(result);
-		log("a2a_send_success", { url, responseLength: responseText.length });
+		if (state === "failed") {
+			const errorText = extractResponseText(result);
+			log("a2a_send_failed_immediately", { url, taskId }, "ERROR");
+			return { ok: false, error: errorText, raw: result, taskId: taskId ?? undefined };
+		}
 
-		return { ok: true, response: responseText, raw: result };
+		// Task is submitted or working — return for polling
+		log("a2a_send_working", { url, taskId, state });
+		return { ok: true, response: "", raw: result, working: true, taskId: taskId ?? undefined };
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
 
@@ -210,6 +262,83 @@ export async function sendA2AMessage(
 
 		log("a2a_send_error", { url, error: msg }, "ERROR");
 		return { ok: false, error: msg };
+	}
+}
+
+/**
+ * Poll a remote A2A task's status via the SDK Client's getTask method.
+ *
+ * Creates a short-lived Client per call (same pattern as sendA2AMessage).
+ * Returns the task state and extracted response/error text.
+ */
+export async function getRemoteTask(
+	opts: GetRemoteTaskOptions,
+	log: LogFn,
+): Promise<GetRemoteTaskResult> {
+	const { url, taskId, credential, onRefreshCredential } = opts;
+
+	try {
+		// Build auth-aware fetch (same pattern as sendA2AMessage)
+		let currentCredential = credential ?? null;
+		let retried = false;
+
+		const authHandler: AuthenticationHandler = {
+			async headers() {
+				const hdrs: Record<string, string> = {};
+				if (currentCredential) {
+					hdrs["Authorization"] = `Bearer ${currentCredential}`;
+				}
+				return hdrs;
+			},
+			async shouldRetryWithHeaders(_req, res) {
+				if (res.status === 401 && !retried && onRefreshCredential) {
+					retried = true;
+					const fresh = await onRefreshCredential();
+					if (fresh) {
+						currentCredential = fresh;
+						return { Authorization: `Bearer ${fresh}` };
+					}
+				}
+				return undefined;
+			},
+		};
+
+		const fetchImpl = createAuthenticatingFetchWithRetry(fetch, authHandler);
+		const transport = new JsonRpcTransport({ endpoint: url, fetchImpl });
+		const minimalCard: AgentCard = {
+			name: "remote-agent",
+			description: "",
+			url,
+			version: "1.0.0",
+			protocolVersion: "0.2.2",
+			capabilities: {},
+			defaultInputModes: ["text/plain"],
+			defaultOutputModes: ["text/plain"],
+			skills: [],
+		};
+		const client = new Client(transport, minimalCard);
+
+		const task = await client.getTask({ id: taskId });
+		const state = task.status?.state ?? "unknown";
+
+		if (state === "completed") {
+			const response = extractResponseText(task);
+			log("a2a_poll_completed", { url, taskId, responseLength: response.length });
+			return { state, response, raw: task };
+		}
+
+		if (state === "failed") {
+			const errorText = extractResponseText(task);
+			log("a2a_poll_failed", { url, taskId }, "WARN");
+			return { state, error: errorText, raw: task };
+		}
+
+		// Still working/submitted/canceled
+		return { state, raw: task };
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		log("a2a_poll_error", { url, taskId, error: msg }, "ERROR");
+		throw err;
 	}
 }
 

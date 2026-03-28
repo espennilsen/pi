@@ -136,8 +136,9 @@ export default function (pi: ExtensionAPI) {
 	// with full tool/skill access — everything visible in the TUI.
 	// On agent_end, we capture the response and send it back to the caller.
 
-	/** Resolve function for the pending A2A request. */
+	/** Resolve/reject functions for the pending A2A request. */
 	let pendingResolve: ((result: ProcessResult) => void) | null = null;
+	let pendingReject: ((error: Error) => void) | null = null;
 	let pendingStartTime = 0;
 	/** Nonce embedded in the injected message to correlate with agent_end. */
 	let pendingNonce: string | null = null;
@@ -171,29 +172,57 @@ export default function (pi: ExtensionAPI) {
 		await waitForIdle();
 
 		const INPUT_ANSWER_TIMEOUT_MS = 300_000;
-		const answer = await Promise.race([
-			new Promise<string>((resolve) => {
-				const nonce = randomUUID();
-				pendingInputResolvers.set(nonce, { resolve, startTime: Date.now() });
+		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+		let nonce: string | null = null;
 
-				pi.sendMessage(
-					{
-						customType: "a2a-input-question",
-						content:
-							`❓ **${agentName} needs more information:**\n\n` +
-							`> ${question.split("\n").join("\n> ")}\n\n` +
-							`*Please answer this question. Your response will be sent back to ${agentName}.*`,
-						display: true,
-						details: { nonce },
-					},
-					{ triggerTurn: true },
-				);
-			}),
-			new Promise<string>((_, reject) =>
-				setTimeout(() => reject(new Error("Local agent failed to answer within 5 minutes")), INPUT_ANSWER_TIMEOUT_MS)
-			),
-		]);
-		return answer;
+		try {
+			const answer = await Promise.race([
+				new Promise<string>((resolve) => {
+					nonce = randomUUID();
+					pendingInputResolvers.set(nonce, { resolve, startTime: Date.now() });
+
+					pi.sendMessage(
+						{
+							customType: "a2a-input-question",
+							content:
+								`❓ **${agentName} needs more information:**\n\n` +
+								`> ${question.split("\n").join("\n> ")}\n\n` +
+								`*Please answer this question. Your response will be sent back to ${agentName}.*`,
+							display: true,
+							details: { nonce },
+						},
+						{ triggerTurn: true },
+					);
+				}),
+				new Promise<string>((_, reject) => {
+					timeoutHandle = setTimeout(() => {
+						if (nonce) {
+							pendingInputResolvers.delete(nonce);
+						}
+						reject(new Error("Local agent failed to answer within 5 minutes"));
+					}, INPUT_ANSWER_TIMEOUT_MS);
+				}),
+			]);
+			return answer;
+		} finally {
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+			}
+		}
+	}
+
+	/**
+	 * Abort a pending A2A request due to timeout or cancellation.
+	 * Cleans up pendingResolve/pendingReject state so new tasks can proceed.
+	 */
+	function abortPendingRequest(reason: string): void {
+		if (pendingReject) {
+			const reject = pendingReject;
+			pendingResolve = null;
+			pendingReject = null;
+			pendingNonce = null;
+			reject(new Error(reason));
+		}
 	}
 
 	/**
@@ -218,9 +247,10 @@ export default function (pi: ExtensionAPI) {
 			return { ok: false, response: "", error: "A2A request already in progress — concurrent invocation rejected", durationMs: 0 };
 		}
 
-		return new Promise<ProcessResult>((resolve) => {
+		return new Promise<ProcessResult>((resolve, reject) => {
 			const nonce = randomUUID();
 			pendingResolve = resolve;
+			pendingReject = reject;
 			pendingStartTime = start;
 			pendingNonce = nonce;
 
@@ -285,6 +315,7 @@ export default function (pi: ExtensionAPI) {
 				const durationMs = Date.now() - pendingStartTime;
 				const resolve = pendingResolve;
 				pendingResolve = null;
+				pendingReject = null;
 				pendingNonce = null;
 
 				if (response) {
@@ -524,6 +555,9 @@ export default function (pi: ExtensionAPI) {
 			defaultMaxHops: maxHops,
 		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds);
 
+		// Set abort callback so executor can clean up pendingResolve on timeout
+		executor.setAbortCallback(abortPendingRequest);
+
 		// When the executor finishes an A2A task, refresh TUI status and
 		// send telemetry so the hub sees "idle" immediately — agent_end
 		// fires before the executor clears activeTaskId, so this callback
@@ -730,8 +764,18 @@ export default function (pi: ExtensionAPI) {
 	/**
 	 * Build a self-contained prompt for a fresh pi subprocess from an
 	 * answered clarification. Includes full handoff context + owner response.
+	 *
+	 * Truncates response and handoff items to prevent OS spawn E2BIG/EINVAL errors.
 	 */
 	function buildClarificationPrompt(c: AnsweredClarification): string {
+		const MAX_RESPONSE_LENGTH = 50_000; // ~50KB per field
+		const MAX_HANDOFF_ITEM_LENGTH = 10_000; // ~10KB per handoff item
+
+		const truncate = (text: string, maxLen: number): string => {
+			if (text.length <= maxLen) return text;
+			return text.slice(0, maxLen) + `\n\n[... truncated ${text.length - maxLen} characters]`;
+		};
+
 		const lines: string[] = [];
 
 		lines.push("# Owner Response — Resume Work\n");
@@ -742,7 +786,7 @@ export default function (pi: ExtensionAPI) {
 		lines.push("## Question Asked");
 		lines.push(`> ${c.question}\n`);
 		lines.push("## Owner's Response");
-		lines.push(c.response);
+		lines.push(truncate(c.response, MAX_RESPONSE_LENGTH));
 		lines.push("");
 
 		// Handoff context
@@ -759,25 +803,25 @@ export default function (pi: ExtensionAPI) {
 
 			if (Array.isArray(h.done) && h.done.length > 0) {
 				lines.push("## What's Been Done");
-				for (const item of h.done) lines.push(`- ${item}`);
+				for (const item of h.done) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.remaining) && h.remaining.length > 0) {
 				lines.push("## What's Left");
-				for (const item of h.remaining) lines.push(`- ${item}`);
+				for (const item of h.remaining) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.decisions) && h.decisions.length > 0) {
 				lines.push("## Key Decisions");
-				for (const item of h.decisions) lines.push(`- ${item}`);
+				for (const item of h.decisions) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.uncertain) && h.uncertain.length > 0) {
 				lines.push("## Open Questions");
-				for (const item of h.uncertain) lines.push(`- ${item}`);
+				for (const item of h.uncertain) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
@@ -788,7 +832,7 @@ export default function (pi: ExtensionAPI) {
 				lines.push("## Additional Context");
 				for (const key of extraKeys) {
 					const val = typeof h[key] === "string" ? h[key] : JSON.stringify(h[key]);
-					lines.push(`- **${key}:** ${val}`);
+					lines.push(`- **${key}:** ${truncate(val, MAX_HANDOFF_ITEM_LENGTH)}`);
 				}
 				lines.push("");
 			}

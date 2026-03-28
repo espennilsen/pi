@@ -78,6 +78,8 @@ export class PiAgentExecutor implements AgentExecutor {
 	private supervisorConfig: SupervisorConfig;
 	/** Timeout for a single task's processMessage call. 0 = no timeout. */
 	private taskTimeoutMs: number;
+	/** Callback to abort a pending request when timeout occurs. */
+	private abortCurrentTask?: (reason: string) => void;
 	/**
 	 * Track the single active task for cancellation.
 	 * Note: cancellation only prevents result dispatch — the underlying
@@ -143,6 +145,15 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.taskTimeoutMs = taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
 		this.inputRequiredTimeoutMs = inputRequiredTimeoutMs ?? DEFAULT_INPUT_REQUIRED_TIMEOUT_MS;
 		this.maxInputRounds = maxInputRounds ?? DEFAULT_MAX_INPUT_ROUNDS;
+	}
+
+	/**
+	 * Set the callback to abort a pending request when timeout occurs.
+	 * This allows the executor to clean up pendingResolve state in the main
+	 * index.ts module, preventing queue contamination.
+	 */
+	setAbortCallback(abort: (reason: string) => void): void {
+		this.abortCurrentTask = abort;
 	}
 
 	/**
@@ -597,17 +608,24 @@ export class PiAgentExecutor implements AgentExecutor {
 		// finishes, but we need it for the saved task result.
 		const loopMetadata = this.activeLoopMetadata;
 
+		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		try {
 			// Wrap processMessage with a timeout to prevent one stuck task
 			// from blocking the entire inbound queue indefinitely.
 			let result: ProcessResult;
 			if (this.taskTimeoutMs > 0) {
-				const timeoutPromise = new Promise<ProcessResult>((_, reject) =>
-					setTimeout(() => reject(new Error(`Task timeout: agent did not respond within ${this.taskTimeoutMs}ms`)), this.taskTimeoutMs),
-				);
+				const timeoutPromise = new Promise<ProcessResult>((_, reject) => {
+					timeoutHandle = setTimeout(() => reject(new Error(`Task timeout: agent did not respond within ${this.taskTimeoutMs}ms`)), this.taskTimeoutMs);
+				});
 				result = await Promise.race([this.processMessage(prompt, senderName), timeoutPromise]);
 			} else {
 				result = await this.processMessage(prompt, senderName);
+			}
+
+			// Clear timeout handle if processMessage won the race
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+				timeoutHandle = null;
 			}
 
 			// Check if canceled while processing
@@ -641,6 +659,12 @@ export class PiAgentExecutor implements AgentExecutor {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_error", { taskId, error: msg }, "ERROR");
 
+			// If this was a task timeout, abort the pending request in index.ts
+			// to clean up pendingResolve state and prevent queue contamination
+			if (msg.includes("Task timeout") && this.abortCurrentTask) {
+				this.abortCurrentTask(msg);
+			}
+
 			this.lastTaskDurationMs = undefined;
 			this.lastTaskStatus = "failed";
 			this.onTaskFinished?.();
@@ -656,6 +680,10 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.inputRoundCounts.delete(taskId);
 			this.parkedInputResolvers.delete(taskId);
 		} finally {
+			// Clean up timeout handle to prevent timer leak
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+			}
 			releaseQueue();
 		}
 	}

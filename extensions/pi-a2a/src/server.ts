@@ -20,8 +20,14 @@ import type { LogFn } from "./logger.ts";
 
 /** Authenticated user — created when API key auth succeeds. */
 class AuthenticatedUser implements User {
+	private _userName: string;
+
+	constructor(userName: string) {
+		this._userName = userName;
+	}
+
 	get isAuthenticated(): boolean { return true; }
-	get userName(): string { return "a2a-client"; }
+	get userName(): string { return this._userName; }
 }
 
 const MAX_BODY = 1_048_576; // 1 MB
@@ -112,6 +118,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					}
 
 					// API key auth when configured
+					let authenticatedKeyId: string | undefined;
 					if (opts.apiKey) {
 						const authHeader = req.headers.authorization ?? "";
 						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -120,6 +127,8 @@ export function startServer(opts: ServerOptions): Promise<void> {
 							res.end(JSON.stringify({ error: "Unauthorized" }));
 							return;
 						}
+						// Generate a stable identifier from the API key for audit logging
+						authenticatedKeyId = `key-${createHmac("sha256", "a2a-key-id").update(token).digest("hex").slice(0, 12)}`;
 					}
 
 					const body = await readBody(req);
@@ -147,7 +156,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					} catch (err) {
 						opts.log("extensions_parse_error", { header: extensionsHeader, error: err instanceof Error ? err.message : String(err) }, "WARN");
 					}
-					const user: User | undefined = opts.apiKey ? new AuthenticatedUser() : undefined;
+					const user: User | undefined = authenticatedKeyId ? new AuthenticatedUser(authenticatedKeyId) : undefined;
 					const callContext = new ServerCallContext(
 						requestedExtensions.length > 0 ? requestedExtensions : undefined,
 						user,

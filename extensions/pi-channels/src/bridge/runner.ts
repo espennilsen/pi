@@ -46,6 +46,7 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 
 		args.push(prompt);
 
+		console.log(`[pi-channels DEBUG] runPrompt spawning: pi ${args.join(' ').slice(0,100)}...`);
 		let child: ChildProcess;
 		try {
 			child = spawn("pi", args, {
@@ -54,7 +55,9 @@ export function runPrompt(options: RunOptions): Promise<RunResult> {
 				env: { ...process.env },
 				timeout: timeoutMs,
 			});
+			console.log(`[pi-channels DEBUG] Spawned child PID: ${child.pid}`);
 		} catch (err: any) {
+			console.log(`[pi-channels DEBUG] Failed to spawn: ${err.message}`);
 			resolve({
 				ok: false, response: "", error: `Failed to spawn: ${err.message}`,
 				durationMs: Date.now() - startTime, exitCode: 1,

@@ -107,11 +107,19 @@ export class ChatBridge {
 	// ── Main entry point ──────────────────────────────────────
 
 	handleMessage(message: IncomingMessage): void {
-		if (!this.running) return;
+		console.log(`[pi-channels DEBUG] Bridge.handleMessage: running=${this.running}, sender=${message.sender}, text=${message.text?.slice(0,30)}..., attachments=${message.attachments?.length ?? 0}`);
+		if (!this.running) {
+			console.log(`[pi-channels DEBUG] Bridge not running, returning`);
+			return;
+		}
 
 		const text = message.text?.trim();
 		const hasAttachments = message.attachments && message.attachments.length > 0;
-		if (!text && !hasAttachments) return;
+		console.log(`[pi-channels DEBUG] text=${text?.slice(0,30)}..., hasAttachments=${hasAttachments}`);
+		if (!text && !hasAttachments) {
+			console.log(`[pi-channels DEBUG] No text and no attachments, returning`);
+			return;
+		}
 
 		// Rejected messages (too large, unsupported type) — send back directly
 		if (message.metadata?.rejected) {

@@ -111,9 +111,9 @@ function broadcast(data: unknown): void {
 
 async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
 	if (subPath === "/prompt" && req.method === "POST") {
-		if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
 		try {
 			const body = JSON.parse(await readBody(req));
+			if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
 			const prompt = body.prompt;
 			if (!prompt || typeof prompt !== "string") {
 				json(res, 400, { error: "Missing 'prompt' string in request body" });
@@ -346,10 +346,10 @@ async function handleCronApi(req: IncomingMessage, res: ServerResponse, subPath:
 
 	// POST /jobs/:name/toggle — enable/disable
 	if (subPath.match(/^\/jobs\/[^/]+\/toggle$/) && req.method === "POST") {
-		if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
 		const name = decodeURIComponent(subPath.split("/")[2]);
 		try {
 			const body = JSON.parse(await readBody(req));
+			if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
 			const action = body.enabled ? "enable" : "disable";
 			const result = await _pi.exec("pi-cron", [action, name], { timeout: 10_000 });
 			json(res, 200, { ok: result.code === 0, output: result.stdout?.trim() });

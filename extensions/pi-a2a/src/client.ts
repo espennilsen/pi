@@ -95,6 +95,8 @@ export interface GetRemoteTaskOptions {
 	credential?: string | null;
 	/** Callback to refresh a stale credential on 401. */
 	onRefreshCredential?: () => Promise<string | null>;
+	/** Per-request timeout in milliseconds. Defaults to 30000 (30s). */
+	timeoutMs?: number;
 }
 
 /** Result of polling a remote task. */
@@ -342,7 +344,8 @@ export async function getRemoteTask(
 		};
 		const client = new Client(transport, minimalCard);
 
-		const task = await client.getTask({ id: taskId });
+		const requestTimeoutMs = opts.timeoutMs ?? 30_000;
+		const task = await client.getTask({ id: taskId }, { signal: AbortSignal.timeout(requestTimeoutMs) });
 		const state = task.status?.state ?? "unknown";
 
 		if (state === "completed") {

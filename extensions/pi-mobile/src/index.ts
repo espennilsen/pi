@@ -385,7 +385,15 @@ function safeResolvePath(requestedPath: string): string | null {
 	const resolved = path.resolve(_cwd, requestedPath);
 	// Prevent path traversal — must stay within cwd
 	if (!resolved.startsWith(_cwd + path.sep) && resolved !== _cwd) return null;
-	return resolved;
+	// Dereference symlinks to prevent sandbox escape
+	try {
+		const real = fs.realpathSync(resolved);
+		if (!real.startsWith(_cwd + path.sep) && real !== _cwd) return null;
+		return real;
+	} catch {
+		// Path doesn't exist yet (e.g. new file write) — allow if logical path is valid
+		return resolved;
+	}
 }
 
 async function handleFilesApi(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {

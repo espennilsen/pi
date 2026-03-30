@@ -635,6 +635,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			if (this.activeTaskId !== taskId) {
 				this.log("executor_canceled_during_run", { taskId });
 				this.activeLoopMetadata = null;
+				this.inputRoundCounts.delete(taskId);
 				return;
 			}
 

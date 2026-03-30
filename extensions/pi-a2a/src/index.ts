@@ -499,6 +499,7 @@ export default function (pi: ExtensionAPI) {
 			pendingResolve({ ok: false, response: "", error: "Session restart", durationMs: Date.now() - pendingStartTime });
 		}
 		pendingResolve = null;
+		pendingReject = null;
 		pendingNonce = null;
 		// Resolve any pending outbound input-required questions with empty strings
 		for (const [, pending] of pendingInputResolvers) {
@@ -689,6 +690,7 @@ export default function (pi: ExtensionAPI) {
 		if (pendingResolve) {
 			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
 			pendingResolve = null;
+			pendingReject = null;
 			pendingNonce = null;
 		}
 		// Resolve any pending outbound input-required questions

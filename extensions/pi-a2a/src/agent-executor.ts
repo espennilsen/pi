@@ -469,8 +469,11 @@ export class PiAgentExecutor implements AgentExecutor {
 				textSegments.push(JSON.stringify(dataPart.data, null, 2));
 			} else if (part.kind === "file") {
 				const file = part.file as { uri?: string; name?: string; bytes?: string };
-				if (file?.uri) {
+				if (file?.uri && /^https?:\/\//i.test(file.uri)) {
 					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
+				} else if (file?.uri) {
+					// Non-http(s) URI (file://, data:, etc.) — display name only, no link
+					textSegments.push(`[File: ${file.name ?? file.uri}]`);
 				} else if (file?.name) {
 					textSegments.push(`[File: ${file.name}]`);
 				}
@@ -679,6 +682,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.taskContexts.delete(taskId);
 			this.inputRoundCounts.delete(taskId);
 			this.parkedInputResolvers.delete(taskId);
+			const parkedTimeout = this.parkedInputTimeouts.get(taskId);
+			if (parkedTimeout) clearTimeout(parkedTimeout);
+			this.parkedInputTimeouts.delete(taskId);
 		} finally {
 			// Clean up timeout handle to prevent timer leak
 			if (timeoutHandle) {

@@ -111,7 +111,7 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * follow-up message/send arrives for the same taskId, execute() looks
 	 * up the resolver and delivers the follow-up text.
 	 */
-	private parkedInputResolvers = new Map<string, (text: string) => void>();
+	private parkedInputResolvers = new Map<string, { resolve: (text: string) => void; reject: (err: Error) => void }>();
 	/** Track timeout handles for parked input resolvers (keyed by taskId). */
 	private parkedInputTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 	/** Track how many input-required rounds each task has used (keyed by taskId). */
@@ -229,9 +229,20 @@ export class PiAgentExecutor implements AgentExecutor {
 
 		// ── Park: create promise and wait for follow-up ─────────────
 		return new Promise<string>((resolve, reject) => {
+			// Abort handler (Ctrl+C, session restart)
+			const onAbort = () => {
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+					this.parkedInputTimeouts.delete(taskId);
+				}
+				this.parkedInputResolvers.delete(taskId);
+				reject(new Error("Input-required aborted"));
+			};
+
 			// Timeout handler
 			const timeoutId = this.inputRequiredTimeoutMs > 0
 				? setTimeout(() => {
+					signal?.removeEventListener("abort", onAbort);
 					this.parkedInputTimeouts.delete(taskId);
 					this.parkedInputResolvers.delete(taskId);
 					reject(new Error(
@@ -243,26 +254,29 @@ export class PiAgentExecutor implements AgentExecutor {
 			// Track the timeout handle so abortAll() can clear it
 			if (timeoutId) this.parkedInputTimeouts.set(taskId, timeoutId);
 
-			// Abort handler (Ctrl+C, session restart)
-			const onAbort = () => {
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					this.parkedInputTimeouts.delete(taskId);
-				}
-				this.parkedInputResolvers.delete(taskId);
-				reject(new Error("Input-required aborted"));
-			};
 			signal?.addEventListener("abort", onAbort, { once: true });
 
-			// Store resolver — execute() will call this when follow-up arrives
-			this.parkedInputResolvers.set(taskId, (text: string) => {
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					this.parkedInputTimeouts.delete(taskId);
-				}
-				signal?.removeEventListener("abort", onAbort);
-				this.parkedInputResolvers.delete(taskId);
-				resolve(text);
+			// Store resolver + reject — execute() calls resolve on follow-up,
+			// cancelTask() calls reject to unblock processInBackground.
+			this.parkedInputResolvers.set(taskId, {
+				resolve: (text: string) => {
+					if (timeoutId) {
+						clearTimeout(timeoutId);
+						this.parkedInputTimeouts.delete(taskId);
+					}
+					signal?.removeEventListener("abort", onAbort);
+					this.parkedInputResolvers.delete(taskId);
+					resolve(text);
+				},
+				reject: (err: Error) => {
+					if (timeoutId) {
+						clearTimeout(timeoutId);
+						this.parkedInputTimeouts.delete(taskId);
+					}
+					signal?.removeEventListener("abort", onAbort);
+					this.parkedInputResolvers.delete(taskId);
+					reject(err);
+				},
 			});
 		});
 	}
@@ -340,7 +354,7 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.log("input_followup_delivered", { taskId, textLength: followUpText.length });
 
 			// Resolve the parked promise — a2a_request_input returns the answer
-			parkedResolver(followUpText);
+			parkedResolver.resolve(followUpText);
 
 			// ACK the caller: publish "working" (resumed) and finish
 			eventBus.publish({
@@ -568,6 +582,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			const parkedTimeout = this.parkedInputTimeouts.get(taskId);
 			if (parkedTimeout) clearTimeout(parkedTimeout);
 			this.parkedInputTimeouts.delete(taskId);
+			const parkedEntry = this.parkedInputResolvers.get(taskId);
+			if (parkedEntry) parkedEntry.reject(new Error("Task canceled"));
+			// reject() already deletes the entry via its cleanup, but ensure it's gone
 			this.parkedInputResolvers.delete(taskId);
 			this.log("executor_cancel", { taskId });
 
@@ -687,6 +704,8 @@ export class PiAgentExecutor implements AgentExecutor {
 			}, loopMetadata);
 			this.taskContexts.delete(taskId);
 			this.inputRoundCounts.delete(taskId);
+			const parkedEntry = this.parkedInputResolvers.get(taskId);
+			if (parkedEntry) parkedEntry.reject(new Error("Task failed"));
 			this.parkedInputResolvers.delete(taskId);
 			const parkedTimeout = this.parkedInputTimeouts.get(taskId);
 			if (parkedTimeout) clearTimeout(parkedTimeout);

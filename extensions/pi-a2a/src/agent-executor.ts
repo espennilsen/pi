@@ -564,6 +564,11 @@ export class PiAgentExecutor implements AgentExecutor {
 			this.activeTaskId = null;
 			this.activeLoopMetadata = null;
 			this.taskContexts.delete(taskId);
+			this.inputRoundCounts.delete(taskId);
+			const parkedTimeout = this.parkedInputTimeouts.get(taskId);
+			if (parkedTimeout) clearTimeout(parkedTimeout);
+			this.parkedInputTimeouts.delete(taskId);
+			this.parkedInputResolvers.delete(taskId);
 			this.log("executor_cancel", { taskId });
 
 			eventBus.publish({

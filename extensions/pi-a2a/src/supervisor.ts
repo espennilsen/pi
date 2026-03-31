@@ -82,7 +82,7 @@ export function extractLoopMetadata(
 			: 0;
 
 	const visitedAgents = Array.isArray(metadata["pi:visitedAgents"])
-		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string").slice(0, MAX_VISITED_AGENTS)
+		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string").slice(-MAX_VISITED_AGENTS)
 		: [];
 
 	const rawBudgets = metadata["pi:budgets"];

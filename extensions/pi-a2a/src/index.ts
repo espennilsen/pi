@@ -604,11 +604,25 @@ export default function (pi: ExtensionAPI) {
 			if (task?.status?.state === "working") {
 				const fallback = executor?.getFallbackStatus(params.id);
 				if (fallback) {
+					const now = new Date().toISOString();
 					task.status = {
 						...task.status,
 						state: fallback.state as "completed" | "failed",
-						timestamp: new Date().toISOString(),
+						timestamp: now,
+						message: {
+							kind: "message",
+							role: "agent",
+							messageId: `fallback-${params.id}`,
+							parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : "Task completed") }],
+						},
 					};
+					// For completed tasks, add the response as an artifact
+					if (fallback.state === "completed" && fallback.response) {
+						task.artifacts = [{
+							artifactId: `fallback-artifact-${params.id}`,
+							parts: [{ kind: "text", text: fallback.response }],
+						}];
+					}
 				}
 			}
 			return task;

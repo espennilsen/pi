@@ -826,9 +826,7 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * Returns undefined if no fallback exists (normal path — DB worked fine).
 	 */
 	getFallbackStatus(taskId: string): { state: "completed" | "failed"; response: string } | undefined {
-		const status = this.fallbackStatuses.get(taskId);
-		if (status) this.fallbackStatuses.delete(taskId);
-		return status;
+		return this.fallbackStatuses.get(taskId);
 	}
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {

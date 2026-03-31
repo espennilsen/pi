@@ -595,6 +595,25 @@ export default function (pi: ExtensionAPI) {
 			pushNotificationSender,
 			undefined,
 		);
+
+		// Wrap getTask to consult in-memory fallback statuses when DB write failed
+		const originalGetTask = requestHandler.getTask.bind(requestHandler);
+		requestHandler.getTask = async (params, context) => {
+			const task = await originalGetTask(params, context);
+			// If the task is still "working" but we have a fallback terminal state, patch it
+			if (task?.status?.state === "working") {
+				const fallback = executor?.getFallbackStatus(params.id);
+				if (fallback) {
+					task.status = {
+						...task.status,
+						state: fallback.state as "completed" | "failed",
+						timestamp: new Date().toISOString(),
+					};
+				}
+			}
+			return task;
+		};
+
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
 		// Start the A2A server

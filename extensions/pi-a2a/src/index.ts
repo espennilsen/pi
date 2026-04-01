@@ -205,6 +205,7 @@ export default function (pi: ExtensionAPI) {
 			]);
 			return answer;
 		} finally {
+			if (nonce) pendingInputResolvers.delete(nonce);
 			if (timeoutHandle) {
 				clearTimeout(timeoutHandle);
 			}

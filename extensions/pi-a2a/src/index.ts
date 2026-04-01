@@ -1511,8 +1511,10 @@ export default function (pi: ExtensionAPI) {
 					const dur = fmtDuration(Date.now() - sendStart);
 					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
 				} finally {
-					outboundPending--;
-					updateStatusLine();
+					if (sessionToken === myToken) {
+						outboundPending--;
+						updateStatusLine();
+					}
 				}
 			})();
 

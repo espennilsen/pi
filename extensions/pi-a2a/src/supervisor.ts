@@ -78,11 +78,11 @@ export function extractLoopMetadata(
 
 	const hopCount =
 		typeof metadata["pi:hopCount"] === "number"
-			? (metadata["pi:hopCount"] as number)
+			? Math.max(0, metadata["pi:hopCount"] as number)
 			: 0;
 
 	const visitedAgents = Array.isArray(metadata["pi:visitedAgents"])
-		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string").slice(0, MAX_VISITED_AGENTS)
+		? (metadata["pi:visitedAgents"] as string[]).filter((v) => typeof v === "string").slice(-MAX_VISITED_AGENTS)
 		: [];
 
 	const rawBudgets = metadata["pi:budgets"];
@@ -132,7 +132,11 @@ export function supervise(
 	incoming: LoopMetadata,
 	config: SupervisorConfig,
 ): SupervisorResult {
-	const maxHops = incoming.budgets?.maxHops ?? config.defaultMaxHops;
+	// Cap incoming budget at the server's own limit — untrusted callers
+	// must not be able to override the configured hop ceiling.
+	const maxHops = incoming.budgets?.maxHops !== undefined
+		? Math.min(incoming.budgets.maxHops, config.defaultMaxHops)
+		: config.defaultMaxHops;
 
 	// ── 1. Cycle detection ──────────────────────────────────────
 	// Check BEFORE incrementing — if we've been visited before, it's a cycle

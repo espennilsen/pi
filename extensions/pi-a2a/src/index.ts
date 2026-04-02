@@ -120,6 +120,8 @@ export default function (pi: ExtensionAPI) {
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
+	/** Active push notification store — shares DB with taskStore. */
+	let pushNotificationStore: SQLitePushNotificationStore | null = null;
 	/** Agent's canonical public URL (set on session_start, used for loop metadata). */
 	let agentPublicUrl: string = "http://localhost:3100";
 	/** Configured max hops (set on session_start, used for seeding outbound metadata). */
@@ -134,11 +136,20 @@ export default function (pi: ExtensionAPI) {
 	// with full tool/skill access — everything visible in the TUI.
 	// On agent_end, we capture the response and send it back to the caller.
 
-	/** Resolve function for the pending A2A request. */
+	/** Resolve/reject functions for the pending A2A request. */
 	let pendingResolve: ((result: ProcessResult) => void) | null = null;
+	let pendingReject: ((error: Error) => void) | null = null;
 	let pendingStartTime = 0;
 	/** Nonce embedded in the injected message to correlate with agent_end. */
 	let pendingNonce: string | null = null;
+
+	/**
+	 * Pending outbound input-required resolvers — keyed by nonce.
+	 * When the outbound polling loop sees "input-required", it injects the
+	 * question into the chat and parks here. agent_end resolves the matching
+	 * nonce with the agent's answer, which is then sent as a follow-up.
+	 */
+	const pendingInputResolvers = new Map<string, { resolve: (text: string) => void; startTime: number }>();
 
 	/** Wait for agent to be idle before injecting an A2A message. */
 	let agentBusy = false;
@@ -149,6 +160,70 @@ export default function (pi: ExtensionAPI) {
 		return new Promise((resolve) => {
 			idleResolvers.push(resolve);
 		});
+	}
+
+	/**
+	 * Get input from the local agent for an outbound input-required follow-up.
+	 * Injects the remote agent's question into the chat, triggers a turn,
+	 * and captures the response via agent_end (correlated by nonce).
+	 */
+	async function getInputFromAgent(agentName: string, question: string): Promise<string> {
+		// Wait for agent to be idle
+		await waitForIdle();
+
+		const INPUT_ANSWER_TIMEOUT_MS = 300_000;
+		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+		let nonce: string | null = null;
+
+		try {
+			const answer = await Promise.race([
+				new Promise<string>((resolve) => {
+					nonce = randomUUID();
+					pendingInputResolvers.set(nonce, { resolve, startTime: Date.now() });
+
+					pi.sendMessage(
+						{
+							customType: "a2a-input-question",
+							content:
+								`❓ **${agentName} needs more information:**\n\n` +
+								`> ${question.split("\n").join("\n> ")}\n\n` +
+								`*Please answer this question. Your response will be sent back to ${agentName}.*`,
+							display: true,
+							details: { nonce },
+						},
+						{ triggerTurn: true },
+					);
+				}),
+				new Promise<string>((_, reject) => {
+					timeoutHandle = setTimeout(() => {
+						if (nonce) {
+							pendingInputResolvers.delete(nonce);
+						}
+						reject(new Error("Local agent failed to answer within 5 minutes"));
+					}, INPUT_ANSWER_TIMEOUT_MS);
+				}),
+			]);
+			return answer;
+		} finally {
+			if (nonce) pendingInputResolvers.delete(nonce);
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+			}
+		}
+	}
+
+	/**
+	 * Abort a pending A2A request due to timeout or cancellation.
+	 * Cleans up pendingResolve/pendingReject state so new tasks can proceed.
+	 */
+	function abortPendingRequest(reason: string): void {
+		if (pendingReject) {
+			const reject = pendingReject;
+			pendingResolve = null;
+			pendingReject = null;
+			pendingNonce = null;
+			reject(new Error(reason));
+		}
 	}
 
 	/**
@@ -173,9 +248,10 @@ export default function (pi: ExtensionAPI) {
 			return { ok: false, response: "", error: "A2A request already in progress — concurrent invocation rejected", durationMs: 0 };
 		}
 
-		return new Promise<ProcessResult>((resolve) => {
+		return new Promise<ProcessResult>((resolve, reject) => {
 			const nonce = randomUUID();
 			pendingResolve = resolve;
+			pendingReject = reject;
 			pendingStartTime = start;
 			pendingNonce = nonce;
 
@@ -240,6 +316,7 @@ export default function (pi: ExtensionAPI) {
 				const durationMs = Date.now() - pendingStartTime;
 				const resolve = pendingResolve;
 				pendingResolve = null;
+				pendingReject = null;
 				pendingNonce = null;
 
 				if (response) {
@@ -260,6 +337,24 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				updateStatusLine();
+			}
+		}
+
+		// Check for outbound input-required responses (a2a-input-question nonce matching)
+		if (pendingInputResolvers.size > 0) {
+			for (const [nonce, pending] of pendingInputResolvers) {
+				const hasMatch = event.messages.some((m) =>
+					"customType" in m &&
+					m.customType === "a2a-input-question" &&
+					(m as { details?: { nonce?: string } }).details?.nonce === nonce
+				);
+
+				if (hasMatch) {
+					const response = extractAssistantText(event.messages);
+					pendingInputResolvers.delete(nonce);
+					pending.resolve(response || "(no response)");
+					break; // Only one match per agent_end
+				}
 			}
 		}
 
@@ -396,6 +491,7 @@ export default function (pi: ExtensionAPI) {
 		sessionToken++;
 		responseLimiter.reset();
 		credentialCache.clear();
+		conversationContexts.clear();
 		agentBusy = false;
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
@@ -404,7 +500,13 @@ export default function (pi: ExtensionAPI) {
 			pendingResolve({ ok: false, response: "", error: "Session restart", durationMs: Date.now() - pendingStartTime });
 		}
 		pendingResolve = null;
+		pendingReject = null;
 		pendingNonce = null;
+		// Resolve any pending outbound input-required questions with empty strings
+		for (const [, pending] of pendingInputResolvers) {
+			pending.resolve("");
+		}
+		pendingInputResolvers.clear();
 		if (pollerInterval) {
 			clearInterval(pollerInterval);
 			pollerInterval = null;
@@ -425,6 +527,7 @@ export default function (pi: ExtensionAPI) {
 			executor.abortAll();
 			executor = null;
 		}
+		pushNotificationStore = null;
 		if (taskStore) {
 			taskStore.close();
 			taskStore = null;
@@ -452,7 +555,10 @@ export default function (pi: ExtensionAPI) {
 		executor = new PiAgentExecutor(log, processMessage, taskStore, {
 			agentId: publicUrl,
 			defaultMaxHops: maxHops,
-		});
+		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds);
+
+		// Set abort callback so executor can clean up pendingResolve on timeout
+		executor.setAbortCallback(abortPendingRequest);
 
 		// When the executor finishes an A2A task, refresh TUI status and
 		// send telemetry so the hub sees "idle" immediately — agent_end
@@ -464,7 +570,7 @@ export default function (pi: ExtensionAPI) {
 				sendTelemetry(config).catch(() => {});
 			}
 		};
-		const pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
+		pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
 		const pushNotificationSender = new DefaultPushNotificationSender(pushNotificationStore);
 
 		// Set up task expiry interval
@@ -475,6 +581,8 @@ export default function (pi: ExtensionAPI) {
 				const pruned = taskStore.pruneOlderThan(taskTtlMs);
 				if (pruned > 0) {
 					log("task_expiry_pruned", { pruned, taskTtlMs });
+					// Clean up orphaned push notification configs for pruned tasks
+					pushNotificationStore?.pruneOrphaned();
 				}
 			}, 300_000); // every 5 minutes
 		}
@@ -488,13 +596,55 @@ export default function (pi: ExtensionAPI) {
 			pushNotificationSender,
 			undefined,
 		);
+
+		// Wrap getTask to consult in-memory fallback statuses when DB write failed
+		const originalGetTask = requestHandler.getTask.bind(requestHandler);
+		requestHandler.getTask = async (params, context) => {
+			const task = await originalGetTask(params, context);
+			// If the task is still "working" but we have a fallback terminal state, patch it
+			if (task?.status?.state === "working") {
+				const fallback = executor?.getFallbackStatus(params.id);
+				if (fallback) {
+					const now = new Date().toISOString();
+					task.status = {
+						...task.status,
+						state: fallback.state as "completed" | "failed",
+						timestamp: now,
+						message: {
+							kind: "message",
+							role: "agent",
+							messageId: `fallback-${params.id}`,
+							parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : "Task completed") }],
+						},
+					};
+					// For completed tasks, add the response as an artifact
+					if (fallback.state === "completed" && fallback.response) {
+						task.artifacts = [{
+							artifactId: `fallback-artifact-${params.id}`,
+							parts: [{ kind: "text", text: fallback.response }],
+						}];
+					}
+				}
+			}
+			return task;
+		};
+
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
 		// Start the A2A server
 		const bind = config.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
 		if (!isLocalhost && !config.apiKey) {
-			ctx.ui.notify("pi-a2a: WARNING — binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.", "warning");
+		// Security: refuse to start when binding to external interfaces without authentication
+		const msg = "Refusing to start A2A server: binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.";
+		ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
+		log("server_start_rejected", { bind, reason: "no_api_key_on_external_interface" }, "ERROR");
+		// Clean up resources allocated before server start
+		if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+		executor = null;
+		pushNotificationStore = null;
+		taskStore.close(); taskStore = null;
+		return;
 		}
 		try {
 			await startServer({ port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
@@ -504,6 +654,7 @@ export default function (pi: ExtensionAPI) {
 			// Clean up resources allocated before server start
 			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 			executor = null;
+			pushNotificationStore = null;
 			taskStore.close(); taskStore = null;
 			ctx.ui.notify(`pi-a2a: Failed to start server — ${msg}`, "warning");
 			return;
@@ -573,8 +724,14 @@ export default function (pi: ExtensionAPI) {
 		if (pendingResolve) {
 			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
 			pendingResolve = null;
+			pendingReject = null;
 			pendingNonce = null;
 		}
+		// Resolve any pending outbound input-required questions
+		for (const [, pending] of pendingInputResolvers) {
+			pending.resolve("");
+		}
+		pendingInputResolvers.clear();
 
 		// Stop poller interval
 		if (pollerInterval) {
@@ -618,6 +775,7 @@ export default function (pi: ExtensionAPI) {
 			executor.abortAll();
 			executor = null;
 		}
+		pushNotificationStore = null;
 		if (taskStore) {
 			taskStore.close();
 			taskStore = null;
@@ -642,8 +800,18 @@ export default function (pi: ExtensionAPI) {
 	/**
 	 * Build a self-contained prompt for a fresh pi subprocess from an
 	 * answered clarification. Includes full handoff context + owner response.
+	 *
+	 * Truncates response and handoff items to prevent OS spawn E2BIG/EINVAL errors.
 	 */
 	function buildClarificationPrompt(c: AnsweredClarification): string {
+		const MAX_RESPONSE_LENGTH = 50_000; // ~50KB per field
+		const MAX_HANDOFF_ITEM_LENGTH = 10_000; // ~10KB per handoff item
+
+		const truncate = (text: string, maxLen: number): string => {
+			if (text.length <= maxLen) return text;
+			return text.slice(0, maxLen) + `\n\n[... truncated ${text.length - maxLen} characters]`;
+		};
+
 		const lines: string[] = [];
 
 		lines.push("# Owner Response — Resume Work\n");
@@ -654,7 +822,7 @@ export default function (pi: ExtensionAPI) {
 		lines.push("## Question Asked");
 		lines.push(`> ${c.question}\n`);
 		lines.push("## Owner's Response");
-		lines.push(c.response);
+		lines.push(truncate(c.response, MAX_RESPONSE_LENGTH));
 		lines.push("");
 
 		// Handoff context
@@ -671,25 +839,25 @@ export default function (pi: ExtensionAPI) {
 
 			if (Array.isArray(h.done) && h.done.length > 0) {
 				lines.push("## What's Been Done");
-				for (const item of h.done) lines.push(`- ${item}`);
+				for (const item of h.done) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.remaining) && h.remaining.length > 0) {
 				lines.push("## What's Left");
-				for (const item of h.remaining) lines.push(`- ${item}`);
+				for (const item of h.remaining) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.decisions) && h.decisions.length > 0) {
 				lines.push("## Key Decisions");
-				for (const item of h.decisions) lines.push(`- ${item}`);
+				for (const item of h.decisions) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
 			if (Array.isArray(h.uncertain) && h.uncertain.length > 0) {
 				lines.push("## Open Questions");
-				for (const item of h.uncertain) lines.push(`- ${item}`);
+				for (const item of h.uncertain) lines.push(`- ${truncate(item, MAX_HANDOFF_ITEM_LENGTH)}`);
 				lines.push("");
 			}
 
@@ -700,7 +868,7 @@ export default function (pi: ExtensionAPI) {
 				lines.push("## Additional Context");
 				for (const key of extraKeys) {
 					const val = typeof h[key] === "string" ? h[key] : JSON.stringify(h[key]);
-					lines.push(`- **${key}:** ${val}`);
+					lines.push(`- **${key}:** ${truncate(val, MAX_HANDOFF_ITEM_LENGTH)}`);
 				}
 				lines.push("");
 			}
@@ -911,6 +1079,18 @@ export default function (pi: ExtensionAPI) {
 	/** In-memory cache of discovered agents from the hub. */
 	let discoveredAgents: RemoteAgentSummary[] = [];
 
+	/**
+	 * Conversation context per remote agent — keyed by normalized agent URL.
+	 * Tracks the last contextId and taskId so follow-up messages to the
+	 * same agent automatically continue the conversation.
+	 */
+	const conversationContexts = new Map<string, { contextId: string; taskId?: string }>();
+
+	/** Normalize an agent URL for use as conversation context key. */
+	function normalizeAgentUrl(url: string): string {
+		return url.replace(/\/+$/, "").toLowerCase();
+	}
+
 	/** Credential cache: agentId → { credential, fetchedAt }. TTL = 1 hour. */
 	const CREDENTIAL_TTL_MS = 60 * 60 * 1000; // 1 hour
 	const credentialCache = new Map<string, { credential: string | null; fetchedAt: number }>();
@@ -1037,12 +1217,23 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Send a message to a remote A2A agent. " +
 			"Specify the agent by name (from a2a_discover results) or by agentId/URL. " +
-			"The hub provides the agent's URL and credential automatically.",
+			"The hub provides the agent's URL and credential automatically. " +
+			"Follow-up messages to the same agent automatically continue the previous conversation " +
+			"(contextId/taskId are tracked per agent). Use newConversation to start fresh.",
 		parameters: Type.Object({
 			agent: Type.String({
 				description: "Agent name, agent ID (UUID), or direct URL. Names are matched against discovered agents.",
 			}),
 			message: Type.String({ description: "Message to send to the remote agent" }),
+			contextId: Type.Optional(Type.String({
+				description: "Context ID to group related messages. Auto-filled from previous conversation with the same agent if omitted.",
+			})),
+			taskId: Type.Optional(Type.String({
+				description: "Task ID to continue an existing task. Auto-filled from previous conversation with the same agent if omitted.",
+			})),
+			newConversation: Type.Optional(Type.Boolean({
+				description: "Start a new conversation — ignore any stored contextId/taskId for this agent. Defaults to false.",
+			})),
 		}),
 		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
@@ -1125,6 +1316,28 @@ export default function (pi: ExtensionAPI) {
 			outboundPending++;
 			updateStatusLine();
 
+			// ── Resolve conversation context (contextId / taskId) ───
+			// Auto-fill from previous conversation unless starting fresh.
+			const agentKey = normalizeAgentUrl(agentUrl);
+			let resolvedContextId = params.contextId;
+			let resolvedTaskId = params.taskId;
+
+			if (!params.newConversation && !resolvedContextId && !resolvedTaskId) {
+				const prev = conversationContexts.get(agentKey);
+				if (prev) {
+					resolvedContextId = prev.contextId;
+					resolvedTaskId = prev.taskId;
+					log("conversation_context_reused", { agent: agentName, contextId: prev.contextId, taskId: prev.taskId });
+				}
+			}
+			// Generate a fresh contextId for new conversations (or first contact)
+			if (!resolvedContextId) {
+				resolvedContextId = randomUUID();
+			}
+			if (params.newConversation) {
+				resolvedTaskId = undefined;
+			}
+
 			// Resolve loop metadata: propagate from active inbound task, or seed fresh
 			const activeLoop = executor?.getActiveLoopMetadata() ?? null;
 			const outboundLoop = activeLoop
@@ -1139,6 +1352,8 @@ export default function (pi: ExtensionAPI) {
 				timeoutMs: config.sendTimeoutMs,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
 				loopMetadata: outboundLoop,
+				contextId: resolvedContextId,
+				taskId: resolvedTaskId,
 				// SDK auth handler retries on 401 — provide a callback to refresh the credential
 				onRefreshCredential: (!resolvedFromStatic && resolvedAgentId && hubConfig)
 					? async () => {
@@ -1150,117 +1365,232 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			(async () => {
-				const result = await sendA2AMessage(sendOpts, log);
+				try {
+					const result = await sendA2AMessage(sendOpts, log);
 
-				// Bail out if session restarted while we were waiting
-				if (sessionToken !== myToken) { outboundPending--; return; }
+					// Bail out if session restarted while we were waiting
+					if (sessionToken !== myToken) return;
 
-				// ── Immediate completion (remote responded inline) ──────
-				if (result.ok && !result.working && result.response) {
-					outboundPending--;
-					updateStatusLine();
-					const dur = fmtDuration(Date.now() - sendStart);
-					if (!responseLimiter.tryAcquire()) {
-						log("rate_limit_response", { agent: resolvedName }, "WARN");
-						pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed (too many responses in 60s)`, display: true }, { triggerTurn: false });
+					// Store conversation context for follow-up messages
+					if (result.ok) {
+						conversationContexts.set(agentKey, {
+							contextId: result.contextId ?? resolvedContextId!,
+							taskId: result.taskId,
+						});
+					}
+
+					// ── Immediate completion (remote responded inline) ──────
+					if (result.ok && !result.working && result.response) {
+						const dur = fmtDuration(Date.now() - sendStart);
+						if (!responseLimiter.tryAcquire()) {
+							log("rate_limit_response", { agent: resolvedName }, "WARN");
+							pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed (too many responses in 60s)`, display: true }, { triggerTurn: false });
+							return;
+						}
+						pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: true });
 						return;
 					}
-					pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: true });
-					return;
-				}
 
-				// ── Send error ──────────────────────────────────────────
-				if (!result.ok) {
-					outboundPending--;
-					updateStatusLine();
-					const dur = fmtDuration(Date.now() - sendStart);
-					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: true });
-					return;
-				}
+					// ── Send error ──────────────────────────────────────────
+					if (!result.ok) {
+						const dur = fmtDuration(Date.now() - sendStart);
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: true });
+						return;
+					}
 
-				// ── Working — poll for completion ───────────────────────
-				const taskId = result.taskId;
-				if (!taskId) {
-					outboundPending--;
-					updateStatusLine();
-					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: true });
-					return;
-				}
+					// ── Working — poll for completion ───────────────────────
+					const taskId = result.taskId;
+					if (!taskId) {
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: true });
+						return;
+					}
 
-				log("a2a_poll_start", { agent: resolvedName, taskId });
-				const POLL_INTERVAL_MS = 5_000;
-				const maxPollMs = config.sendTimeoutMs ?? 600_000; // 10 min default
-				const pollDeadline = Date.now() + maxPollMs;
-				const pollOpts = {
-					url: resolvedUrl,
-					taskId,
-					credential,
-					onRefreshCredential: sendOpts.onRefreshCredential,
-				};
+					log("a2a_poll_start", { agent: resolvedName, taskId });
+					const POLL_INTERVAL_MS = 5_000;
+					const maxPollMs = config.sendTimeoutMs ?? 600_000; // 10 min default
+					const pollDeadline = Date.now() + maxPollMs;
+					const pollOpts = {
+						url: resolvedUrl,
+						taskId,
+						credential,
+						onRefreshCredential: sendOpts.onRefreshCredential,
+					};
+					const maxOutboundInputRounds = config.maxInputRounds ?? 5;
+					let outboundInputRounds = 0;
 
-				while (Date.now() < pollDeadline) {
-					if (sessionToken !== myToken) { outboundPending--; return; }
-					await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-					if (sessionToken !== myToken) { outboundPending--; return; }
+					while (Date.now() < pollDeadline) {
+						if (sessionToken !== myToken) return;
+						await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+						if (sessionToken !== myToken) return;
 
-					try {
-						const poll = await getRemoteTask(pollOpts, log);
+						try {
+							const poll = await getRemoteTask(pollOpts, log);
 
-						if (poll.state === "completed") {
-							outboundPending--;
-							updateStatusLine();
-							const dur = fmtDuration(Date.now() - sendStart);
-							if (!responseLimiter.tryAcquire()) {
-								log("rate_limit_response", { agent: resolvedName, taskId }, "WARN");
-								pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed`, display: true }, { triggerTurn: false });
+							if (poll.state === "completed") {
+								const dur = fmtDuration(Date.now() - sendStart);
+								if (!responseLimiter.tryAcquire()) {
+									log("rate_limit_response", { agent: resolvedName, taskId }, "WARN");
+									pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed`, display: true }, { triggerTurn: false });
+									return;
+								}
+								pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: true });
 								return;
 							}
-							pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: true });
-							return;
-						}
 
-						if (poll.state === "failed") {
-							outboundPending--;
-							updateStatusLine();
-							const dur = fmtDuration(Date.now() - sendStart);
-							pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: true });
-							return;
-						}
+							if (poll.state === "failed") {
+								const dur = fmtDuration(Date.now() - sendStart);
+								pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: true });
+								return;
+							}
 
-						if (poll.state === "canceled") {
-							outboundPending--;
-							updateStatusLine();
-							const dur = fmtDuration(Date.now() - sendStart);
-							pi.sendMessage({ customType: "a2a-response-error", content: `🚫 **${resolvedName}** cancelled the task (${dur})`, display: true }, { triggerTurn: false });
-							return;
-						}
+							if (poll.state === "canceled") {
+								const dur = fmtDuration(Date.now() - sendStart);
+								pi.sendMessage({ customType: "a2a-response-error", content: `🚫 **${resolvedName}** cancelled the task (${dur})`, display: true }, { triggerTurn: false });
+								return;
+							}
 
-						// Still working/submitted — continue polling
-					} catch (pollErr) {
-						const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-						log("a2a_poll_network_error", { agent: resolvedName, taskId, error: msg }, "WARN");
-						// Continue polling — transient network errors are expected
+							if (poll.state === "input-required") {
+								// Remote agent needs more information — ask the local agent
+								outboundInputRounds++;
+								if (outboundInputRounds > maxOutboundInputRounds) {
+									const dur = fmtDuration(Date.now() - sendStart);
+									log("a2a_poll_input_round_limit", { agent: resolvedName, taskId, rounds: outboundInputRounds, max: maxOutboundInputRounds }, "WARN");
+									pi.sendMessage({ customType: "a2a-response-error", content: `⚠️ **${resolvedName}** asked for input too many times (${outboundInputRounds}/${maxOutboundInputRounds} rounds). Stopping. (${dur})`, display: true }, { triggerTurn: false });
+									return;
+								}
+
+								const question = poll.response ?? "(agent needs more information)";
+								log("a2a_poll_input_required", { agent: resolvedName, taskId, questionLength: question.length, round: outboundInputRounds });
+
+								try {
+									// Get the local agent's answer (injects question, captures response)
+									const answer = await getInputFromAgent(resolvedName, question);
+
+									if (sessionToken !== myToken) return;
+
+									log("a2a_poll_input_followup", { agent: resolvedName, taskId, answerLength: answer.length });
+
+									// Send the follow-up with the same taskId
+									const followUpResult = await sendA2AMessage({
+										...sendOpts,
+										message: answer,
+										taskId,
+									}, log);
+
+									if (!followUpResult.ok) {
+										const dur = fmtDuration(Date.now() - sendStart);
+										pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A follow-up to ${resolvedName} failed** (${dur}): ${followUpResult.error}`, display: true }, { triggerTurn: true });
+										return;
+									}
+									// Follow-up sent — continue polling for completion
+								} catch (inputErr) {
+									const msg = inputErr instanceof Error ? inputErr.message : String(inputErr);
+									log("a2a_poll_input_error", { agent: resolvedName, taskId, error: msg }, "ERROR");
+									const dur = fmtDuration(Date.now() - sendStart);
+									pi.sendMessage({ customType: "a2a-response-error", content: `❌ **Failed to answer ${resolvedName}'s question** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+									return;
+								}
+								continue;
+							}
+
+							// Still working/submitted — continue polling
+						} catch (pollErr) {
+							const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+							log("a2a_poll_network_error", { agent: resolvedName, taskId, error: msg }, "WARN");
+							// Continue polling — transient network errors are expected
+						}
+					}
+
+					// Poll timeout
+					const dur = fmtDuration(Date.now() - sendStart);
+					pi.sendMessage({ customType: "a2a-response-error", content: `⏰ **${resolvedName}** did not complete within ${fmtDuration(maxPollMs)} (${dur}). Task ID: ${taskId}`, display: true }, { triggerTurn: false });
+				} catch (err: unknown) {
+					// Bail out if session restarted while we were waiting
+					if (sessionToken !== myToken) return;
+
+					const msg = err instanceof Error ? err.message : String(err);
+					const dur = fmtDuration(Date.now() - sendStart);
+					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+				} finally {
+					if (sessionToken === myToken) {
+						outboundPending--;
+						updateStatusLine();
 					}
 				}
+			})();
 
-				// Poll timeout
-				outboundPending--;
-				updateStatusLine();
-				const dur = fmtDuration(Date.now() - sendStart);
-				pi.sendMessage({ customType: "a2a-response-error", content: `⏰ **${resolvedName}** did not complete within ${fmtDuration(maxPollMs)} (${dur}). Task ID: ${taskId}`, display: true }, { triggerTurn: false });
-			})().catch((err: unknown) => {
-				// Bail out if session restarted while we were waiting
-				if (sessionToken !== myToken) { outboundPending--; return; }
+			const contextNote = resolvedTaskId
+				? ` (continuing task ${resolvedTaskId.slice(0, 8)}…)`
+				: params.newConversation ? " (new conversation)" : "";
+			return txt(`📤 Message sent to **${agentName}**${contextNote} — waiting for response in the background. You'll see it when it arrives.`);
+		},
+	});
 
-				outboundPending--;
-				updateStatusLine();
+	// ── Request Input (Multi-turn input-required) ───────────
 
+	pi.registerTool({
+		name: "a2a_request_input",
+		label: "A2A Request Input",
+		description:
+			"Ask the remote A2A caller for more information during task processing. " +
+			"This pauses the current task, sends a question back to the caller via " +
+			"the input-required protocol state, and resumes when they respond. " +
+			"Only works during inbound A2A task processing — not for user-initiated turns.",
+		parameters: Type.Object({
+			question: Type.String({ description: "The question to ask the caller" }),
+			context: Type.Optional(Type.String({ description: "Additional context to help the caller understand what's needed" })),
+		}),
+		async execute(_toolCallId, params, signal) {
+			if (!executor) {
+				return txt("Error: A2A server not running.");
+			}
+
+			const activeTaskId = executor.getActiveTaskId();
+			if (!activeTaskId) {
+				return txt(
+					"Error: Not processing an A2A task. " +
+					"a2a_request_input can only be used during inbound A2A task processing.",
+				);
+			}
+
+			const fullQuestion = params.context
+				? `${params.question}\n\nContext: ${params.context}`
+				: params.question;
+
+			log("a2a_request_input_called", { taskId: activeTaskId, questionLength: fullQuestion.length });
+
+			// Show in TUI that we're waiting for input
+			pi.sendMessage(
+				{
+					customType: "a2a-input-required",
+					content: `⏸️ **A2A task paused** — asking caller for more information:\n\n> ${fullQuestion.split("\n").join("\n> ")}`,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+			updateStatusLine();
+
+			try {
+				const answer = await executor.parkForInput(activeTaskId, fullQuestion, signal);
+
+				log("a2a_request_input_answered", { taskId: activeTaskId, answerLength: answer.length });
+
+				// Show in TUI that we received the answer
+				pi.sendMessage(
+					{
+						customType: "a2a-input-received",
+						content: `▶️ **A2A task resumed** — caller responded:\n\n> ${answer.split("\n").join("\n> ")}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
+				return txt(answer);
+			} catch (err: unknown) {
 				const msg = err instanceof Error ? err.message : String(err);
-				const dur = fmtDuration(Date.now() - sendStart);
-				pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
-			});
-
-			return txt(`📤 Message sent to **${agentName}** — waiting for response in the background. You'll see it when it arrives.`);
+				log("a2a_request_input_error", { taskId: activeTaskId, error: msg }, "ERROR");
+				return txt(`Error waiting for input: ${msg}`);
+			}
 		},
 	});
 

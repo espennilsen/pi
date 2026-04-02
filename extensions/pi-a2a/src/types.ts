@@ -35,11 +35,27 @@ export interface A2AConfig {
 	/** Default maximum hop count for loop control. Defaults to 10.
 	 *  Messages exceeding this many agent-to-agent hops are rejected. */
 	maxHops?: number;
+	/** URL to an icon for the agent (displayed in hub UIs and agent discovery). */
+	iconUrl?: string;
+	/** URL to the agent's documentation page. */
+	documentationUrl?: string;
 	/** Manually configured remote agents (no hub required). */
 	staticAgents?: StaticAgentConfig[];
 	/** Task time-to-live in milliseconds. Tasks older than this are pruned periodically.
 	 *  Defaults to 86400000 (24 hours). Set to 0 to disable expiry. */
 	taskTtlMs?: number;
+	/** Timeout in milliseconds for processing a single inbound A2A task.
+	 *  If the main agent doesn't respond within this time, the task is marked failed
+	 *  and the queue is unblocked. Defaults to 600000 (10 minutes). Set to 0 to disable. */
+	taskTimeoutMs?: number;
+	/** Timeout in milliseconds for waiting for follow-up input when a task is in
+	 *  input-required state. If the caller doesn't respond within this time, the
+	 *  a2a_request_input tool returns an error and the task fails.
+	 *  Defaults to 600000 (10 minutes). */
+	inputRequiredTimeoutMs?: number;
+	/** Maximum number of input-required rounds allowed per task.
+	 *  Prevents infinite input loops. Defaults to 5. */
+	maxInputRounds?: number;
 	/** Clarification response poller settings.
 	 *  When enabled, periodically checks the hub for answered owner clarifications
 	 *  and spawns a fresh pi subprocess to handle each response. */

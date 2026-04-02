@@ -92,6 +92,13 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		],
 	};
 
+	if (config.iconUrl) {
+		card.iconUrl = config.iconUrl;
+	}
+	if (config.documentationUrl) {
+		card.documentationUrl = config.documentationUrl;
+	}
+
 	if (config.apiKey) {
 		card.securitySchemes = {
 			bearerAuth: {

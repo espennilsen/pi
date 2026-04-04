@@ -59,16 +59,15 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let body = "";
-		let oversized = false;
 		req.on("data", (chunk: Buffer) => {
 			body += chunk.toString();
-			if (body.length > maxBytes) { oversized = true; req.destroy(); }
+			if (body.length > maxBytes) {
+				reject(new Error("Body too large"));
+				req.destroy();
+			}
 		});
-		req.on("end", () => {
-			if (oversized) reject(new Error("Body too large"));
-			else resolve(body);
-		});
-		req.on("error", reject);
+		req.on("end", () => { resolve(body); });
+		req.on("error", (err) => { reject(err); });
 	});
 }
 

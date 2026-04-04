@@ -11,6 +11,45 @@
  */
 
 import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
+
+export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
+export type TaskPriority = "low" | "normal" | "high" | "critical";
+
+export interface HubTask {
+	id: string;
+	title: string;
+	description: string | null;
+	project: string;
+	repo: string | null;
+	state: PipelineState;
+	priority: TaskPriority;
+	assignedAgentId: string | null;
+	createdBy: string;
+	externalTaskId: string | null;
+	branch: string | null;
+	prUrl: string | null;
+	prNumber: number | null;
+	blockedReason: string | null;
+	reviewRound: number;
+	maxReviewRounds: number;
+	metadata: Record<string, unknown>;
+	createdAt: string;
+	updatedAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+}
+
+export interface HubTaskTransition {
+	id: string;
+	taskId: string;
+	fromState: PipelineState | null;
+	toState: PipelineState;
+	actorAgentId: string | null;
+	actorUserId: string | null;
+	note: string | null;
+	metadata: Record<string, unknown>;
+	createdAt: string;
+}
 import type { LogFn } from "./logger.ts";
 
 interface HubRpcResponse {
@@ -481,4 +520,163 @@ export async function reportTelemetryToHub(
 		return { telemetryUpdatedAt: result.telemetryUpdatedAt as string };
 	}
 	return null;
+}
+
+// ── Pipeline Tasks ───────────────────────────────────────────
+
+function asTask(r: Record<string, unknown>): HubTask {
+	return r as unknown as HubTask;
+}
+
+function asTaskList(r: Record<string, unknown>): { tasks: HubTask[]; total: number; page: number; limit: number } {
+	return {
+		tasks: (r.tasks as unknown[]).map((t) => t as HubTask),
+		total: r.total as number,
+		page: r.page as number,
+		limit: r.limit as number,
+	};
+}
+
+export async function createHubTask(
+	params: {
+		title: string;
+		project: string;
+		description?: string;
+		repo?: string;
+		priority?: TaskPriority;
+		assignedAgentId?: string;
+		metadata?: Record<string, unknown>;
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubTask | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.create", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_create");
+	return result ? asTask(result) : null;
+}
+
+export async function getHubTask(
+	taskId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubTask | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.get", { taskId }, hubConfig.apiKey, log, "tasks_get");
+	return result ? asTask(result) : null;
+}
+
+export async function listHubTasks(
+	params: {
+		project?: string;
+		state?: PipelineState;
+		assignedAgentId?: string;
+		priority?: TaskPriority;
+		page?: number;
+		limit?: number;
+		includeTerminal?: boolean;
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ tasks: HubTask[]; total: number; page: number; limit: number } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.list", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_list");
+	return result ? asTaskList(result) : null;
+}
+
+export async function updateHubTask(
+	params: {
+		taskId: string;
+		title?: string;
+		description?: string;
+		priority?: TaskPriority;
+		assignedAgentId?: string | null;
+		metadata?: Record<string, unknown>;
+		externalTaskId?: string;
+		branch?: string;
+		prUrl?: string;
+		prNumber?: number;
+		blockedReason?: string;
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubTask | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.update", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_update");
+	return result ? asTask(result) : null;
+}
+
+export async function transitionHubTask(
+	params: {
+		taskId: string;
+		toState: PipelineState;
+		note?: string;
+		metadata?: Record<string, unknown>;
+		actorAgentId?: string;
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubTask | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.transition", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_transition");
+	return result ? asTask(result) : null;
+}
+
+export async function deleteHubTask(
+	taskId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ deleted: boolean; taskId: string } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.delete", { taskId }, hubConfig.apiKey, log, "tasks_delete");
+	return result ? { deleted: result.deleted as boolean, taskId: result.taskId as string } : null;
+}
+
+export async function getHubTaskHistory(
+	taskId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+	limit = 50,
+): Promise<{ taskId: string; transitions: HubTaskTransition[] } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.history", { taskId, limit }, hubConfig.apiKey, log, "tasks_history");
+	if (!result) return null;
+	return {
+		taskId: result.taskId as string,
+		transitions: (result.transitions as unknown[]).map((t) => t as HubTaskTransition),
+	};
+}
+
+export async function getHubTaskBoard(
+	params: { project?: string; assignedAgentId?: string },
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ board: Record<PipelineState, HubTask[]>; total: number; projects: string[] } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.board", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_board");
+	if (!result) return null;
+	return {
+		board: result.board as Record<PipelineState, HubTask[]>,
+		total: result.total as number,
+		projects: result.projects as string[],
+	};
+}
+
+export async function reportHubTaskStatus(
+	params: {
+		hubTaskId: string;
+		toState: PipelineState;
+		note?: string;
+		externalTaskId?: string;
+		branch?: string;
+		prUrl?: string;
+		prNumber?: number;
+		blockedReason?: string;
+		metadata?: Record<string, unknown>;
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubTask | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_report_status");
+	return result ? asTask(result) : null;
 }

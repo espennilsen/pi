@@ -933,9 +933,10 @@ async function sendPrompt() {
     }
   } catch (e) {
     addEvent('error', 'Failed to send: ' + esc(e.message));
+  } finally {
+    promptBusy = false;
+    updatePromptState();
   }
-  promptBusy = false;
-  updatePromptState();
 }
 
 promptSend.addEventListener('click', sendPrompt);

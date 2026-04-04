@@ -530,7 +530,7 @@ function asTask(r: Record<string, unknown>): HubTask {
 
 function asTaskList(r: Record<string, unknown>): { tasks: HubTask[]; total: number; page: number; limit: number } {
 	return {
-		tasks: (r.tasks as unknown[]).map((t) => t as HubTask),
+		tasks: ((r.tasks as unknown[]) ?? []).map((t) => t as HubTask),
 		total: r.total as number,
 		page: r.page as number,
 		limit: r.limit as number,
@@ -642,7 +642,7 @@ export async function getHubTaskHistory(
 	if (!result) return null;
 	return {
 		taskId: result.taskId as string,
-		transitions: (result.transitions as unknown[]).map((t) => t as HubTaskTransition),
+		transitions: ((result.transitions as unknown[]) ?? []).map((t) => t as HubTaskTransition),
 	};
 }
 
@@ -657,7 +657,7 @@ export async function getHubTaskBoard(
 	return {
 		board: result.board as Record<PipelineState, HubTask[]>,
 		total: result.total as number,
-		projects: result.projects as string[],
+		projects: (result.projects as string[]) ?? [],
 	};
 }
 

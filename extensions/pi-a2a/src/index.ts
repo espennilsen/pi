@@ -2036,7 +2036,7 @@ export default function (pi: ExtensionAPI) {
 						description: params.description,
 						repo: params.repo,
 						priority: params.priority as TaskPriority | undefined,
-						assignedAgentId: params.assignedAgentId,
+						assignedAgentId: params.assignedAgentId === "" ? undefined : params.assignedAgentId,
 					}, hubConfig, log);
 					if (!task) return txt("❌ Failed to create task.");
 					return txt(`✅ Created\n**ID:** ${task.id}\n**Title:** ${task.title}\n**Project:** ${task.project} | **State:** ${task.state} | **Priority:** ${task.priority}`);

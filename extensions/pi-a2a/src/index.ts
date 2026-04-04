@@ -1998,7 +1998,7 @@ export default function (pi: ExtensionAPI) {
 						lines.push(`- **${t.id.slice(0, 8)}…** \`${t.state}\` [${t.priority}] ${t.title}${ext}${agent}`);
 						lines.push(`  id: ${t.id} | project: ${t.project}`);
 					}
-					if (result.total > result.page * result.limit) {
+					if (result.limit > 0 && result.total > result.page * result.limit) {
 						lines.push(`\n_${result.total - result.page * result.limit} more — use page param to paginate_`);
 					}
 					return txt(lines.join("\n"));

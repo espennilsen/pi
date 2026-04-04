@@ -929,10 +929,10 @@ async function sendPrompt() {
       autoGrowTextarea();
     } else {
       const err = await res.json().catch(() => ({}));
-      addEvent('error', 'Prompt error: ' + (err.error || res.statusText));
+      addEvent('error', 'Prompt error: ' + esc(err.error || res.statusText));
     }
   } catch (e) {
-    addEvent('error', 'Failed to send: ' + e.message);
+    addEvent('error', 'Failed to send: ' + esc(e.message));
   }
   promptBusy = false;
   updatePromptState();
@@ -949,7 +949,7 @@ promptStop.addEventListener('click', async () => {
   try {
     await fetch('/api/dashboard/stop', { method: 'POST' });
   } catch (e) {
-    addEvent('error', 'Stop failed: ' + e.message);
+    addEvent('error', 'Stop failed: ' + esc(e.message));
   }
 });
 

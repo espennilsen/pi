@@ -4,6 +4,7 @@
  * Page:  /dashboard              — Dashboard HTML
  * API:   /api/dashboard/events   — SSE stream
  * API:   /api/dashboard/prompt   — POST prompt
+ * API:   /api/dashboard/stop     — POST abort the running agent
  * API:   /api/dashboard/config   — GET status
  */
 
@@ -74,6 +75,13 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
 // ── Saved reference to pi for prompt submission ─────────────────
 
 let _pi: ExtensionAPI | null = null;
+
+/** Abort callback set while the agent is running; cleared on agent_end. */
+let _abortFn: (() => void) | null = null;
+
+export function setAbortFn(fn: (() => void) | null): void {
+	_abortFn = fn;
+}
 
 // ── Page handler ────────────────────────────────────────────────
 
@@ -156,6 +164,22 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 			} else {
 				json(res, 400, { error: "Invalid JSON" });
 			}
+		}
+		return;
+	}
+
+	// POST /api/dashboard/stop
+	if (method === "POST" && p === "/stop") {
+		if (!_abortFn) {
+			json(res, 409, { error: "Agent is not running" });
+			return;
+		}
+		try {
+			_abortFn();
+			json(res, 202, { status: "stopping" });
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			json(res, 500, { error: `Abort failed: ${msg}` });
 		}
 		return;
 	}

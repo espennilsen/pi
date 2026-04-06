@@ -1393,6 +1393,14 @@ export default function (pi: ExtensionAPI) {
 					: undefined,
 			};
 
+			// Was this a2a_send initiated during an active inbound task processing?
+			// If so, suppress triggerTurn on response delivery to prevent the agent
+			// from initiating a new forward hop back to the original caller.
+			// The inbound task result is already stored in the TaskStore by the time
+			// this async IIFE completes — triggering a new turn would cause the agent
+			// to re-invoke the sender, which trips the loop-guard cycle detector.
+			const wasSubcall = executor?.getActiveTaskId() !== null;
+
 			(async () => {
 				try {
 					let result = await sendA2AMessage(sendOpts, log);
@@ -1431,21 +1439,21 @@ export default function (pi: ExtensionAPI) {
 							pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed (too many responses in 60s)`, display: true }, { triggerTurn: false });
 							return;
 						}
-						pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
 					// ── Send error ──────────────────────────────────────────
 					if (!result.ok) {
 						const dur = fmtDuration(Date.now() - sendStart);
-						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
 					// ── Working — poll for completion ───────────────────────
 					const taskId = result.taskId;
 					if (!taskId) {
-						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
@@ -1477,13 +1485,13 @@ export default function (pi: ExtensionAPI) {
 									pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed`, display: true }, { triggerTurn: false });
 									return;
 								}
-								pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: true });
+								pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: !wasSubcall });
 								return;
 							}
 
 							if (poll.state === "failed") {
 								const dur = fmtDuration(Date.now() - sendStart);
-								pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: true });
+								pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: !wasSubcall });
 								return;
 							}
 
@@ -1523,7 +1531,7 @@ export default function (pi: ExtensionAPI) {
 
 									if (!followUpResult.ok) {
 										const dur = fmtDuration(Date.now() - sendStart);
-										pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A follow-up to ${resolvedName} failed** (${dur}): ${followUpResult.error}`, display: true }, { triggerTurn: true });
+										pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A follow-up to ${resolvedName} failed** (${dur}): ${followUpResult.error}`, display: true }, { triggerTurn: !wasSubcall });
 										return;
 									}
 									// Follow-up sent — continue polling for completion
@@ -1531,7 +1539,7 @@ export default function (pi: ExtensionAPI) {
 									const msg = inputErr instanceof Error ? inputErr.message : String(inputErr);
 									log("a2a_poll_input_error", { agent: resolvedName, taskId, error: msg }, "ERROR");
 									const dur = fmtDuration(Date.now() - sendStart);
-									pi.sendMessage({ customType: "a2a-response-error", content: `❌ **Failed to answer ${resolvedName}'s question** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+									pi.sendMessage({ customType: "a2a-response-error", content: `❌ **Failed to answer ${resolvedName}'s question** (${dur}): ${msg}`, display: true }, { triggerTurn: !wasSubcall });
 									return;
 								}
 								continue;
@@ -1554,7 +1562,7 @@ export default function (pi: ExtensionAPI) {
 
 					const msg = err instanceof Error ? err.message : String(err);
 					const dur = fmtDuration(Date.now() - sendStart);
-					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: !wasSubcall });
 				} finally {
 					if (sessionToken === myToken) {
 						outboundPending--;

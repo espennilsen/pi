@@ -1366,10 +1366,25 @@ export default function (pi: ExtensionAPI) {
 
 			(async () => {
 				try {
-					const result = await sendA2AMessage(sendOpts, log);
+					let result = await sendA2AMessage(sendOpts, log);
 
 					// Bail out if session restarted while we were waiting
 					if (sessionToken !== myToken) return;
+
+					// ── Auto-retry on terminal task error ──────────────────
+					// When the remote task is already completed/failed/cancelled,
+					// the hub rejects follow-up messages with JSON-RPC -32600
+					// ("Task ... is in a terminal state and cannot be modified").
+					// Recover automatically by starting a fresh task (same contextId,
+					// no stale taskId) so the user doesn't need newConversation=true.
+					if (!result.ok && result.error && /terminal state/i.test(result.error) && resolvedTaskId) {
+						log("a2a_terminal_task_retry", { agent: agentName, oldTaskId: resolvedTaskId });
+						// Clear the stale taskId from the context store immediately
+						conversationContexts.set(agentKey, { contextId: resolvedContextId! });
+						// Retry as a new task (keep contextId for conversation continuity)
+						result = await sendA2AMessage({ ...sendOpts, taskId: undefined }, log);
+						if (sessionToken !== myToken) return;
+					}
 
 					// Store conversation context for follow-up messages
 					if (result.ok) {

@@ -162,6 +162,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 		} catch (err: any) {
 			if (err.message === "Body too large") {
 				json(res, 413, { error: "Request body too large (max 1MB)" });
+			} else if (err.message === "Request timeout") {
+				json(res, 408, { error: "Request timed out" });
 			} else {
 				json(res, 400, { error: "Invalid JSON" });
 			}

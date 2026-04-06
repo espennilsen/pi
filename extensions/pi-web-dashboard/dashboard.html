@@ -923,6 +923,7 @@ async function sendPrompt() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: text }),
+      signal: AbortSignal.timeout(15_000),
     });
     if (res.ok) {
       promptInput.value = '';

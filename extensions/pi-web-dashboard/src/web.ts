@@ -59,6 +59,7 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let body = "";
+		req.setTimeout(10_000, () => { reject(new Error("Request timeout")); req.destroy(); });
 		req.on("data", (chunk: Buffer) => {
 			if (body.length + chunk.length > maxBytes) {
 				reject(new Error("Body too large"));

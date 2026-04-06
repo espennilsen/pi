@@ -49,7 +49,7 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
@@ -1873,6 +1873,249 @@ export default function (pi: ExtensionAPI) {
 				"Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query] | /a2a agents [refresh|name]",
 				"info",
 			);
+		},
+	});
+
+	// ── Hub Tasks (Pipeline CRUD) ───────────────────────────────────────────
+
+	pi.registerTool({
+		name: "hub_tasks",
+		label: "Hub Tasks",
+		description:
+			"Manage pipeline tasks on the A2A Hub. Full CRUD for the Hub's build pipeline.\n" +
+			"Actions:\n" +
+			"  board      — Kanban board grouped by pipeline state\n" +
+			"  list       — List tasks (filters: project, state, priority, assignedAgentId, page, limit, includeTerminal)\n" +
+			"  get        — Get a single task by taskId\n" +
+			"  create     — Create a task (title + project required; optional: description, repo, priority, assignedAgentId)\n" +
+			"  update     — Update task fields (taskId required; any of: title, description, priority, assignedAgentId, externalTaskId, branch, prUrl, prNumber, blockedReason)\n" +
+			"  transition — Move through pipeline (taskId + toState; optional note). States: queued→planning→building→reviewing→pr_ready→approved | blocked | cancelled\n" +
+			"  delete     — Delete a task (taskId required)\n" +
+			"  history    — State transition log for a task (taskId required)\n" +
+			"  report     — Agent self-reports pipeline status (hubTaskId + toState; optional: externalTaskId, branch, prUrl, prNumber, blockedReason)",
+		parameters: Type.Object({
+			action: Type.Union([
+				Type.Literal("board"),
+				Type.Literal("list"),
+				Type.Literal("get"),
+				Type.Literal("create"),
+				Type.Literal("update"),
+				Type.Literal("transition"),
+				Type.Literal("delete"),
+				Type.Literal("history"),
+				Type.Literal("report"),
+			], { description: "Action to perform" }),
+			// Task identity
+			taskId: Type.Optional(Type.String({ description: "Hub task ID (required for get/update/transition/delete/history)" })),
+			hubTaskId: Type.Optional(Type.String({ description: "Hub task ID (for report action)" })),
+			// Create / update fields
+			title: Type.Optional(Type.String({ description: "Task title" })),
+			description: Type.Optional(Type.String({ description: "Task description" })),
+			project: Type.Optional(Type.String({ description: "Project name e.g. 'aivena', 'e9n.dev'" })),
+			repo: Type.Optional(Type.String({ description: "Git repo URL" })),
+			priority: Type.Optional(Type.Union([
+				Type.Literal("low"), Type.Literal("normal"), Type.Literal("high"), Type.Literal("critical"),
+			], { description: "Task priority (default: normal)" })),
+			assignedAgentId: Type.Optional(Type.String({ description: "Agent ID to assign. Pass empty string to unassign." })),
+			// Transition / report
+			toState: Type.Optional(Type.Union([
+				Type.Literal("queued"), Type.Literal("planning"), Type.Literal("building"),
+				Type.Literal("reviewing"), Type.Literal("pr_ready"), Type.Literal("blocked"),
+				Type.Literal("approved"), Type.Literal("cancelled"),
+			], { description: "Target pipeline state" })),
+			note: Type.Optional(Type.String({ description: "Transition note (e.g. review feedback)" })),
+			// External references
+			externalTaskId: Type.Optional(Type.String({ description: "td task ID on agent side e.g. td-abc123" })),
+			branch: Type.Optional(Type.String({ description: "Git branch name" })),
+			prUrl: Type.Optional(Type.String({ description: "Pull request URL" })),
+			prNumber: Type.Optional(Type.Number({ description: "Pull request number" })),
+			blockedReason: Type.Optional(Type.String({ description: "Reason for blocking" })),
+			// List filters
+			state: Type.Optional(Type.Union([
+				Type.Literal("queued"), Type.Literal("planning"), Type.Literal("building"),
+				Type.Literal("reviewing"), Type.Literal("pr_ready"), Type.Literal("blocked"),
+				Type.Literal("approved"), Type.Literal("cancelled"),
+			], { description: "Filter by state (for list)" })),
+			page: Type.Optional(Type.Number({ description: "Page number for list (default: 1)" })),
+			limit: Type.Optional(Type.Number({ description: "Results per page for list/history (default: 20/50)" })),
+			includeTerminal: Type.Optional(Type.Boolean({ description: "Include approved/cancelled in list (default: false)" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			switch (params.action) {
+
+				case "board": {
+					const board = await getHubTaskBoard(
+						{ project: params.project, assignedAgentId: params.assignedAgentId },
+						hubConfig, log,
+					);
+					if (!board) return txt("❌ Failed to fetch board — check hub connection.");
+					const STAGES: PipelineState[] = ["queued", "planning", "building", "reviewing", "pr_ready", "blocked"];
+					const EMOJI: Record<string, string> = {
+						queued: "📋", planning: "📐", building: "🔨",
+						reviewing: "👀", pr_ready: "🚀", blocked: "🚧",
+					};
+					const lines = [`# Hub Pipeline Board (${board.total} active tasks)\n`];
+					if (board.projects.length) lines.push(`Projects: ${board.projects.join(", ")}\n`);
+					for (const stage of STAGES) {
+						const tasks: HubTask[] = (board.board[stage] as unknown as HubTask[]) ?? [];
+						lines.push(`## ${EMOJI[stage]} ${stage.replace("_", " ")} (${tasks.length})`);
+						if (tasks.length === 0) { lines.push("_none_\n"); continue; }
+						for (const t of tasks) {
+							const ext = t.externalTaskId ? ` [${t.externalTaskId}]` : "";
+							const agent = t.assignedAgentId ? ` → agent:${t.assignedAgentId.slice(0, 8)}…` : "";
+							const pr = t.prUrl ? ` PR#${t.prNumber}` : "";
+							lines.push(`- **${t.id?.slice(0, 8) ?? '?'}…** ${t.title} [${t.priority}]${ext}${agent}${pr}`);
+							lines.push(`  id: ${t.id} | project: ${t.project}`);
+						}
+						lines.push("");
+					}
+					return txt(lines.join("\n"));
+				}
+
+				case "list": {
+					const result = await listHubTasks({
+						project: params.project,
+						state: params.state as PipelineState | undefined,
+						priority: params.priority as TaskPriority | undefined,
+						assignedAgentId: params.assignedAgentId,
+						page: params.page,
+						limit: params.limit,
+						includeTerminal: params.includeTerminal,
+					}, hubConfig, log);
+					if (!result) return txt("❌ Failed to list tasks.");
+					if (result.tasks.length === 0) return txt("No tasks found.");
+					const lines = [`# Hub Tasks (${result.total} total, page ${result.page})\n`];
+					for (const t of result.tasks) {
+						const ext = t.externalTaskId ? ` [${t.externalTaskId}]` : "";
+						const agent = t.assignedAgentId ? ` → agent:${t.assignedAgentId.slice(0, 8)}…` : "";
+						lines.push(`- **${t.id?.slice(0, 8) ?? '?'}…** \`${t.state}\` [${t.priority}] ${t.title}${ext}${agent}`);
+						lines.push(`  id: ${t.id} | project: ${t.project}`);
+					}
+					if (result.limit > 0 && result.total > result.page * result.limit) {
+						lines.push(`\n_${result.total - result.page * result.limit} more — use page param to paginate_`);
+					}
+					return txt(lines.join("\n"));
+				}
+
+				case "get": {
+					if (!params.taskId) return txt("❌ taskId required.");
+					const task = await getHubTask(params.taskId, hubConfig, log);
+					if (!task) return txt(`❌ Task not found: ${params.taskId}`);
+					const lines = [
+						`# Task: ${task.title}`,
+						`**ID:** ${task.id}`,
+						`**State:** ${task.state} | **Priority:** ${task.priority} | **Project:** ${task.project}`,
+						task.description ? `**Description:** ${task.description}` : "",
+						task.assignedAgentId ? `**Assigned:** ${task.assignedAgentId}` : "",
+						task.externalTaskId ? `**External Task:** ${task.externalTaskId}` : "",
+						task.branch ? `**Branch:** ${task.branch}` : "",
+						task.prUrl ? `**PR:** [#${task.prNumber}](${task.prUrl})` : "",
+						task.blockedReason ? `**Blocked:** ${task.blockedReason}` : "",
+						task.repo ? `**Repo:** ${task.repo}` : "",
+						`**Review:** ${task.reviewRound}/${task.maxReviewRounds} rounds`,
+						`**Created:** ${task.createdAt} | **Updated:** ${task.updatedAt}`,
+						task.startedAt ? `**Started:** ${task.startedAt}` : "",
+						task.completedAt ? `**Completed:** ${task.completedAt}` : "",
+					].filter(Boolean);
+					return txt(lines.join("\n"));
+				}
+
+				case "create": {
+					if (!params.title) return txt("❌ title required.");
+					if (!params.project) return txt("❌ project required.");
+					const task = await createHubTask({
+						title: params.title,
+						project: params.project,
+						description: params.description,
+						repo: params.repo,
+						priority: params.priority as TaskPriority | undefined,
+						assignedAgentId: params.assignedAgentId === "" ? undefined : params.assignedAgentId,
+					}, hubConfig, log);
+					if (!task) return txt("❌ Failed to create task.");
+					return txt(`✅ Created\n**ID:** ${task.id}\n**Title:** ${task.title}\n**Project:** ${task.project} | **State:** ${task.state} | **Priority:** ${task.priority}`);
+				}
+
+				case "update": {
+					if (!params.taskId) return txt("❌ taskId required.");
+					const task = await updateHubTask({
+						taskId: params.taskId,
+						title: params.title,
+						description: params.description,
+						priority: params.priority as TaskPriority | undefined,
+						assignedAgentId: params.assignedAgentId === "" ? null : params.assignedAgentId,
+						externalTaskId: params.externalTaskId,
+						branch: params.branch,
+						prUrl: params.prUrl,
+						prNumber: params.prNumber,
+						blockedReason: params.blockedReason,
+					}, hubConfig, log);
+					if (!task) return txt(`❌ Failed to update: ${params.taskId}`);
+					return txt(`✅ Updated\n**ID:** ${task.id}\n**Title:** ${task.title} | **State:** ${task.state} | **Priority:** ${task.priority}${task.externalTaskId ? `\n**External:** ${task.externalTaskId}` : ""}${task.branch ? `\n**Branch:** ${task.branch}` : ""}`);
+				}
+
+				case "transition": {
+					if (!params.taskId) return txt("❌ taskId required.");
+					if (!params.toState) return txt("❌ toState required.");
+					const task = await transitionHubTask({
+						taskId: params.taskId,
+						toState: params.toState as PipelineState,
+						note: params.note,
+					}, hubConfig, log);
+					if (!task) return txt(`❌ Failed to transition: ${params.taskId}`);
+					return txt(`✅ Transitioned → **${task.state}**\n**ID:** ${task.id}\n**Title:** ${task.title}${params.note ? `\n**Note:** ${params.note}` : ""}`);
+				}
+
+				case "delete": {
+					if (!params.taskId) return txt("❌ taskId required.");
+					const result = await deleteHubTask(params.taskId, hubConfig, log);
+					if (!result?.deleted) return txt(`❌ Failed to delete: ${params.taskId}`);
+					return txt(`✅ Deleted: ${params.taskId}`);
+				}
+
+				case "history": {
+					if (!params.taskId) return txt("❌ taskId required.");
+					const result = await getHubTaskHistory(params.taskId, hubConfig, log, params.limit ?? 50);
+					if (!result) return txt(`❌ Failed to fetch history: ${params.taskId}`);
+					if (result.transitions.length === 0) return txt("No transitions recorded.");
+					const lines = [`# History: ${params.taskId}\n`];
+					for (const t of result.transitions) {
+						const from = t.fromState ?? "(created)";
+						const actor = t.actorAgentId
+							? `agent:${t.actorAgentId.slice(0, 8)}…`
+							: t.actorUserId ? `user:${t.actorUserId.slice(0, 8)}…` : "unknown";
+						const note = t.note ? ` — ${t.note}` : "";
+						lines.push(`- ${t.createdAt.slice(0, 19)} | ${from} → **${t.toState}** by ${actor}${note}`);
+					}
+					return txt(lines.join("\n"));
+				}
+
+				case "report": {
+					if (!params.hubTaskId) return txt("❌ hubTaskId required.");
+					if (!params.toState) return txt("❌ toState required.");
+					const task = await reportHubTaskStatus({
+						hubTaskId: params.hubTaskId,
+						toState: params.toState as PipelineState,
+						note: params.note,
+						externalTaskId: params.externalTaskId,
+						branch: params.branch,
+						prUrl: params.prUrl,
+						prNumber: params.prNumber,
+						blockedReason: params.blockedReason,
+					}, hubConfig, log);
+					if (!task) return txt(`❌ Failed to report status: ${params.hubTaskId}`);
+					return txt(`✅ Status reported → **${task.state}**\n**ID:** ${task.id}\n**Title:** ${task.title}${task.branch ? `\n**Branch:** ${task.branch}` : ""}${task.prUrl ? `\n**PR:** ${task.prUrl}` : ""}`);
+				}
+
+				default:
+					return txt("Unknown action. Use: board, list, get, create, update, transition, delete, history, report");
+			}
 		},
 	});
 }

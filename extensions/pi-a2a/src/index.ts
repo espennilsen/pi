@@ -1971,7 +1971,7 @@ export default function (pi: ExtensionAPI) {
 							const ext = t.externalTaskId ? ` [${t.externalTaskId}]` : "";
 							const agent = t.assignedAgentId ? ` → agent:${t.assignedAgentId.slice(0, 8)}…` : "";
 							const pr = t.prUrl ? ` PR#${t.prNumber}` : "";
-							lines.push(`- **${t.id.slice(0, 8)}…** ${t.title} [${t.priority}]${ext}${agent}${pr}`);
+							lines.push(`- **${t.id?.slice(0, 8) ?? '?'}…** ${t.title} [${t.priority}]${ext}${agent}${pr}`);
 							lines.push(`  id: ${t.id} | project: ${t.project}`);
 						}
 						lines.push("");
@@ -1995,7 +1995,7 @@ export default function (pi: ExtensionAPI) {
 					for (const t of result.tasks) {
 						const ext = t.externalTaskId ? ` [${t.externalTaskId}]` : "";
 						const agent = t.assignedAgentId ? ` → agent:${t.assignedAgentId.slice(0, 8)}…` : "";
-						lines.push(`- **${t.id.slice(0, 8)}…** \`${t.state}\` [${t.priority}] ${t.title}${ext}${agent}`);
+						lines.push(`- **${t.id?.slice(0, 8) ?? '?'}…** \`${t.state}\` [${t.priority}] ${t.title}${ext}${agent}`);
 						lines.push(`  id: ${t.id} | project: ${t.project}`);
 					}
 					if (result.limit > 0 && result.total > result.page * result.limit) {

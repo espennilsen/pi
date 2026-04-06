@@ -656,7 +656,7 @@ export async function getHubTaskBoard(
 	if (!result) return null;
 	return {
 		board: (result.board as Record<PipelineState, HubTask[]>) ?? {},
-		total: result.total as number,
+		total: (result.total as number) ?? 0,
 		projects: (result.projects as string[]) ?? [],
 	};
 }

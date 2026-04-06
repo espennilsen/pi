@@ -487,6 +487,54 @@ export async function acknowledgeClarification(
 }
 
 /**
+ * Report pipeline task status to the A2A Hub.
+ *
+ * Called by coding agents when the state of a hub-assigned task changes
+ * (e.g. started planning, opened a PR, got blocked). The hub uses this
+ * to track the full pipeline; local td state is separate.
+ */
+export async function reportPipelineStatus(
+	hubTaskId: string,
+	toState: PipelineState,
+	hubConfig: HubConfig,
+	log: LogFn,
+	options?: {
+		note?: string;
+		externalTaskId?: string;
+		branch?: string;
+		prUrl?: string;
+		prNumber?: number;
+		blockedReason?: string;
+		metadata?: Record<string, unknown>;
+	},
+): Promise<{ id: string; state: string; updatedAt: string } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+
+	const params: Record<string, unknown> = { hubTaskId, toState };
+	if (options?.note !== undefined) params.note = options.note;
+	if (options?.externalTaskId !== undefined) params.externalTaskId = options.externalTaskId;
+	if (options?.branch !== undefined) params.branch = options.branch;
+	if (options?.prUrl !== undefined) params.prUrl = options.prUrl;
+	if (options?.prNumber !== undefined) params.prNumber = options.prNumber;
+	if (options?.blockedReason !== undefined) params.blockedReason = options.blockedReason;
+	if (options?.metadata !== undefined) params.metadata = options.metadata;
+
+	log("hub_pipeline_status_start", { hubTaskId, toState });
+
+	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params, hubConfig.apiKey, log, "hub_pipeline_status");
+	if (result) {
+		const out = {
+			id: result.id as string,
+			state: result.state as string,
+			updatedAt: result.updatedAt as string,
+		};
+		log("hub_pipeline_status_success", out);
+		return out;
+	}
+	return null;
+}
+
+/**
  * Report telemetry to the A2A Hub.
  *
  * Sends the agent's current operational state (queue depth, active tasks,

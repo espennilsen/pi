@@ -1344,6 +1344,35 @@ export default function (pi: ExtensionAPI) {
 				? activeLoop  // Propagate inbound chain (already incremented by supervisor)
 				: seedLoopMetadata(agentPublicUrl, configuredMaxHops);
 
+			// ── Anti-pattern check: sending back to the inbound caller ──
+			// If an agent calls a2a_send to the agent that sent it the current
+			// inbound task, the remote end receives a new task and its loop-guard
+			// will fire (cycle detection: caller already in visitedAgents).
+			// Warn loudly so the agent knows to respond directly instead.
+			if (activeLoop && executor?.getActiveTaskId()) {
+				const visited = activeLoop.visitedAgents;
+				// visitedAgents = [...chain, thisAgent]. Direct caller = visited[length-2].
+				const callerUrl = visited.length >= 2 ? visited[visited.length - 2] : null;
+				if (callerUrl && normalizeAgentUrl(resolvedUrl) === normalizeAgentUrl(callerUrl)) {
+					log("a2a_send_reply_to_caller", {
+						agent: resolvedName,
+						callerUrl,
+						taskId: executor.getActiveTaskId(),
+					}, "WARN");
+					pi.sendMessage({
+						customType: "a2a-reply-to-caller-warning",
+						content:
+							`⚠️ **A2A anti-pattern**: You are calling \`a2a_send\` back to **${resolvedName}**, ` +
+							`which is the agent that sent you the current inbound task. ` +
+							`Do not use \`a2a_send\` to reply to an inbound request — the caller is already polling ` +
+							`your task store for results. Simply complete your turn and your response will be ` +
+							`delivered automatically. Calling \`a2a_send\` back to the caller will trigger a ` +
+							`loop-guard block (cycle detection) on the remote side.`,
+						display: true,
+					}, { triggerTurn: false });
+				}
+			}
+
 			const resolvedFromStatic = fromStatic;
 			const sendOpts = {
 				url: resolvedUrl,

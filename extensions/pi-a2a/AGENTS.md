@@ -26,6 +26,40 @@ src/
 └── hub.ts            # A2A Hub registration client
 ```
 
+## ⚠️ Inbound A2A: Respond Directly — Never Call `a2a_send` Back to the Caller
+
+This is the most important rule for A2A agent behaviour:
+
+**When your agent receives an inbound A2A request, respond by completing your turn. Do NOT call `a2a_send` to send a reply back to the requester.**
+
+### Why
+
+Inbound A2A tasks work via the task lifecycle, not message passing:
+
+1. The remote caller sends `message/send` → your agent ACKs with `state: working`
+2. Your agent processes the request (your turn runs)
+3. The result is stored in the SQLite TaskStore automatically on turn completion
+4. The remote caller polls `tasks/get` (or SSE) and retrieves the result
+
+If you call `a2a_send` back to the caller mid-task:
+- The caller's loop-guard fires (cycle detection: it's already in `visitedAgents`)
+- The call fails with a `Loop control` error
+- You've wasted a round-trip and confused the protocol state
+
+### What to do instead
+
+| Situation | Correct approach |
+|-----------|------------------|
+| Normal reply | Just complete your turn. Your final message is stored as the task result. |
+| Need more info | Use `a2a_request_input` — it pauses the task and asks the caller via the `input-required` state |
+| Sending to a *different* agent | `a2a_send` is fine — just not back to the requester |
+
+### Runtime detection
+
+The extension emits a `⚠️ A2A anti-pattern` warning in the chat if it detects an `a2a_send` call targeting the same URL as the agent that sent the current inbound task. Heed the warning and abort the send.
+
+---
+
 ## Key Design Decisions
 
 - **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `SQLiteTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific main-process delegation.

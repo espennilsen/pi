@@ -15,3 +15,7 @@ Rules:
 - Include relevant code snippets inline (the next agent can't read the files).
 - Don't implement anything. Just gather and compress context.
 - Prioritize: what exists, where it is, how it connects.
+
+## A2A Inbound Requests
+
+If you are running as an A2A agent responding to an inbound request: **respond directly by completing your turn.** Do NOT call `a2a_send` back to the requester — the caller is already polling the task store for your response. Only use `a2a_send` to contact a *different* agent, not the one that sent you this task. Use `a2a_request_input` if you need clarification from the caller.

@@ -51,13 +51,21 @@ function truncateInput(input: unknown, maxChars: number): string | undefined {
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
-	// Mount web routes when webserver is ready
-	const mount = () => { mountDashboard(pi); log("mount", {}); };
+	// Mount web routes when webserver is ready.
+	// Guard against double-mounting if both web:ready and session_start fire.
+	let mounted = false;
+	const mount = () => {
+		if (mounted) return;
+		mounted = true;
+		mountDashboard(pi);
+		log("mount", {});
+	};
 
 	pi.events.on("web:ready", mount);
 	pi.on("session_start", async () => mount());
 
 	pi.on("session_shutdown", async () => {
+		mounted = false;
 		unmountDashboard(pi);
 	});
 

@@ -5,6 +5,7 @@
  *   Page: /dashboard         — Dashboard UI with live agent stream
  *   API:  /api/dashboard/events  — SSE stream of agent events
  *   API:  /api/dashboard/prompt  — POST a prompt to the agent
+ *   API:  /api/dashboard/stop    — POST to abort the running agent
  *   API:  /api/dashboard/config  — Agent config/status
  *
  * Subscribes to agent lifecycle events and streams them to SSE clients.
@@ -21,7 +22,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { mountDashboard, unmountDashboard, broadcast } from "./web.ts";
+import { mountDashboard, unmountDashboard, broadcast, setAbortFn } from "./web.ts";
 import { createLogger } from "./logger.ts";
 
 /** Max characters per text content block in SSE payloads. */
@@ -50,23 +51,33 @@ function truncateInput(input: unknown, maxChars: number): string | undefined {
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
-	// Mount web routes when webserver is ready
-	const mount = () => { mountDashboard(pi); log("mount", {}); };
+	// Mount web routes when webserver is ready.
+	// Guard against double-mounting if both web:ready and session_start fire.
+	let mounted = false;
+	const mount = () => {
+		if (mounted) return;
+		mounted = true;
+		mountDashboard(pi);
+		log("mount", {});
+	};
 
 	pi.events.on("web:ready", mount);
 	pi.on("session_start", async () => mount());
 
 	pi.on("session_shutdown", async () => {
+		mounted = false;
 		unmountDashboard(pi);
 	});
 
 	// ── Stream agent events to SSE clients ────────────────────
 
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (_event, ctx) => {
+		setAbortFn(() => ctx.abort());
 		broadcast({ type: "agent_start", time: new Date().toISOString() });
 	});
 
 	pi.on("agent_end", async () => {
+		setAbortFn(null);
 		broadcast({ type: "agent_end", time: new Date().toISOString() });
 	});
 

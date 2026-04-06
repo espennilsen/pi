@@ -4,6 +4,7 @@
  * Page:  /dashboard              — Dashboard HTML
  * API:   /api/dashboard/events   — SSE stream
  * API:   /api/dashboard/prompt   — POST prompt
+ * API:   /api/dashboard/stop     — POST abort the running agent
  * API:   /api/dashboard/config   — GET status
  */
 
@@ -58,22 +59,30 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let body = "";
-		let oversized = false;
+		req.setTimeout(10_000, () => { reject(new Error("Request timeout")); req.destroy(); });
 		req.on("data", (chunk: Buffer) => {
-			body += chunk.toString();
-			if (body.length > maxBytes) { oversized = true; req.destroy(); }
+			if (body.length + chunk.length > maxBytes) {
+				reject(new Error("Body too large"));
+				req.destroy();
+			} else {
+				body += chunk.toString();
+			}
 		});
-		req.on("end", () => {
-			if (oversized) reject(new Error("Body too large"));
-			else resolve(body);
-		});
-		req.on("error", reject);
+		req.on("end", () => { resolve(body); });
+		req.on("error", (err) => { reject(err); });
 	});
 }
 
 // ── Saved reference to pi for prompt submission ─────────────────
 
 let _pi: ExtensionAPI | null = null;
+
+/** Abort callback set while the agent is running; cleared on agent_end. */
+let _abortFn: (() => void) | null = null;
+
+export function setAbortFn(fn: (() => void) | null): void {
+	_abortFn = fn;
+}
 
 // ── Page handler ────────────────────────────────────────────────
 
@@ -153,9 +162,27 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 		} catch (err: any) {
 			if (err.message === "Body too large") {
 				json(res, 413, { error: "Request body too large (max 1MB)" });
+			} else if (err.message === "Request timeout") {
+				json(res, 408, { error: "Request timed out" });
 			} else {
 				json(res, 400, { error: "Invalid JSON" });
 			}
+		}
+		return;
+	}
+
+	// POST /api/dashboard/stop
+	if (method === "POST" && p === "/stop") {
+		if (!_abortFn) {
+			json(res, 409, { error: "Agent is not running" });
+			return;
+		}
+		try {
+			_abortFn();
+			json(res, 202, { status: "stopping" });
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			json(res, 500, { error: `Abort failed: ${msg}` });
 		}
 		return;
 	}

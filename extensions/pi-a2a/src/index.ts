@@ -1359,17 +1359,16 @@ export default function (pi: ExtensionAPI) {
 						callerUrl,
 						taskId: executor.getActiveTaskId(),
 					}, "WARN");
-					pi.sendMessage({
-						customType: "a2a-reply-to-caller-warning",
-						content:
-							`⚠️ **A2A anti-pattern**: You are calling \`a2a_send\` back to **${resolvedName}**, ` +
-							`which is the agent that sent you the current inbound task. ` +
-							`Do not use \`a2a_send\` to reply to an inbound request — the caller is already polling ` +
-							`your task store for results. Simply complete your turn and your response will be ` +
-							`delivered automatically. Calling \`a2a_send\` back to the caller will trigger a ` +
-							`loop-guard block (cycle detection) on the remote side.`,
-						display: true,
-					}, { triggerTurn: false });
+					// Block the send and return a clear tool error — the LLM must see
+					// the failure reason before the outbound request goes out.
+					// (If we only warn without blocking, the send fires immediately
+					// with triggerTurn:false and hits the remote cycle-detector anyway.)
+					return txt(
+						`⚠️ **A2A anti-pattern blocked**: \`a2a_send\` to **${resolvedName}** was cancelled. ` +
+						`That agent sent you the current inbound task — do not call \`a2a_send\` back to it. ` +
+						`Complete your turn and the result will be stored automatically for the caller to retrieve. ` +
+						`Use \`a2a_request_input\` if you need to ask the caller a question.`,
+					);
 				}
 			}
 
@@ -1399,7 +1398,10 @@ export default function (pi: ExtensionAPI) {
 			// The inbound task result is already stored in the TaskStore by the time
 			// this async IIFE completes — triggering a new turn would cause the agent
 			// to re-invoke the sender, which trips the loop-guard cycle detector.
-			const wasSubcall = executor?.getActiveTaskId() !== null;
+			// Use loose != (catches both null and undefined) so that when executor
+			// is null, executor?.getActiveTaskId() returns undefined, which != null
+			// is false — correctly treating a missing executor as no active task.
+			const wasSubcall = executor?.getActiveTaskId() != null;
 
 			(async () => {
 				try {

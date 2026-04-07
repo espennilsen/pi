@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI) {
 
 	const PRISM_GRANTS: { owner: string; tables: string[] }[] = [
 		{ owner: "pi-jobs",         tables: ["jobs", "tool_calls"] },
-		{ owner: "pi-myfinance",    tables: ["finance_transactions", "finance_accounts", "finance_budgets", "finance_categories"] },
+		{ owner: "pi-myfinance",    tables: ["finance_transactions", "finance_accounts", "finance_budgets", "finance_categories", "finance_vendors"] },
 		{ owner: "pi-personal-crm", tables: ["crm_contacts", "crm_companies", "crm_reminders"] },
 		{ owner: "pi-calendar",     tables: ["calendar_events"] },
 	];
@@ -50,6 +50,8 @@ export default function (pi: ExtensionAPI) {
 	let isOpen = false;
 	/** Reference to the live sidebar instance — needed to dispose its timer on session end. */
 	let liveSidebar: import("./sidebar.ts").WidgetSidebar | null = null;
+	/** Auto-open timer — stored so it can be cancelled if session_shutdown fires first. */
+	let autoOpenTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// ── Build widgets from settings ──────────────────────────
 
@@ -121,6 +123,8 @@ export default function (pi: ExtensionAPI) {
 	// ── Auto-launch on session start ─────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Cancel any pending auto-open from a previous session
+		if (autoOpenTimer) { clearTimeout(autoOpenTimer); autoOpenTimer = null; }
 		// Close any sidebar that survived from a previous session.
 		// close() calls both dispose() (stops the timer) and done() (pops the
 		// TUI overlay stack) so no ghost frame accumulates on restart.
@@ -133,12 +137,13 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const settings = resolveSettings(process.cwd());
 		if (!settings.autoOpen) return;
-		setTimeout(() => toggle(ctx), 800);
+		autoOpenTimer = setTimeout(() => { autoOpenTimer = null; toggle(ctx); }, 800);
 	});
 
 	// ── Dispose sidebar on session end to stop the refresh timer ─
 
 	pi.on("session_shutdown", async () => {
+		if (autoOpenTimer) { clearTimeout(autoOpenTimer); autoOpenTimer = null; }
 		if (liveSidebar) {
 			liveSidebar.close();
 			liveSidebar = null;

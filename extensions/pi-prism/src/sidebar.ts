@@ -47,8 +47,8 @@ export class WidgetSidebar {
 		this.hubUrl = settings.hubUrl;
 		this.hubApiKey = settings.hubApiKey;
 		this.project = settings.project;
-		this.refresh();
-		this.timer = setInterval(() => this.refresh(), 60000);
+		this.refresh().catch(() => {});
+		this.timer = setInterval(() => this.refresh().catch(() => {}), 60000);
 	}
 
 	private async refresh(): Promise<void> {
@@ -134,6 +134,7 @@ export class WidgetSidebar {
 		const overlayRows = Math.floor(termRows * 0.95);
 		const maxVisible = Math.max(8, overlayRows - 6);
 		this.maxScroll = Math.max(0, content.length - maxVisible);
+		this.scroll = Math.min(this.scroll, this.maxScroll);
 		const visible = content.slice(this.scroll, this.scroll + maxVisible);
 
 		for (const line of visible) {

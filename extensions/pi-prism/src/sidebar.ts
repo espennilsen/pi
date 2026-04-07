@@ -127,8 +127,12 @@ export class WidgetSidebar {
 			content.push(...widgetLines);
 		}
 
-		// Apply scroll
-		const maxVisible = 40;
+		// Apply scroll — compute visible rows from terminal height so scrolling
+		// works on small terminals. Overlay is capped at ~95% of terminal rows;
+		// subtract header (2) + footer (4) to get the content viewport.
+		const termRows = this.tui.terminal.rows;
+		const overlayRows = Math.floor(termRows * 0.95);
+		const maxVisible = Math.max(8, overlayRows - 6);
 		this.maxScroll = Math.max(0, content.length - maxVisible);
 		const visible = content.slice(this.scroll, this.scroll + maxVisible);
 

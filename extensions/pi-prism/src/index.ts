@@ -23,14 +23,28 @@ import { WIDGET_FACTORIES, DEFAULT_WIDGETS, type Widget } from "./widgets/index.
 const ACTOR = "pi-prism";
 
 export default function (pi: ExtensionAPI) {
-	// ── DB access grant ──────────────────────────────────────
+	// ── DB access grants (read-only, scoped to needed tables) ─────────────
+	//
+	// Enumerate exactly the tables each widget reads. A wildcard owner/table
+	// grant would expose vault credentials, auth tokens, and private notes.
 
-	pi.events.emit("kysely:grant", {
-		owner: "*",
-		grantee: ACTOR,
-		table: "*",
-		operations: ["select"],
-	});
+	const PRISM_GRANTS: { owner: string; tables: string[] }[] = [
+		{ owner: "pi-jobs",         tables: ["jobs", "tool_calls"] },
+		{ owner: "pi-myfinance",    tables: ["finance_transactions", "finance_accounts", "finance_budgets", "finance_categories"] },
+		{ owner: "pi-personal-crm", tables: ["crm_contacts", "crm_companies", "crm_reminders"] },
+		{ owner: "pi-calendar",     tables: ["calendar_events"] },
+	];
+
+	for (const { owner, tables } of PRISM_GRANTS) {
+		for (const table of tables) {
+			pi.events.emit("kysely:grant", {
+				owner,
+				grantee: ACTOR,
+				table,
+				operations: ["select"],
+			});
+		}
+	}
 
 	let overlayHandle: OverlayHandle | null = null;
 	let isOpen = false;

@@ -1,6 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { execCmd, pad } from "../helpers.ts";
+import { execCmd, hubRpc, pad } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 
 export class SystemHealthWidget implements Widget {
@@ -35,9 +35,13 @@ export class SystemHealthWidget implements Widget {
 		const branch = await execCmd("git branch --show-current 2>/dev/null", ctx.cwd);
 		this.checks.push({ name: "Git", ok: !!branch, detail: branch || "no repo" });
 
-		// td check
-		const tdOut = await execCmd("td status 2>/dev/null | head -1", ctx.cwd);
-		this.checks.push({ name: "Tasks", ok: !!tdOut, detail: tdOut ? "ok" : "unavailable" });
+		// Hub reachability check (replaces retired td CLI)
+		if (ctx.hubUrl && ctx.hubApiKey) {
+			const hubResult = await hubRpc(ctx.hubUrl, ctx.hubApiKey, "tasks.list", { limit: 1 });
+			this.checks.push({ name: "Hub", ok: !!hubResult, detail: hubResult ? "reachable" : "unreachable" });
+		} else {
+			this.checks.push({ name: "Hub", ok: false, detail: "not configured" });
+		}
 	}
 
 	render(w: number, th: Theme): string[] {

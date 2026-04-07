@@ -430,15 +430,30 @@ export class PiAgentExecutor implements AgentExecutor {
 		//
 		// Re-publish the existing terminal task so the caller's message/send
 		// response carries the result directly (no extra polling needed).
-		const existingTask = await this.taskStore.load(taskId);
-		const existingState = existingTask?.status?.state;
-		if (existingState === "completed" || existingState === "failed" || existingState === "canceled") {
-			this.log("executor_skip_terminal_task", { taskId, state: existingState });
-			// Re-publish the completed task so the caller gets the result in-band
-			if (existingTask) {
-				eventBus.publish(existingTask as Task);
+		try {
+			const existingTask = await this.taskStore.load(taskId);
+			const existingState = existingTask?.status?.state;
+			if (existingState === "completed" || existingState === "failed" || existingState === "canceled") {
+				this.log("executor_skip_terminal_task", { taskId, state: existingState });
+				// Re-publish the completed task so the caller gets the result in-band
+				if (existingTask) {
+					eventBus.publish(existingTask as Task);
+				}
+				eventBus.finished();
+				this.taskContexts.delete(taskId);
+				releaseQueue!();
+				return;
 			}
+		} catch (err: unknown) {
+			// Store error (DB failure, disk full, etc.) — log and fall through to
+			// normal processing. Better to risk a duplicate turn than to deadlock
+			// the queue by never calling releaseQueue.
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("executor_store_load_error", { taskId, error: msg }, "ERROR");
+			// Guard failed — abort this turn so the queue stays healthy
+			this.publishError(taskId, contextId, eventBus, `Store error during duplicate-send check: ${msg}`);
 			eventBus.finished();
+			this.taskContexts.delete(taskId);
 			releaseQueue!();
 			return;
 		}

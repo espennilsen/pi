@@ -160,11 +160,25 @@ export class WidgetSidebar {
 		this.cacheVer = -1;
 	}
 
+	/**
+	 * Stop the refresh timer and release resources.
+	 * Does NOT signal the TUI to pop the overlay — use close() for that.
+	 */
 	dispose(): void {
 		this.disposed = true;
 		if (this.timer) {
 			clearInterval(this.timer);
 			this.timer = null;
 		}
+	}
+
+	/**
+	 * Close the sidebar: stop the timer AND signal the TUI to pop the overlay.
+	 * Call this from session_start / session_shutdown instead of dispose()
+	 * so the TUI stack stays consistent and no ghost frame is left behind.
+	 */
+	close(): void {
+		this.dispose();
+		this.done();
 	}
 }

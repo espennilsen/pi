@@ -15,16 +15,24 @@ export class SessionStatsWidget implements Widget {
 	async refresh(ctx: WidgetContext): Promise<void> {
 		const today = new Date().toISOString().slice(0, 10);
 		try {
-			const r = await ctx.query(
-				`SELECT SUM(cost_total) as cost, COUNT(*) as jobs, SUM(tool_call_count) as tools,
-				model FROM jobs WHERE date(created_at) = ? GROUP BY model ORDER BY cost DESC LIMIT 1`,
+			// Day totals — no GROUP BY so counts span all models used today
+			const totals = await ctx.query(
+				`SELECT SUM(cost_total) as cost, COUNT(*) as jobs, SUM(tool_call_count) as tools
+				FROM jobs WHERE date(created_at) = ?`,
 				[today],
 			);
-			const row = r.rows[0];
-			this.todayCost = Number(row?.cost ?? 0);
-			this.todayJobs = Number(row?.jobs ?? 0);
-			this.todayToolCalls = Number(row?.tools ?? 0);
-			this.model = String(row?.model ?? "?");
+			const t = totals.rows[0];
+			this.todayCost = Number(t?.cost ?? 0);
+			this.todayJobs = Number(t?.jobs ?? 0);
+			this.todayToolCalls = Number(t?.tools ?? 0);
+
+			// Dominant model — separate query for display only
+			const dominant = await ctx.query(
+				`SELECT model FROM jobs WHERE date(created_at) = ?
+				GROUP BY model ORDER BY SUM(cost_total) DESC LIMIT 1`,
+				[today],
+			);
+			this.model = String(dominant.rows[0]?.model ?? "?");
 		} catch {
 			// stats unavailable
 		}

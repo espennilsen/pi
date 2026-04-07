@@ -107,9 +107,11 @@ export default function (pi: ExtensionAPI) {
 	// ── Auto-launch on session start ─────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Dispose any sidebar that survived from a previous session
+		// Close any sidebar that survived from a previous session.
+		// close() calls both dispose() (stops the timer) and done() (pops the
+		// TUI overlay stack) so no ghost frame accumulates on restart.
 		if (liveSidebar) {
-			liveSidebar.dispose();
+			liveSidebar.close();
 			liveSidebar = null;
 			overlayHandle = null;
 			isOpen = false;
@@ -124,7 +126,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		if (liveSidebar) {
-			liveSidebar.dispose();
+			liveSidebar.close();
 			liveSidebar = null;
 			overlayHandle = null;
 			isOpen = false;

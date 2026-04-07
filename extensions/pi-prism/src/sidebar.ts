@@ -9,6 +9,7 @@ import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import type { TUI } from "@mariozechner/pi-tui";
 import { matchesKey, truncateToWidth, visibleWidth, Key } from "@mariozechner/pi-tui";
 import { createQuery, fmtAgo, type Q } from "./helpers.ts";
+import { resolveSettings } from "./settings.ts";
 import type { Widget, WidgetContext } from "./widgets/index.ts";
 
 export class WidgetSidebar {
@@ -16,6 +17,9 @@ export class WidgetSidebar {
 	private theme: Theme;
 	private query: Q;
 	private cwd: string;
+	private hubUrl: string | null;
+	private hubApiKey: string | null;
+	private project: string | null;
 	private done: () => void;
 	private widgets: Widget[] = [];
 
@@ -39,6 +43,10 @@ export class WidgetSidebar {
 		this.cwd = cwd;
 		this.widgets = widgets;
 		this.done = done;
+		const settings = resolveSettings(cwd);
+		this.hubUrl = settings.hubUrl;
+		this.hubApiKey = settings.hubApiKey;
+		this.project = settings.project;
 		this.refresh();
 		this.timer = setInterval(() => this.refresh(), 60000);
 	}
@@ -49,7 +57,13 @@ export class WidgetSidebar {
 		this.ver++;
 		this.tui.requestRender();
 
-		const ctx: WidgetContext = { query: this.query, cwd: this.cwd };
+		const ctx: WidgetContext = {
+			query: this.query,
+			cwd: this.cwd,
+			hubUrl: this.hubUrl,
+			hubApiKey: this.hubApiKey,
+			project: this.project,
+		};
 		await Promise.all(this.widgets.map((w) => w.refresh(ctx).catch(() => {})));
 
 		if (this.disposed) return;

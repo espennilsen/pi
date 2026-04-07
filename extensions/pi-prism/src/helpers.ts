@@ -38,6 +38,46 @@ export function createQuery(events: ExtensionAPI["events"]): Q {
 		});
 }
 
+// ── Hub JSON-RPC Helper ──────────────────────────────────────
+
+export interface HubTask {
+	id: string;
+	title: string;
+	state: string;
+	priority: string;
+	project: string;
+	branch: string | null;
+	prUrl: string | null;
+	prNumber: number | null;
+	externalTaskId: string | null;
+	assignedAgentId: string | null;
+}
+
+/**
+ * Fire a JSON-RPC call to the A2A Hub pipeline API.
+ * Returns the result object, or null on error/timeout.
+ */
+export async function hubRpc(
+	rpcUrl: string,
+	apiKey: string,
+	method: string,
+	params: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+	try {
+		const res = await fetch(rpcUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+			body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+			signal: AbortSignal.timeout(8_000),
+		});
+		if (!res.ok) return null;
+		const data = (await res.json()) as { result?: Record<string, unknown>; error?: unknown };
+		return data.result ?? null;
+	} catch {
+		return null;
+	}
+}
+
 // ── CLI Exec Helper ──────────────────────────────────────────
 
 export async function execCmd(cmd: string, cwd: string): Promise<string> {

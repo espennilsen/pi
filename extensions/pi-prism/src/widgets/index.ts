@@ -10,6 +10,12 @@ import type { Q } from "../helpers.ts";
 export interface WidgetContext {
 	query: Q;
 	cwd: string;
+	/** Hub JSON-RPC endpoint (e.g. http://localhost:8080/api/rpc). Null if not configured. */
+	hubUrl: string | null;
+	/** Hub API key for the X-API-Key header. Null if not configured. */
+	hubApiKey: string | null;
+	/** Optional project filter for hub task widgets. */
+	project: string | null;
 }
 
 export interface Widget {

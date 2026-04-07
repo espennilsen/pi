@@ -414,13 +414,21 @@ if (typeof marked !== 'undefined') {
   });
 }
 
+// Evaluated once at script load time. False if the DOMPurify CDN script
+// failed (outage, CSP block, etc.). Used in renderMarkdown and the startup
+// guard below to consistently reflect the initial load state.
+const DOMPURIFY_AVAILABLE = typeof DOMPurify !== 'undefined';
+
 function renderMarkdown(text) {
   if (!text || !text.trim()) return '';
-  // Hard-fail if DOMPurify is not loaded — rendering unsanitized marked output
-  // is an XSS risk. Throw rather than silently degrade so callers surface the
-  // problem instead of injecting unsafe HTML into the page.
-  if (typeof DOMPurify === 'undefined') {
-    throw new Error('[dashboard] DOMPurify is not loaded — cannot render markdown safely. Check the CDN script tag.');
+  // Hard-fail if DOMPurify is not loaded — return a visible error placeholder
+  // rather than unsafe unsanitized HTML. We don't throw here because a throw
+  // would create a repeated unhandled-exception loop in the SSE → renderLive
+  // → setTimeout path (the onmessage catch{} swallows it silently each time).
+  // The startup guard below shows a full-page overlay and is the primary
+  // user-visible signal; this placeholder handles any per-block fallout.
+  if (!DOMPURIFY_AVAILABLE) {
+    return '<span style="color:var(--red);font-style:italic">[Content not rendered — DOMPurify unavailable]</span>';
   }
   try {
     const html = marked.parse(text);
@@ -1072,7 +1080,7 @@ async function loadTools() {
 // catches the problem before any SSE events arrive so the user sees it
 // immediately rather than having renders silently fail.
 (function checkDOMPurify() {
-  if (typeof DOMPurify !== 'undefined') return;
+  if (DOMPURIFY_AVAILABLE) return;
   const banner = document.createElement('div');
   banner.setAttribute('role', 'alert');
   banner.style.cssText = [

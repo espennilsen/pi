@@ -414,17 +414,27 @@ if (typeof marked !== 'undefined') {
   });
 }
 
+// Evaluated once at script load time. False if the DOMPurify CDN script
+// failed (outage, CSP block, etc.). Used in renderMarkdown and the startup
+// guard below to consistently reflect the initial load state.
+const DOMPURIFY_AVAILABLE = typeof DOMPurify !== 'undefined';
+
 function renderMarkdown(text) {
   if (!text || !text.trim()) return '';
+  // Hard-fail if DOMPurify is not loaded — return a visible error placeholder
+  // rather than unsafe unsanitized HTML. We don't throw here because a throw
+  // would create a repeated unhandled-exception loop in the SSE → renderLive
+  // → setTimeout path (the onmessage catch{} swallows it silently each time).
+  // The startup guard below shows a full-page overlay and is the primary
+  // user-visible signal; this placeholder handles any per-block fallout.
+  if (!DOMPURIFY_AVAILABLE) {
+    return '<span style="color:var(--red);font-style:italic">[Content not rendered — DOMPurify unavailable]</span>';
+  }
   try {
     const html = marked.parse(text);
-    // Sanitize to prevent XSS from LLM-produced or injected content
-    if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
-    // Hard fallback: render as plain text rather than unsanitized HTML
-    if (!renderMarkdown._warned) { console.warn('[dashboard] DOMPurify unavailable — falling back to plain text'); renderMarkdown._warned = true; }
-    return '<pre>' + esc(text) + '</pre>';
+    return DOMPurify.sanitize(html);
   }
-  catch { return '<p>'+esc(text)+'</p>'; }
+  catch (err) { return '<p>'+esc(text)+'</p>'; }
 }
 
 // ── SSE connection ───────────────────────────────────────────────
@@ -1063,6 +1073,31 @@ async function loadTools() {
     $('tools').innerHTML = '<tr><td colspan="4" style="color:var(--fg3)">—</td></tr>';
   }
 }
+
+// ── DOMPurify startup guard ──────────────────────────────────────
+// Fail loudly at page load if DOMPurify didn't load (CDN outage, CSP block,
+// etc.). renderMarkdown throws on each call too, but the startup banner
+// catches the problem before any SSE events arrive so the user sees it
+// immediately rather than having renders silently fail.
+(function checkDOMPurify() {
+  if (DOMPURIFY_AVAILABLE) return;
+  const banner = document.createElement('div');
+  banner.setAttribute('role', 'alert');
+  banner.style.cssText = [
+    'position:fixed', 'inset:0', 'z-index:9999',
+    'display:flex', 'align-items:center', 'justify-content:center',
+    'background:rgba(10,10,15,0.92)', 'backdrop-filter:blur(4px)',
+  ].join(';');
+  banner.innerHTML =
+    '<div style="background:#1a0a0a;border:2px solid #c0392b;border-radius:8px;padding:2rem 2.5rem;max-width:480px;text-align:center">' +
+    '<div style="font-size:1.5rem;margin-bottom:0.75rem">⚠️ Security Error</div>' +
+    '<div style="color:#e0e0e8;margin-bottom:0.5rem"><strong>DOMPurify failed to load.</strong></div>' +
+    '<div style="color:#888898;font-size:0.9rem">Markdown rendering is disabled to prevent XSS.<br>' +
+    'Check your network connection or Content-Security-Policy.</div>' +
+    '</div>';
+  document.body.appendChild(banner);
+  console.error('[dashboard] DOMPurify is not loaded — markdown rendering disabled (XSS risk).');
+})();
 
 // ── Refresh cycle ────────────────────────────────────────────────
 

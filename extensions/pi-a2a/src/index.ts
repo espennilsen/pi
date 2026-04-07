@@ -1313,8 +1313,9 @@ export default function (pi: ExtensionAPI) {
 			const resolvedAgentId = agentId;
 			const hubConfig = config.hub;
 			const myToken = sessionToken;
-			outboundPending++;
-			updateStatusLine();
+			// NOTE: outboundPending is incremented AFTER the anti-pattern check so
+			// that a blocked send doesn't leak the counter (the IIFE's finally block
+			// that decrements it is never launched when we return early).
 
 			// ── Resolve conversation context (contextId / taskId) ───
 			// Auto-fill from previous conversation unless starting fresh.
@@ -1371,6 +1372,11 @@ export default function (pi: ExtensionAPI) {
 					);
 				}
 			}
+
+			// Increment now — after all early-return guards — so a blocked send
+			// doesn't permanently inflate the pending count.
+			outboundPending++;
+			updateStatusLine();
 
 			const resolvedFromStatic = fromStatic;
 			const sendOpts = {

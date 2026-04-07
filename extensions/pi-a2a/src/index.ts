@@ -1313,8 +1313,9 @@ export default function (pi: ExtensionAPI) {
 			const resolvedAgentId = agentId;
 			const hubConfig = config.hub;
 			const myToken = sessionToken;
-			outboundPending++;
-			updateStatusLine();
+			// NOTE: outboundPending is incremented AFTER the anti-pattern check so
+			// that a blocked send doesn't leak the counter (the IIFE's finally block
+			// that decrements it is never launched when we return early).
 
 			// ── Resolve conversation context (contextId / taskId) ───
 			// Auto-fill from previous conversation unless starting fresh.
@@ -1344,6 +1345,39 @@ export default function (pi: ExtensionAPI) {
 				? activeLoop  // Propagate inbound chain (already incremented by supervisor)
 				: seedLoopMetadata(agentPublicUrl, configuredMaxHops);
 
+			// ── Anti-pattern check: sending back to the inbound caller ──
+			// If an agent calls a2a_send to the agent that sent it the current
+			// inbound task, the remote end receives a new task and its loop-guard
+			// will fire (cycle detection: caller already in visitedAgents).
+			// Warn loudly so the agent knows to respond directly instead.
+			if (activeLoop && executor?.getActiveTaskId()) {
+				const visited = activeLoop.visitedAgents;
+				// visitedAgents = [...chain, thisAgent]. Direct caller = visited[length-2].
+				const callerUrl = visited.length >= 2 ? visited[visited.length - 2] : null;
+				if (callerUrl && normalizeAgentUrl(resolvedUrl) === normalizeAgentUrl(callerUrl)) {
+					log("a2a_send_reply_to_caller", {
+						agent: resolvedName,
+						callerUrl,
+						taskId: executor.getActiveTaskId(),
+					}, "WARN");
+					// Block the send and return a clear tool error — the LLM must see
+					// the failure reason before the outbound request goes out.
+					// (If we only warn without blocking, the send fires immediately
+					// with triggerTurn:false and hits the remote cycle-detector anyway.)
+					return txt(
+						`⚠️ **A2A anti-pattern blocked**: \`a2a_send\` to **${resolvedName}** was cancelled. ` +
+						`That agent sent you the current inbound task — do not call \`a2a_send\` back to it. ` +
+						`Complete your turn and the result will be stored automatically for the caller to retrieve. ` +
+						`Use \`a2a_request_input\` if you need to ask the caller a question.`,
+					);
+				}
+			}
+
+			// Increment now — after all early-return guards — so a blocked send
+			// doesn't permanently inflate the pending count.
+			outboundPending++;
+			updateStatusLine();
+
 			const resolvedFromStatic = fromStatic;
 			const sendOpts = {
 				url: resolvedUrl,
@@ -1363,6 +1397,17 @@ export default function (pi: ExtensionAPI) {
 					}
 					: undefined,
 			};
+
+			// Was this a2a_send initiated during an active inbound task processing?
+			// If so, suppress triggerTurn on response delivery to prevent the agent
+			// from initiating a new forward hop back to the original caller.
+			// The inbound task result is already stored in the TaskStore by the time
+			// this async IIFE completes — triggering a new turn would cause the agent
+			// to re-invoke the sender, which trips the loop-guard cycle detector.
+			// Use loose != (catches both null and undefined) so that when executor
+			// is null, executor?.getActiveTaskId() returns undefined, which != null
+			// is false — correctly treating a missing executor as no active task.
+			const wasSubcall = executor?.getActiveTaskId() != null;
 
 			(async () => {
 				try {
@@ -1402,21 +1447,21 @@ export default function (pi: ExtensionAPI) {
 							pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed (too many responses in 60s)`, display: true }, { triggerTurn: false });
 							return;
 						}
-						pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${result.response}`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
 					// ── Send error ──────────────────────────────────────────
 					if (!result.ok) {
 						const dur = fmtDuration(Date.now() - sendStart);
-						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${result.error}`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
 					// ── Working — poll for completion ───────────────────────
 					const taskId = result.taskId;
 					if (!taskId) {
-						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: true });
+						pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}**: No task ID returned for polling`, display: true }, { triggerTurn: !wasSubcall });
 						return;
 					}
 
@@ -1448,13 +1493,13 @@ export default function (pi: ExtensionAPI) {
 									pi.sendMessage({ customType: "a2a-rate-limited", content: `⚠️ Rate limited — response from **${resolvedName}** suppressed`, display: true }, { triggerTurn: false });
 									return;
 								}
-								pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: true });
+								pi.sendMessage({ customType: "a2a-response-received", content: `📨 **A2A response from ${resolvedName}** (${dur}):\n\n${poll.response ?? "(no content)"}`, display: true }, { triggerTurn: !wasSubcall });
 								return;
 							}
 
 							if (poll.state === "failed") {
 								const dur = fmtDuration(Date.now() - sendStart);
-								pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: true });
+								pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${poll.error ?? "Task failed"}`, display: true }, { triggerTurn: !wasSubcall });
 								return;
 							}
 
@@ -1494,7 +1539,7 @@ export default function (pi: ExtensionAPI) {
 
 									if (!followUpResult.ok) {
 										const dur = fmtDuration(Date.now() - sendStart);
-										pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A follow-up to ${resolvedName} failed** (${dur}): ${followUpResult.error}`, display: true }, { triggerTurn: true });
+										pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A follow-up to ${resolvedName} failed** (${dur}): ${followUpResult.error}`, display: true }, { triggerTurn: !wasSubcall });
 										return;
 									}
 									// Follow-up sent — continue polling for completion
@@ -1502,7 +1547,7 @@ export default function (pi: ExtensionAPI) {
 									const msg = inputErr instanceof Error ? inputErr.message : String(inputErr);
 									log("a2a_poll_input_error", { agent: resolvedName, taskId, error: msg }, "ERROR");
 									const dur = fmtDuration(Date.now() - sendStart);
-									pi.sendMessage({ customType: "a2a-response-error", content: `❌ **Failed to answer ${resolvedName}'s question** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+									pi.sendMessage({ customType: "a2a-response-error", content: `❌ **Failed to answer ${resolvedName}'s question** (${dur}): ${msg}`, display: true }, { triggerTurn: !wasSubcall });
 									return;
 								}
 								continue;
@@ -1525,7 +1570,7 @@ export default function (pi: ExtensionAPI) {
 
 					const msg = err instanceof Error ? err.message : String(err);
 					const dur = fmtDuration(Date.now() - sendStart);
-					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: true });
+					pi.sendMessage({ customType: "a2a-response-error", content: `❌ **A2A error from ${resolvedName}** (${dur}): ${msg}`, display: true }, { triggerTurn: !wasSubcall });
 				} finally {
 					if (sessionToken === myToken) {
 						outboundPending--;

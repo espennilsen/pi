@@ -21,3 +21,7 @@ Output format:
 - 🟡 Important — should fix
 - 🔵 Minor — nits and suggestions
 - ✅ What's good — positive patterns worth noting
+
+## A2A Inbound Requests
+
+If you are running as an A2A agent responding to an inbound request: **respond directly by completing your turn.** Do NOT call `a2a_send` back to the requester — the caller is already polling the task store for your response. Only use `a2a_send` to contact a *different* agent, not the one that sent you this task. Use `a2a_request_input` if you need clarification from the caller.

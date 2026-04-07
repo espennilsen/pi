@@ -26,10 +26,45 @@ src/
 └── hub.ts            # A2A Hub registration client
 ```
 
+## ⚠️ Inbound A2A: Respond Directly — Never Call `a2a_send` Back to the Caller
+
+This is the most important rule for A2A agent behaviour:
+
+**When your agent receives an inbound A2A request, respond by completing your turn. Do NOT call `a2a_send` to send a reply back to the requester.**
+
+### Why
+
+Inbound A2A tasks work via the task lifecycle, not message passing:
+
+1. The remote caller sends `message/send` → your agent ACKs with `state: working`
+2. Your agent processes the request (your turn runs)
+3. The result is stored in the SQLite TaskStore automatically on turn completion
+4. The remote caller polls `tasks/get` (or SSE) and retrieves the result
+
+If you call `a2a_send` back to the caller mid-task:
+- The caller's loop-guard fires (cycle detection: it's already in `visitedAgents`)
+- The call fails with a `Loop control` error
+- You've wasted a round-trip and confused the protocol state
+
+### What to do instead
+
+| Situation | Correct approach |
+|-----------|------------------|
+| Normal reply | Just complete your turn. Your final message is stored as the task result. |
+| Need more info | Use `a2a_request_input` — it pauses the task and asks the caller via the `input-required` state |
+| Sending to a *different* agent | `a2a_send` is fine — just not back to the requester |
+
+### Runtime detection
+
+The extension emits a `⚠️ A2A anti-pattern` warning in the chat if it detects an `a2a_send` call targeting the same URL as the agent that sent the current inbound task. Heed the warning and abort the send.
+
+---
+
 ## Key Design Decisions
 
 - **@a2a-js/sdk v0.3.10 integration** — Uses the SDK's `DefaultRequestHandler`, `JsonRpcTransportHandler`, `SQLiteTaskStore`, `InMemoryPushNotificationStore`, and `DefaultPushNotificationSender` for spec-compliant A2A protocol handling. The extension implements the `AgentExecutor` interface with pi-specific main-process delegation.
 - **Async-first task lifecycle** — Inbound: the executor ACKs with "working" immediately (unblocking the HTTP response), then processes in the background. On completion, results are saved directly to the SQLite TaskStore (artifact + completed/failed status). Outbound: `a2a_send` sends with `blocking: false` (fire-and-forget), gets back a taskId, then polls `tasks/get` every 5s until completed/failed/timeout. A sliding-window rate limiter (10 triggers/60s) prevents response injection storms. No result messages are sent back — this eliminates bidirectional loops.
+- **Sub-call response suppression** — When `a2a_send` is called from inside an active inbound task turn, the response notification is delivered with `triggerTurn: false`. This prevents a new agent turn from firing after the inbound task completes, which would otherwise cause the agent to re-invoke the original caller (triggering cycle-detection on the remote side). Top-level outbound calls (not inside an inbound task) continue to use `triggerTurn: true` so the agent can process the response normally. Detection: `wasSubcall = executor?.getActiveTaskId() != null` (loose `!=` — catches both `null` and `undefined`, so a missing executor correctly yields `false`) is captured at the start of `a2a_send` execute().
 - **Multi-turn conversations** — `a2a_send` tracks `contextId` and `taskId` per remote agent. Follow-up messages to the same agent automatically continue the previous conversation (reusing contextId/taskId). Use `newConversation: true` to start fresh. Context is in-memory and resets on session restart.
 - **Input-required multi-turn** — Full support for the A2A `input-required` task state. **Inbound**: the `a2a_request_input` tool allows the agent to pause mid-turn and ask the caller for more information. The tool's `execute()` parks on a promise; when the follow-up `message/send` arrives with the same taskId, the executor bypasses the serial queue, resolves the parked promise, and the agent turn continues with full context. **Outbound**: when polling sees `input-required`, the question is injected into the local chat (triggering a turn), the agent's response is captured, and a follow-up is sent automatically. Configurable via `inputRequiredTimeoutMs` (default 10min) and `maxInputRounds` (default 5).
 - **Persistent SQLite TaskStore** — Tasks survive restarts. Schema: `a2a_tasks` with extracted `status`, `hop_count`, and `visited_agents` columns for efficient querying and loop control. WAL mode for concurrent reads during processing. DB at `{agentDir}/db/a2a.db`.

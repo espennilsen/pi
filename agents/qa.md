@@ -144,3 +144,7 @@ Score each dimension 1-10:
 6. **Report precisely** — include exact reproduction steps, not vague descriptions
 7. **Grade honestly** — a 10 means genuinely exceptional, not "it works"
 8. **Clean up** — if you started a dev server in a cmux pane, stop it when done
+
+## A2A Inbound Requests
+
+If you are running as an A2A agent responding to an inbound request: **respond directly by completing your turn.** Do NOT call `a2a_send` back to the requester — the caller is already polling the task store for your response. Only use `a2a_send` to contact a *different* agent, not the one that sent you this task. Use `a2a_request_input` if you need clarification from the caller.

@@ -116,6 +116,20 @@ cd ../pi-worktrees/<task-id>/<short-description>
 - **Clean up worktrees after merge** — `git worktree remove <path>` and optionally `git branch -d <branch>`
 - **No exceptions** — if you forgot to create a task, stop and create one now before continuing
 
+## ⚠️ A2A Inbound Requests: Respond Directly
+
+When Pi receives an inbound A2A request (another agent calling `message/send`), the correct response is to **complete the turn and return a result**. The task result is stored automatically in the SQLite TaskStore and retrieved by the caller via `tasks/get` polling.
+
+**Never call `a2a_send` back to the agent that sent you a task.** This creates a loop that the hub's cycle-detection guard will block. Use these tools instead:
+
+| Goal | Correct tool |
+|------|--------------|
+| Reply with an answer | Just complete the turn — the response is stored automatically |
+| Ask the caller a question | `a2a_request_input` — pauses task, waits for follow-up |
+| Contact a *different* agent | `a2a_send` — fine, as long as it's not the requester |
+
+The pi-a2a extension emits a `⚠️ A2A anti-pattern` warning if it detects an `a2a_send` targeting the inbound caller. Heed the warning and abort the send.
+
 ## Other Conventions
 
 - Each extension owns its own DB tables (prefixed by extension name)

@@ -26,23 +26,26 @@ export class ActiveTaskWidget implements Widget {
 			return;
 		}
 
-		// Fetch tasks in active states — building first, then reviewing / pr_ready
-		const result = await hubRpc(ctx.hubUrl, ctx.hubApiKey, "tasks.list", {
-			...(ctx.project ? { project: ctx.project } : {}),
-			limit: 3,
-		});
+		// Fetch each active state separately so pagination doesn't hide results.
+		// A single tasks.list call with no state filter could return limit rows
+		// of queued/planning tasks, silently missing building/reviewing tasks.
+		const projectFilter = ctx.project ? { project: ctx.project } : {};
+		const [buildingRes, reviewingRes, prReadyRes] = await Promise.all([
+			hubRpc(ctx.hubUrl, ctx.hubApiKey, "tasks.list", { ...projectFilter, state: "building", limit: 2 }),
+			hubRpc(ctx.hubUrl, ctx.hubApiKey, "tasks.list", { ...projectFilter, state: "reviewing", limit: 1 }),
+			hubRpc(ctx.hubUrl, ctx.hubApiKey, "tasks.list", { ...projectFilter, state: "pr_ready", limit: 1 }),
+		]);
 
-		if (!result) {
+		if (!buildingRes && !reviewingRes && !prReadyRes) {
 			this.error = "hub unreachable";
 			return;
 		}
 
-		const all = ((result.tasks as HubTask[]) ?? []);
-		// Filter to active states, prefer building
-		const active = all.filter((t) =>
-			["building", "reviewing", "pr_ready"].includes(t.state),
-		);
-		this.tasks = active.slice(0, 2);
+		// building first (highest urgency), then reviewing, then pr_ready
+		const building: HubTask[] = (buildingRes?.tasks as HubTask[]) ?? [];
+		const reviewing: HubTask[] = (reviewingRes?.tasks as HubTask[]) ?? [];
+		const prReady: HubTask[] = (prReadyRes?.tasks as HubTask[]) ?? [];
+		this.tasks = [...building, ...reviewing, ...prReady].slice(0, 2);
 	}
 
 	render(w: number, th: Theme): string[] {

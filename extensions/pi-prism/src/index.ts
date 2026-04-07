@@ -34,6 +34,8 @@ export default function (pi: ExtensionAPI) {
 
 	let overlayHandle: OverlayHandle | null = null;
 	let isOpen = false;
+	/** Reference to the live sidebar instance — needed to dispose its timer on session end. */
+	let liveSidebar: import("./sidebar.ts").WidgetSidebar | null = null;
 
 	// ── Build widgets from settings ──────────────────────────
 
@@ -75,11 +77,14 @@ export default function (pi: ExtensionAPI) {
 
 		ctx.ui.custom(
 			(tui: TUI, theme: any, _kb: unknown, done: (v: undefined) => void) => {
-				return new WidgetSidebar(tui, theme, pi, cwd, widgets, () => {
+				const sidebar = new WidgetSidebar(tui, theme, pi, cwd, widgets, () => {
 					isOpen = false;
 					done(undefined);
 					overlayHandle = null;
+					liveSidebar = null;
 				});
+				liveSidebar = sidebar;
+				return sidebar;
 			},
 			{
 				overlay: true,
@@ -102,10 +107,28 @@ export default function (pi: ExtensionAPI) {
 	// ── Auto-launch on session start ─────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Dispose any sidebar that survived from a previous session
+		if (liveSidebar) {
+			liveSidebar.dispose();
+			liveSidebar = null;
+			overlayHandle = null;
+			isOpen = false;
+		}
 		if (!ctx.hasUI) return;
 		const settings = resolveSettings(process.cwd());
 		if (!settings.autoOpen) return;
 		setTimeout(() => toggle(ctx), 800);
+	});
+
+	// ── Dispose sidebar on session end to stop the refresh timer ─
+
+	pi.on("session_shutdown", async () => {
+		if (liveSidebar) {
+			liveSidebar.dispose();
+			liveSidebar = null;
+			overlayHandle = null;
+			isOpen = false;
+		}
 	});
 
 	// ── Command & shortcut ───────────────────────────────────

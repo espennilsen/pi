@@ -445,13 +445,12 @@ export class PiAgentExecutor implements AgentExecutor {
 				return;
 			}
 		} catch (err: unknown) {
-			// Store error (DB failure, disk full, etc.) — log and fall through to
-			// normal processing. Better to risk a duplicate turn than to deadlock
-			// the queue by never calling releaseQueue.
+			// Store error (DB failure, disk full, etc.) — abort this turn to keep
+			// the queue healthy. The raw error is logged internally; the caller
+			// receives a generic message to avoid leaking internal file paths.
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("executor_store_load_error", { taskId, error: msg }, "ERROR");
-			// Guard failed — abort this turn so the queue stays healthy
-			this.publishError(taskId, contextId, eventBus, `Store error during duplicate-send check: ${msg}`);
+			this.publishError(taskId, contextId, eventBus, "Internal error — task lookup failed. Please retry.");
 			eventBus.finished();
 			this.taskContexts.delete(taskId);
 			releaseQueue!();

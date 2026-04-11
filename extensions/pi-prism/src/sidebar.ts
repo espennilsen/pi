@@ -29,6 +29,8 @@ export class WidgetSidebar {
 	private lastRefresh = 0;
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private disposed = false;
+	private paused = false;
+	private refreshing = false;
 
 	// Cache
 	private cache: string[] = [];
@@ -53,9 +55,12 @@ export class WidgetSidebar {
 
 	private async refresh(): Promise<void> {
 		if (this.disposed) return;
+		if (this.paused) return;
+		if (this.refreshing) return;
+		this.refreshing = true;
 		this.loading = true;
 		this.ver++;
-		this.tui.requestRender();
+		if (!this.disposed) this.tui.requestRender();
 
 		const ctx: WidgetContext = {
 			query: this.query,
@@ -70,10 +75,12 @@ export class WidgetSidebar {
 		this.loading = false;
 		this.lastRefresh = Date.now();
 		this.ver++;
+		this.refreshing = false;
 		this.tui.requestRender();
 	}
 
 	handleInput(data: string): void {
+		if (this.disposed) return;
 		if (matchesKey(data, Key.escape) || data === "q" || data === "Q") {
 			this.dispose();
 			this.done();
@@ -90,7 +97,12 @@ export class WidgetSidebar {
 			this.tui.requestRender();
 		}
 		if (data === "r" || data === "R") {
-			this.refresh();
+			this.refresh().catch(() => {});
+		}
+		if (data === "h" || data === "H") {
+			this.paused = !this.paused;
+			this.ver++;
+			this.tui.requestRender();
 		}
 	}
 
@@ -147,10 +159,11 @@ export class WidgetSidebar {
 
 		// ── Footer ──
 		lines.push(sep());
-		const keys = `${th.fg("muted", "j/k")} scroll ${th.fg("muted", "│ r")} refresh ${th.fg("muted", "│ q")} close`;
+		const keys = `${th.fg("muted", "j/k")} scroll ${th.fg("muted", "│ r")} refresh ${th.fg("muted", "│ h")} pause ${th.fg("muted", "│ q")} close`;
 		lines.push(row(` ${keys}`));
 		if (this.lastRefresh) {
-			lines.push(row(` ${th.fg("dim", fmtAgo(this.lastRefresh))} ${th.fg("dim", `· ${this.widgets.length} widgets`)}`));
+			const pauseStatus = this.paused ? th.fg("warning", " │ PAUSED") : "";
+			lines.push(row(` ${th.fg("dim", fmtAgo(this.lastRefresh))} ${th.fg("dim", `· ${this.widgets.length} widgets`)}${pauseStatus}`));
 		}
 		lines.push(bdr("╰" + "─".repeat(innerW) + "╯"));
 

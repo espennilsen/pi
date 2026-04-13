@@ -1,6 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { fmtTime } from "../helpers.ts";
+import { fmtTime, todayIso } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 
 export class TodayCalendarWidget implements Widget {
@@ -10,7 +10,7 @@ export class TodayCalendarWidget implements Widget {
 	private events: Record<string, unknown>[] = [];
 
 	async refresh(ctx: WidgetContext): Promise<void> {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 		try {
 			this.events = (
 				await ctx.query(

@@ -4,6 +4,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { DateTime } from "luxon";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -89,6 +90,18 @@ export async function execCmd(cmd: string, cwd: string): Promise<string> {
 	} catch {
 		return "";
 	}
+}
+
+// ── Luxon Date Helpers (DST-safe) ────────────────────────────
+
+/** Today's date in ISO format (YYYY-MM-DD), using Oslo timezone. */
+export function todayIso(): string {
+	return DateTime.now().setZone("Europe/Oslo").toISODate()!;
+}
+
+/** Date N days from now in ISO format (YYYY-MM-DD), using Oslo timezone. Handles DST correctly. */
+export function daysAheadIso(days: number): string {
+	return DateTime.now().setZone("Europe/Oslo").plus({ days }).toISODate()!;
 }
 
 // ── Format Helpers ───────────────────────────────────────────

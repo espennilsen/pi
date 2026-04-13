@@ -140,13 +140,7 @@ export default function (pi: ExtensionAPI) {
 		autoOpenTimer = setTimeout(() => { autoOpenTimer = null; toggle(ctx); }, 800);
 	});
 
-	// ── Dispose sidebar on session end to stop the refresh timer ─
-
-	pi.on("session_end", async () => {
-		if (liveSidebar) {
-			liveSidebar.dispose();
-		}
-	});
+	// ── Dispose sidebar on session shutdown to stop the refresh timer ─
 
 	pi.on("session_shutdown", async () => {
 		if (autoOpenTimer) { clearTimeout(autoOpenTimer); autoOpenTimer = null; }

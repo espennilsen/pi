@@ -1,0 +1,42 @@
+{
+	"name": "@e9n/pi-mealie",
+	"version": "0.1.0",
+	"description": "Mealie recipe manager API integration for pi — recipes, meal plans, and shopping lists",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": ">=0.65.2",
+		"@sinclair/typebox": ">=0.34.0"
+	},
+	"devDependencies": {
+		"@mariozechner/pi-coding-agent": "^0.65.2",
+		"@sinclair/typebox": "^0.34.49",
+		"typescript": "^5.9.3"
+	},
+	"license": "MIT",
+	"author": "Espen Nilsen <hi@e9n.dev>",
+	"files": [
+		"CHANGELOG.md",
+		"README.md",
+		"package.json",
+		"src"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/espennilsen/pi.git",
+		"directory": "extensions/pi-mealie"
+	}
+}

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0 — 2026-04-15
+
+- `mealie_mealplans`: auto-update recipe `lastMade` when adding a recipe to today or a past date
+- `mealie_recipes`: add `servings` numeric parameter for `recipeServings` (recipe scaling); fixes recipes created with 0 portions
+
 ## 0.1.0 — 2026-04-11
 
 - Initial release

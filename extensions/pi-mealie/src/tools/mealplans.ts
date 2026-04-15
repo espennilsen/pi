@@ -193,10 +193,10 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 								const currentLastMade = recipe.lastMade ? recipe.lastMade.slice(0, 10) : null;
 								if (!currentLastMade || params.date > currentLastMade) {
 									try {
-										await mealie.patch(`/recipes/${params.recipeSlug}/last-made`, { timestamp: params.date + "T12:00:00" }, signal);
+										await mealie.patch(`/recipes/${recipe.slug}/last-made`, { timestamp: params.date + "T12:00:00" }, signal);
 									} catch (err) {
 										// Best-effort — don't fail the meal plan add if last-made update fails
-										console.warn('Failed to update lastMade for', params.recipeSlug, err);
+										console.warn('Failed to update lastMade for', recipe.slug, err);
 									}
 								}
 							}

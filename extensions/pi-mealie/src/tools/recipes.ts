@@ -347,6 +347,7 @@ async function buildRecipeBody(params: {
 		body.recipeInstructions = params.instructions.map((step) => ({
 			text: step.text,
 			title: step.title || "",
+			ingredientReferences: [] as { referenceId: string }[],
 		}));
 	}
 

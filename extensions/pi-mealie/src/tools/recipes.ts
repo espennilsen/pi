@@ -73,6 +73,7 @@ interface RecipeDetail {
 	slug: string;
 	description: string | null;
 	recipeYield: string | null;
+	recipeServings: number;
 	prepTime: string | null;
 	cookTime: string | null;
 	totalTime: string | null;
@@ -123,7 +124,8 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			query: Type.Optional(Type.String({ description: "Search query (for search action)" })),
 			name: Type.Optional(Type.String({ description: "Recipe name (for create/update)" })),
 			description: Type.Optional(Type.String({ description: "Recipe description" })),
-			recipeYield: Type.Optional(Type.String({ description: "Yield / servings (e.g. '4 servings', '2-3 wraps')" })),
+			recipeYield: Type.Optional(Type.String({ description: "Yield display text (e.g. '4 servings', '2-3 wraps')" })),
+			servings: Type.Optional(Type.Number({ description: "Number of servings (numeric, e.g. 4). Used for recipe scaling. Defaults to 0 if not set." })),
 			prepTime: Type.Optional(Type.String({ description: "Prep time (e.g. '15 Minutes')" })),
 			cookTime: Type.Optional(Type.String({ description: "Cook time (e.g. '30 Minutes')" })),
 			totalTime: Type.Optional(Type.String({ description: "Total time (e.g. '45 Minutes')" })),
@@ -298,6 +300,7 @@ async function resolveOrganizerName(path: string, name: string, signal?: AbortSi
  *  Resolves tag, category, food, and unit names to full Mealie objects to avoid 422 errors and duplicates. */
 async function buildRecipeBody(params: {
 	recipeYield?: string;
+	servings?: number;
 	prepTime?: string;
 	cookTime?: string;
 	totalTime?: string;
@@ -310,6 +313,7 @@ async function buildRecipeBody(params: {
 	const body: Record<string, unknown> = {};
 
 	if (params.recipeYield !== undefined) body.recipeYield = params.recipeYield;
+	if (params.servings !== undefined) body.recipeServings = params.servings;
 	if (params.prepTime !== undefined) body.prepTime = params.prepTime;
 	if (params.cookTime !== undefined) body.cookTime = params.cookTime;
 	if (params.totalTime !== undefined) body.totalTime = params.totalTime;
@@ -395,6 +399,7 @@ function formatDetail(r: RecipeDetail): string {
 	lines.push(`**Slug:** ${r.slug}`);
 	if (r.description) lines.push(`\n${r.description}`);
 	if (r.recipeYield) lines.push(`**Yield:** ${r.recipeYield}`);
+	if (r.recipeServings) lines.push(`**Servings:** ${r.recipeServings}`);
 	if (r.prepTime) lines.push(`**Prep Time:** ${r.prepTime}`);
 	if (r.cookTime) lines.push(`**Cook Time:** ${r.cookTime}`);
 	if (r.totalTime) lines.push(`**Total Time:** ${r.totalTime}`);

@@ -167,8 +167,12 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 								await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
 							} catch (patchErr: any) {
 								// Rollback: delete the stub recipe so we don't leave orphans
-								try { await mealie.delete(`/recipes/${resolvedSlug}`); } catch { /* best-effort */ }
-								throw new Error(`Recipe created but failed to add details (rolled back): ${patchErr.message || patchErr}`);
+								let rolledBack = false;
+								try { await mealie.delete(`/recipes/${resolvedSlug}`); rolledBack = true; } catch { /* best-effort */ }
+								const suffix = rolledBack
+									? "(rolled back)"
+									: `ORPHAN stub recipe may remain at slug: "${resolvedSlug}" — please delete it manually`;
+								throw new Error(`Recipe created but failed to add details (${suffix}): ${patchErr.message || patchErr}`);
 							}
 						}
 
@@ -206,6 +210,15 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						}
 						if (!/^https?:\/\//i.test(params.url)) {
 							return { content: [{ type: "text", text: "❌ Invalid URL: only http(s) URLs are supported for scraping." }], details: {} };
+						}
+						try {
+							const parsed = new URL(params.url);
+							const host = parsed.hostname;
+							if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0)/.test(host)) {
+								return { content: [{ type: "text", text: "❌ URL points to a private/internal address. Only public URLs are allowed for scraping." }], details: {} };
+							}
+						} catch {
+							return { content: [{ type: "text", text: "❌ Invalid URL format." }], details: {} };
 						}
 						const result = await mealie.post<RecipeDetail>("/recipes/create/url", { url: params.url }, signal);
 						return { content: [{ type: "text", text: `✅ Recipe scraped from URL:\n\n${formatDetail(result)}` }], details: {} };

@@ -4,7 +4,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { isClientReady, mealie } from "../client.ts";
+import { isClientReady, mealie, apiList } from "../client.ts";
 
 /** Format a Date as YYYY-MM-DD in local timezone (avoids UTC shift from toISOString). */
 function toLocalISODate(d: Date): string {
@@ -99,11 +99,10 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						const start = toLocalISODate(monday);
 						const end = toLocalISODate(sunday);
 
-						const entries = await mealie.get<MealPlanEntry[]>(
-							"/households/mealplans",
-							{ start_date: start, end_date: end },
+						const entries = await apiList<MealPlanEntry>("/households/mealplans", {
+							params: { start_date: start, end_date: end },
 							signal,
-						);
+						});
 						if (!entries || entries.length === 0) {
 							return { content: [{ type: "text", text: "No meals planned for this week (" + start + " to " + end + ")." }], details: {} };
 						}
@@ -135,11 +134,10 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						if (!params.date) {
 							return { content: [{ type: "text", text: "Missing required parameter: date" }], details: {} };
 						}
-						const entries = await mealie.get<MealPlanEntry[]>(
-							"/households/mealplans",
-							{ start_date: params.date, end_date: params.date },
+						const entries = await apiList<MealPlanEntry>("/households/mealplans", {
+							params: { start_date: params.date, end_date: params.date },
 							signal,
-						);
+						});
 						if (!entries || entries.length === 0) {
 							return { content: [{ type: "text", text: "No meals planned for " + params.date + "." }], details: {} };
 						}

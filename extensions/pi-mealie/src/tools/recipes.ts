@@ -323,11 +323,21 @@ async function buildRecipeBody(params: {
 			};
 			if (ing.unit) {
 				const found = await resolveOrganizerName("/units", ing.unit, signal);
-				entry.unit = found ? { id: found.id, name: found.name } : { name: ing.unit };
+				if (found) {
+					entry.unit = { id: found.id, name: found.name };
+				} else {
+					const created = await mealie.post<OrganizerItem>("/units", { name: ing.unit }, signal);
+					entry.unit = { id: created.id, name: created.name };
+				}
 			}
 			if (ing.food) {
 				const found = await resolveOrganizerName("/foods", ing.food, signal);
-				entry.food = found ? { id: found.id, name: found.name } : { name: ing.food };
+				if (found) {
+					entry.food = { id: found.id, name: found.name };
+				} else {
+					const created = await mealie.post<OrganizerItem>("/foods", { name: ing.food }, signal);
+					entry.food = { id: created.id, name: created.name };
+				}
 			}
 			(body.recipeIngredient as Record<string, unknown>[]).push(entry);
 		}

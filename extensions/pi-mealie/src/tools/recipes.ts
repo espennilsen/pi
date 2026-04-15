@@ -13,6 +13,38 @@ function validatePathSegment(value: string, name: string): void {
 	}
 }
 
+/** Check if a hostname (brackets already stripped) points to a private/internal address. */
+function checkPrivateHost(host: string): boolean {
+	// Simple hostnames: localhost
+	if (host === "localhost") return true;
+
+	// Direct IPv4 private ranges
+	if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0)/.test(host)) return true;
+
+	// IPv6 loopback
+	if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+
+	// IPv4-mapped IPv6: ::ffff:a.b.c.d or ::ffff:XXXX:XXXX (hex)
+	const fffffMatch = host.match(/^::ffff:(.+)$/i);
+	if (fffffMatch) {
+		const rest = fffffMatch[1];
+		// If it's in dotted-decimal form, test directly
+		if (/^\d+\.\d+\.\d+\.\d+$/.test(rest)) {
+			return checkPrivateHost(rest);
+		}
+		// Hex form: two 16-bit groups like 7f00:1 — convert to dotted decimal
+		const hexMatch = rest.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+		if (hexMatch) {
+			const hi = parseInt(hexMatch[1], 16);
+			const lo = parseInt(hexMatch[2], 16);
+			const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+			return checkPrivateHost(ipv4);
+		}
+	}
+
+	return false;
+}
+
 interface RecipeSummary {
 	id: string;
 	name: string;
@@ -34,12 +66,12 @@ interface RecipeDetail {
 	name: string;
 	slug: string;
 	description: string | null;
- recipeYield: string | null;
+	recipeYield: string | null;
 	prepTime: string | null;
 	cookTime: string | null;
 	totalTime: string | null;
-	ingredients: { note: string; quantity: number | null; unit: { name: string } | null; food: { name: string } | null }[];
-	instructions: { text: string; title: string | null }[];
+	recipeIngredient: { note: string; quantity: number | null; unit: { name: string } | null; food: { name: string } | null }[];
+	recipeInstructions: { text: string; title: string | null }[];
 	notes: { title: string | null; text: string }[];
 	tags: { id: string; name: string; slug: string }[];
 	recipeCategory: { id: string; name: string; slug: string }[];
@@ -51,6 +83,18 @@ interface RecipeDetail {
 	dateUpdated: string;
 	extras: Record<string, string>;
 }
+
+const ingredientSchema = Type.Object({
+	note: Type.Optional(Type.String({ description: "Free-text ingredient description (e.g. 'finely chopped')" })),
+	quantity: Type.Optional(Type.Number({ description: "Amount (e.g. 2, 0.5)" })),
+	unit: Type.Optional(Type.String({ description: "Unit name (e.g. 'g', 'cups', 'stk')" })),
+	food: Type.Optional(Type.String({ description: "Food name (e.g. 'kjøttdeig', 'onion')" })),
+});
+
+const instructionSchema = Type.Object({
+	text: Type.String({ description: "Step text" }),
+	title: Type.Optional(Type.String({ description: "Optional section title" })),
+});
 
 const actionSchema = Type.Union([
 	Type.Literal("list"),
@@ -73,6 +117,16 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			query: Type.Optional(Type.String({ description: "Search query (for search action)" })),
 			name: Type.Optional(Type.String({ description: "Recipe name (for create/update)" })),
 			description: Type.Optional(Type.String({ description: "Recipe description" })),
+			recipeYield: Type.Optional(Type.String({ description: "Yield / servings (e.g. '4 servings', '2-3 wraps')" })),
+			prepTime: Type.Optional(Type.String({ description: "Prep time (e.g. '15 Minutes')" })),
+			cookTime: Type.Optional(Type.String({ description: "Cook time (e.g. '30 Minutes')" })),
+			totalTime: Type.Optional(Type.String({ description: "Total time (e.g. '45 Minutes')" })),
+			ingredients: Type.Optional(Type.Array(ingredientSchema, { description: "Recipe ingredients" })),
+			instructions: Type.Optional(Type.Array(instructionSchema, { description: "Recipe steps/instructions" })),
+			notes: Type.Optional(Type.Array(Type.Object({
+				text: Type.String({ description: "Note text" }),
+				title: Type.Optional(Type.String({ description: "Note title" })),
+			}), { description: "Recipe notes" })),
 			url: Type.Optional(Type.String({ description: "URL to scrape recipe from (for scrape_url)" })),
 			tags: Type.Optional(Type.Array(Type.String(), { description: "Tag names" })),
 			categories: Type.Optional(Type.Array(Type.String(), { description: "Category names" })),
@@ -126,27 +180,57 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 					}
 
 					case "create": {
-						const body: Record<string, unknown> = {};
-						if (params.name) body.name = params.name;
-						if (params.description) body.description = params.description;
-						if (params.tags) body.tags = params.tags;
-						if (params.categories) body.recipeCategory = params.categories;
+						// Step 1: Create minimal recipe (Mealie POST returns a slug string)
+						const createBody: Record<string, unknown> = {};
+						if (params.name) createBody.name = params.name;
+						if (params.description) createBody.description = params.description;
 
-						const recipe = await mealie.post<RecipeDetail>("/recipes", body, signal);
-						return { content: [{ type: "text", text: `✅ Recipe created:\n\n${formatDetail(recipe)}` }], details: {} };
+						const slug = await mealie.post<string>("/recipes", createBody, signal);
+						if (!slug) throw new Error("Recipe creation returned no slug");
+
+						const resolvedSlug = typeof slug === "string" ? slug : (slug as unknown as RecipeDetail).slug;
+						if (!resolvedSlug) throw new Error("Could not determine recipe slug from create response");
+						// Validate server-returned slug — never use an invalid slug in a URL path (path traversal risk)
+						if (!/^[\w-]+$/.test(resolvedSlug)) {
+							throw new Error(`Invalid slug returned by Mealie: "${resolvedSlug}". Cannot safely clean up — please delete the stub recipe manually.`);
+						}
+
+						// Step 2: If additional fields provided, PATCH the recipe
+						const patchBody = buildRecipeBody(params);
+						if (Object.keys(patchBody).length > 0) {
+							try {
+								await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
+							} catch (patchErr: any) {
+								// Rollback: delete the stub recipe so we don't leave orphans
+								let rolledBack = false;
+								try { await mealie.delete(`/recipes/${resolvedSlug}`); rolledBack = true; } catch { /* best-effort */ }
+								const suffix = rolledBack
+									? "(rolled back)"
+									: `ORPHAN stub recipe may remain at slug: "${resolvedSlug}" — please delete it manually`;
+								throw new Error(`Recipe created but failed to add details (${suffix}): ${patchErr.message || patchErr}`);
+							}
+						}
+
+						// Step 3: Fetch the final recipe for display
+						try {
+							const recipe = await mealie.get<RecipeDetail>(`/recipes/${resolvedSlug}`, undefined, signal);
+							return { content: [{ type: "text", text: `✅ Recipe created:\n\n${formatDetail(recipe)}` }], details: {} };
+						} catch {
+							// Recipe was created and patched successfully; only the display fetch failed
+							return { content: [{ type: "text", text: `✅ Recipe created (slug: ${resolvedSlug}). Use \`get\` action with this slug to view details.` }], details: {} };
+						}
 					}
 
 					case "update": {
 						if (!params.slug) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: slug" }], details: {} };
 						}
-						const body: Record<string, unknown> = {};
+						validatePathSegment(params.slug, "slug");
+
+						const body = buildRecipeBody(params);
 						if (params.name !== undefined) body.name = params.name;
 						if (params.description !== undefined) body.description = params.description;
-						if (params.tags) body.tags = params.tags;
-						if (params.categories) body.recipeCategory = params.categories;
 
-						validatePathSegment(params.slug, "slug");
 						const recipe = await mealie.patch<RecipeDetail>(`/recipes/${params.slug}`, body, signal);
 						return { content: [{ type: "text", text: `✅ Recipe updated:\n\n${formatDetail(recipe)}` }], details: {} };
 					}
@@ -167,6 +251,18 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (!/^https?:\/\//i.test(params.url)) {
 							return { content: [{ type: "text", text: "❌ Invalid URL: only http(s) URLs are supported for scraping." }], details: {} };
 						}
+						let host: string;
+						try {
+							host = new URL(params.url).hostname;
+						} catch {
+							return { content: [{ type: "text", text: "❌ Invalid URL format." }], details: {} };
+						}
+						// WHATWG URL returns IPv6 hostnames bracketed, e.g. "[::ffff:7f00:1]"
+						const unbracketed = host.replace(/^\[|\]$/g, "");
+						const isPrivate = checkPrivateHost(unbracketed);
+						if (isPrivate) {
+							return { content: [{ type: "text", text: "❌ URL points to a private/internal address. Only public URLs are allowed for scraping." }], details: {} };
+						}
 						const result = await mealie.post<RecipeDetail>("/recipes/create/url", { url: params.url }, signal);
 						return { content: [{ type: "text", text: `✅ Recipe scraped from URL:\n\n${formatDetail(result)}` }], details: {} };
 					}
@@ -179,6 +275,54 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			}
 		},
 	});
+}
+
+/** Build recipe body fields for PATCH from tool params (excludes name/description which are handled separately). */
+function buildRecipeBody(params: {
+	recipeYield?: string;
+	prepTime?: string;
+	cookTime?: string;
+	totalTime?: string;
+	ingredients?: { note?: string; quantity?: number; unit?: string; food?: string }[];
+	instructions?: { text: string; title?: string }[];
+	notes?: { text: string; title?: string }[];
+	tags?: string[];
+	categories?: string[];
+}): Record<string, unknown> {
+	const body: Record<string, unknown> = {};
+
+	if (params.recipeYield !== undefined) body.recipeYield = params.recipeYield;
+	if (params.prepTime !== undefined) body.prepTime = params.prepTime;
+	if (params.cookTime !== undefined) body.cookTime = params.cookTime;
+	if (params.totalTime !== undefined) body.totalTime = params.totalTime;
+
+	if (params.ingredients) {
+		body.recipeIngredient = params.ingredients.map((ing) => ({
+			note: ing.note || "",
+			quantity: ing.quantity ?? null,
+			unit: ing.unit ? { name: ing.unit } : null,
+			food: ing.food ? { name: ing.food } : null,
+		}));
+	}
+
+	if (params.instructions) {
+		body.recipeInstructions = params.instructions.map((step) => ({
+			text: step.text,
+			title: step.title || "",
+		}));
+	}
+
+	if (params.notes) {
+		body.notes = params.notes.map((n) => ({
+			text: n.text,
+			title: n.title || "",
+		}));
+	}
+
+	if (params.tags) body.tags = params.tags.map((name) => ({ name }));
+	if (params.categories) body.recipeCategory = params.categories.map((name) => ({ name }));
+
+	return body;
 }
 
 function formatSummary(r: RecipeSummary): string {
@@ -224,20 +368,21 @@ function formatDetail(r: RecipeDetail): string {
 		if (nutrition) lines.push(nutrition);
 	}
 
-	if (r.ingredients?.length) {
+	if (r.recipeIngredient?.length) {
 		lines.push(`\n### Ingredients`);
-		for (const ing of r.ingredients) {
+		for (const ing of r.recipeIngredient) {
 			const qty = ing.quantity ?? "";
 			const unit = ing.unit?.name ? ` ${ing.unit.name}` : "";
 			const food = ing.food?.name ? ` ${ing.food.name}` : "";
-			lines.push(`- ${qty}${unit}${food} — ${ing.note}`);
+			const note = ing.note ? ` — ${ing.note}` : "";
+			lines.push(`- ${qty}${unit}${food}${note}`);
 		}
 	}
 
-	if (r.instructions?.length) {
+	if (r.recipeInstructions?.length) {
 		lines.push(`\n### Instructions`);
-		for (let i = 0; i < r.instructions.length; i++) {
-			const step = r.instructions[i];
+		for (let i = 0; i < r.recipeInstructions.length; i++) {
+			const step = r.recipeInstructions[i];
 			const title = step.title ? ` (${step.title})` : "";
 			lines.push(`${i + 1}. ${step.text}${title}`);
 		}

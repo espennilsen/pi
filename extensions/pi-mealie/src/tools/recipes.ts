@@ -13,6 +13,38 @@ function validatePathSegment(value: string, name: string): void {
 	}
 }
 
+/** Check if a hostname (brackets already stripped) points to a private/internal address. */
+function checkPrivateHost(host: string): boolean {
+	// Simple hostnames: localhost
+	if (host === "localhost") return true;
+
+	// Direct IPv4 private ranges
+	if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0)/.test(host)) return true;
+
+	// IPv6 loopback
+	if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+
+	// IPv4-mapped IPv6: ::ffff:a.b.c.d or ::ffff:XXXX:XXXX (hex)
+	const fffffMatch = host.match(/^::ffff:(.+)$/i);
+	if (fffffMatch) {
+		const rest = fffffMatch[1];
+		// If it's in dotted-decimal form, test directly
+		if (/^\d+\.\d+\.\d+\.\d+$/.test(rest)) {
+			return checkPrivateHost(rest);
+		}
+		// Hex form: two 16-bit groups like 7f00:1 — convert to dotted decimal
+		const hexMatch = rest.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+		if (hexMatch) {
+			const hi = parseInt(hexMatch[1], 16);
+			const lo = parseInt(hexMatch[2], 16);
+			const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+			return checkPrivateHost(ipv4);
+		}
+	}
+
+	return false;
+}
+
 interface RecipeSummary {
 	id: string;
 	name: string;
@@ -158,7 +190,11 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 
 						const resolvedSlug = typeof slug === "string" ? slug : (slug as unknown as RecipeDetail).slug;
 						if (!resolvedSlug) throw new Error("Could not determine recipe slug from create response");
-						validatePathSegment(resolvedSlug, "slug");
+						// Validate server-returned slug defensively, but don't let it orphan the stub — wrap with cleanup
+						if (!/^[\w-]+$/.test(resolvedSlug)) {
+							try { await mealie.delete(`/recipes/${resolvedSlug}`); } catch { /* best-effort cleanup */ }
+							throw new Error(`Invalid slug returned by Mealie: "${resolvedSlug}". The stub recipe has been cleaned up.`);
+						}
 
 						// Step 2: If additional fields provided, PATCH the recipe
 						const patchBody = buildRecipeBody(params);
@@ -216,14 +252,17 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (!/^https?:\/\//i.test(params.url)) {
 							return { content: [{ type: "text", text: "❌ Invalid URL: only http(s) URLs are supported for scraping." }], details: {} };
 						}
+						let host: string;
 						try {
-							const parsed = new URL(params.url);
-							const host = parsed.hostname;
-							if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|::ffff:|0\.0\.0\.0)/.test(host) || /::ffff:(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(host)) {
-								return { content: [{ type: "text", text: "❌ URL points to a private/internal address. Only public URLs are allowed for scraping." }], details: {} };
-							}
+							host = new URL(params.url).hostname;
 						} catch {
 							return { content: [{ type: "text", text: "❌ Invalid URL format." }], details: {} };
+						}
+						// WHATWG URL returns IPv6 hostnames bracketed, e.g. "[::ffff:7f00:1]"
+						const unbracketed = host.replace(/^\[|\]$/g, "");
+						const isPrivate = checkPrivateHost(unbracketed);
+						if (isPrivate) {
+							return { content: [{ type: "text", text: "❌ URL points to a private/internal address. Only public URLs are allowed for scraping." }], details: {} };
 						}
 						const result = await mealie.post<RecipeDetail>("/recipes/create/url", { url: params.url }, signal);
 						return { content: [{ type: "text", text: `✅ Recipe scraped from URL:\n\n${formatDetail(result)}` }], details: {} };

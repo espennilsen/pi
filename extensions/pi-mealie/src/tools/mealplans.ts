@@ -21,6 +21,16 @@ function validatePathSegment(value: string, name: string): void {
 	}
 }
 
+/** Resolve a recipe slug to its UUID by fetching the recipe detail. */
+async function resolveRecipeId(slug: string, signal?: AbortSignal): Promise<string> {
+	validatePathSegment(slug, "recipeSlug");
+	const recipe = await mealie.get<{ id: string; name: string; slug: string }>(`/recipes/${slug}`, undefined, signal);
+	if (!recipe?.id) {
+		throw new Error(`Recipe not found for slug "${slug}"`);
+	}
+	return recipe.id;
+}
+
 interface MealPlanEntry {
 	id: string;
 	date: string;
@@ -154,10 +164,11 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 							entryType: params.entryType || "dinner",
 						};
 						if (params.recipeSlug) {
-							body.recipeSlug = params.recipeSlug;
+							// Resolve slug → recipe UUID (Mealie API requires recipe_id, not slug)
+							const recipeId = await resolveRecipeId(params.recipeSlug, signal);
+							body.recipeId = recipeId;
 						} else if (params.title) {
 							body.title = params.title;
-							body.recipeSlug = null;
 						} else {
 							return { content: [{ type: "text", text: "Must provide either recipeSlug or title" }], details: {} };
 						}
@@ -188,8 +199,9 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 
 function formatEntry(e: MealPlanEntry): string {
 	const label = ENTRY_TYPE_LABELS[e.entryType] || "[" + e.entryType + "]";
+	const idSuffix = " (id: `" + e.id + "`)";
 	if (e.recipe) {
-		return label + " " + e.recipe.name + " (_" + e.recipe.slug + "_)" + (e.note ? " -- " + e.note : "");
+		return label + " " + e.recipe.name + " (_" + e.recipe.slug + "_)" + (e.note ? " -- " + e.note : "") + idSuffix;
 	}
-	return label + " " + (e.title || "Untitled") + (e.note ? " -- " + e.note : "");
+	return label + " " + (e.title || "Untitled") + (e.note ? " -- " + e.note : "") + idSuffix;
 }

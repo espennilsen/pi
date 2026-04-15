@@ -54,6 +54,7 @@ export function registerOrganizerTool(pi: ExtensionAPI) {
 			id: Type.Optional(Type.String({ description: "Item ID (for update/delete actions)" })),
 			name: Type.Optional(Type.String({ description: "Name (for create/update actions)" })),
 			description: Type.Optional(Type.String({ description: "Description (for create/update actions)" })),
+			query: Type.Optional(Type.String({ description: "Search query (for list_foods, list_units)" })),
 		}),
 		execute: async (_toolCallId, params, signal, _onUpdate, _ctx) => {
 			if (!isClientReady()) {
@@ -69,8 +70,8 @@ export function registerOrganizerTool(pi: ExtensionAPI) {
 					case "list_tags": return await listItems("Tags", "/organizers/tags", "🏷️", signal);
 					case "list_categories": return await listItems("Categories", "/organizers/categories", "📁", signal);
 					case "list_tools": return await listItems("Tools", "/organizers/tools", "🔧", signal);
-					case "list_foods": return await listItems("Foods", "/foods", "🥕", signal);
-					case "list_units": return await listItems("Units", "/units", "📏", signal);
+					case "list_foods": return await listItems("Foods", "/foods", "🥕", signal, params.query);
+					case "list_units": return await listItems("Units", "/units", "📏", signal, params.query);
 
 					// Create
 					case "create_tag": return await createItem("Tag", "/organizers/tags", params, signal);
@@ -103,8 +104,11 @@ export function registerOrganizerTool(pi: ExtensionAPI) {
 	});
 }
 
-async function listItems(label: string, path: string, icon: string, signal?: AbortSignal): Promise<AgentToolResult<{}>> {
-	const items = await apiList<OrganizerItem>(path, { signal });
+async function listItems(label: string, path: string, icon: string, signal?: AbortSignal, search?: string): Promise<AgentToolResult<{}>> {
+	const items = await apiList<OrganizerItem>(path, {
+		params: search ? { search } : undefined,
+		signal,
+	});
 	if (items.length === 0) {
 		return { content: [{ type: "text" as const, text: `No ${label.toLowerCase()} found.` }], details: {} };
 	}

@@ -175,6 +175,25 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						if (params.note) body.note = params.note;
 
 						const entry = await mealie.post<MealPlanEntry>("/households/mealplans", body, signal);
+
+						// Update recipe's lastMade when meal plan date is today or past,
+						// and is more recent than the current lastMade
+						if (params.recipeSlug) {
+							const today = toLocalISODate(new Date());
+							if (params.date <= today) {
+								try {
+									validatePathSegment(params.recipeSlug, "recipeSlug");
+									const recipe = await mealie.get<{ lastMade: string | null }>(`/recipes/${params.recipeSlug}`, undefined, signal);
+									const currentLastMade = recipe?.lastMade ? recipe.lastMade.slice(0, 10) : null;
+									if (!currentLastMade || params.date > currentLastMade) {
+										await mealie.patch(`/recipes/${params.recipeSlug}/last-made`, { timestamp: params.date + "T12:00:00Z" }, signal);
+									}
+								} catch {
+									// Best-effort — don't fail the meal plan add if last-made update fails
+								}
+							}
+						}
+
 						return { content: [{ type: "text", text: "Meal added to " + params.date + ":\n\n" + formatEntry(entry) }], details: {} };
 					}
 

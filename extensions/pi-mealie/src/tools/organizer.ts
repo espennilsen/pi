@@ -120,6 +120,7 @@ async function createItem(label: string, path: string, params: { name?: string; 
 	if (params.description) body.description = params.description;
 
 	const item = await mealie.post<OrganizerItem>(path, body, signal);
+	if (!item?.id) throw new Error(`${label} API returned no data`);
 	return { content: [{ type: "text" as const, text: `✅ ${label} "${item.name}" created (_${item.slug}_, id: \`${item.id}\`)` }], details: {} };
 }
 
@@ -136,6 +137,7 @@ async function updateItem(label: string, path: string, params: { id?: string; na
 	if (params.description !== undefined) body.description = params.description;
 
 	const item = await mealie.put<OrganizerItem>(`${path}/${params.id}`, body, signal);
+	if (!item?.id) throw new Error(`${label} API returned no data`);
 	return { content: [{ type: "text" as const, text: `✅ ${label} updated: "${item.name}" (_${item.slug}_, id: \`${item.id}\`)` }], details: {} };
 }
 

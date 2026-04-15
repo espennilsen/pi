@@ -190,10 +190,9 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 
 						const resolvedSlug = typeof slug === "string" ? slug : (slug as unknown as RecipeDetail).slug;
 						if (!resolvedSlug) throw new Error("Could not determine recipe slug from create response");
-						// Validate server-returned slug defensively, but don't let it orphan the stub — wrap with cleanup
+						// Validate server-returned slug — never use an invalid slug in a URL path (path traversal risk)
 						if (!/^[\w-]+$/.test(resolvedSlug)) {
-							try { await mealie.delete(`/recipes/${resolvedSlug}`); } catch { /* best-effort cleanup */ }
-							throw new Error(`Invalid slug returned by Mealie: "${resolvedSlug}". The stub recipe has been cleaned up.`);
+							throw new Error(`Invalid slug returned by Mealie: "${resolvedSlug}". Cannot safely clean up — please delete the stub recipe manually.`);
 						}
 
 						// Step 2: If additional fields provided, PATCH the recipe

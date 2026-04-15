@@ -163,7 +163,13 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						// Step 2: If additional fields provided, PATCH the recipe
 						const patchBody = buildRecipeBody(params);
 						if (Object.keys(patchBody).length > 0) {
-							await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
+							try {
+								await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
+							} catch (patchErr: any) {
+								// Rollback: delete the stub recipe so we don't leave orphans
+								try { await mealie.delete(`/recipes/${resolvedSlug}`); } catch { /* best-effort */ }
+								throw new Error(`Recipe created but failed to add details (rolled back): ${patchErr.message || patchErr}`);
+							}
 						}
 
 						// Step 3: Fetch the final recipe for display

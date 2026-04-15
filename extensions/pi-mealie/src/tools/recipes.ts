@@ -34,12 +34,12 @@ interface RecipeDetail {
 	name: string;
 	slug: string;
 	description: string | null;
- recipeYield: string | null;
+	recipeYield: string | null;
 	prepTime: string | null;
 	cookTime: string | null;
 	totalTime: string | null;
-	ingredients: { note: string; quantity: number | null; unit: { name: string } | null; food: { name: string } | null }[];
-	instructions: { text: string; title: string | null }[];
+	recipeIngredient: { note: string; quantity: number | null; unit: { name: string } | null; food: { name: string } | null }[];
+	recipeInstructions: { text: string; title: string | null }[];
 	notes: { title: string | null; text: string }[];
 	tags: { id: string; name: string; slug: string }[];
 	recipeCategory: { id: string; name: string; slug: string }[];
@@ -51,6 +51,18 @@ interface RecipeDetail {
 	dateUpdated: string;
 	extras: Record<string, string>;
 }
+
+const ingredientSchema = Type.Object({
+	note: Type.Optional(Type.String({ description: "Free-text ingredient description (e.g. 'finely chopped')" })),
+	quantity: Type.Optional(Type.Number({ description: "Amount (e.g. 2, 0.5)" })),
+	unit: Type.Optional(Type.String({ description: "Unit name (e.g. 'g', 'cups', 'stk')" })),
+	food: Type.Optional(Type.String({ description: "Food name (e.g. 'kjøttdeig', 'onion')" })),
+});
+
+const instructionSchema = Type.Object({
+	text: Type.String({ description: "Step text" }),
+	title: Type.Optional(Type.String({ description: "Optional section title" })),
+});
 
 const actionSchema = Type.Union([
 	Type.Literal("list"),
@@ -73,6 +85,16 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			query: Type.Optional(Type.String({ description: "Search query (for search action)" })),
 			name: Type.Optional(Type.String({ description: "Recipe name (for create/update)" })),
 			description: Type.Optional(Type.String({ description: "Recipe description" })),
+			recipeYield: Type.Optional(Type.String({ description: "Yield / servings (e.g. '4 servings', '2-3 wraps')" })),
+			prepTime: Type.Optional(Type.String({ description: "Prep time (e.g. '15 Minutes')" })),
+			cookTime: Type.Optional(Type.String({ description: "Cook time (e.g. '30 Minutes')" })),
+			totalTime: Type.Optional(Type.String({ description: "Total time (e.g. '45 Minutes')" })),
+			ingredients: Type.Optional(Type.Array(ingredientSchema, { description: "Recipe ingredients" })),
+			instructions: Type.Optional(Type.Array(instructionSchema, { description: "Recipe steps/instructions" })),
+			notes: Type.Optional(Type.Array(Type.Object({
+				text: Type.String({ description: "Note text" }),
+				title: Type.Optional(Type.String({ description: "Note title" })),
+			}), { description: "Recipe notes" })),
 			url: Type.Optional(Type.String({ description: "URL to scrape recipe from (for scrape_url)" })),
 			tags: Type.Optional(Type.Array(Type.String(), { description: "Tag names" })),
 			categories: Type.Optional(Type.Array(Type.String(), { description: "Category names" })),
@@ -126,13 +148,26 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 					}
 
 					case "create": {
-						const body: Record<string, unknown> = {};
-						if (params.name) body.name = params.name;
-						if (params.description) body.description = params.description;
-						if (params.tags) body.tags = params.tags;
-						if (params.categories) body.recipeCategory = params.categories;
+						// Step 1: Create minimal recipe (Mealie POST returns a slug string)
+						const createBody: Record<string, unknown> = {};
+						if (params.name) createBody.name = params.name;
+						if (params.description) createBody.description = params.description;
 
-						const recipe = await mealie.post<RecipeDetail>("/recipes", body, signal);
+						const slug = await mealie.post<string>("/recipes", createBody, signal);
+						if (!slug) throw new Error("Recipe creation returned no slug");
+
+						const resolvedSlug = typeof slug === "string" ? slug : (slug as unknown as RecipeDetail).slug;
+						if (!resolvedSlug) throw new Error("Could not determine recipe slug from create response");
+						validatePathSegment(resolvedSlug, "slug");
+
+						// Step 2: If additional fields provided, PATCH the recipe
+						const patchBody = buildRecipeBody(params);
+						if (Object.keys(patchBody).length > 0) {
+							await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
+						}
+
+						// Step 3: Fetch the final recipe for display
+						const recipe = await mealie.get<RecipeDetail>(`/recipes/${resolvedSlug}`, undefined, signal);
 						return { content: [{ type: "text", text: `✅ Recipe created:\n\n${formatDetail(recipe)}` }], details: {} };
 					}
 
@@ -140,13 +175,12 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (!params.slug) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: slug" }], details: {} };
 						}
-						const body: Record<string, unknown> = {};
+						validatePathSegment(params.slug, "slug");
+
+						const body = buildRecipeBody(params);
 						if (params.name !== undefined) body.name = params.name;
 						if (params.description !== undefined) body.description = params.description;
-						if (params.tags) body.tags = params.tags;
-						if (params.categories) body.recipeCategory = params.categories;
 
-						validatePathSegment(params.slug, "slug");
 						const recipe = await mealie.patch<RecipeDetail>(`/recipes/${params.slug}`, body, signal);
 						return { content: [{ type: "text", text: `✅ Recipe updated:\n\n${formatDetail(recipe)}` }], details: {} };
 					}
@@ -179,6 +213,54 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			}
 		},
 	});
+}
+
+/** Build recipe body fields for PATCH from tool params (excludes name/description which are handled separately). */
+function buildRecipeBody(params: {
+	recipeYield?: string;
+	prepTime?: string;
+	cookTime?: string;
+	totalTime?: string;
+	ingredients?: { note?: string; quantity?: number; unit?: string; food?: string }[];
+	instructions?: { text: string; title?: string }[];
+	notes?: { text: string; title?: string }[];
+	tags?: string[];
+	categories?: string[];
+}): Record<string, unknown> {
+	const body: Record<string, unknown> = {};
+
+	if (params.recipeYield !== undefined) body.recipeYield = params.recipeYield;
+	if (params.prepTime !== undefined) body.prepTime = params.prepTime;
+	if (params.cookTime !== undefined) body.cookTime = params.cookTime;
+	if (params.totalTime !== undefined) body.totalTime = params.totalTime;
+
+	if (params.ingredients) {
+		body.recipeIngredient = params.ingredients.map((ing) => ({
+			note: ing.note || "",
+			quantity: ing.quantity ?? null,
+			unit: ing.unit ? { name: ing.unit } : null,
+			food: ing.food ? { name: ing.food } : null,
+		}));
+	}
+
+	if (params.instructions) {
+		body.recipeInstructions = params.instructions.map((step) => ({
+			text: step.text,
+			title: step.title || "",
+		}));
+	}
+
+	if (params.notes) {
+		body.notes = params.notes.map((n) => ({
+			text: n.text,
+			title: n.title || "",
+		}));
+	}
+
+	if (params.tags) body.tags = params.tags.map((name) => ({ name }));
+	if (params.categories) body.recipeCategory = params.categories.map((name) => ({ name }));
+
+	return body;
 }
 
 function formatSummary(r: RecipeSummary): string {
@@ -224,20 +306,21 @@ function formatDetail(r: RecipeDetail): string {
 		if (nutrition) lines.push(nutrition);
 	}
 
-	if (r.ingredients?.length) {
+	if (r.recipeIngredient?.length) {
 		lines.push(`\n### Ingredients`);
-		for (const ing of r.ingredients) {
+		for (const ing of r.recipeIngredient) {
 			const qty = ing.quantity ?? "";
 			const unit = ing.unit?.name ? ` ${ing.unit.name}` : "";
 			const food = ing.food?.name ? ` ${ing.food.name}` : "";
-			lines.push(`- ${qty}${unit}${food} — ${ing.note}`);
+			const note = ing.note ? ` — ${ing.note}` : "";
+			lines.push(`- ${qty}${unit}${food}${note}`);
 		}
 	}
 
-	if (r.instructions?.length) {
+	if (r.recipeInstructions?.length) {
 		lines.push(`\n### Instructions`);
-		for (let i = 0; i < r.instructions.length; i++) {
-			const step = r.instructions[i];
+		for (let i = 0; i < r.recipeInstructions.length; i++) {
+			const step = r.recipeInstructions[i];
 			const title = step.title ? ` (${step.title})` : "";
 			lines.push(`${i + 1}. ${step.text}${title}`);
 		}

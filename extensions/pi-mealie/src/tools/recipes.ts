@@ -6,6 +6,13 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { isClientReady, mealie, apiList } from "../client.ts";
 
+/** Validate a path segment contains only safe characters. */
+function validatePathSegment(value: string, name: string): void {
+	if (!/^[\w-]+$/.test(value)) {
+		throw new Error(`Invalid ${name}: "${value}". Only alphanumeric, hyphens, and underscores allowed.`);
+	}
+}
+
 interface RecipeSummary {
 	id: string;
 	name: string;
@@ -83,14 +90,14 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 				switch (params.action) {
 					case "list": {
 						const recipes = await apiList<RecipeSummary>("/recipes", {
-							params: { perPage: params.limit ?? 50 },
 							signal,
 						});
-						if (recipes.length === 0) {
+						const limited = params.limit ? recipes.slice(0, params.limit) : recipes;
+						if (limited.length === 0) {
 							return { content: [{ type: "text", text: "No recipes found." }], details: {} };
 						}
-						const lines = recipes.map(formatSummary);
-						return { content: [{ type: "text", text: `Found ${recipes.length} recipe(s):\n\n${lines.join("\n")}` }], details: {} };
+						const lines = limited.map(formatSummary);
+						return { content: [{ type: "text", text: `Found ${limited.length} recipe(s):\n\n${lines.join("\n")}` }], details: {} };
 					}
 
 					case "search": {
@@ -113,6 +120,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (!params.slug) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: slug" }], details: {} };
 						}
+						validatePathSegment(params.slug, "slug");
 						const recipe = await mealie.get<RecipeDetail>(`/recipes/${params.slug}`, undefined, signal);
 						return { content: [{ type: "text", text: formatDetail(recipe) }], details: {} };
 					}
@@ -138,6 +146,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (params.tags) body.tags = params.tags;
 						if (params.categories) body.recipeCategory = params.categories;
 
+						validatePathSegment(params.slug, "slug");
 						const recipe = await mealie.patch<RecipeDetail>(`/recipes/${params.slug}`, body, signal);
 						return { content: [{ type: "text", text: `✅ Recipe updated:\n\n${formatDetail(recipe)}` }], details: {} };
 					}
@@ -146,6 +155,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						if (!params.slug) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: slug" }], details: {} };
 						}
+						validatePathSegment(params.slug, "slug");
 						await mealie.delete(`/recipes/${params.slug}`, signal);
 						return { content: [{ type: "text", text: `✅ Recipe "${params.slug}" deleted.` }], details: {} };
 					}
@@ -153,6 +163,9 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 					case "scrape_url": {
 						if (!params.url) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: url" }], details: {} };
+						}
+						if (!/^https?:\/\//i.test(params.url)) {
+							return { content: [{ type: "text", text: "❌ Invalid URL: only http(s) URLs are supported for scraping." }], details: {} };
 						}
 						const result = await mealie.post<RecipeDetail>("/recipes/create/url", { url: params.url }, signal);
 						return { content: [{ type: "text", text: `✅ Recipe scraped from URL:\n\n${formatDetail(result)}` }], details: {} };
@@ -190,7 +203,7 @@ function formatDetail(r: RecipeDetail): string {
 	if (r.prepTime) lines.push(`**Prep Time:** ${r.prepTime}`);
 	if (r.cookTime) lines.push(`**Cook Time:** ${r.cookTime}`);
 	if (r.totalTime) lines.push(`**Total Time:** ${r.totalTime}`);
-	if (r.rating) lines.push(`**Rating:** ${"⭐".repeat(Math.round(r.rating))} (${r.rating}/5)}`);
+	if (r.rating) lines.push(`**Rating:** ${"⭐".repeat(Math.round(r.rating))} (${r.rating}/5)`);
 
 	const cats = r.recipeCategory?.map((c) => c.name).join(", ");
 	const tags = r.tags?.map((t) => t.name).join(", ");

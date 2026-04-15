@@ -62,7 +62,8 @@ export async function api<T>(
 
 	if (!res.ok) {
 		const text = await res.text().catch(() => "");
-		throw new Error(`Mealie API ${res.status}: ${text || res.statusText} [${method} ${path}]`);
+		const safeText = text.length > 200 ? text.slice(0, 200) + "..." : text;
+		throw new Error(`Mealie API ${res.status}: ${safeText || res.statusText} [${method} ${path}]`);
 	}
 
 	// Some DELETE endpoints return 200 with empty body
@@ -82,7 +83,8 @@ export async function apiList<T>(
 	let page = 1;
 	let allItems: T[] = [];
 
-	while (true) {
+	const MAX_PAGES = 200;
+	while (page <= MAX_PAGES) {
 		const result = await api<{ items: T[]; total: number; page: number; total_pages: number }>(
 			"GET", path,
 			{ params: { ...opts?.params, page, perPage }, signal: opts?.signal },

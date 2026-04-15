@@ -6,6 +6,13 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { isClientReady, mealie, apiList } from "../client.ts";
 
+/** Validate a path segment contains only safe characters. */
+function validatePathSegment(value: string, name: string): void {
+	if (!/^[\w-]+$/.test(value)) {
+		throw new Error(`Invalid ${name}: "${value}". Only alphanumeric, hyphens, and underscores allowed.`);
+	}
+}
+
 interface ShoppingList {
 	id: string;
 	name: string;
@@ -127,6 +134,7 @@ export function registerShoppingTool(pi: ExtensionAPI) {
 						if (!params.itemId) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: itemId" }], details: {} };
 						}
+						validatePathSegment(params.itemId, "itemId");
 						await mealie.patch(`/households/shopping/items/${params.itemId}`, { checked: true }, signal);
 						return { content: [{ type: "text", text: `☑ Item ${params.itemId} checked off.` }], details: {} };
 					}
@@ -135,6 +143,7 @@ export function registerShoppingTool(pi: ExtensionAPI) {
 						if (!params.itemId) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: itemId" }], details: {} };
 						}
+						validatePathSegment(params.itemId, "itemId");
 						await mealie.patch(`/households/shopping/items/${params.itemId}`, { checked: false }, signal);
 						return { content: [{ type: "text", text: `☐ Item ${params.itemId} unchecked.` }], details: {} };
 					}
@@ -143,6 +152,7 @@ export function registerShoppingTool(pi: ExtensionAPI) {
 						if (!params.itemId) {
 							return { content: [{ type: "text", text: "❌ Missing required parameter: itemId" }], details: {} };
 						}
+						validatePathSegment(params.itemId, "itemId");
 						await mealie.delete(`/households/shopping/items/${params.itemId}`, signal);
 						return { content: [{ type: "text", text: `✅ Item ${params.itemId} deleted from list.` }], details: {} };
 					}

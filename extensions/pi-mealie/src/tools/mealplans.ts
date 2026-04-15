@@ -6,6 +6,21 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { isClientReady, mealie } from "../client.ts";
 
+/** Format a Date as YYYY-MM-DD in local timezone (avoids UTC shift from toISOString). */
+function toLocalISODate(d: Date): string {
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, "0");
+	const day = String(d.getDate()).padStart(2, "0");
+	return `${y}-${m}-${day}`;
+}
+
+/** Validate a path segment contains only safe characters. */
+function validatePathSegment(value: string, name: string): void {
+	if (!/^[\w-]+$/.test(value)) {
+		throw new Error(`Invalid ${name}: "${value}". Only alphanumeric, hyphens, and underscores allowed.`);
+	}
+}
+
 interface MealPlanEntry {
 	id: string;
 	date: string;
@@ -81,8 +96,8 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						const sunday = new Date(monday);
 						sunday.setDate(monday.getDate() + 6);
 
-						const start = monday.toISOString().slice(0, 10);
-						const end = sunday.toISOString().slice(0, 10);
+						const start = toLocalISODate(monday);
+						const end = toLocalISODate(sunday);
 
 						const entries = await mealie.get<MealPlanEntry[]>(
 							"/households/mealplans",
@@ -101,7 +116,7 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 						const lines: string[] = [];
 						for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-							const iso = d.toISOString().slice(0, 10);
+							const iso = toLocalISODate(d);
 							const dayName = dayNames[d.getDay()];
 							const dayEntries = byDate[iso];
 							if (dayEntries && dayEntries.length > 0) {
@@ -158,6 +173,7 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						if (!params.entryId) {
 							return { content: [{ type: "text", text: "Missing required parameter: entryId" }], details: {} };
 						}
+						validatePathSegment(params.entryId, "entryId");
 						await mealie.delete("/households/mealplans/" + params.entryId, signal);
 						return { content: [{ type: "text", text: "Meal plan entry " + params.entryId + " removed." }], details: {} };
 					}

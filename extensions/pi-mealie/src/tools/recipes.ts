@@ -177,8 +177,13 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						}
 
 						// Step 3: Fetch the final recipe for display
-						const recipe = await mealie.get<RecipeDetail>(`/recipes/${resolvedSlug}`, undefined, signal);
-						return { content: [{ type: "text", text: `✅ Recipe created:\n\n${formatDetail(recipe)}` }], details: {} };
+						try {
+							const recipe = await mealie.get<RecipeDetail>(`/recipes/${resolvedSlug}`, undefined, signal);
+							return { content: [{ type: "text", text: `✅ Recipe created:\n\n${formatDetail(recipe)}` }], details: {} };
+						} catch {
+							// Recipe was created and patched successfully; only the display fetch failed
+							return { content: [{ type: "text", text: `✅ Recipe created (slug: ${resolvedSlug}). Use \`get\` action with this slug to view details.` }], details: {} };
+						}
 					}
 
 					case "update": {
@@ -214,7 +219,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						try {
 							const parsed = new URL(params.url);
 							const host = parsed.hostname;
-							if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0)/.test(host)) {
+							if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|::ffff:|0\.0\.0\.0)/.test(host) || /::ffff:(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(host)) {
 								return { content: [{ type: "text", text: "❌ URL points to a private/internal address. Only public URLs are allowed for scraping." }], details: {} };
 							}
 						} catch {

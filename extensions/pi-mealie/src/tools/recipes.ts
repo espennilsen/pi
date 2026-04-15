@@ -45,6 +45,12 @@ function checkPrivateHost(host: string): boolean {
 	return false;
 }
 
+interface OrganizerItem {
+	id: string;
+	name: string;
+	slug: string;
+}
+
 interface RecipeSummary {
 	id: string;
 	name: string;
@@ -196,7 +202,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						}
 
 						// Step 2: If additional fields provided, PATCH the recipe
-						const patchBody = buildRecipeBody(params);
+						const patchBody = await buildRecipeBody(params, signal);
 						if (Object.keys(patchBody).length > 0) {
 							try {
 								await mealie.patch<RecipeDetail>(`/recipes/${resolvedSlug}`, patchBody, signal);
@@ -227,7 +233,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 						}
 						validatePathSegment(params.slug, "slug");
 
-						const body = buildRecipeBody(params);
+						const body = await buildRecipeBody(params, signal);
 						if (params.name !== undefined) body.name = params.name;
 						if (params.description !== undefined) body.description = params.description;
 
@@ -277,8 +283,20 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 	});
 }
 
-/** Build recipe body fields for PATCH from tool params (excludes name/description which are handled separately). */
-function buildRecipeBody(params: {
+/** Look up an organizer item by exact name via search, returning the full object if found. */
+async function resolveOrganizerName(path: string, name: string, signal?: AbortSignal): Promise<OrganizerItem | null> {
+	try {
+		const items = await apiList<OrganizerItem>(path, { params: { search: name }, signal });
+		const match = items.find((i) => i.name.toLowerCase() === name.toLowerCase());
+		return match ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/** Build recipe body fields for PATCH from tool params (excludes name/description which are handled separately).
+ *  Resolves tag, category, food, and unit names to full Mealie objects to avoid 422 errors and duplicates. */
+async function buildRecipeBody(params: {
 	recipeYield?: string;
 	prepTime?: string;
 	cookTime?: string;
@@ -288,7 +306,7 @@ function buildRecipeBody(params: {
 	notes?: { text: string; title?: string }[];
 	tags?: string[];
 	categories?: string[];
-}): Record<string, unknown> {
+}, signal?: AbortSignal): Promise<Record<string, unknown>> {
 	const body: Record<string, unknown> = {};
 
 	if (params.recipeYield !== undefined) body.recipeYield = params.recipeYield;
@@ -297,12 +315,22 @@ function buildRecipeBody(params: {
 	if (params.totalTime !== undefined) body.totalTime = params.totalTime;
 
 	if (params.ingredients) {
-		body.recipeIngredient = params.ingredients.map((ing) => ({
-			note: ing.note || "",
-			quantity: ing.quantity ?? null,
-			unit: ing.unit ? { name: ing.unit } : null,
-			food: ing.food ? { name: ing.food } : null,
-		}));
+		body.recipeIngredient = [];
+		for (const ing of params.ingredients) {
+			const entry: Record<string, unknown> = {
+				note: ing.note || "",
+				quantity: ing.quantity ?? null,
+			};
+			if (ing.unit) {
+				const found = await resolveOrganizerName("/units", ing.unit, signal);
+				entry.unit = found ? { id: found.id, name: found.name, slug: found.slug } : { name: ing.unit };
+			}
+			if (ing.food) {
+				const found = await resolveOrganizerName("/foods", ing.food, signal);
+				entry.food = found ? { id: found.id, name: found.name, slug: found.slug } : { name: ing.food };
+			}
+			(body.recipeIngredient as Record<string, unknown>[]).push(entry);
+		}
 	}
 
 	if (params.instructions) {
@@ -319,8 +347,20 @@ function buildRecipeBody(params: {
 		}));
 	}
 
-	if (params.tags) body.tags = params.tags.map((name) => ({ name }));
-	if (params.categories) body.recipeCategory = params.categories.map((name) => ({ name }));
+	if (params.tags) {
+		body.tags = [];
+		for (const name of params.tags) {
+			const found = await resolveOrganizerName("/organizers/tags", name, signal);
+			(body.tags as Record<string, unknown>[]).push(found ? { id: found.id, name: found.name, slug: found.slug } : { name });
+		}
+	}
+	if (params.categories) {
+		body.recipeCategory = [];
+		for (const name of params.categories) {
+			const found = await resolveOrganizerName("/organizers/categories", name, signal);
+			(body.recipeCategory as Record<string, unknown>[]).push(found ? { id: found.id, name: found.name, slug: found.slug } : { name });
+		}
+	}
 
 	return body;
 }

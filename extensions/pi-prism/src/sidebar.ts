@@ -71,7 +71,11 @@ export class WidgetSidebar {
 		};
 		await Promise.all(this.widgets.map((w) => w.refresh(ctx).catch(() => {})));
 
-		if (this.disposed) return;
+		if (this.disposed) {
+			this.refreshing = false;
+			this.loading = false;
+			return;
+		}
 		this.loading = false;
 		this.lastRefresh = Date.now();
 		this.ver++;

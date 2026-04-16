@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-mealie",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Mealie recipe manager API integration for pi — recipes, meal plans, and shopping lists",
 	"type": "module",
 	"keywords": [

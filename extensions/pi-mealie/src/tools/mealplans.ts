@@ -21,14 +21,22 @@ function validatePathSegment(value: string, name: string): void {
 	}
 }
 
-/** Resolve a recipe slug to its UUID by fetching the recipe detail. */
-async function resolveRecipeId(slug: string, signal?: AbortSignal): Promise<string> {
+/** Recipe data returned by the Mealie API. */
+interface RecipeSummary {
+	id: string;
+	name: string;
+	slug: string;
+	lastMade: string | null;
+}
+
+/** Resolve a recipe slug by fetching the recipe detail. Returns the full recipe object. */
+async function resolveRecipe(slug: string, signal?: AbortSignal): Promise<RecipeSummary> {
 	validatePathSegment(slug, "recipeSlug");
-	const recipe = await mealie.get<{ id: string; name: string; slug: string }>(`/recipes/${slug}`, undefined, signal);
+	const recipe = await mealie.get<RecipeSummary>(`/recipes/${slug}`, undefined, signal);
 	if (!recipe?.id) {
 		throw new Error(`Recipe not found for slug "${slug}"`);
 	}
-	return recipe.id;
+	return recipe;
 }
 
 interface MealPlanEntry {
@@ -163,10 +171,11 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 							date: params.date,
 							entryType: params.entryType || "dinner",
 						};
+						let recipe: RecipeSummary | undefined;
 						if (params.recipeSlug) {
-							// Resolve slug → recipe UUID (Mealie API requires recipe_id, not slug)
-							const recipeId = await resolveRecipeId(params.recipeSlug, signal);
-							body.recipeId = recipeId;
+							// Resolve slug → recipe detail (Mealie API requires recipe_id, not slug)
+							recipe = await resolveRecipe(params.recipeSlug, signal);
+							body.recipeId = recipe.id;
 						} else if (params.title) {
 							body.title = params.title;
 						} else {
@@ -175,6 +184,24 @@ export function registerMealplansTool(pi: ExtensionAPI) {
 						if (params.note) body.note = params.note;
 
 						const entry = await mealie.post<MealPlanEntry>("/households/mealplans", body, signal);
+
+						// Update recipe's lastMade when meal plan date is today or past,
+						// and is more recent than the current lastMade (reuses recipe from resolveRecipe above)
+						if (recipe) {
+							const today = toLocalISODate(new Date());
+							if (params.date <= today) {
+								const currentLastMade = recipe.lastMade ? recipe.lastMade.slice(0, 10) : null;
+								if (!currentLastMade || params.date > currentLastMade) {
+									try {
+										await mealie.patch(`/recipes/${recipe.slug}/last-made`, { timestamp: params.date + "T12:00:00" }, signal);
+									} catch (err) {
+										// Best-effort — don't fail the meal plan add if last-made update fails
+										console.warn('Failed to update lastMade for', recipe.slug, err);
+									}
+								}
+							}
+						}
+
 						return { content: [{ type: "text", text: "Meal added to " + params.date + ":\n\n" + formatEntry(entry) }], details: {} };
 					}
 

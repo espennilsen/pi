@@ -332,11 +332,18 @@ export class CmuxClient {
 		return typeof result === "string" ? result : JSON.stringify(result);
 	}
 
-	/** List all surfaces (scoped to the agent's workspace). */
-	async listSurfaces(): Promise<unknown[]> {
+	/** List surfaces. If allWorkspaces is true, lists across all workspaces.
+	 *  Otherwise scopes to the agent's workspace (env CMUX_WORKSPACE_ID). */
+	async listSurfaces(options?: { allWorkspaces?: boolean; workspaceId?: string }): Promise<unknown[]> {
 		const params: Record<string, unknown> = {};
-		const workspaceId = process.env.CMUX_WORKSPACE_ID;
-		if (workspaceId) params.workspace_id = workspaceId;
+		if (options?.allWorkspaces) {
+			// No workspace_id = list all
+		} else if (options?.workspaceId) {
+			params.workspace_id = options.workspaceId;
+		} else {
+			const envWorkspaceId = process.env.CMUX_WORKSPACE_ID;
+			if (envWorkspaceId) params.workspace_id = envWorkspaceId;
+		}
 		const result = await this.rpc("surface.list", params);
 		return Array.isArray(result) ? result : (result as { surfaces?: unknown[] })?.surfaces ?? [];
 	}

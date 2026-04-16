@@ -1,6 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { fmtDate, fmtTime, daysAheadIso } from "../helpers.ts";
+import { fmtDate, fmtTime, todayIso, daysAheadIso } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 
 export class WeekCalendarWidget implements Widget {
@@ -10,7 +10,7 @@ export class WeekCalendarWidget implements Widget {
 	private events: Record<string, unknown>[] = [];
 
 	async refresh(ctx: WidgetContext): Promise<void> {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 		const end = daysAheadIso(7);
 		try {
 			this.events = (
@@ -28,7 +28,7 @@ export class WeekCalendarWidget implements Widget {
 
 	render(w: number, th: Theme): string[] {
 		if (this.events.length === 0) return [th.fg("muted", "  no events this week")];
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 		const out: string[] = [];
 		let curDate = "";
 		for (const ev of this.events) {

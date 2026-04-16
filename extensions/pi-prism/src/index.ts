@@ -77,11 +77,13 @@ export default function (pi: ExtensionAPI) {
 		if (overlayHandle && isOpen) {
 			overlayHandle.setHidden(true);
 			isOpen = false;
+			if (liveSidebar) liveSidebar.pause();
 			return;
 		}
 		if (overlayHandle && !isOpen) {
 			overlayHandle.setHidden(false);
 			isOpen = true;
+			if (liveSidebar) liveSidebar.resume();
 			return;
 		}
 

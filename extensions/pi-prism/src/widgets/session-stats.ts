@@ -1,5 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
+import { todayIso } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 
 export class SessionStatsWidget implements Widget {
@@ -13,7 +14,7 @@ export class SessionStatsWidget implements Widget {
 	private model = "";
 
 	async refresh(ctx: WidgetContext): Promise<void> {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 		try {
 			// Day totals — no GROUP BY so counts span all models used today
 			const totals = await ctx.query(

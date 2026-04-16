@@ -22,11 +22,17 @@ export class SystemHealthWidget implements Widget {
 
 		// Memory check
 		try {
-			const fs = await import("node:fs");
 			const path = await import("node:path");
+			const fsPromises = await import("node:fs/promises");
 			const memDir = path.join(ctx.cwd, "memory");
-			const files = fs.existsSync(memDir) ? fs.readdirSync(memDir).filter((f: string) => f.endsWith(".md")) : [];
-			this.checks.push({ name: "Memory", ok: true, detail: `${files.length} logs` });
+			let files: string[];
+			try {
+				files = await fsPromises.readdir(memDir);
+			} catch {
+				files = [];
+			}
+			const mdFiles = files.filter((f) => f.endsWith(".md"));
+			this.checks.push({ name: "Memory", ok: true, detail: `${mdFiles.length} logs` });
 		} catch {
 			this.checks.push({ name: "Memory", ok: false, detail: "error" });
 		}

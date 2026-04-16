@@ -179,6 +179,23 @@ export class WidgetSidebar {
 	}
 
 	/**
+	 * Pause the refresh timer — stops background data fetches while hidden.
+	 */
+	pause(): void {
+		this.paused = true;
+		this.ver++;
+		this.tui.requestRender();
+	}
+
+	/**
+	 * Resume the refresh timer — restarts data fetches when shown again.
+	 */
+	resume(): void {
+		this.paused = false;
+		this.refresh().catch(() => {});
+	}
+
+	/**
 	 * Stop the refresh timer and release resources.
 	 * Does NOT signal the TUI to pop the overlay — use close() for that.
 	 */

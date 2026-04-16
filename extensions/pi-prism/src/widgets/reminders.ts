@@ -1,6 +1,6 @@
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { fmtDate, daysAheadIso } from "../helpers.ts";
+import { fmtDate, todayIso, daysAheadIso } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 
 export class RemindersWidget implements Widget {
@@ -10,7 +10,7 @@ export class RemindersWidget implements Widget {
 	private reminders: Record<string, unknown>[] = [];
 
 	async refresh(ctx: WidgetContext): Promise<void> {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 		const end = daysAheadIso(14);
 		try {
 			this.reminders = (

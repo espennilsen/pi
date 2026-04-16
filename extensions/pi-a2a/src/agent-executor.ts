@@ -30,6 +30,16 @@
  * Concurrency: max 1 (blocks — the main agent handles one request at a
  * time). Additional requests are queued and processed in arrival order.
  * Run more pi instances for parallel A2A processing.
+ *
+ * Duplicate-send / re-processing guard:
+ *   - If a caller resends the same message while the task is still in
+ *     'working' state, the follow-up is queued behind the active task.
+ *   - After the first processing completes (task → completed/failed), the
+ *     queued follow-up wakes up, detects the terminal state, re-publishes
+ *     the existing completed task so the caller gets the result immediately,
+ *     and exits without running processMessage again.
+ *   - This prevents callers that retry on timeout from triggering duplicate
+ *     agent turns and overwriting already-stored results.
  */
 
 import { randomUUID } from "node:crypto";
@@ -407,7 +417,41 @@ export class PiAgentExecutor implements AgentExecutor {
 		// Always call eventBus.finished() to complete the SDK task lifecycle.
 		if (canceled) {
 			this.log("executor_skip_canceled", { taskId });
+			this.taskContexts.delete(taskId);
 			eventBus.finished();
+			releaseQueue!();
+			return;
+		}
+
+		// ── Duplicate-send guard: skip re-processing completed tasks ───────────
+		// When a caller resends the same message/send while the task is working,
+		// the follow-up is queued. By the time it dequeues, the first processing
+		// may have already completed. Re-running processMessage would overwrite
+		// the stored result and trigger a duplicate agent turn.
+		//
+		// Re-publish the existing terminal task so the caller's message/send
+		// response carries the result directly (no extra polling needed).
+		try {
+			const existingTask = await this.taskStore.load(taskId);
+			const existingState = existingTask?.status?.state;
+			if (existingState === "completed" || existingState === "failed" || existingState === "canceled") {
+				this.log("executor_skip_terminal_task", { taskId, state: existingState });
+				// Re-publish the completed task so the caller gets the result in-band
+				if (existingTask) {
+					eventBus.publish(existingTask as Task);
+				}
+				eventBus.finished();
+				this.taskContexts.delete(taskId);
+				releaseQueue!();
+				return;
+			}
+		} catch (err: unknown) {
+			// Store error — abort this turn; the caller gets a failed status and the queue is released.
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("executor_store_load_error", { taskId, error: msg }, "ERROR");
+			this.publishError(taskId, contextId, eventBus, "Internal store error during duplicate-send check");
+			eventBus.finished();
+			this.taskContexts.delete(taskId);
 			releaseQueue!();
 			return;
 		}

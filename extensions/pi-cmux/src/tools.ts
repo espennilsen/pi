@@ -62,30 +62,42 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 			"available panes before reading or sending input.",
 		parameters: Type.Object({}),
 		async execute() {
-			const [surfaces, workspaces] = await Promise.all([
-				client.listSurfaces(),
-				client.listWorkspaces(),
-			]);
-			const lines: string[] = [];
-			lines.push("## Workspaces");
-			if (Array.isArray(workspaces) && workspaces.length > 0) {
-				for (const w of workspaces) {
+			const workspaces = await client.listWorkspaces();
+
+			// Fetch surfaces for each workspace in parallel
+			const wsArray = Array.isArray(workspaces) ? workspaces : [];
+			const surfaceEntries = await Promise.all(
+				wsArray.map(async (w) => {
 					const ws = w as Record<string, unknown>;
-					lines.push(`- ${ws.id ?? "?"}: ${ws.name ?? ws.title ?? "unnamed"}`);
-				}
-			} else {
-				lines.push("No workspaces found.");
-			}
-			lines.push("\n## Surfaces");
-			if (Array.isArray(surfaces) && surfaces.length > 0) {
+					const wsId = String(ws.id ?? "?");
+					const surfaces = await client.listSurfaces({ workspaceId: wsId });
+					return { wsId, ws, surfaces };
+				}),
+			);
+
+			const allSurfaces: unknown[] = [];
+			const lines: string[] = [];
+
+			lines.push("## Workspaces");
+
+			for (const { wsId, ws, surfaces } of surfaceEntries) {
+				const wsName = String(ws.title ?? ws.name ?? "unnamed");
+
+				// Show workspace name as header
+				lines.push("");
+				lines.push(`### ${wsName}`);
+
 				for (const s of surfaces) {
 					const sf = s as Record<string, unknown>;
-					lines.push(`- ${sf.id ?? "?"}: ${sf.title ?? sf.cwd ?? "untitled"} (${sf.type ?? "terminal"})`);
+					allSurfaces.push(sf);
+					const id = String(sf.id ?? "?");
+					const title = String(sf.title ?? sf.cwd ?? "untitled");
+					const type = String(sf.type ?? "terminal");
+					lines.push(`- ${id}: ${title} (${type})`);
 				}
-			} else {
-				lines.push("No surfaces found.");
 			}
-			return txt(lines.join("\n"), { surfaces, workspaces });
+
+			return txt(lines.join("\n"), { surfaces: allSurfaces, workspaces });
 		},
 	});
 
@@ -129,8 +141,8 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		label: "cmux Read Screen",
 		description:
 			"Read the visible terminal output from another cmux pane. " +
-			"Use cmux_list first to find surface IDs. Returns the text content " +
-			"of the terminal screen.",
+			"Use cmux_list first to find surface IDs (works across all workspaces). " +
+			"Returns the text content of the terminal screen.",
 		parameters: Type.Object({
 			surface: Type.String({
 				description: 'Surface ID to read from (e.g. "surface:2")',
@@ -152,6 +164,7 @@ export function registerTools(pi: ExtensionAPI, client: CmuxClient, _log: LogFn)
 		label: "cmux Send Input",
 		description:
 			"Send text or keystrokes to another cmux pane. " +
+			"Works across all workspaces — use cmux_list to discover surface IDs. " +
 			"Provide exactly one of `text` or `key` (not both). " +
 			"Use this to type commands, answer prompts, or interact with programs " +
 			"running in other panes. Append \\n to execute a command.",

@@ -417,6 +417,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		// Always call eventBus.finished() to complete the SDK task lifecycle.
 		if (canceled) {
 			this.log("executor_skip_canceled", { taskId });
+			this.taskContexts.delete(taskId);
 			eventBus.finished();
 			releaseQueue!();
 			return;

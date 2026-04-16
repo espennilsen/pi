@@ -125,7 +125,7 @@ export function registerRecipesTool(pi: ExtensionAPI) {
 			name: Type.Optional(Type.String({ description: "Recipe name (for create/update)" })),
 			description: Type.Optional(Type.String({ description: "Recipe description" })),
 			recipeYield: Type.Optional(Type.String({ description: "Yield display text (e.g. '4 servings', '2-3 wraps')" })),
-			servings: Type.Optional(Type.Number({ description: "Number of servings (numeric, e.g. 4). Used for recipe scaling. Defaults to 0 if not set." })),
+			servings: Type.Optional(Type.Number({ description: "Number of servings (numeric, e.g. 4). Used for recipe scaling. Defaults to 0 if not set.", minimum: 0 })),
 			prepTime: Type.Optional(Type.String({ description: "Prep time (e.g. '15 Minutes')" })),
 			cookTime: Type.Optional(Type.String({ description: "Cook time (e.g. '30 Minutes')" })),
 			totalTime: Type.Optional(Type.String({ description: "Total time (e.g. '45 Minutes')" })),
@@ -399,7 +399,7 @@ function formatDetail(r: RecipeDetail): string {
 	lines.push(`**Slug:** ${r.slug}`);
 	if (r.description) lines.push(`\n${r.description}`);
 	if (r.recipeYield) lines.push(`**Yield:** ${r.recipeYield}`);
-	if (r.recipeServings) lines.push(`**Servings:** ${r.recipeServings}`);
+	if (r.recipeServings != null) lines.push(`**Servings:** ${r.recipeServings}`);
 	if (r.prepTime) lines.push(`**Prep Time:** ${r.prepTime}`);
 	if (r.cookTime) lines.push(`**Cook Time:** ${r.cookTime}`);
 	if (r.totalTime) lines.push(`**Total Time:** ${r.totalTime}`);

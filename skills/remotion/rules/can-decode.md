@@ -32,21 +32,21 @@ export const canDecode = async (src: string) => {
 
   try {
     await input.getFormat();
+
+    const videoTrack = await input.getPrimaryVideoTrack();
+    if (videoTrack && !(await videoTrack.canDecode())) {
+      return false;
+    }
+
+    const audioTrack = await input.getPrimaryAudioTrack();
+    if (audioTrack && !(await audioTrack.canDecode())) {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
-
-  const videoTrack = await input.getPrimaryVideoTrack();
-  if (videoTrack && !(await videoTrack.canDecode())) {
-    return false;
-  }
-
-  const audioTrack = await input.getPrimaryAudioTrack();
-  if (audioTrack && !(await audioTrack.canDecode())) {
-    return false;
-  }
-
-  return true;
 };
 ```
 

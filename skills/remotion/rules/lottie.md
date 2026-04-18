@@ -41,7 +41,12 @@ export const MyAnimation = () => {
 
   useEffect(() => {
     fetch("https://assets4.lottiefiles.com/packages/lf20_zyquagfl.json")
-      .then((data) => data.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to load Lottie animation: ${res.status}`);
+        }
+        return res.json();
+      })
       .then((json) => {
         setAnimationData(json);
         continueRender(handle);

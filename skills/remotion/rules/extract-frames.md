@@ -188,42 +188,40 @@ try {
 }
 ```
 
-## Timeout with Promise.race
+## Timeout with AbortController
+
+Prefer the `AbortController` + `setTimeout` pattern over `Promise.race` — it avoids unhandled promise rejections when the main work resolves before the timeout fires.
 
 ```tsx
 const controller = new AbortController();
 
-const timeoutPromise = new Promise<never>((_, reject) => {
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-    reject(new Error("Frame extraction timed out after 10 seconds"));
-  }, 10000);
-
-  controller.signal.addEventListener("abort", () => clearTimeout(timeoutId), {
-    once: true,
-  });
-});
+const timeoutId = setTimeout(() => {
+  controller.abort();
+}, 10000);
 
 try {
-  await Promise.race([
-    extractFrames({
-      src: "https://remotion.media/video.mp4",
-      timestampsInSeconds: [0, 1, 2, 3, 4],
-      onVideoSample: (sample) => {
-        using frame = sample;
-        const canvas = document.createElement("canvas");
-        canvas.width = frame.displayWidth;
-        canvas.height = frame.displayHeight;
-        const ctx = canvas.getContext("2d");
-        frame.draw(ctx!, 0, 0);
-      },
-      signal: controller.signal,
-    }),
-    timeoutPromise,
-  ]);
+  await extractFrames({
+    src: "https://remotion.media/video.mp4",
+    timestampsInSeconds: [0, 1, 2, 3, 4],
+    onVideoSample: (sample) => {
+      using frame = sample;
+      const canvas = document.createElement("canvas");
+      canvas.width = frame.displayWidth;
+      canvas.height = frame.displayHeight;
+      const ctx = canvas.getContext("2d");
+      frame.draw(ctx!, 0, 0);
+    },
+    signal: controller.signal,
+  });
 
   console.log("Frame extraction complete!");
 } catch (error) {
-  console.error("Frame extraction was aborted or failed:", error);
+  if (controller.signal.aborted) {
+    console.error("Frame extraction timed out after 10 seconds");
+  } else {
+    console.error("Frame extraction failed:", error);
+  }
+} finally {
+  clearTimeout(timeoutId);
 }
 ```

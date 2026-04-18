@@ -112,13 +112,19 @@ const calculateMetadata: CalculateMetadataFunction<
 > = async ({ props, abortSignal }) => {
   const data = await fetch(`https://api.example.com/video/${props.videoId}`, {
     signal: abortSignal,
-  }).then((res) => res.json());
+  });
+
+  if (!data.ok) {
+    throw new Error(`Failed to fetch video data: ${data.status} ${data.statusText}`);
+  }
+
+  const json = await data.json();
 
   return {
     durationInFrames: Math.ceil(data.duration * 30),
     props: {
       ...props,
-      videoUrl: data.url,
+      videoUrl: json.url,
     },
   };
 };

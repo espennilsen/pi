@@ -28,6 +28,9 @@ Create a script that reads the config, calls the ElevenLabs API for each scene, 
 The core API call for a single scene:
 
 ```ts title="generate-voiceover.ts"
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
 if (!process.env.ELEVENLABS_API_KEY) {
   throw new Error("ELEVENLABS_API_KEY is not set");
 }
@@ -57,7 +60,9 @@ if (!response.ok) {
   throw new Error(`ElevenLabs API error: ${response.status}`);
 }
 const audioBuffer = Buffer.from(await response.arrayBuffer());
-writeFileSync(`public/voiceover/${compositionId}/${scene.id}.mp3`, audioBuffer);
+const outputPath = `public/voiceover/${compositionId}/${scene.id}.mp3`;
+mkdirSync(dirname(outputPath), { recursive: true });
+writeFileSync(outputPath, audioBuffer);
 ```
 
 ## Dynamic composition duration with calculateMetadata

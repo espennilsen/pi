@@ -121,7 +121,7 @@ const calculateMetadata: CalculateMetadataFunction<
   const json = await data.json();
 
   return {
-    durationInFrames: Math.ceil(data.duration * 30),
+    durationInFrames: Math.ceil(json.duration * 30),
     props: {
       ...props,
       videoUrl: json.url,

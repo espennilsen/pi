@@ -82,7 +82,7 @@ export const MyComposition = () => {
       center: [6.5615, 46.0598],
       pitch: 65,
       bearing: 0,
-      style: "⁠mapbox://styles/mapbox/standard",
+      style: "mapbox://styles/mapbox/standard",
       interactive: false,
       fadeDuration: 0,
     });
@@ -138,6 +138,10 @@ export const MyComposition = () => {
           "line-join": "round",
         },
       });
+    });
+
+    _map.on("error", (e) => {
+      cancelRender(e.error);
     });
 
     _map.on("load", () => {

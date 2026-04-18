@@ -28,6 +28,10 @@ Create a script that reads the config, calls the ElevenLabs API for each scene, 
 The core API call for a single scene:
 
 ```ts title="generate-voiceover.ts"
+if (!process.env.ELEVENLABS_API_KEY) {
+  throw new Error("ELEVENLABS_API_KEY is not set");
+}
+
 const response = await fetch(
   `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
   {

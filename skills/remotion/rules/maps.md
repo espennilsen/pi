@@ -69,7 +69,7 @@ mapboxgl.accessToken = process.env.REMOTION_MAPBOX_TOKEN as string;
 
 export const MyComposition = () => {
   const ref = useRef<HTMLDivElement>(null);
-  const { delayRender, continueRender } = useDelayRender();
+  const { delayRender, continueRender, cancelRender } = useDelayRender();
 
   const { width, height } = useVideoConfig();
   const [handle] = useState(() => delayRender("Loading map..."));
@@ -227,7 +227,7 @@ const cameraAltitude = 4000;
 ```tsx
 const frame = useCurrentFrame();
 const { fps } = useVideoConfig();
-const { delayRender, continueRender } = useDelayRender();
+const { delayRender, continueRender, cancelRender } = useDelayRender();
 
 useEffect(() => {
   if (!map) {
@@ -261,7 +261,13 @@ useEffect(() => {
   });
 
   map.setFreeCameraOptions(camera);
-  map.once("idle", () => continueRender(handle));
+
+  // Safety timeout: if map doesn't emit idle, continue render anyway
+  const timeoutId = setTimeout(() => continueRender(handle), 2000);
+  map.once("idle", () => {
+    clearTimeout(timeoutId);
+    continueRender(handle);
+  });
 }, [lineCoordinates, fps, frame, handle, map]);
 ```
 
@@ -315,7 +321,12 @@ useEffect(() => {
     source.setData(lineData);
   }
 
-  map.once("idle", () => continueRender(animationHandle));
+  // Safety timeout: if map doesn't emit idle, continue render anyway
+  const timeoutId = setTimeout(() => continueRender(animationHandle), 2000);
+  map.once("idle", () => {
+    clearTimeout(timeoutId);
+    continueRender(animationHandle);
+  });
 }, [frame, map, durationInFrames]);
 ```
 

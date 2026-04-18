@@ -15,7 +15,7 @@ Mediabunny can extract the duration of an audio file. It works in browser, Node.
 import { Input, ALL_FORMATS, UrlSource } from "mediabunny";
 
 export const getAudioDuration = async (src: string) => {
-  const input = new Input({
+  using input = new Input({
     formats: ALL_FORMATS,
     source: new UrlSource(src, {
       getRetryDelay: () => null,
@@ -51,7 +51,7 @@ Use `FileSource` instead of `UrlSource`:
 ```tsx
 import { Input, ALL_FORMATS, FileSource } from "mediabunny";
 
-const input = new Input({
+using input = new Input({
   formats: ALL_FORMATS,
   source: new FileSource(file), // File object from input or drag-drop
 });

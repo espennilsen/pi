@@ -38,6 +38,9 @@ export const MyComponent: React.FC = () => {
     try {
       // Assuming captions.json is in the public/ folder.
       const response = await fetch(staticFile("captions123.json"));
+      if (!response.ok) {
+        throw new Error(`Failed to fetch captions: ${response.status}`);
+      }
       const data = await response.json();
       setCaptions(data);
       continueRender(handle);

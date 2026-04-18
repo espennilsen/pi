@@ -49,6 +49,9 @@ const response = await fetch(
   },
 );
 
+if (!response.ok) {
+  throw new Error(`ElevenLabs API error: ${response.status}`);
+}
 const audioBuffer = Buffer.from(await response.arrayBuffer());
 writeFileSync(`public/voiceover/${compositionId}/${scene.id}.mp3`, audioBuffer);
 ```

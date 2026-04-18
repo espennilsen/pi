@@ -57,7 +57,7 @@ In the root file, the schema can be passed to the composition:
 
 ```tsx title="src/Root.tsx"
 import { Composition } from "remotion";
-import { MycComponent, MyCompositionSchema } from "./MyComposition";
+import { MyComponent, MyCompositionSchema } from "./MyComposition";
 
 export const RemotionRoot = () => {
   return (

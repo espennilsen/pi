@@ -43,7 +43,7 @@ The user needs to create a free Mapbox account and create an access token by vis
 The mapbox token needs to be added to the `.env` file:
 
 ```txt title=".env"
-REMOTION_MAPBOX_TOKEN==pk.your-mapbox-access-token
+REMOTION_MAPBOX_TOKEN=pk.your-mapbox-access-token
 ```
 
 ## Adding a map

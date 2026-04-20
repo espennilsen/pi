@@ -36,14 +36,25 @@ export type TtsResult = TtsSuccessResult | TtsErrorResult;
 
 /**
  * Call the TTS server and save the resulting WAV to a temp file.
+ *
+ * @param request - TTS request payload
+ * @param baseUrl - TTS server base URL
+ * @param timeoutMs - Request timeout in milliseconds
+ * @param signal - Optional AbortSignal from the framework for cancellation
  */
 export async function generateAudio(
 	request: TtsRequest,
 	baseUrl: string = DEFAULT_BASE_URL,
 	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+	signal?: AbortSignal,
 ): Promise<TtsResult> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+	// Link external signal with timeout controller so either can abort
+	const combinedSignal = signal
+		? AbortSignal.any([controller.signal, signal])
+		: controller.signal;
 
 	try {
 		const payload: Record<string, string> = {
@@ -60,7 +71,7 @@ export async function generateAudio(
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
-			signal: controller.signal,
+			signal: combinedSignal,
 		});
 
 		if (!response.ok) {
@@ -71,6 +82,16 @@ export async function generateAudio(
 				status: response.status,
 				message: "TTS backend error",
 				details: truncated,
+			};
+		}
+
+		// If cancelled before file write, skip creating the file
+		if (combinedSignal.aborted) {
+			return {
+				ok: false,
+				status: 0,
+				message: "TTS request cancelled",
+				details: "The request was cancelled before the audio file could be saved.",
 			};
 		}
 
@@ -94,7 +115,15 @@ export async function generateAudio(
 			size_bytes: buffer.length,
 		};
 	} catch (err: any) {
-		if (err.name === "AbortError" || controller.signal.aborted) {
+		if (err.name === "AbortError" || combinedSignal.aborted) {
+			if (signal?.aborted) {
+				return {
+					ok: false,
+					status: 0,
+					message: "TTS request cancelled",
+					details: "The request was cancelled by the framework.",
+				};
+			}
 			return {
 				ok: false,
 				status: 0,

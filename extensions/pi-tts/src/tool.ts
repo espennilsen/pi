@@ -23,7 +23,13 @@ interface TtsToolDetails {
 	message?: string;
 }
 
-export function registerTtsTool(pi: ExtensionAPI) {
+export interface TtsToolConfig {
+	getBaseUrl: () => string;
+	getTimeoutMs: () => number;
+	onFileCreated?: (filePath: string) => void;
+}
+
+export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 	pi.registerTool({
 		name: "generate_tts",
 		label: "Generate TTS",
@@ -67,7 +73,7 @@ export function registerTtsTool(pi: ExtensionAPI) {
 				text,
 				language_id,
 				voice_sample_path,
-			});
+			}, config.getBaseUrl(), config.getTimeoutMs(), signal);
 
 			if (!result.ok) {
 				const details: TtsToolDetails = {
@@ -87,6 +93,9 @@ export function registerTtsTool(pi: ExtensionAPI) {
 					isError: true,
 				};
 			}
+
+			// Track file for session cleanup
+			config.onFileCreated?.(result.file_path);
 
 			const sizeKb = (result.size_bytes / 1024).toFixed(1);
 			const details: TtsToolDetails = {

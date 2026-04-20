@@ -15,11 +15,11 @@ Flat `src/` layout with one file per concern. Voice IDs are mapped to file paths
 
 ## Key Files
 
-- `src/index.ts` — Extension entry point. Registers the tool and `/tts` command.
-- `src/tool.ts` — Registers the `generate_tts` LLM tool with TypeBox schema; formats results.
-- `src/tts-client.ts` — TTS server API client (`fetch`-based). Handles request building, error parsing, and WAV file saving to /tmp.
+- `src/index.ts` — Extension entry point. Registers the tool and `/tts` command. Loads settings on session_start, cleans up temp files on session_shutdown.
+- `src/tool.ts` — Registers the `generate_tts` LLM tool with TypeBox schema; formats results. Receives config via getter functions so settings changes are picked up dynamically.
+- `src/tts-client.ts` — TTS server API client (`fetch`-based). Handles request building, abort signal propagation (timeout + framework cancellation), error parsing, and WAV file saving to /tmp.
 - `src/voices.ts` — Voice ID to file path mapping. Add new voices here.
-- `src/logger.ts` — Extension logger (delegates to pi-logger via event bus).
+- `src/settings.ts` — Loads `baseUrl` and `timeoutMs` from pi settings.json (global + project), falling back to defaults.
 
 ## Tools
 
@@ -40,7 +40,7 @@ To add a new voice, edit `src/voices.ts` and add an entry to `VOICE_MAP`.
 ## Events
 
 - Emits: log events via pi event bus
-- Listens: session_start
+- Listens: session_start (loads settings), session_shutdown (cleans up temp files)
 
 ## Settings
 
@@ -61,9 +61,16 @@ Configure in settings.json:
 
 None.
 
+## Cancellation & Cleanup
+
+- The `generate_tts` tool forwards the framework's abort `signal` to the HTTP fetch, so cancelled tool calls abort the network request promptly.
+- `AbortSignal.any()` combines the timeout AbortController with the framework signal — either one triggers cancellation.
+- If the signal fires before file write, the response is discarded instead of written to /tmp.
+- Temp WAV files are tracked and deleted on `session_shutdown`.
+
 ## Conventions
 
-- WAV files saved to `/tmp/tts-<uuid>.wav` (cleaned by OS).
+- WAV files saved to `/tmp/tts-<uuid>.wav` and cleaned up on session shutdown.
 - 30-second default timeout with clear abort error messages.
 - Voice IDs normalized to lowercase for case-insensitive matching.
 - Unknown voice_id returns a friendly error listing available voices.

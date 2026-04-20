@@ -6,6 +6,7 @@
  *
  * The generated WAV file is saved to /tmp and the file path is returned
  * so the assistant or client can play or stream the audio.
+ * Temp files are cleaned up when the session ends.
  *
  * Also provides a `/tts` command for quick speech generation from the TUI.
  *
@@ -23,6 +24,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { registerTtsTool } from "./tool.ts";
+import { resolveSettings } from "./settings.ts";
 import { resolveVoicePath, getAvailableVoices } from "./voices.ts";
 import { generateAudio } from "./tts-client.ts";
 
@@ -35,13 +37,38 @@ export default function (pi: ExtensionAPI) {
 	let baseUrl = DEFAULT_BASE_URL;
 	let timeoutMs = DEFAULT_TIMEOUT_MS;
 
-	pi.on("session_start", async (_event, _ctx) => {
+	// Track temp files created during this session for cleanup
+	const tempFiles: string[] = [];
+
+	pi.on("session_start", async (_event, ctx) => {
+		const settings = resolveSettings(ctx.cwd);
+		baseUrl = settings.baseUrl;
+		timeoutMs = settings.timeoutMs;
 		log("init", { status: "ready", baseUrl, timeoutMs });
+	});
+
+	pi.on("session_shutdown", async () => {
+		// Clean up temp WAV files created during the session
+		if (tempFiles.length > 0) {
+			const { unlink } = await import("node:fs/promises");
+			for (const filePath of tempFiles) {
+				try {
+					await unlink(filePath);
+				} catch {
+					// File may already be gone — ignore
+				}
+			}
+			log("cleanup", { filesRemoved: tempFiles.length });
+		}
 	});
 
 	// ── TTS tool for LLM ────────────────────────────────────────
 
-	registerTtsTool(pi);
+	registerTtsTool(pi, {
+		getBaseUrl: () => baseUrl,
+		getTimeoutMs: () => timeoutMs,
+		onFileCreated: (filePath) => tempFiles.push(filePath),
+	});
 
 	// ── /tts command for TUI ─────────────────────────────────────
 
@@ -100,6 +127,9 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`TTS error (${result.status}): ${result.message}\n${result.details}`, "error");
 				return;
 			}
+
+			// Track file for session cleanup
+			tempFiles.push(result.file_path);
 
 			const sizeKb = (result.size_bytes / 1024).toFixed(1);
 			ctx.ui.notify(`Audio saved: ${result.file_path} (${sizeKb} KB)`, "info");

@@ -7,11 +7,13 @@
  * the chat, just like normal user messages.
  *
  * Task lifecycle:
- *   1. Publish initial Task (state: submitted) if new
- *   2. Publish status-update (state: working) + finish event bus → HTTP response
- *   3. Delegate to main agent process via processMessage callback (background)
- *   4. On completion: update task in TaskStore with artifact + completed/failed status
- *   5. Callers retrieve results via tasks/get polling or SSE resubscribe
+ *   1. Pre-checks: supervisor loop control, content validation
+ *   2. Publish initial Task (state: submitted) + status-update (state: working) +
+ *      finish event bus → immediate HTTP response (before queue wait)
+ *   3. Wait for preceding tasks in the queue (HTTP response already sent)
+ *   4. Delegate to main agent process via processMessage callback (background)
+ *   5. On completion: update task in TaskStore with artifact + completed/failed status
+ *   6. Callers retrieve results via tasks/get polling or SSE resubscribe
  *
  * Multi-turn (input-required) support:
  *   - The a2a_request_input tool calls parkForInput(), which saves the task
@@ -114,7 +116,7 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * to the DB (e.g. disk full). Allows tasks/get to return a terminal state
 	 * instead of being stuck on "working" forever.
 	 */
-	private fallbackStatuses = new Map<string, { state: "completed" | "failed"; response: string }>();
+	private fallbackStatuses = new Map<string, { state: "completed" | "failed" | "canceled"; response: string }>();
 	/**
 	 * Parked input resolvers — keyed by taskId.
 	 * When a2a_request_input parks, the resolver is stored here. When a
@@ -387,79 +389,47 @@ export class PiAgentExecutor implements AgentExecutor {
 			return;
 		}
 
-		// ── Normal flow: serialize and process ──────────────────────
-		// Serialize: queue behind any active task, process in arrival order
-		let releaseQueue: () => void;
-		const myTurn = this.queue;
-		this.queue = new Promise<void>((resolve) => { releaseQueue = resolve; });
-		if (!task) {
-			eventBus.publish({
-				kind: "task",
-				id: taskId,
-				contextId,
-				status: { state: "submitted", timestamp: new Date().toISOString() },
-				history: [userMessage],
-			} as Task);
-		}
 
-		// Register cancel callback and context mapping so queued tasks can be canceled
-		let canceled = false;
-		this._queueDepth++;
-		this.cancelCallbacks.set(taskId, () => { canceled = true; });
-		this.taskContexts.set(taskId, contextId);
+		// ── Pre-ACK: extract metadata and validate ──────────────────────
+		// These checks run before the ACK so that rejection responses are
+		// sent immediately, not after the queue wait.
 
-		// Wait for preceding tasks to finish
-		await myTurn;
-		this._queueDepth--;
-		this.cancelCallbacks.delete(taskId);
+		const messageMeta = userMessage.metadata as Record<string, unknown> | undefined;
 
-		// If canceled while queued (by abortAll or cancelTask), skip processing.
-		// Always call eventBus.finished() to complete the SDK task lifecycle.
-		if (canceled) {
-			this.log("executor_skip_canceled", { taskId });
-			this.taskContexts.delete(taskId);
-			eventBus.finished();
-			releaseQueue!();
-			return;
-		}
+		// Extract sender identity for logging (needed for processing)
+		const senderMeta = messageMeta?.["pi:sender"] as
+			| { name?: string; description?: string }
+			| undefined;
+		// Sanitize sender name: max 64 chars, strip newlines to prevent injection
+		const rawSenderName = senderMeta?.name ?? "Unknown agent";
+		const senderName = rawSenderName.slice(0, 64).replace(/[\r\n]/g, " ");
 
-		// ── Duplicate-send guard: skip re-processing completed tasks ───────────
-		// When a caller resends the same message/send while the task is working,
-		// the follow-up is queued. By the time it dequeues, the first processing
-		// may have already completed. Re-running processMessage would overwrite
-		// the stored result and trigger a duplicate agent turn.
-		//
-		// Re-publish the existing terminal task so the caller's message/send
-		// response carries the result directly (no extra polling needed).
-		try {
-			const existingTask = await this.taskStore.load(taskId);
-			const existingState = existingTask?.status?.state;
-			if (existingState === "completed" || existingState === "failed" || existingState === "canceled") {
-				this.log("executor_skip_terminal_task", { taskId, state: existingState });
-				// Re-publish the completed task so the caller gets the result in-band
-				if (existingTask) {
-					eventBus.publish(existingTask as Task);
+		// Extract text from all part types (need the prompt for processing)
+		const textSegments: string[] = [];
+		for (const part of userMessage.parts) {
+			if (part.kind === "text") {
+				textSegments.push((part as { kind: "text"; text: string }).text);
+			} else if (part.kind === "data") {
+				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
+				textSegments.push(JSON.stringify(dataPart.data, null, 2));
+			} else if (part.kind === "file") {
+				const file = part.file as { uri?: string; name?: string; bytes?: string };
+				if (file?.uri && /^https?:\/\//i.test(file.uri)) {
+					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
+				} else if (file?.uri) {
+					// Non-http(s) URI (file://, data:, etc.) — display name only, no link
+					textSegments.push(`[File: ${file.name ?? file.uri}]`);
+				} else if (file?.name) {
+					textSegments.push(`[File: ${file.name}]`);
 				}
-				eventBus.finished();
-				this.taskContexts.delete(taskId);
-				releaseQueue!();
-				return;
+				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
+			} else {
+				this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
 			}
-		} catch (err: unknown) {
-			// Store error — abort this turn; the caller gets a failed status and the queue is released.
-			const msg = err instanceof Error ? err.message : String(err);
-			this.log("executor_store_load_error", { taskId, error: msg }, "ERROR");
-			this.publishError(taskId, contextId, eventBus, "Internal store error during duplicate-send check");
-			eventBus.finished();
-			this.taskContexts.delete(taskId);
-			releaseQueue!();
-			return;
 		}
 
 		// ── Supervisor: loop control check ──────────────────────────
-		// Extract loop metadata from the incoming message and run supervisor
-		// checks (cycle detection, hop count limit) BEFORE processing.
-		const messageMeta = userMessage.metadata as Record<string, unknown> | undefined;
+		// Run BEFORE the ACK so that rejection responses are immediate.
 		const incomingLoop = extractLoopMetadata(messageMeta);
 		const supervisorResult = supervise(incomingLoop, this.supervisorConfig);
 
@@ -496,8 +466,132 @@ export class PiAgentExecutor implements AgentExecutor {
 			};
 			await this.taskStore.save(rejectedTask);
 
+			return;
+		}
+
+		// ── Empty message check ─────────────────────────────────────────
+		if (textSegments.length === 0) {
+			this.publishError(taskId, contextId, eventBus, "No processable content in message");
+			eventBus.finished();
+			return;
+		}
+
+		// ── Immediate ACK ────────────────────────────────────────────────
+		// Publish initial task + "working" ACK and finish the event bus BEFORE
+		// any queue waiting. This ensures the HTTP response is sent back to the
+		// caller immediately — even for blocking callers — instead of being held
+		// until the queue drains (which can take minutes for long-running tasks).
+		//
+		// The eventBus.finished() call tells the SDK's ExecutionEventQueue to
+		// stop yielding events, which unblocks the HTTP response. The result is
+		// saved to the TaskStore by processInBackground() when processing completes;
+		// callers retrieve it via tasks/get polling or SSE resubscribe.
+		const prompt = textSegments.join("\n");
+		const ackMetadata = injectLoopMetadata(messageMeta, supervisorResult.metadata);
+
+		if (!task) {
+			eventBus.publish({
+				kind: "task",
+				id: taskId,
+				contextId,
+				status: { state: "submitted", timestamp: new Date().toISOString() },
+				history: [userMessage],
+			} as Task);
+		}
+
+		eventBus.publish({
+			kind: "status-update",
+			taskId,
+			contextId,
+			status: {
+				state: "working",
+				message: {
+					kind: "message",
+					messageId: randomUUID(),
+				role: "agent",
+					parts: [{ kind: "text", text: "Message received, working on it…" } as Part],
+				},
+				timestamp: new Date().toISOString(),
+			},
+			metadata: ackMetadata,
+			final: true,
+		} as TaskStatusUpdateEvent);
+		eventBus.finished();
+
+		this.log("executor_ack_sent", { taskId, sender: senderName, promptLength: prompt.length });
+
+		// ── Queue: serialize and process ─────────────────────────────
+		// After the ACK, wait for any preceding task to finish before
+		// starting background processing. The HTTP response is already sent,
+		// so the queue wait doesn't block the caller.
+		let releaseQueue: () => void;
+		const myTurn = this.queue;
+		this.queue = new Promise<void>((resolve) => { releaseQueue = resolve; });
+
+		// Register cancel callback and context mapping so queued tasks can be canceled
+		let canceled = false;
+		this._queueDepth++;
+		this.cancelCallbacks.set(taskId, () => { canceled = true; });
+		this.taskContexts.set(taskId, contextId);
+
+		// Wait for preceding tasks to finish
+		await myTurn;
+		this._queueDepth--;
+		this.cancelCallbacks.delete(taskId);
+
+		// If canceled while queued (by abortAll or cancelTask), update the
+		// task store to reflect the canceled state and skip processing.
+		if (canceled) {
+			this.log("executor_skip_canceled", { taskId });
+			this.taskContexts.delete(taskId);
+			// Update the task store so tasks/get returns canceled instead of stuck on working
+			try {
+				const cancelTask: Task = {
+					kind: "task",
+					id: taskId,
+					contextId,
+				status: {
+						state: "canceled",
+						message: {
+							kind: "message",
+							messageId: randomUUID(),
+							role: "agent",
+							parts: [{ kind: "text", text: "Task canceled while queued" } as Part],
+						},
+						timestamp: new Date().toISOString(),
+					},
+				};
+				await this.taskStore.save(cancelTask);
+			} catch (e) {
+				this.log("executor_cancel_store_error", { taskId, error: e instanceof Error ? e.message : String(e) }, "WARN");
+			}
+			this.fallbackStatuses.set(taskId, { state: "canceled", response: "Task canceled while queued" });
 			releaseQueue!();
 			return;
+		}
+
+		// ── Duplicate-send guard: skip re-processing completed tasks ───────────
+		// When a caller resends the same message/send while the task is working,
+		// the follow-up is queued. By the time it dequeues, the first processing
+		// may have already completed. Re-running processMessage would overwrite
+		// the stored result and trigger a duplicate agent turn.
+		//
+		// Since we already ACKed this task, save the duplicate result to the
+		// task store so callers polling via tasks/get see the terminal state.
+		try {
+			const existingTask = await this.taskStore.load(taskId);
+			const existingState = existingTask?.status?.state;
+			if (existingState === "completed" || existingState === "failed" || existingState === "canceled") {
+				this.log("executor_skip_terminal_task", { taskId, state: existingState });
+				this.taskContexts.delete(taskId);
+				releaseQueue!();
+				return;
+			}
+		} catch (err: unknown) {
+			// Store error — proceed with processing anyway; the result
+			// will be saved by processInBackground when it finishes.
+			const msg = err instanceof Error ? err.message : String(err);
+			this.log("executor_store_load_error", { taskId, error: msg }, "WARN");
 		}
 
 		// Supervisor approved — store the updated metadata for this task.
@@ -509,46 +603,6 @@ export class PiAgentExecutor implements AgentExecutor {
 			visitedAgents: supervisorResult.metadata.visitedAgents,
 		});
 
-		// Extract sender identity for logging
-		const senderMeta = messageMeta?.["pi:sender"] as
-			| { name?: string; description?: string }
-			| undefined;
-		// Sanitize sender name: max 64 chars, strip newlines to prevent injection
-		const rawSenderName = senderMeta?.name ?? "Unknown agent";
-		const senderName = rawSenderName.slice(0, 64).replace(/[\r\n]/g, " ");
-
-		// Extract text from all part types
-		const textSegments: string[] = [];
-		for (const part of userMessage.parts) {
-			if (part.kind === "text") {
-				textSegments.push((part as { kind: "text"; text: string }).text);
-			} else if (part.kind === "data") {
-				const dataPart = part as { kind: "data"; data: Record<string, unknown> };
-				textSegments.push(JSON.stringify(dataPart.data, null, 2));
-			} else if (part.kind === "file") {
-				const file = part.file as { uri?: string; name?: string; bytes?: string };
-				if (file?.uri && /^https?:\/\//i.test(file.uri)) {
-					textSegments.push(`[File: ${file.name ?? file.uri}](${file.uri})`);
-				} else if (file?.uri) {
-					// Non-http(s) URI (file://, data:, etc.) — display name only, no link
-					textSegments.push(`[File: ${file.name ?? file.uri}]`);
-				} else if (file?.name) {
-					textSegments.push(`[File: ${file.name}]`);
-				}
-				this.log("executor_file_part", { taskId, uri: file?.uri, name: file?.name });
-			} else {
-				this.log("executor_unsupported_part", { taskId, kind: (part as { kind: string }).kind }, "WARN");
-			}
-		}
-
-		if (textSegments.length === 0) {
-			this.publishError(taskId, contextId, eventBus, "No processable content in message");
-			eventBus.finished();
-			releaseQueue!();
-			return;
-		}
-
-		const prompt = textSegments.join("\n");
 		this.activeTaskId = taskId;
 		const callContext = requestContext.context;
 		this.log("executor_start", {
@@ -560,31 +614,6 @@ export class PiAgentExecutor implements AgentExecutor {
 				? { requestedExtensions: callContext.requestedExtensions.length }
 				: {}),
 		});
-
-		// ── ACK immediately: publish "working" and finish the event bus ──
-		// This unblocks the HTTP response so the sender gets a Task with
-		// state: "working" right away instead of waiting for the agent to
-		// finish (which can take minutes and causes timeout).
-		// Include loop metadata so the caller can inspect it.
-		const ackMetadata = injectLoopMetadata(messageMeta, supervisorResult.metadata);
-		eventBus.publish({
-			kind: "status-update",
-			taskId,
-			contextId,
-			status: {
-				state: "working",
-				message: {
-					kind: "message",
-					messageId: randomUUID(),
-					role: "agent",
-					parts: [{ kind: "text", text: "Message received, working on it…" } as Part],
-				},
-				timestamp: new Date().toISOString(),
-			},
-			metadata: ackMetadata,
-			final: true,
-		} as TaskStatusUpdateEvent);
-		eventBus.finished();
 
 		// ── Process in the background ──────────────────────────────
 		// The HTTP response has already been sent with "working" status.
@@ -869,7 +898,7 @@ export class PiAgentExecutor implements AgentExecutor {
 	 * Get fallback status for a task whose result couldn't be persisted.
 	 * Returns undefined if no fallback exists (normal path — DB worked fine).
 	 */
-	getFallbackStatus(taskId: string): { state: "completed" | "failed"; response: string } | undefined {
+	getFallbackStatus(taskId: string): { state: "completed" | "failed" | "canceled"; response: string } | undefined {
 		return this.fallbackStatuses.get(taskId);
 	}
 

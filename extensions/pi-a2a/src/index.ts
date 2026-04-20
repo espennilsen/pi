@@ -608,13 +608,13 @@ export default function (pi: ExtensionAPI) {
 					const now = new Date().toISOString();
 					task.status = {
 						...task.status,
-						state: fallback.state as "completed" | "failed",
+						state: fallback.state as "completed" | "failed" | "canceled",
 						timestamp: now,
 						message: {
 							kind: "message",
 							role: "agent",
 							messageId: `fallback-${params.id}`,
-							parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : "Task completed") }],
+							parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : fallback.state === "canceled" ? "Task canceled" : "Task completed") }],
 						},
 					};
 					// For completed tasks, add the response as an artifact

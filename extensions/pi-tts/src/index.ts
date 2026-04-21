@@ -51,14 +51,16 @@ export default function (pi: ExtensionAPI) {
 		// Clean up temp WAV files created during the session
 		if (tempFiles.length > 0) {
 			const { unlink } = await import("node:fs/promises");
+			let removed = 0;
 			for (const filePath of tempFiles) {
 				try {
 					await unlink(filePath);
+					removed++;
 				} catch {
 					// File may already be gone — ignore
 				}
 			}
-			log("cleanup", { filesRemoved: tempFiles.length });
+			log("cleanup", { filesTracked: tempFiles.length, filesRemoved: removed });
 		}
 	});
 

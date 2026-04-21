@@ -34,7 +34,7 @@ export function resolveSettings(cwd: string): TtsSettings {
 
 		return {
 			baseUrl: typeof cfg.baseUrl === "string" ? cfg.baseUrl : DEFAULTS.baseUrl,
-			timeoutMs: typeof cfg.timeoutMs === "number" ? cfg.timeoutMs : DEFAULTS.timeoutMs,
+			timeoutMs: typeof cfg.timeoutMs === "number" && cfg.timeoutMs > 0 ? cfg.timeoutMs : DEFAULTS.timeoutMs,
 		};
 	} catch {
 		return { ...DEFAULTS };

@@ -100,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 			let text = raw;
 
 			if (raw.startsWith("--voice ")) {
-				const parts = raw.slice(8).split(/\s+/, 1);
+				const parts = raw.slice(8).trimStart().split(/\s+/, 1);
 				voiceId = parts[0];
 				text = raw.slice(8 + voiceId.length).trim();
 			}

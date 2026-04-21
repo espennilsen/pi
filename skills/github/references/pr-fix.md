@@ -61,7 +61,18 @@ git push origin <branch>
 
 ### Step 6: Resolve threads
 
-For each fixed thread, reply then resolve:
+For each fixed thread, reply then resolve using the registered tools:
+
+```
+tool: github_review_thread_reply
+  thread_id: "THREAD_ID"
+  message: "Fixed — <description>"
+
+tool: github_resolve_review_thread
+  thread_id: "THREAD_ID"
+```
+
+Or use the shell scripts (legacy, still work):
 
 ```bash
 bash scripts/reply-thread.sh "THREAD_ID" "Fixed — <description>"

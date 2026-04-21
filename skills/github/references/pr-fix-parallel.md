@@ -85,10 +85,13 @@ Each worker follows this sequence:
 6. Commit and push:
      git commit -m "fix: address review feedback — <summary>"
      git push origin <branch>
-7. Resolve auto-fixed threads:
+7. Resolve auto-fixed threads using the tools (preferred) or scripts:
+     tool: github_review_thread_reply (thread_id, message)
+     tool: github_resolve_review_thread (thread_id)
+     # Or fallback to shell scripts:
      bash scripts/reply-thread.sh "THREAD_ID" "Fixed — <description>"
      bash scripts/resolve-thread.sh "THREAD_ID"
-8. Post summary comment:
+8. Post summary comment using `github_post_pr_comment` tool (preferred) or:
      gh pr comment <N> -R <owner/repo> --body '<summary table>'
 9. Report back to orchestrator:
      send_message("orchestrator", "PR #97: fixed 5/7 threads, pushed.

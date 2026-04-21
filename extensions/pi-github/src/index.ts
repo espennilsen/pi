@@ -20,6 +20,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { registerCommands, setSessionCwd } from "./commands.ts";
 import { registerPrFixCommand } from "./pr-fix.ts";
+import { registerPrFixTools } from "./pr-fix-tools.ts";
 import { registerPrMergeCommand } from "./pr-merge.ts";
 import { createLogger } from "./logger.ts";
 import { setDefaultOwner } from "./repo-ref.ts";
@@ -48,6 +49,7 @@ export default function (pi: ExtensionAPI) {
 	registerCommands(pi, log);
 	registerPrFixCommand(pi, log, () => cwd);
 	registerPrMergeCommand(pi, log, () => cwd);
+	registerPrFixTools(pi);
 
 	// ── Lifecycle ─────────────────────────────────────────────
 

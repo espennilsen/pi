@@ -1,0 +1,81 @@
+{
+	"providers": {
+		"anthropic": {
+			"baseUrl": "http://ai-proxy.e9n.dev/anthropic"
+		},
+		"openai": {
+			"baseUrl": "http://ai-proxy.e9n.dev/openai"
+		},
+		"google": {
+			"baseUrl": "http://ai-proxy.e9n.dev/google"
+		},
+		"xai": {
+			"baseUrl": "http://ai-proxy.e9n.dev/xai"
+		},
+		"openrouter": {
+			"baseUrl": "http://ai-proxy.e9n.dev/openrouter"
+		},
+		"groq": {
+			"baseUrl": "http://ai-proxy.e9n.dev/groq"
+		},
+		"mistral": {
+			"baseUrl": "http://ai-proxy.e9n.dev/mistral"
+		},
+		"ollama": {
+			"baseUrl": "http://localhost:11434/v1",
+			"api": "openai-completions",
+			"apiKey": "ollama",
+			"compat": {
+				"supportsDeveloperRole": false,
+				"supportsReasoningEffort": false
+			},
+			"models": [
+				{
+					"id": "glm-5.1:cloud",
+					"name": "GLM-5.1 (Cloud)",
+					"reasoning": true,
+					"input": ["text"],
+					"contextWindow": 198000,
+					"maxTokens": 16384,
+					"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+				},
+				{
+					"id": "gemma4:31b-cloud",
+					"name": "Gemma 4 31B (Cloud)",
+					"reasoning": true,
+					"input": ["text", "image"],
+					"contextWindow": 256000,
+					"maxTokens": 16384,
+					"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+				},
+				{
+					"id": "minimax-m2.7:cloud",
+					"name": "MiniMax M2.7 (Cloud)",
+					"reasoning": true,
+					"input": ["text"],
+					"contextWindow": 200000,
+					"maxTokens": 16384,
+					"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+				},
+				{
+					"id": "kimi-k2.6:cloud",
+					"name": "Kimi K2.6 (Cloud)",
+					"reasoning": true,
+					"input": ["text", "image"],
+					"contextWindow": 256000,
+					"maxTokens": 16384,
+					"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+				},
+				{
+					"id": "qwen3.5:cloud",
+					"name": "Qwen 3.5 (Cloud)",
+					"reasoning": true,
+					"input": ["text", "image"],
+					"contextWindow": 256000,
+					"maxTokens": 16384,
+					"cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+				}
+			]
+		}
+	}
+}

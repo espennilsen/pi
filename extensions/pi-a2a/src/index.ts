@@ -639,6 +639,7 @@ export default function (pi: ExtensionAPI) {
 						return {
 							kind: "task",
 							id: params.id,
+							contextId: params.id,
 							status: {
 								state: fallback.state as "completed" | "failed" | "canceled",
 								timestamp: now,

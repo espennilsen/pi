@@ -473,6 +473,25 @@ export class PiAgentExecutor implements AgentExecutor {
 		if (textSegments.length === 0) {
 			this.publishError(taskId, contextId, eventBus, "No processable content in message");
 			eventBus.finished();
+
+			// Persist the rejected task for parity with the supervisor rejection path
+			const emptyTask: Task = {
+				kind: "task",
+				id: taskId,
+				contextId,
+				status: {
+					state: "failed",
+					message: {
+						kind: "message",
+						messageId: randomUUID(),
+						role: "agent",
+						parts: [{ kind: "text", text: "No processable content in message" } as Part],
+					},
+					timestamp: new Date().toISOString(),
+				},
+			};
+			await this.taskStore.save(emptyTask);
+
 			return;
 		}
 
@@ -508,7 +527,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				message: {
 					kind: "message",
 					messageId: randomUUID(),
-				role: "agent",
+					role: "agent",
 					parts: [{ kind: "text", text: "Message received, working on it…" } as Part],
 				},
 				timestamp: new Date().toISOString(),
@@ -550,7 +569,7 @@ export class PiAgentExecutor implements AgentExecutor {
 					kind: "task",
 					id: taskId,
 					contextId,
-				status: {
+					status: {
 						state: "canceled",
 						message: {
 							kind: "message",
@@ -564,8 +583,8 @@ export class PiAgentExecutor implements AgentExecutor {
 				await this.taskStore.save(cancelTask);
 			} catch (e) {
 				this.log("executor_cancel_store_error", { taskId, error: e instanceof Error ? e.message : String(e) }, "WARN");
+				this.fallbackStatuses.set(taskId, { state: "canceled", response: "Task canceled while queued" });
 			}
-			this.fallbackStatuses.set(taskId, { state: "canceled", response: "Task canceled while queued" });
 			releaseQueue!();
 			return;
 		}

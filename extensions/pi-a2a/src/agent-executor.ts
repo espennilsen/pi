@@ -490,7 +490,12 @@ export class PiAgentExecutor implements AgentExecutor {
 					timestamp: new Date().toISOString(),
 				},
 			};
-			await this.taskStore.save(emptyTask);
+			try {
+				await this.taskStore.save(emptyTask);
+			} catch (e) {
+				this.log("executor_empty_store_error", { taskId, error: e instanceof Error ? e.message : String(e) }, "WARN");
+				this.fallbackStatuses.set(taskId, { state: "failed", response: "No processable content in message" });
+			}
 
 			return;
 		}

@@ -37,11 +37,14 @@ const { chromium } = require('/Users/espen/node_modules/playwright');
 
 (async () => {
   const browser = await chromium.launch({ headless: false });
-  const page = await browser.newPage();
-  await page.goto('https://example.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(3000);
-  await page.screenshot({ path: '/tmp/screenshot.png' });
-  await browser.close();
+  try {
+    const page = await browser.newPage();
+    await page.goto('https://example.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: '/tmp/screenshot.png' });
+  } finally {
+    await browser.close();
+  }
 })();
 ```
 
@@ -207,20 +210,23 @@ const { chromium } = require('/Users/espen/node_modules/playwright');
 
 (async () => {
   const browser = await chromium.launch({ headless: false });
-  const page = await browser.newPage();
+  try {
+    const page = await browser.newPage();
 
-  page.on('console', msg => {
-    if (msg.type() === 'error') console.log('CONSOLE ERROR:', msg.text());
-  });
-  page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
+    page.on('console', msg => {
+      if (msg.type() === 'error') console.log('CONSOLE ERROR:', msg.text());
+    });
+    page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
-  await page.goto('https://example.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(4000);
+    await page.goto('https://example.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(4000);
 
-  const title = await page.title();
-  console.log('Title:', title);
+    const title = await page.title();
+    console.log('Title:', title);
 
-  await page.screenshot({ path: '/tmp/debug.png' });
-  await browser.close();
+    await page.screenshot({ path: '/tmp/debug.png' });
+  } finally {
+    await browser.close();
+  }
 })();
 ```

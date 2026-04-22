@@ -230,6 +230,7 @@ import json, os
 for root, dirs, files in os.walk('src/data/nodes'):
     for f in files:
         if not f.endswith('.json') or f == '_metadata.json': continue
+        path = os.path.join(root, f)
         try:
             with open(os.path.join(root, f)) as fh: d = json.load(fh)
         except json.JSONDecodeError:

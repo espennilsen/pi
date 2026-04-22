@@ -40,6 +40,7 @@ import { join } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import {
+	A2AError,
 	DefaultRequestHandler,
 	DefaultPushNotificationSender,
 	JsonRpcTransportHandler,
@@ -600,33 +601,66 @@ export default function (pi: ExtensionAPI) {
 		// Wrap getTask to consult in-memory fallback statuses when DB write failed
 		const originalGetTask = requestHandler.getTask.bind(requestHandler);
 		requestHandler.getTask = async (params, context) => {
-			const task = await originalGetTask(params, context);
-			// If the task is still "working" but we have a fallback terminal state, patch it
-			if (task?.status?.state === "working") {
-				const fallback = executor?.getFallbackStatus(params.id);
-				if (fallback) {
-					const now = new Date().toISOString();
-					task.status = {
-						...task.status,
-						state: fallback.state as "completed" | "failed",
-						timestamp: now,
-						message: {
-							kind: "message",
-							role: "agent",
-							messageId: `fallback-${params.id}`,
-							parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : "Task completed") }],
-						},
-					};
-					// For completed tasks, add the response as an artifact
-					if (fallback.state === "completed" && fallback.response) {
-						task.artifacts = [{
-							artifactId: `fallback-artifact-${params.id}`,
-							parts: [{ kind: "text", text: fallback.response }],
-						}];
+			try {
+				const task = await originalGetTask(params, context);
+				// If the task is still "working" but we have a fallback terminal state, patch it
+				if (task?.status?.state === "working") {
+					const fallback = executor?.getFallbackStatus(params.id);
+					if (fallback) {
+						const now = new Date().toISOString();
+						task.status = {
+							...task.status,
+							state: fallback.state as "completed" | "failed" | "canceled",
+							timestamp: now,
+							message: {
+								kind: "message",
+								role: "agent",
+								messageId: `fallback-${params.id}`,
+								parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : fallback.state === "canceled" ? "Task canceled" : "Task completed") }],
+							},
+						};
+						// For completed tasks, add the response as an artifact
+						if (fallback.state === "completed" && fallback.response) {
+							task.artifacts = [{
+								artifactId: `fallback-artifact-${params.id}`,
+								parts: [{ kind: "text", text: fallback.response }],
+							}];
+						}
 					}
 				}
+				return task;
+			} catch (e) {
+				// If the task was never persisted to the DB (e.g. empty-message save failed),
+				// originalGetTask throws "task not found". Check the fallback map.
+				if (e instanceof A2AError && e.code === -32001) {
+					const fallback = executor?.getFallbackStatus(params.id);
+					if (fallback) {
+						const now = new Date().toISOString();
+						return {
+							kind: "task",
+							id: params.id,
+							contextId: params.id,
+							status: {
+								state: fallback.state as "completed" | "failed" | "canceled",
+								timestamp: now,
+								message: {
+									kind: "message",
+									role: "agent",
+									messageId: `fallback-${params.id}`,
+									parts: [{ kind: "text", text: fallback.response || (fallback.state === "failed" ? "Task failed" : fallback.state === "canceled" ? "Task canceled" : "Task completed") }],
+								},
+							},
+							...(fallback.state === "completed" && fallback.response ? {
+								artifacts: [{
+									artifactId: `fallback-artifact-${params.id}`,
+									parts: [{ kind: "text", text: fallback.response }],
+								}],
+							} : {}),
+						};
+					}
+				}
+				throw e;
 			}
-			return task;
 		};
 
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);

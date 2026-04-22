@@ -62,6 +62,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			log("cleanup", { filesTracked: tempFiles.length, filesRemoved: removed });
 		}
+		tempFiles.length = 0;
 	});
 
 	// ── TTS tool for LLM ────────────────────────────────────────

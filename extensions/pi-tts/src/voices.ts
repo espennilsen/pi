@@ -16,7 +16,8 @@ export const VOICE_MAP: Record<string, string> = {
  */
 export function resolveVoicePath(voiceId: string | undefined): string | undefined {
 	if (!voiceId) return undefined;
-	return VOICE_MAP[voiceId.toLowerCase()];
+	const key = voiceId.toLowerCase();
+	return Object.hasOwn(VOICE_MAP, key) ? VOICE_MAP[key] : undefined;
 }
 
 /**

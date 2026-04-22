@@ -56,12 +56,13 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 				voice_sample_path = resolveVoicePath(voice_id);
 				if (!voice_sample_path) {
 					const available = getAvailableVoices();
+					const message = `Unknown voice_id "${voice_id}". Available voices: ${available.join(", ")}. Omit voice_id to use the server default.`;
 					return {
 						content: [{
 							type: "text" as const,
-							text: `Unknown voice_id "${voice_id}". Available voices: ${available.join(", ")}. Omit voice_id to use the server default.`,
+							text: message,
 						}],
-						details: { text, language_id, voice_id, error: true } as TtsToolDetails,
+						details: { text, language_id, voice_id, error: true, message } as TtsToolDetails,
 						isError: true,
 					};
 				}

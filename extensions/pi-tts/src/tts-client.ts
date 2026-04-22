@@ -51,12 +51,12 @@ export async function generateAudio(
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-	// Link external signal with timeout controller so either can abort
-	const combinedSignal = signal
-		? AbortSignal.any([controller.signal, signal])
-		: controller.signal;
-
 	try {
+		// Link external signal with timeout controller so either can abort
+		const combinedSignal = signal
+			? AbortSignal.any([controller.signal, signal])
+			: controller.signal;
+
 		const payload: Record<string, string> = {
 			text: request.text,
 		};
@@ -67,7 +67,7 @@ export async function generateAudio(
 			payload.voice_sample_path = request.voice_sample_path;
 		}
 
-		const response = await fetch(`${baseUrl}/tts`, {
+		const response = await fetch(new URL("/tts", baseUrl).href, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
@@ -85,8 +85,8 @@ export async function generateAudio(
 			};
 		}
 
-		// If cancelled before file write, skip creating the file
-		if (combinedSignal.aborted) {
+		// If cancelled by framework before file write, skip creating the file
+		if (signal?.aborted) {
 			return {
 				ok: false,
 				status: 0,
@@ -115,7 +115,7 @@ export async function generateAudio(
 			size_bytes: buffer.length,
 		};
 	} catch (err: any) {
-		if (err.name === "AbortError" || combinedSignal.aborted) {
+		if (err.name === "AbortError") {
 			if (signal?.aborted) {
 				return {
 					ok: false,

@@ -31,7 +31,7 @@ def parse_frontmatter(content):
     if not content.startswith('---'):
         return None, "No YAML frontmatter found (must start with ---)"
 
-    match = re.match(r'^---\r?\n(.*?)\r?\n---\r?\n', content, re.DOTALL)
+    match = re.match(r'^---\r?\n(.*?)\r?\n---(?:\r?\n)?', content, re.DOTALL)
     if not match:
         return None, "Invalid frontmatter format (missing closing ---)"
 
@@ -81,21 +81,21 @@ def validate(skill_path):
     skill_md = skill_path / 'SKILL.md'
     if not skill_md.exists():
         # Check for wrong case
-    try:
-        skill_path_children = list(skill_path.iterdir())
-    except OSError as e:
-        errors.append(f"Cannot read skill directory: {e}")
-        return errors, warnings
-    for f in skill_path_children:
-        if f.name.lower() == 'skill.md' and f.name != 'SKILL.md':
-            errors.append(f"Found '{f.name}' — must be exactly 'SKILL.md' (case-sensitive)")
+        try:
+            skill_path_children = list(skill_path.iterdir())
+        except OSError as e:
+            errors.append(f"Cannot read skill directory: {e}")
             return errors, warnings
+        for f in skill_path_children:
+            if f.name.lower() == 'skill.md' and f.name != 'SKILL.md':
+                errors.append(f"Found '{f.name}' — must be exactly 'SKILL.md' (case-sensitive)")
+                return errors, warnings
         errors.append("SKILL.md not found")
         return errors, warnings
 
     try:
         skill_md_text = skill_md.read_text()
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         errors.append(f"Cannot read SKILL.md: {e}")
         return errors, warnings
     content = skill_md_text

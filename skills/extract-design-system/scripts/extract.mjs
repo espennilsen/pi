@@ -28,16 +28,25 @@
 
 import { chromium, devices } from 'playwright';
 import { mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 const url = process.argv[2];
-const outDir = process.argv[3] || 'extracted-design-system';
+const rawOutDir = process.argv[3] || 'extracted-design-system';
 const subpages = (process.argv[4] || '').split(',').filter(Boolean);
 
 if (!url) {
   console.error('Usage: node extract.mjs <url> [outDir] [subpage1,subpage2,...]');
   process.exit(1);
 }
+
+// Validate outDir to prevent path traversal
+const resolvedOut = resolve(rawOutDir);
+const resolvedCwd = resolve(process.cwd());
+if (resolvedOut !== resolvedCwd && !resolvedOut.startsWith(resolvedCwd + '/')) {
+  console.error(`❌ outDir must be inside the current working directory. Received: ${rawOutDir}`);
+  process.exit(1);
+}
+const outDir = rawOutDir;
 
 // ── Output directories ────────────────────────────────────────────────
 for (const sub of ['screenshots/pages', 'screenshots/components', 'raw']) {
@@ -248,44 +257,49 @@ const responsiveData = {};
 for (const pg of allPages) {
   responsiveData[pg.name] = {};
   for (const [bpName, profile] of Object.entries(profiles)) {
-    const bpCtx = await browser.newContext({
-      viewport: profile.viewport,
-      deviceScaleFactor: profile.deviceScaleFactor || 1,
-      userAgent: profile.userAgent || undefined,
-      isMobile: profile.isMobile || false,
-      hasTouch: profile.hasTouch || false,
-    });
     try {
-      const bpPage = await bpCtx.newPage();
+      const bpCtx = await browser.newContext({
+        viewport: profile.viewport,
+        deviceScaleFactor: profile.deviceScaleFactor || 1,
+        userAgent: profile.userAgent || undefined,
+        isMobile: profile.isMobile || false,
+        hasTouch: profile.hasTouch || false,
+      });
       try {
-        await bpPage.goto(pg.url, { waitUntil: 'networkidle', timeout: 30000 });
-        await bpPage.waitForTimeout(500);
+        const bpPage = await bpCtx.newPage();
+        try {
+          await bpPage.goto(pg.url, { waitUntil: 'networkidle', timeout: 30000 });
+          await bpPage.waitForTimeout(500);
 
-        const filename = `${pg.name}-${bpName}.png`;
-        await bpPage.screenshot({
-          path: join(outDir, 'screenshots/pages', filename),
-          fullPage: true,
-        });
-        console.log(`   📸 ${filename} (${profile.viewport.width}×${profile.viewport.height} @${profile.deviceScaleFactor || 1}x)`);
+          const filename = `${pg.name}-${bpName}.png`;
+          await bpPage.screenshot({
+            path: join(outDir, 'screenshots/pages', filename),
+            fullPage: true,
+          });
+          console.log(`   📸 ${filename} (${profile.viewport.width}×${profile.viewport.height} @${profile.deviceScaleFactor || 1}x)`);
 
-        responsiveData[pg.name][bpName] = await bpPage.evaluate(() => {
-          const nav = document.querySelector('nav');
-          const main = document.querySelector('main') || document.querySelector('[role="main"]');
-          const sidebar = document.querySelector('aside') || document.querySelector('[class*="sidebar"]');
-          return {
-            viewport: `${window.innerWidth}x${window.innerHeight}`,
-            devicePixelRatio: window.devicePixelRatio,
-            navVisible: nav ? getComputedStyle(nav).display !== 'none' : null,
-            sidebarVisible: sidebar ? getComputedStyle(sidebar).display !== 'none' : null,
-            mainWidth: main ? getComputedStyle(main).width : null,
-            bodyFontSize: getComputedStyle(document.body).fontSize,
-          };
-        });
+          responsiveData[pg.name][bpName] = await bpPage.evaluate(() => {
+            const nav = document.querySelector('nav');
+            const main = document.querySelector('main') || document.querySelector('[role="main"]');
+            const sidebar = document.querySelector('aside') || document.querySelector('[class*="sidebar"]');
+            return {
+              viewport: `${window.innerWidth}x${window.innerHeight}`,
+              devicePixelRatio: window.devicePixelRatio,
+              navVisible: nav ? getComputedStyle(nav).display !== 'none' : null,
+              sidebarVisible: sidebar ? getComputedStyle(sidebar).display !== 'none' : null,
+              mainWidth: main ? getComputedStyle(main).width : null,
+              bodyFontSize: getComputedStyle(document.body).fontSize,
+            };
+          });
+        } finally {
+          await bpPage.close();
+        }
       } finally {
-        await bpPage.close();
+        await bpCtx.close();
       }
-    } finally {
-      await bpCtx.close();
+    } catch (e) {
+      console.error(`   ⚠️  ${pg.name} @${bpName}: ${e.message.slice(0, 80)}`);
+      responsiveData[pg.name][bpName] = { error: e.message };
     }
   }
 }
@@ -393,34 +407,38 @@ for (const target of focusTargets) {
 
 // Mobile nav (hamburger) — use real iPhone profile
 console.log('\n📸 Checking for mobile nav...');
-const mobileCtx = await browser.newContext({
-  viewport: profiles.mobile.viewport,
-  deviceScaleFactor: profiles.mobile.deviceScaleFactor,
-  userAgent: profiles.mobile.userAgent,
-  isMobile: true,
-  hasTouch: true,
-});
 try {
-  const mobilePage = await mobileCtx.newPage();
+  const mobileCtx = await browser.newContext({
+    viewport: profiles.mobile.viewport,
+    deviceScaleFactor: profiles.mobile.deviceScaleFactor,
+    userAgent: profiles.mobile.userAgent,
+    isMobile: true,
+    hasTouch: true,
+  });
   try {
-    await mobilePage.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-    await mobilePage.waitForTimeout(500);
+    const mobilePage = await mobileCtx.newPage();
+    try {
+      await mobilePage.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+      await mobilePage.waitForTimeout(500);
 
-    const hamburger = await mobilePage.$('button[class*="menu"], button[class*="hamburger"], button[class*="nav"], button[aria-label*="menu"], [class*="mobile-menu"] button');
-    if (hamburger) {
-      await hamburger.click();
-      await mobilePage.waitForTimeout(600);
-      await mobilePage.screenshot({
-        path: join(outDir, 'screenshots/components/nav-mobile-open.png'),
-        fullPage: true,
-      });
-      console.log('   📸 nav-mobile-open');
+      const hamburger = await mobilePage.$('button[class*="menu"], button[class*="hamburger"], button[class*="nav"], button[aria-label*="menu"], [class*="mobile-menu"] button');
+      if (hamburger) {
+        await hamburger.click();
+        await mobilePage.waitForTimeout(600);
+        await mobilePage.screenshot({
+          path: join(outDir, 'screenshots/components/nav-mobile-open.png'),
+          fullPage: true,
+        });
+        console.log('   📸 nav-mobile-open');
+      }
+    } finally {
+      await mobilePage.close();
     }
   } finally {
-    await mobilePage.close();
+    await mobileCtx.close();
   }
-} finally {
-  await mobileCtx.close();
+} catch (e) {
+  console.error(`   ⚠️  Mobile nav detection failed: ${e.message.slice(0, 80)}`);
 }
 
 // ── 8. Dark mode detection ────────────────────────────────────────────
@@ -459,8 +477,12 @@ if (darkModeDetected) {
     }
     return props;
   });
-  writeFileSync(join(outDir, 'raw/colors-dark.json'), JSON.stringify(darkColors, null, 2));
-  console.log('   Extracted dark mode CSS variables');
+  try {
+    writeFileSync(join(outDir, 'raw/colors-dark.json'), JSON.stringify(darkColors, null, 2));
+    console.log('   Extracted dark mode CSS variables');
+  } catch (e) {
+    console.error(`   ⚠️  Failed to write colors-dark.json: ${e.message}`);
+  }
 } else {
   // Method 2: look for a toggle button
   await page.emulateMedia({ colorScheme: 'light' });
@@ -484,7 +506,11 @@ const componentManifest = {
   responsive: responsiveData,
 };
 
-writeFileSync(join(outDir, 'raw/components.json'), JSON.stringify(componentManifest, null, 2));
+try {
+  writeFileSync(join(outDir, 'raw/components.json'), JSON.stringify(componentManifest, null, 2));
+} catch (e) {
+  console.error(`   ⚠️  Failed to write components.json: ${e.message}`);
+}
 
 // ── Summary ───────────────────────────────────────────────────────────
 console.log(`\n✅ Extraction complete. Output in: ${outDir}/`);
@@ -500,7 +526,11 @@ console.log(`   All screenshots at native device DPR (2x–3x) for pixel-accurat
   console.error(`\n❌ Extraction failed: ${e.message}`);
   exitCode = 1;
 } finally {
-  await browser.close();
+  try {
+    await browser.close();
+  } catch (e) {
+    console.error(`   ⚠️  browser.close() failed: ${e.message}`);
+  }
 }
 
 process.exit(exitCode);

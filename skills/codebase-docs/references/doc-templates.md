@@ -6,7 +6,7 @@ Use these templates as starting points for each documentation file. Adapt sectio
 
 ## OVERVIEW.md Template
 
-```markdown
+````markdown
 # [Project Name]
 
 > Last updated: YYYY-MM-DD
@@ -44,13 +44,13 @@ Use these templates as starting points for each documentation file. Adapt sectio
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## STRUCTURE.md Template
 
-```markdown
+````markdown
 # Project Structure
 
 > Last updated: YYYY-MM-DD
@@ -102,13 +102,13 @@ project-root/
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## ARCHITECTURE.md Template
 
-```markdown
+````markdown
 # Architecture
 
 > Last updated: YYYY-MM-DD
@@ -177,13 +177,13 @@ Client Request
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## DATA_MODEL.md Template
 
-```markdown
+````markdown
 # Data Model
 
 > Last updated: YYYY-MM-DD
@@ -224,13 +224,13 @@ Client Request
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## INDEX.md Template
 
-```markdown
+````markdown
 # Documentation Index
 
 > Last updated: YYYY-MM-DD
@@ -263,13 +263,13 @@ This directory contains AI-readable documentation for [Project Name]. Start with
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## API.md Template
 
-```markdown
+````markdown
 # API Documentation
 
 > Last updated: YYYY-MM-DD
@@ -306,13 +306,13 @@ This directory contains AI-readable documentation for [Project Name]. Start with
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## CONFIGURATION.md Template
 
-```markdown
+````markdown
 # Configuration
 
 > Last updated: YYYY-MM-DD
@@ -341,13 +341,13 @@ This directory contains AI-readable documentation for [Project Name]. Start with
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## PATTERNS.md Template
 
-```markdown
+````markdown
 # Patterns & Conventions
 
 > Last updated: YYYY-MM-DD
@@ -381,13 +381,13 @@ This directory contains AI-readable documentation for [Project Name]. Start with
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
 
 ---
 
 ## GLOSSARY.md Template
 
-```markdown
+````markdown
 # Glossary
 
 > Last updated: YYYY-MM-DD
@@ -402,3 +402,4 @@ Domain-specific and project-specific terms used in this codebase.
 
 - YYYY-MM-DD: Initial documentation generated
 ```
+````

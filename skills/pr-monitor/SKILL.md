@@ -25,11 +25,10 @@ Run this exact command to collect all open PRs:
 ```bash
 for dir in ~/Dev/*/; do
   if [ -d "$dir/.git" ]; then
-    cd "$dir"
-    remote=$(git remote get-url origin 2>/dev/null)
+    remote=$(git -C "$dir" remote get-url origin 2>/dev/null)
     if echo "$remote" | grep -q github.com; then
       repo=$(echo "$remote" | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/.*github.com[:/]\(.*\)/\1/')
-      prs=$(gh pr list --repo "$repo" --state open --json number,title,createdAt,headRefName,author,isDraft,reviewDecision)
+      prs=$(timeout 30s gh pr list --repo "$repo" --state open --json number,title,createdAt,headRefName,author,isDraft,reviewDecision)
       pr_count=$(echo "${prs:-[]}" | jq 'length' 2>/dev/null)
       if [ "${pr_count:-0}" -gt 0 ]; then
         echo "=== $(basename "$dir") ($repo) ==="
@@ -67,7 +66,7 @@ End with:
 
 ### Step 5: Deduplication check (before alerting)
 
-**Before sending any Telegram alert**, check today's daily memory log for PRs already covered. Optionally, write a lightweight per-PR "alert sent" timestamp (e.g., `pr-monitor-alert-<repo>-<number>-<date>`) to memory so overlapping executions don't duplicate alerts.
+**Before sending any Telegram alert**, check today's daily memory log for PRs already covered. Optionally, write a lightweight per-PR "alert sent" timestamp (e.g., `pr-monitor: [repo] #[number] — <date>`) to memory so overlapping executions don't duplicate alerts.
 
 ```
 memory_read(target: "daily")

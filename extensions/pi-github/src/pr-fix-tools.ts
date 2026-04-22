@@ -12,7 +12,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { ghGraphql, ghJson } from "./gh.ts";
+import { ghGraphql, ghJson, gh } from "./gh.ts";
 
 const REPLY_MUTATION = `
 mutation($threadId: ID!, $body: String!) {
@@ -59,7 +59,7 @@ export function registerPrFixTools(pi: ExtensionAPI): void {
 
       if (!result) {
         return {
-          content: [{ type: "text" as const, text: "❌ Failed to reply to review thread. The gh GraphQL call returned no response." }],
+          content: [{ type: "text" as const, text: "❌ Failed to reply to review thread. The gh GraphQL call returned no response. Check gh auth status, network connectivity, or rate limits." }],
           details: { ok: false, thread_id },
         };
       }
@@ -104,7 +104,7 @@ export function registerPrFixTools(pi: ExtensionAPI): void {
 
       if (!result) {
         return {
-          content: [{ type: "text" as const, text: "❌ Failed to resolve review thread. The gh GraphQL call returned no response." }],
+          content: [{ type: "text" as const, text: "❌ Failed to resolve review thread. The gh GraphQL call returned no response. Check gh auth status, network connectivity, or rate limits." }],
           details: { ok: false, thread_id },
         };
       }
@@ -136,27 +136,27 @@ export function registerPrFixTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       owner: Type.String({ description: "Repository owner (e.g. espennilsen)" }),
       repo: Type.String({ description: "Repository name (e.g. pi)" }),
-      pr_number: Type.Number({ description: "Pull request number", minimum: 1 }),
+      pr_number: Type.Integer({ description: "Pull request number", minimum: 1 }),
       body: Type.String({ description: "Comment body (supports markdown)", minLength: 1 }),
     }) as any,
 
     async execute(_toolCallId, params: any) {
       const { owner, repo, pr_number, body } = params;
 
-      const result = await ghJson<any>(
+      const result = await gh(
         ["pr", "comment", String(pr_number), "-R", `${owner}/${repo}`, "--body", body],
       );
 
-      if (result === null) {
+      if (!result.ok) {
         return {
-          content: [{ type: "text" as const, text: "❌ Failed to post PR comment. The gh CLI call failed." }],
+          content: [{ type: "text" as const, text: `❌ Failed to post PR comment. The gh CLI call failed: ${result.stderr}` }],
           details: { ok: false, owner, repo, pr_number },
         };
       }
 
       return {
         content: [{ type: "text" as const, text: `✅ Posted comment on PR #${pr_number}.` }],
-        details: { ok: true, owner, repo, pr_number, url: result?.url },
+        details: { ok: true, owner, repo, pr_number },
       };
     },
   });

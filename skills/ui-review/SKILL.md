@@ -23,7 +23,7 @@ Systematic UI/UX review methodology for designs (in Penpot) and implementations 
 
 #### Color & Contrast
 - [ ] Text contrast ≥ 4.5:1 against background (normal text)
-- [ ] Text contrast ≥ 3:1 against background (large text ≥ 18px or 14px bold)
+- [ ] Text contrast ≥ 3:1 against background (large text ≥ 24px or 18.67px bold, equivalent to WCAG 18pt/14pt)
 - [ ] UI component contrast ≥ 3:1 against adjacent colors (borders, icons, controls)
 - [ ] Information not conveyed by color alone (use icons, patterns, labels too)
 - [ ] Tested with color blindness simulation (protanopia, deuteranopia, tritanopia)
@@ -46,7 +46,7 @@ Systematic UI/UX review methodology for designs (in Penpot) and implementations 
 #### Motion & Interaction
 - [ ] Animations respect `prefers-reduced-motion`
 - [ ] No content that flashes more than 3 times per second
-- [ ] Touch targets ≥ 44x44px on mobile
+- [ ] Touch targets ≥ 44x44px on mobile (WCAG 2.1 AAA — optional but recommended)
 - [ ] Adequate time for timed interactions (or ability to extend)
 
 ### 2. Design System Compliance

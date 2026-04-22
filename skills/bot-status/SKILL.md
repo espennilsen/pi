@@ -73,7 +73,7 @@ Extensions (16 loaded)
 Check if the pi-webserver is responding:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:4110/ 2>/dev/null
+curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" http://localhost:4110/ 2>/dev/null
 ```
 
 Report:
@@ -156,8 +156,11 @@ du -sh .pi/db/aivena.db
 # Tables
 sqlite3 -readonly .pi/db/aivena.db "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
 
-# Row counts for key tables
-sqlite3 -readonly .pi/db/aivena.db "SELECT 'contacts: ' || COUNT(*) FROM contacts UNION ALL SELECT 'interactions: ' || COUNT(*) FROM interactions UNION ALL SELECT 'companies: ' || COUNT(*) FROM companies UNION ALL SELECT 'reminders: ' || COUNT(*) FROM reminders"
+# Row counts for key tables (robust against missing tables)
+for table in contacts interactions companies reminders; do
+  count=$(sqlite3 -readonly .pi/db/aivena.db "SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='$table') THEN (SELECT COUNT(*) FROM $table) ELSE 0 END" 2>/dev/null)
+  echo "$table: ${count:-0}"
+done
 ```
 
 If the database is empty (0 bytes) or has no tables, note it:

@@ -112,11 +112,6 @@ export function pad(s: string, width: number): string {
 	return s + " ".repeat(width - vis);
 }
 
-export function fmtMoney(amount: number, cur = "NOK"): string {
-	const abs = Math.abs(amount);
-	return `${amount < 0 ? "-" : ""}${abs.toLocaleString("nb-NO", { maximumFractionDigits: 0 })} ${cur}`;
-}
-
 export function fmtDate(iso: string): string {
 	if (!iso) return "";
 	try {
@@ -142,8 +137,3 @@ export function fmtAgo(ts: number): string {
 	return `${Math.floor(d / 3600000)}h ago`;
 }
 
-export function bar(ratio: number, width: number): string {
-	const r = Math.max(0, Math.min(1, ratio));
-	const f = Math.round(r * width);
-	return "█".repeat(f) + "░".repeat(width - f);
-}

@@ -31,7 +31,7 @@ def parse_frontmatter(content):
     if not content.startswith('---'):
         return None, "No YAML frontmatter found (must start with ---)"
 
-    match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    match = re.match(r'^---\r?\n(.*?)\r?\n---\r?\n', content, re.DOTALL)
     if not match:
         return None, "Invalid frontmatter format (missing closing ---)"
 
@@ -81,14 +81,24 @@ def validate(skill_path):
     skill_md = skill_path / 'SKILL.md'
     if not skill_md.exists():
         # Check for wrong case
-        for f in skill_path.iterdir():
-            if f.name.lower() == 'skill.md' and f.name != 'SKILL.md':
-                errors.append(f"Found '{f.name}' — must be exactly 'SKILL.md' (case-sensitive)")
-                return errors, warnings
+    try:
+        skill_path_children = list(skill_path.iterdir())
+    except OSError as e:
+        errors.append(f"Cannot read skill directory: {e}")
+        return errors, warnings
+    for f in skill_path_children:
+        if f.name.lower() == 'skill.md' and f.name != 'SKILL.md':
+            errors.append(f"Found '{f.name}' — must be exactly 'SKILL.md' (case-sensitive)")
+            return errors, warnings
         errors.append("SKILL.md not found")
         return errors, warnings
 
-    content = skill_md.read_text()
+    try:
+        skill_md_text = skill_md.read_text()
+    except OSError as e:
+        errors.append(f"Cannot read SKILL.md: {e}")
+        return errors, warnings
+    content = skill_md_text
 
     # Parse frontmatter
     fm, err = parse_frontmatter(content)
@@ -147,7 +157,7 @@ def validate(skill_path):
         errors.append(f"Compatibility too long ({len(compat)} chars, max 500)")
 
     # Check body size
-    body_match = re.match(r'^---\n.*?\n---\n?(.*)', content, re.DOTALL)
+    body_match = re.match(r'^---\r?\n.*?\r?\n---\r?\n?(.*)', content, re.DOTALL)
     if body_match:
         body = body_match.group(1)
         lines = body.strip().split('\n')
@@ -168,8 +178,16 @@ def validate(skill_path):
     ref_pattern = re.findall(r'\[.*?\]\(((?:scripts|references|assets)/[^)]+)\)', content_no_code)
     for ref in ref_pattern:
         ref_path = skill_path / ref
-        if not ref_path.exists():
-            errors.append(f"Broken reference: '{ref}' (file not found)")
+        try:
+            ref_path_resolved = ref_path.resolve()
+            skill_path_resolved = skill_path.resolve()
+            if not str(ref_path_resolved).startswith(str(skill_path_resolved)):
+                errors.append(f"Path traversal detected in reference: '{ref}'")
+                continue
+            if not ref_path.exists():
+                errors.append(f"Broken reference: '{ref}' (file not found)")
+        except (OSError, RuntimeError):
+            errors.append(f"Cannot resolve reference: '{ref}'")
 
     # Check for TODO markers
     if 'TODO' in content:

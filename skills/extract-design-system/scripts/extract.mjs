@@ -28,7 +28,7 @@
 
 import { chromium, devices } from 'playwright';
 import { mkdirSync, writeFileSync } from 'fs';
-import { join, resolve } from 'path';
+import { join, resolve, relative } from 'path';
 
 const url = process.argv[2];
 const rawOutDir = process.argv[3] || 'extracted-design-system';
@@ -42,8 +42,9 @@ if (!url) {
 // Validate outDir to prevent path traversal
 const resolvedOut = resolve(rawOutDir);
 const resolvedCwd = resolve(process.cwd());
-if (resolvedOut !== resolvedCwd && !resolvedOut.startsWith(resolvedCwd + '/')) {
-  console.error(`❌ outDir must be inside the current working directory. Received: ${rawOutDir}`);
+const rel = relative(resolvedCwd, resolvedOut);
+if (rel.startsWith('..') || (rel === '..' && resolvedOut !== resolvedCwd)) {
+  console.error('❌ outDir must be inside the current working directory.');
   process.exit(1);
 }
 const outDir = rawOutDir;

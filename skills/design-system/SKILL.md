@@ -60,7 +60,7 @@ breakpoint/         — sm (640px), md (768px), lg (1024px), xl (1280px), 2xl (1
 #### 5. Motion Tokens
 ```
 duration/           — fast (100ms), normal (200ms), slow (300ms), slower (500ms)
-easing/             — ease-in, ease-out, ease-in-out, spring
+easing/             — ease-in, ease-out, ease-in-out, cubic-bezier(0.4, 0, 0.2, 1)
 ```
 
 ### Token Format (JSON)
@@ -75,7 +75,8 @@ Store tokens in a structured JSON file that can be consumed by both Penpot and T
     "primitive": { "gray": { "50": "#fafafa", "900": "#171717" } },
     "semantic": {
       "background": { "page": "{colors.primitive.gray.50}", "card": "#ffffff" },
-      "foreground": { "primary": "{colors.primitive.gray.900}" }
+      "foreground": { "text-primary": "{colors.primitive.gray.900}", "text-secondary": "#737373", "text-muted": "#a3a3a3" },
+      "accent": { "primary": "#7c6ff0", "primary-foreground": "#ffffff", "secondary": "#6b7280" }
     }
   },
   "typography": { ... },
@@ -179,7 +180,7 @@ export default {
         // From semantic tokens
         background: 'var(--color-background)',
         foreground: 'var(--color-foreground)',
-        primary: { DEFAULT: 'var(--color-primary)', foreground: 'var(--color-primary-foreground)' },
+        primary: { DEFAULT: 'var(--color-primary)', foreground: 'var(--color-accent-primary-foreground)' },
       },
       borderRadius: {
         // From radius tokens

@@ -11,11 +11,11 @@ Fix the unresolved review threads on this PR. For each thread:
    - ⚪ **SUGGESTION** — fix only if trivial. Otherwise skip and note it in your report.
 4. Apply the fix surgically (edit only what's needed — do not refactor surrounding code)
 5. Verify the fix compiles (`tsc --noEmit` or equivalent)
-6. **Leave a GitHub comment on the thread** describing what was done:
+6. **Reply to the review thread** using the `github_review_thread_reply` tool describing what was done:
    - If fixed: briefly describe the change made and why it resolves the concern
    - If `WONTFIX`: explain why the fix was not applied
    - If skipped (SUGGESTION): note that it has been logged to the backlog
-7. **Resolve the thread on GitHub** if the fix was applied or a `WONTFIX` was given. Leave threads open only if the fix is partial or requires further discussion.
+7. **Resolve the thread on GitHub** using the `github_resolve_review_thread` tool if the fix was applied or a `WONTFIX` was given. Leave threads open only if the fix is partial or requires further discussion.
 
 **Do not re-fix threads already marked resolved or where a previous `WONTFIX` was accepted by the reviewer.**
 
@@ -23,6 +23,7 @@ After all threads are handled:
 
 8. Stage, commit (use a descriptive conventional commit message referencing the PR), and push to the current branch
 9. Verify the push succeeded
+10. **Post a summary comment on the PR** using the `github_post_pr_comment` tool with a table of what was fixed, WONTFIX'd, or skipped
 
 Report a summary to the user that includes:
 - What was fixed per thread (one bullet each), with its classification (BLOCKER/WARNING/SUGGESTION)

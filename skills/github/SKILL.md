@@ -21,7 +21,12 @@ operations. All commands also work as `/github-*` variants.
 - `gh` CLI installed and authenticated
 - For repo-scoped commands: run from a git repo, or specify the repo
 
-## Commands
+## Commands + Agent Tools
+
+The `pi-github` extension provides `/gh-*` commands for user-initiated operations
+and LLM tools for agentic workflows (PR review thread resolution).
+
+### Commands
 
 | Command | What it does |
 |---------|-------------|
@@ -34,6 +39,14 @@ operations. All commands also work as `/github-*` variants.
 | `/gh-pr-review [number\|repo#N\|URL]` | Show PR review feedback |
 | `/gh-pr-fix [number\|repo#N\|URL]` | Fix unresolved review threads |
 | `/gh-pr-merge [number\|repo#N\|URL] [--squash\|--merge\|--rebase]` | Merge PR + full cleanup |
+
+### PR Thread Tools (for agents fixing review feedback)
+
+| Tool | Purpose |
+|------|---------|
+| `github_review_thread_reply` | Reply to a PR review thread (`thread_id`, `message`) |
+| `github_resolve_review_thread` | Mark a review thread as resolved (`thread_id`) |
+| `github_post_pr_comment` | Post a summary comment on a PR (`owner`, `repo`, `pr_number`, `body`) |
 
 ## Repo Reference Syntax
 

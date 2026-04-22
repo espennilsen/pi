@@ -206,16 +206,26 @@ function formatThreadsForAgent(threads: ReviewThread[], prInfo: PrInfo, localPat
 	lines.push("```");
 	lines.push("");
 	lines.push("**After pushing, for each addressed thread:**");
-	lines.push("1. Reply to the thread with a short summary of the fix:");
-	lines.push("```bash");
-	lines.push(`gh api graphql -f query='mutation { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: "THREAD_ID", body: "Fixed — <brief description of what was done>"}) { comment { id } } }'`);
+	lines.push("1. Reply to the thread with a short summary of the fix using the `github_review_thread_reply` tool:");
 	lines.push("```");
-	lines.push("2. Then resolve the thread:");
-	lines.push("```bash");
-	lines.push(`gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'`);
+	lines.push(`tool: github_review_thread_reply`);
+	lines.push(`  thread_id: "THREAD_ID"`);
+	lines.push(`  message: "Fixed — <brief description of what was done>"`);
+	lines.push("```");
+	lines.push("2. Then resolve the thread using the `github_resolve_review_thread` tool:");
+	lines.push("```");
+	lines.push(`tool: github_resolve_review_thread`);
+	lines.push(`  thread_id: "THREAD_ID"`);
 	lines.push("```");
 	lines.push("");
-	lines.push(`**Finally, post a summary comment on the PR:** \`gh pr comment ${prInfo.number} -R ${repoSlug} --body '...'\``);
+	lines.push("**Finally, post a summary comment on the PR using the `github_post_pr_comment` tool:**");
+	lines.push("```");
+	lines.push(`tool: github_post_pr_comment`);
+	lines.push(`  owner: "${prInfo.owner}"`);
+	lines.push(`  repo: "${prInfo.repo}"`);
+	lines.push(`  pr_number: ${prInfo.number}`);
+	lines.push(`  body: "..."`);
+	lines.push("```");
 
 	return lines.join("\n");
 }

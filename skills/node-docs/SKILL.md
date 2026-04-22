@@ -121,22 +121,28 @@ instead — Flux uses guidance differently than SD 1.5 or SDXL."
 
 ### use_cases
 
-Use objects with `scenario` and `context`:
+Use an array of objects with `scenario` and `context`:
+
 ```json
-{
-  "scenario": "Text-to-image generation",
-  "context": "The most common workflow — connect Empty Latent Image as input with denoise 1.0 to generate from scratch"
-}
+[
+  {
+    "scenario": "Text-to-image generation",
+    "context": "The most common workflow — connect Empty Latent Image as input with denoise 1.0 to generate from scratch"
+  }
+]
 ```
 
 ### common_errors
 
-Use objects with `symptom` and `solution`:
+Use an array of objects with `symptom` and `solution`:
+
 ```json
-{
-  "symptom": "Black or completely blank images",
-  "solution": "CFG scale too high (>15). Lower to 7–9 range. Also check that model, VAE, and conditioning are all connected."
-}
+[
+  {
+    "symptom": "Black or completely blank images",
+    "solution": "CFG scale too high (>15). Lower to 7–9 range. Also check that model, VAE, and conditioning are all connected."
+  }
+]
 ```
 
 ## How to Use Embedded Docs
@@ -205,7 +211,13 @@ for root, dirs, files in os.walk('src/data/nodes'):
     for f in files:
         if not f.endswith('.json') or f == '_metadata.json': continue
         path = os.path.join(root, f)
-        with open(path) as fh: d = json.load(fh)
+        try:
+            with open(path) as fh: d = json.load(fh)
+        except json.JSONDecodeError:
+            print(f'BAD_JSON: {path}')
+            continue
+        except UnicodeDecodeError:
+            continue
         desc = d.get('description','')
         bdesc = d.get('beginner_description','')
         if desc and desc == bdesc:
@@ -218,7 +230,13 @@ import json, os
 for root, dirs, files in os.walk('src/data/nodes'):
     for f in files:
         if not f.endswith('.json') or f == '_metadata.json': continue
-        with open(os.path.join(root, f)) as fh: d = json.load(fh)
+        try:
+            with open(os.path.join(root, f)) as fh: d = json.load(fh)
+        except json.JSONDecodeError:
+            print(f'BAD_JSON: {path}')
+            continue
+        except UnicodeDecodeError:
+            continue
         if not d.get('tips',{}).get('general_tips'):
             print(d.get('name', f))
 "
@@ -263,3 +281,8 @@ for root, dirs, files in os.walk('src/data/nodes'):
 For large batches (50+ nodes), use parallel subagents grouped by category.
 Each subagent gets a category batch and writes docs for all nodes in that group.
 This keeps context focused and produces more consistent output within a category.
+
+**Coordination:** The subagents should write their results to per-node JSON files
+(different files per node, so no write conflicts) rather than editing a single shared
+plan file. A single coordinator agent can update `exports/NODE_UPDATE_PLAN.md`
+after all workers complete.

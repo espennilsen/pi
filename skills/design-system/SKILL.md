@@ -180,7 +180,7 @@ export default {
         // From semantic tokens
         background: 'var(--color-background)',
         foreground: 'var(--color-foreground)',
-        primary: { DEFAULT: 'var(--color-primary)', foreground: 'var(--color-accent-primary-foreground)' },
+        primary: { DEFAULT: 'var(--color-accent-primary)', foreground: 'var(--color-accent-primary-foreground)' },
       },
       borderRadius: {
         // From radius tokens

@@ -42,7 +42,7 @@ If a `docs/` directory already exists, read it first. You'll be updating, not st
 
 ## Step 2: Generate the Documentation Set
 
-Create the `docs/` directory with the files described below. Not every project needs every file — use judgment. A small CLI tool doesn't need `data-model.md`, and a pure library doesn't need `deployment.md`.
+Create the `docs/` directory with the files described below. Not every project needs every file — use judgment. A small CLI tool doesn't need `DATA_MODEL.md`, and a pure library doesn't need `DEPLOYMENT.md`.
 
 Refer to `references/doc-templates.md` for the exact templates and structure for each file. Read that file before writing any documentation.
 

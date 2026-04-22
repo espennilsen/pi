@@ -61,7 +61,7 @@ Use these templates as starting points for each documentation file. Adapt sectio
 
 [Generate an annotated tree. Group by responsibility, not alphabetically. Use comments to explain non-obvious directories.]
 
-\```
+```
 project-root/
 ├── src/                    # Application source code
 │   ├── api/                # API route handlers
@@ -79,7 +79,7 @@ project-root/
 ├── scripts/                # Build/deploy/maintenance scripts
 ├── docs/                   # This documentation
 └── [other top-level files] # package.json, tsconfig, etc.
-\```
+```
 
 ## Key Files
 
@@ -401,5 +401,80 @@ Domain-specific and project-specific terms used in this codebase.
 ## Changes Log
 
 - YYYY-MM-DD: Initial documentation generated
-```
+````
+
+---
+
+## DEPLOYMENT.md Template
+
+````markdown
+# Deployment
+
+> Last updated: YYYY-MM-DD
+
+[1-2 sentences about the deployment approach: where it's hosted, how it's built, key environments.]
+
+## Build Process
+
+[How the project is built from source to deployable artifact.]
+
+## Environments
+
+| Environment | URL / Endpoint | Purpose |
+|-------------|---------------|---------|
+| Development | `http://localhost:3000` | Local iteration |
+| Staging | [URL] | Pre-production validation |
+| Production | [URL] | Live traffic |
+
+## CI/CD Pipeline
+
+[Description of the automated pipeline, where config lives, and what triggers deploys.]
+
+## Infrastructure
+
+[High-level description of cloud resources, containers, databases, CDNs, etc.]
+
+## Rollback Strategy
+
+[How to revert a bad deployment.]
+
+## Changes Log
+
+- YYYY-MM-DD: Initial documentation generated
+````
+
+---
+
+## DEVELOPMENT.md Template
+
+````markdown
+# Development
+
+> Last updated: YYYY-MM-DD
+
+[1-2 sentences about the local development experience.]
+
+## Prerequisites
+
+[List all tools, languages, and versions needed before `npm install` / `cargo build` / etc.]
+
+## Local Setup
+
+[Step-by-step instructions to get the project running locally.]
+
+## Testing
+
+[How to run the test suite, what frameworks are used, and any test configuration.]
+
+## Debugging
+
+[Common techniques, log locations, and how to attach a debugger.]
+
+## Contributing
+
+[Guidelines for PRs, code style, and commit conventions if applicable.]
+
+## Changes Log
+
+- YYYY-MM-DD: Initial documentation generated
 ````

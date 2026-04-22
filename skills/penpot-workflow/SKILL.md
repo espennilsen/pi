@@ -182,7 +182,16 @@ https://penpot.e9n.dev/#/view?file-id=<fileId>&page-id=<pageId>&section=interact
 
 Use Playwright to screenshot each page URL. Penpot is a complex ClojureScript SPA — wait 6+ seconds after navigation for it to render.
 
-Save screenshots to `/tmp/penpot-<page-name>.png`, then `read` them to view inline.
+> **Cleanup:** Always close the Playwright browser after capture to prevent leaking Chromium processes:
+> ```javascript
+> await browser.close();
+> ```
+
+Save screenshots to `/tmp/penpot-<page-name>.png`, then `read` them to view inline. After viewing, delete the temporary file to avoid accumulating disk usage:
+
+```bash
+rm /tmp/penpot-<page-name>.png
+```
 
 #### 4. Review what you see
 

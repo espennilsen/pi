@@ -4,11 +4,11 @@ description: >
   Interact with GitHub repos, PRs, issues, CI, and notifications via the
   pi-github extension commands and gh CLI. Use when asked to check PRs,
   list issues, view repo status, check CI, browse notifications, create or
-  merge PRs, fix review feedback, or perform any GitHub operation.
+  merge PRs, fix PR review feedback, or perform any GitHub operation.
 
   **Triggers:** "open PRs", "repo status", "CI status", "merge PR",
-  "fix PR feedback", "create PR", "GitHub notifications", any /gh-* command,
-  or when a GitHub PR URL is shared.
+  "fix PR", "fix PRs", "fix review feedback", "create PR", "GitHub notifications",
+  any /gh-* command, or when a GitHub PR URL is shared.
 ---
 
 # GitHub — pi-github Extension

@@ -24,3 +24,4 @@ pi-debug.log
 .todos/
 .pilot
 models.json
+package/

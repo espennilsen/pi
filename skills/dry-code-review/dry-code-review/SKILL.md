@@ -39,7 +39,9 @@ The script detects:
 - Identical or near-identical code blocks (3+ lines repeated)
 - Repeated string literals and magic numbers
 - Similar function signatures across files
-- Repeated import/dependency patterns
+- Repeated boilerplate and configuration patterns
+
+Import/dependency lines are intentionally excluded from the duplicate-lines scan so they don't dominate the output.
 
 ### Phase 3: Manual Analysis
 

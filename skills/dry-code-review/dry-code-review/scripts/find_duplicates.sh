@@ -22,7 +22,7 @@ fi
 FIND_CMD="find \"$TARGET_DIR\" -type f"
 if [ -n "$EXTENSIONS" ]; then
   IFS=',' read -ra EXTS <<< "$EXTENSIONS"
-  FIND_CMD="$FIND_CMD \\("
+  FIND_CMD="$FIND_CMD \\(""
   for i in "${!EXTS[@]}"; do
     ext="${EXTS[$i]}"
     if [ "$i" -gt 0 ]; then
@@ -45,17 +45,17 @@ echo "Min block:  $MIN_BLOCK_LINES lines"
 echo "----------------------------------------"
 echo ""
 
-# Collect all source files
-FILES=$(eval "$FIND_CMD" 2>/dev/null | sort)
-FILE_COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+# Collect all source files into an array
+readarray -t file_array < <(eval "$FIND_CMD" 2>/dev/null | sort)
+FILE_COUNT=${#file_array[@]}
 TOTAL_LINES=0
 
-if [ -z "$FILES" ]; then
+if [ "$FILE_COUNT" -eq 0 ]; then
   echo "No matching files found."
   exit 0
 fi
 
-for f in $FILES; do
+for f in "${file_array[@]}"; do
   lines=$(wc -l < "$f")
   TOTAL_LINES=$((TOTAL_LINES + lines))
 done
@@ -72,21 +72,26 @@ echo ""
 
 # Find non-trivial lines that appear 3+ times across the codebase
 temp_all_lines=$(mktemp)
-for f in $FILES; do
+for f in "${file_array[@]}"; do
   # Strip leading/trailing whitespace, skip short/trivial lines
-  sed 's/^[[:space:]]*//;s/[[:space:]]*$//' "$f" | \
-    grep -n '.' | \
-    awk -F: -v file="$f" -v minlen="$MIN_LINE_LENGTH" \
-      'length($2) >= minlen && $2 !~ /^[{}()\[\];,]$/ && $2 !~ /^(import |from |#include|using |require)/ && $2 !~ /^\/\// && $2 !~ /^#/ && $2 !~ /^\*/ { print $2 "\t" file ":" $1 }' \
-    >> "$temp_all_lines"
+  # Keep original line numbers by doing it inline
+  awk -v file="$f" -v minlen="$MIN_LINE_LENGTH" '
+    {
+      trimmed = $0
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", trimmed)
+      if (length(trimmed) >= minlen && trimmed !~ /^[{}()\[\];,]$/ && trimmed !~ /^(import |from |#include|using |require)/ && trimmed !~ /^\/\// && trimmed !~ /^#/ && trimmed !~ /^\*/) {
+        print trimmed "\t" file ":" NR
+      }
+    }
+  ' "$f" >> "$temp_all_lines"
 done
 
 # Count and show repeated lines
 if [ -s "$temp_all_lines" ]; then
-  cut -f1 "$temp_all_lines" | sort | uniq -c | sort -rn | head -30 | while read count line; do
+  cut -f1 "$temp_all_lines" | sort | uniq -c | sort -rn | head -30 | while read -r count line; do
     if [ "$count" -ge 3 ]; then
       echo "  [$count occurrences] $line"
-      grep -F "$line" "$temp_all_lines" | cut -f2 | head -5 | sed 's/^/    → /'
+      awk -F'\t' -v pattern="$line" '$1 == pattern {print $2}' "$temp_all_lines" | head -5 | sed 's/^/    → /'
       remaining=$((count - 5))
       if [ "$remaining" -gt 0 ]; then
         echo "    → ... and $remaining more"
@@ -104,7 +109,7 @@ echo "========================================"
 echo ""
 
 temp_literals=$(mktemp)
-for f in $FILES; do
+for f in "${file_array[@]}"; do
   # Find repeated string literals (quoted strings)
   grep -noE '"[^"]{4,}"' "$f" 2>/dev/null | \
     awk -F: -v file="$f" '{ print $2 "\t" file ":" $1 }' >> "$temp_literals" || true
@@ -112,15 +117,14 @@ for f in $FILES; do
     awk -F: -v file="$f" '{ print $2 "\t" file ":" $1 }' >> "$temp_literals" || true
   # Find magic numbers (numeric literals not 0 or 1)
   grep -noE '\b[0-9]{2,}\b' "$f" 2>/dev/null | \
-    grep -vE '(import|require|version|line|row|col)' | \
     awk -F: -v file="$f" '{ print "NUM:" $2 "\t" file ":" $1 }' >> "$temp_literals" || true
 done
 
 if [ -s "$temp_literals" ]; then
-  cut -f1 "$temp_literals" | sort | uniq -c | sort -rn | head -20 | while read count literal; do
+  cut -f1 "$temp_literals" | sort | uniq -c | sort -rn | head -20 | while read -r count literal; do
     if [ "$count" -ge 3 ]; then
       echo "  [$count times] $literal"
-      grep -F "$literal" "$temp_literals" | cut -f2 | head -3 | sed 's/^/    → /'
+      awk -F'\t' -v pattern="$literal" '$1 == pattern {print $2}' "$temp_literals" | head -3 | sed 's/^/    → /'
       echo ""
     fi
   done
@@ -134,18 +138,20 @@ echo "========================================"
 echo ""
 
 temp_funcs=$(mktemp)
-for f in $FILES; do
+for f in "${file_array[@]}"; do
   # Match common function/method declarations across languages
+  # Exclude control flow keywords to reduce false positives
   grep -nE '^\s*(export\s+)?(async\s+)?function\s+\w+|^\s*(public|private|protected|static|async)?\s*(def |fn |func |void |int |string |bool )?\w+\s*\(' "$f" 2>/dev/null | \
+    grep -vE '\b(if|while|for|switch|return|catch)\s*\(' | \
     awk -F: -v file="$f" '{ print $2 "\t" file ":" $1 }' >> "$temp_funcs" || true
 done
 
 if [ -s "$temp_funcs" ]; then
   # Normalize function names to find similar patterns
-  cut -f1 "$temp_funcs" | sed 's/[[:space:]]*//g' | sort | uniq -c | sort -rn | head -15 | while read count sig; do
+  cut -f1 "$temp_funcs" | sed 's/[[:space:]]*//g' | sort | uniq -c | sort -rn | head -15 | while read -r count sig; do
     if [ "$count" -ge 2 ]; then
       echo "  [$count matches] $sig"
-      grep -F "$sig" "$temp_funcs" 2>/dev/null | cut -f2 | head -5 | sed 's/^/    → /' || true
+      awk -F'\t' -v pattern="$sig" '{gsub(/[[:space:]]/,"",$1); if ($1 == pattern) print $2}' "$temp_funcs" 2>/dev/null | head -5 | sed 's/^/    → /' || true
       echo ""
     fi
   done
@@ -157,12 +163,6 @@ echo "========================================"
 echo "  4. HIGHLY SIMILAR FILES"
 echo "========================================"
 echo ""
-
-# Compare files pairwise using a simple line-overlap heuristic
-file_array=()
-while IFS= read -r f; do
-  file_array+=("$f")
-done <<< "$FILES"
 
 file_count=${#file_array[@]}
 if [ "$file_count" -le 100 ]; then

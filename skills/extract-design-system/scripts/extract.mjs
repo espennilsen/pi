@@ -60,6 +60,10 @@ const browser = await chromium.launch({
   slowMo: 100,  // slight delay so interactions are visible — remove for speed
 });
 
+let exitCode = 0;
+
+try {
+
 // Desktop context for token extraction + component screenshots
 const context = await browser.newContext({
   viewport: profiles.desktop.viewport,
@@ -111,7 +115,11 @@ const colors = await page.evaluate(() => {
   return [...colorSet];
 });
 
-writeFileSync(join(outDir, 'raw/colors.json'), JSON.stringify({ customProperties, computedColors: colors }, null, 2));
+try {
+  writeFileSync(join(outDir, 'raw/colors.json'), JSON.stringify({ customProperties, computedColors: colors }, null, 2));
+} catch (e) {
+  console.error(`⚠️  Failed to write colors.json: ${e.message}`);
+}
 console.log(`   Found ${Object.keys(customProperties).length} CSS vars, ${colors.length} computed colors`);
 
 // ── 3. Typography ─────────────────────────────────────────────────────
@@ -158,7 +166,11 @@ const typography = await page.evaluate(() => {
   return { fonts: [...fonts], styles, fontFaces };
 });
 
-writeFileSync(join(outDir, 'raw/typography.json'), JSON.stringify(typography, null, 2));
+try {
+  writeFileSync(join(outDir, 'raw/typography.json'), JSON.stringify(typography, null, 2));
+} catch (e) {
+  console.error(`⚠️  Failed to write typography.json: ${e.message}`);
+}
 console.log(`   Found ${typography.fonts.length} font families, ${typography.styles.length} unique type styles`);
 
 // ── 4. Spacing, radii, shadows, borders ───────────────────────────────
@@ -205,7 +217,11 @@ const layout = await page.evaluate(() => {
   };
 });
 
-writeFileSync(join(outDir, 'raw/spacing.json'), JSON.stringify(layout, null, 2));
+try {
+  writeFileSync(join(outDir, 'raw/spacing.json'), JSON.stringify(layout, null, 2));
+} catch (e) {
+  console.error(`⚠️  Failed to write spacing.json: ${e.message}`);
+}
 console.log(`   Spacing: ${layout.spacing.length}, Radii: ${layout.radii.length}, Shadows: ${layout.shadows.length}`);
 
 // ── 5. Responsive page screenshots ────────────────────────────────────
@@ -216,7 +232,13 @@ console.log('\n📸 Capturing responsive screenshots...');
 
 const allPages = [{ name: 'home', url }];
 for (const sub of subpages) {
-  const subUrl = sub.startsWith('http') ? sub : new URL(sub, url).href;
+  let subUrl;
+  try {
+    subUrl = sub.startsWith('http') ? sub : new URL(sub, url).href;
+  } catch {
+    console.warn(`⚠️  Skipping invalid subpage URL: ${sub}`);
+    continue;
+  }
   const name = sub.replace(/^\//, '').replace(/\//g, '-') || 'home';
   allPages.push({ name, url: subUrl });
 }
@@ -233,33 +255,38 @@ for (const pg of allPages) {
       isMobile: profile.isMobile || false,
       hasTouch: profile.hasTouch || false,
     });
-    const bpPage = await bpCtx.newPage();
-    await bpPage.goto(pg.url, { waitUntil: 'networkidle', timeout: 30000 });
-    await bpPage.waitForTimeout(500);
+    try {
+      const bpPage = await bpCtx.newPage();
+      try {
+        await bpPage.goto(pg.url, { waitUntil: 'networkidle', timeout: 30000 });
+        await bpPage.waitForTimeout(500);
 
-    const filename = `${pg.name}-${bpName}.png`;
-    await bpPage.screenshot({
-      path: join(outDir, 'screenshots/pages', filename),
-      fullPage: true,
-    });
-    console.log(`   📸 ${filename} (${profile.viewport.width}×${profile.viewport.height} @${profile.deviceScaleFactor || 1}x)`);
+        const filename = `${pg.name}-${bpName}.png`;
+        await bpPage.screenshot({
+          path: join(outDir, 'screenshots/pages', filename),
+          fullPage: true,
+        });
+        console.log(`   📸 ${filename} (${profile.viewport.width}×${profile.viewport.height} @${profile.deviceScaleFactor || 1}x)`);
 
-    responsiveData[pg.name][bpName] = await bpPage.evaluate(() => {
-      const nav = document.querySelector('nav');
-      const main = document.querySelector('main') || document.querySelector('[role="main"]');
-      const sidebar = document.querySelector('aside') || document.querySelector('[class*="sidebar"]');
-      return {
-        viewport: `${window.innerWidth}x${window.innerHeight}`,
-        devicePixelRatio: window.devicePixelRatio,
-        navVisible: nav ? getComputedStyle(nav).display !== 'none' : null,
-        sidebarVisible: sidebar ? getComputedStyle(sidebar).display !== 'none' : null,
-        mainWidth: main ? getComputedStyle(main).width : null,
-        bodyFontSize: getComputedStyle(document.body).fontSize,
-      };
-    });
-
-    await bpPage.close();
-    await bpCtx.close();
+        responsiveData[pg.name][bpName] = await bpPage.evaluate(() => {
+          const nav = document.querySelector('nav');
+          const main = document.querySelector('main') || document.querySelector('[role="main"]');
+          const sidebar = document.querySelector('aside') || document.querySelector('[class*="sidebar"]');
+          return {
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            devicePixelRatio: window.devicePixelRatio,
+            navVisible: nav ? getComputedStyle(nav).display !== 'none' : null,
+            sidebarVisible: sidebar ? getComputedStyle(sidebar).display !== 'none' : null,
+            mainWidth: main ? getComputedStyle(main).width : null,
+            bodyFontSize: getComputedStyle(document.body).fontSize,
+          };
+        });
+      } finally {
+        await bpPage.close();
+      }
+    } finally {
+      await bpCtx.close();
+    }
   }
 }
 
@@ -373,22 +400,28 @@ const mobileCtx = await browser.newContext({
   isMobile: true,
   hasTouch: true,
 });
-const mobilePage = await mobileCtx.newPage();
-await mobilePage.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-await mobilePage.waitForTimeout(500);
+try {
+  const mobilePage = await mobileCtx.newPage();
+  try {
+    await mobilePage.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await mobilePage.waitForTimeout(500);
 
-const hamburger = await mobilePage.$('button[class*="menu"], button[class*="hamburger"], button[class*="nav"], button[aria-label*="menu"], [class*="mobile-menu"] button');
-if (hamburger) {
-  await hamburger.click();
-  await mobilePage.waitForTimeout(600);
-  await mobilePage.screenshot({
-    path: join(outDir, 'screenshots/components/nav-mobile-open.png'),
-    fullPage: true,
-  });
-  console.log('   📸 nav-mobile-open');
+    const hamburger = await mobilePage.$('button[class*="menu"], button[class*="hamburger"], button[class*="nav"], button[aria-label*="menu"], [class*="mobile-menu"] button');
+    if (hamburger) {
+      await hamburger.click();
+      await mobilePage.waitForTimeout(600);
+      await mobilePage.screenshot({
+        path: join(outDir, 'screenshots/components/nav-mobile-open.png'),
+        fullPage: true,
+      });
+      console.log('   📸 nav-mobile-open');
+    }
+  } finally {
+    await mobilePage.close();
+  }
+} finally {
+  await mobileCtx.close();
 }
-await mobilePage.close();
-await mobileCtx.close();
 
 // ── 8. Dark mode detection ────────────────────────────────────────────
 console.log('\n🌙 Checking for dark mode...');
@@ -463,4 +496,11 @@ console.log(`   ${foundComponents.length} components screenshotted`);
 console.log(`   ${allPages.length * Object.keys(profiles).length} page screenshots`);
 console.log(`   All screenshots at native device DPR (2x–3x) for pixel-accurate design reference`);
 
-await browser.close();
+} catch (e) {
+  console.error(`\n❌ Extraction failed: ${e.message}`);
+  exitCode = 1;
+} finally {
+  await browser.close();
+}
+
+process.exit(exitCode);

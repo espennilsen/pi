@@ -29,9 +29,9 @@ for dir in ~/Dev/*/; do
     remote=$(git remote get-url origin 2>/dev/null)
     if echo "$remote" | grep -q github.com; then
       repo=$(echo "$remote" | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/.*github.com[:/]\(.*\)/\1/')
-      prs=$(gh pr list --repo "$repo" --state open --json number,title,createdAt,headRefName,author,isDraft,reviewDecision 2>/dev/null)
-      pr_count=$(echo "$prs" | jq 'length' 2>/dev/null || echo "0")
-      if [ "$pr_count" -gt 0 ]; then
+      prs=$(gh pr list --repo "$repo" --state open --json number,title,createdAt,headRefName,author,isDraft,reviewDecision)
+      pr_count=$(echo "${prs:-[]}" | jq 'length' 2>/dev/null)
+      if [ "${pr_count:-0}" -gt 0 ]; then
         echo "=== $(basename "$dir") ($repo) ==="
         echo "$prs" | jq -r '.[] | "  #\(.number) [\(.headRefName)] \(.title) (by \(.author.login), created \(.createdAt[:10]), draft: \(.isDraft), review: \(.reviewDecision // "none"))"'
         echo ""
@@ -67,13 +67,13 @@ End with:
 
 ### Step 5: Deduplication check (before alerting)
 
-**Before sending any Telegram alert**, check today's daily memory log for PRs already covered:
+**Before sending any Telegram alert**, check today's daily memory log for PRs already covered. Optionally, write a lightweight per-PR "alert sent" timestamp (e.g., `pr-monitor-alert-<repo>-<number>-<date>`) to memory so overlapping executions don't duplicate alerts.
 
 ```
 memory_read(target: "daily")
 ```
 
-Scan the result for PR references matching `[repo] #[number]`. Any stale PR already mentioned in today's standup or a prior pr-monitor alert should be **excluded** from the new alert.
+Scan the result for PR references matching `[repo] #[number]`. Any stale PR already mentioned in today's standup or a prior pr-monitor alert **today** should be **excluded** from the new alert.
 
 - If **all** stale PRs were already reported today → skip the alert entirely (no noise)
 - If **some** are new → send alert only for the new ones

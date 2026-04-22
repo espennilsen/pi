@@ -9,8 +9,7 @@
  *
  * Available widgets:
  *   active-task, task-queue, git-status, today-calendar, week-calendar,
- *   recent-ops, system-health, accounts, budget-bars, recent-txns,
- *   reminders, recent-contacts, session-stats, clock
+ *   recent-ops, system-health, reminders, recent-contacts, session-stats, clock
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -30,7 +29,6 @@ export default function (pi: ExtensionAPI) {
 
 	const PRISM_GRANTS: { owner: string; tables: string[] }[] = [
 		{ owner: "pi-jobs",         tables: ["jobs", "tool_calls"] },
-		{ owner: "pi-myfinance",    tables: ["finance_transactions", "finance_accounts", "finance_budgets", "finance_categories", "finance_vendors"] },
 		{ owner: "pi-personal-crm", tables: ["crm_contacts", "crm_companies", "crm_reminders"] },
 		{ owner: "pi-calendar",     tables: ["calendar_events"] },
 	];

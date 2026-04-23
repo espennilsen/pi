@@ -21,38 +21,57 @@
  *   }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { registerTtsTool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";
 import { resolveVoicePath, getAvailableVoices } from "./voices.ts";
-import { generateAudio } from "./tts-client.ts";
+import { generateAudio, redactUrl } from "./tts-client.ts";
 
 const DEFAULT_BASE_URL = "http://192.168.0.27:8001";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+interface SessionState {
+	baseUrl: string;
+	timeoutMs: number;
+	tempFiles: string[];
+}
+
+const sessions = new Map<string, SessionState>();
+
+function getOrCreateSessionState(ctx: ExtensionContext): SessionState {
+	const sessionId = ctx.sessionManager.getSessionId();
+	let state = sessions.get(sessionId);
+	if (!state) {
+		const settings = resolveSettings(ctx.cwd);
+		state = { baseUrl: settings.baseUrl, timeoutMs: settings.timeoutMs, tempFiles: [] };
+		sessions.set(sessionId, state);
+	}
+	return state;
+}
+
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
-	let baseUrl = DEFAULT_BASE_URL;
-	let timeoutMs = DEFAULT_TIMEOUT_MS;
-
-	// Track temp files created during this session for cleanup
-	const tempFiles: string[] = [];
-
 	pi.on("session_start", async (_event, ctx) => {
 		const settings = resolveSettings(ctx.cwd);
-		baseUrl = settings.baseUrl;
-		timeoutMs = settings.timeoutMs;
-		log("init", { status: "ready", baseUrl, timeoutMs });
+		const sessionId = ctx.sessionManager.getSessionId();
+		sessions.set(sessionId, {
+			baseUrl: settings.baseUrl,
+			timeoutMs: settings.timeoutMs,
+			tempFiles: [],
+		});
+		log("init", { status: "ready", baseUrl: redactUrl(settings.baseUrl), timeoutMs: settings.timeoutMs });
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		const state = sessions.get(sessionId);
 		// Clean up temp WAV files created during the session
-		if (tempFiles.length > 0) {
+		if (state?.tempFiles.length) {
 			const { unlink } = await import("node:fs/promises");
 			let removed = 0;
-			for (const filePath of tempFiles) {
+			for (const filePath of state.tempFiles) {
 				try {
 					await unlink(filePath);
 					removed++;
@@ -60,17 +79,19 @@ export default function (pi: ExtensionAPI) {
 					// File may already be gone — ignore
 				}
 			}
-			log("cleanup", { filesTracked: tempFiles.length, filesRemoved: removed });
+			log("cleanup", { filesTracked: state.tempFiles.length, filesRemoved: removed });
 		}
-		tempFiles.length = 0;
+		sessions.delete(sessionId);
 	});
 
 	// ── TTS tool for LLM ────────────────────────────────────────
 
 	registerTtsTool(pi, {
-		getBaseUrl: () => baseUrl,
-		getTimeoutMs: () => timeoutMs,
-		onFileCreated: (filePath) => tempFiles.push(filePath),
+		getBaseUrl: (ctx) => getOrCreateSessionState(ctx).baseUrl,
+		getTimeoutMs: (ctx) => getOrCreateSessionState(ctx).timeoutMs,
+		onFileCreated: (filePath, ctx) => {
+			getOrCreateSessionState(ctx).tempFiles.push(filePath);
+		},
 	});
 
 	// ── /tts command for TUI ─────────────────────────────────────
@@ -90,6 +111,8 @@ export default function (pi: ExtensionAPI) {
 			return null;
 		},
 		handler: async (args, ctx) => {
+			const state = getOrCreateSessionState(ctx);
+
 			const raw = args?.trim() ?? "";
 			if (!raw) {
 				const voices = getAvailableVoices();
@@ -125,7 +148,7 @@ export default function (pi: ExtensionAPI) {
 				text,
 				language_id: "en",
 				voice_sample_path: voicePath,
-			}, baseUrl, timeoutMs);
+			}, state.baseUrl, state.timeoutMs);
 
 			if (!result.ok) {
 				ctx.ui.notify(`TTS error (${result.status}): ${result.message}\n${result.details}`, "error");
@@ -133,7 +156,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Track file for session cleanup
-			tempFiles.push(result.file_path);
+			state.tempFiles.push(result.file_path);
 
 			const sizeKb = (result.size_bytes / 1024).toFixed(1);
 			ctx.ui.notify(`Audio saved: ${result.file_path} (${sizeKb} KB)`, "info");

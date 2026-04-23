@@ -5,7 +5,7 @@
  * Returns a file path to the generated WAV audio.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import { generateAudio, type TtsResult } from "./tts-client.ts";
@@ -24,9 +24,9 @@ interface TtsToolDetails {
 }
 
 export interface TtsToolConfig {
-	getBaseUrl: () => string;
-	getTimeoutMs: () => number;
-	onFileCreated?: (filePath: string) => void;
+	getBaseUrl: (ctx: ExtensionContext) => string;
+	getTimeoutMs: (ctx: ExtensionContext) => number;
+	onFileCreated?: (filePath: string, ctx: ExtensionContext) => void;
 }
 
 export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
@@ -47,7 +47,7 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 			voice_id: Type.Optional(Type.String({ description: 'Logical voice name, e.g. "espen". Omit to use the TTS server default voice.' })),
 		}),
 
-		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const { text, language_id = "en", voice_id } = params;
 
 			// Resolve voice ID to file path
@@ -74,7 +74,7 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 				text,
 				language_id,
 				voice_sample_path,
-			}, config.getBaseUrl(), config.getTimeoutMs(), signal);
+			}, config.getBaseUrl(ctx), config.getTimeoutMs(ctx), signal);
 
 			if (!result.ok) {
 				const details: TtsToolDetails = {
@@ -88,7 +88,7 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 				return {
 					content: [{
 						type: "text" as const,
-						text: `TTS error (${result.status}): ${result.message}\n${result.details}`,
+						text: `TTS error (${result.status}): ${result.message}. Check the TTS server logs for details.`,
 					}],
 					details,
 					isError: true,
@@ -96,7 +96,7 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 			}
 
 			// Track file for session cleanup
-			config.onFileCreated?.(result.file_path);
+			config.onFileCreated?.(result.file_path, ctx);
 
 			const sizeKb = (result.size_bytes / 1024).toFixed(1);
 			const details: TtsToolDetails = {

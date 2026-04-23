@@ -11,6 +11,8 @@
 
 const DEFAULT_BASE_URL = "http://192.168.0.27:8001";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_ERROR_BODY_BYTES = 2 * 1024;           // 2 KB
 
 export interface TtsRequest {
 	text: string;
@@ -33,6 +35,55 @@ export interface TtsErrorResult {
 }
 
 export type TtsResult = TtsSuccessResult | TtsErrorResult;
+
+/**
+ * Strip embedded credentials from a URL before logging or displaying it.
+ */
+export function redactUrl(baseUrl: string): string {
+	try {
+		const url = new URL(baseUrl);
+		if (url.username || url.password) {
+			url.username = "";
+			url.password = "";
+			return url.href;
+		}
+	} catch {
+		// Invalid URL — return as-is
+	}
+	return baseUrl;
+}
+
+async function readBodyLimited(response: Response, maxBytes: number): Promise<Buffer> {
+	const reader = response.body?.getReader();
+	if (!reader) return Buffer.alloc(0);
+
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) {
+				total += value.length;
+				if (total > maxBytes) {
+					throw new Error(`Response body exceeds maximum size of ${maxBytes} bytes`);
+				}
+				chunks.push(value);
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+
+	const result = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		result.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return Buffer.from(result);
+}
 
 /**
  * Call the TTS server and save the resulting WAV to a temp file.
@@ -75,8 +126,9 @@ export async function generateAudio(
 		});
 
 		if (!response.ok) {
-			const body = await response.text().catch(() => "");
-			const truncated = body.slice(0, 2048);
+			const body = await readBodyLimited(response, MAX_ERROR_BODY_BYTES).catch(() => Buffer.alloc(0));
+			const text = body.toString("utf-8");
+			const truncated = text.slice(0, 2048);
 			return {
 				ok: false,
 				status: response.status,
@@ -95,8 +147,7 @@ export async function generateAudio(
 			};
 		}
 
-		const arrayBuffer = await response.arrayBuffer();
-		const buffer = Buffer.from(arrayBuffer);
+		const buffer = await readBodyLimited(response, MAX_RESPONSE_SIZE_BYTES);
 
 		// Save to /tmp/tts-<uuid>.wav
 		const { randomUUID } = await import("node:crypto");
@@ -128,7 +179,7 @@ export async function generateAudio(
 				ok: false,
 				status: 0,
 				message: "TTS request timed out",
-				details: `Request exceeded ${timeoutMs}ms timeout. The TTS server at ${baseUrl} may be unresponsive.`,
+				details: `Request exceeded ${timeoutMs}ms timeout. The TTS server at ${redactUrl(baseUrl)} may be unresponsive.`,
 			};
 		}
 

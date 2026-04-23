@@ -137,7 +137,7 @@ export function registerTtsTool(pi: ExtensionAPI, config: TtsToolConfig) {
 				return new Text(theme.fg("error", `TTS error: ${details.message ?? "unknown"}`), 0, 0);
 			}
 
-			const sizeKb = details?.size_bytes ? (details.size_bytes / 1024).toFixed(1) : "?";
+			const sizeKb = details?.size_bytes != null ? (details.size_bytes / 1024).toFixed(1) : "?";
 			let text = theme.fg("success", "✓ Audio generated");
 			text += theme.fg("dim", ` — ${sizeKb} KB`);
 			if (details?.file_path) {

@@ -53,7 +53,7 @@ export function redactUrl(baseUrl: string): string {
 	return baseUrl;
 }
 
-async function readBodyLimited(response: Response, maxBytes: number): Promise<Buffer> {
+async function readBodyLimited(response: Response, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
 	const reader = response.body?.getReader();
 	if (!reader) return Buffer.alloc(0);
 
@@ -62,11 +62,17 @@ async function readBodyLimited(response: Response, maxBytes: number): Promise<Bu
 
 	try {
 		while (true) {
+			if (signal?.aborted) {
+				await reader.cancel();
+				throw new DOMException("The operation was aborted.", "AbortError");
+			}
+
 			const { done, value } = await reader.read();
 			if (done) break;
 			if (value) {
 				total += value.length;
 				if (total > maxBytes) {
+					await reader.cancel();
 					throw new Error(`Response body exceeds maximum size of ${maxBytes} bytes`);
 				}
 				chunks.push(value);
@@ -147,7 +153,18 @@ export async function generateAudio(
 			};
 		}
 
-		const buffer = await readBodyLimited(response, MAX_RESPONSE_SIZE_BYTES);
+		const buffer = await readBodyLimited(response, MAX_RESPONSE_SIZE_BYTES, combinedSignal);
+
+		if (combinedSignal.aborted) {
+			return {
+				ok: false,
+				status: 0,
+				message: signal?.aborted ? "TTS request cancelled" : "TTS request timed out",
+				details: signal?.aborted
+					? "The request was cancelled by the framework."
+					: `Request exceeded ${timeoutMs}ms timeout. The TTS server at ${redactUrl(baseUrl)} may be unresponsive.`,
+			};
+		}
 
 		// Save to /tmp/tts-<uuid>.wav
 		const { randomUUID } = await import("node:crypto");

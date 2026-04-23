@@ -1,0 +1,38 @@
+{
+  "name": "@e9n/pi-tts",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "license": "MIT",
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "keywords": [
+    "pi-package"
+  ],
+  "description": "Text-to-speech extension for pi — generates WAV audio via a local TTS server",
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-tts"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

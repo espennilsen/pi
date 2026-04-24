@@ -651,13 +651,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_switch", async (_event, ctx) => {
-		sessionCwd = ctx.cwd;
-	});
 
-	pi.on("session_fork", async (_event, ctx) => {
-		sessionCwd = ctx.cwd;
-	});
 
 	pi.events.on("web:ready", () => {
 		const settings = loadTdSettings(sessionCwd);

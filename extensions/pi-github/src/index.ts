@@ -59,15 +59,5 @@ export default function (pi: ExtensionAPI) {
 		loadSettings(ctx.cwd);
 	});
 
-	pi.on("session_switch", async (_event, ctx) => {
-		cwd = ctx.cwd;
-		setSessionCwd(ctx.cwd);
-		loadSettings(ctx.cwd);
-	});
 
-	pi.on("session_fork", async (_event, ctx) => {
-		cwd = ctx.cwd;
-		setSessionCwd(ctx.cwd);
-		loadSettings(ctx.cwd);
-	});
 }

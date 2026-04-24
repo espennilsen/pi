@@ -18,11 +18,11 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": ">=0.65.2",
+		"@mariozechner/pi-coding-agent": "*",
 		"typebox": "^1.1.24"
 	},
 	"devDependencies": {
-		"@mariozechner/pi-coding-agent": "^0.65.2",
+		"@mariozechner/pi-coding-agent": "*",
 		"typebox": "^1.1.24",
 		"typescript": "^5.9.3"
 	},

@@ -85,10 +85,10 @@ export default function (pi: ExtensionAPI) {
 	 * Update the cmux workspace title.
 	 *
 	 * Priority: session name > workon project name > cwd basename.
-	 * Called on session_start, session_switch, session_fork, and workon:switch.
+	 * Called on session_start, session_before_switch, session_before_fork, and workon:switch.
 	 *
 	 * Note: `workonProjectName` is module-level but safe — Pi runs one
-	 * session at a time per process (session_switch is sequential, not concurrent).
+	 * session at a time per process (session_before_switch is sequential, not concurrent).
 	 */
 	let workonProjectName: string | undefined;
 
@@ -121,18 +121,18 @@ export default function (pi: ExtensionAPI) {
 		// updateTerminalTitle() sets the terminal title after extensions
 		// init. We only use renameWorkspace() (with the π prefix) to keep
 		// the cmux workspace name in sync across lifecycle events that
-		// Pi core doesn't know about (session_switch, session_fork, workon:switch).
+		// Pi core doesn't know about (session_before_switch, session_before_fork, workon:switch).
 
 		log("session_started", { workspaceId, surfaceId });
 	});
 
-	pi.on("session_switch", () => {
+	pi.on("session_before_switch", async (_event, _ctx) => {
 		// Session changed — update workspace name for the new session
 		workonProjectName = undefined;
 		updateWorkspaceName();
 	});
 
-	pi.on("session_fork", () => {
+	pi.on("session_before_fork", async (_event, _ctx) => {
 		// Forked session continues from the same conversation, so inherit
 		// the workon project context. Session name is read fresh from the
 		// new session by getSessionName().

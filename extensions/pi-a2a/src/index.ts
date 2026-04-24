@@ -1735,8 +1735,8 @@ export default function (pi: ExtensionAPI) {
 				hubConfig,
 				log,
 				{
-					context: params.context,
-					handoff: params.handoff,
+					context: params.context as Record<string, unknown>,
+					handoff: params.handoff as Record<string, unknown>,
 					priority: params.priority,
 				},
 			);

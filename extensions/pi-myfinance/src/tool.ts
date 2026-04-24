@@ -4,7 +4,7 @@
  * Conversational finance tracking accessible from Pi agent prompts.
  */
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { getFinanceStore } from "./store.ts";
 import { generateInsights, analyzeTrends, autoCategorize } from "./insights.ts";

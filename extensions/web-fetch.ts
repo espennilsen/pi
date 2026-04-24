@@ -13,7 +13,7 @@ import {
 	truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -27,7 +27,7 @@
 	"peerDependencies": {
 		"@mariozechner/pi-ai": "*",
 		"@mariozechner/pi-coding-agent": "*",
-		"@sinclair/typebox": "*"
+		"typebox": "^1.1.24"
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.12",

@@ -19,7 +19,7 @@
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
-    "@sinclair/typebox": "*"
+    "typebox": "^1.1.24"
   },
   "files": [
     "CHANGELOG.md",

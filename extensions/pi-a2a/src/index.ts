@@ -38,7 +38,7 @@ import { resolve } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import {
 	A2AError,
 	DefaultRequestHandler,
@@ -1735,8 +1735,8 @@ export default function (pi: ExtensionAPI) {
 				hubConfig,
 				log,
 				{
-					context: params.context,
-					handoff: params.handoff,
+					context: params.context as Record<string, unknown>,
+					handoff: params.handoff as Record<string, unknown>,
 					priority: params.priority,
 				},
 			);

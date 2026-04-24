@@ -10,7 +10,7 @@
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "typebox": "^1.1.24"
   },
   "license": "MIT",
   "author": "Espen Nilsen <hi@e9n.dev>",

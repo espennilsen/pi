@@ -3,7 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { isClientReady, mealie, apiList } from "../client.ts";
 
 /** Validate a path segment contains only safe characters. */

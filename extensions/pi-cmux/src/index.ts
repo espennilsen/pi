@@ -85,10 +85,10 @@ export default function (pi: ExtensionAPI) {
 	 * Update the cmux workspace title.
 	 *
 	 * Priority: session name > workon project name > cwd basename.
-	 * Called on session_start, session_switch, session_fork, and workon:switch.
+	 * Called from the session_start handler and workon:switch events.
 	 *
 	 * Note: `workonProjectName` is module-level but safe — Pi runs one
-	 * session at a time per process (session_switch is sequential, not concurrent).
+	 * session at a time per process (session_start is sequential, not concurrent).
 	 */
 	let workonProjectName: string | undefined;
 
@@ -103,13 +103,16 @@ export default function (pi: ExtensionAPI) {
 		log("workspace_renamed", { name, source }, "DEBUG");
 	}
 
-	pi.on("session_start", async (_event, _ctx) => {
+	pi.on("session_start", async (event, _ctx) => {
 		// Clear stale browser surface tracking from previous sessions
 		resetBrowserState();
 		cancelPendingNotify();
 
-		// Reset workon state — new session hasn't switched projects yet
-		workonProjectName = undefined;
+		// Reset workon state on startup, reload, switch (new/resume).
+		// On fork, preserve the inherited project context.
+		if (event.reason !== "fork") {
+			workonProjectName = undefined;
+		}
 
 		// Set workspace name from session
 		updateWorkspaceName();
@@ -121,22 +124,9 @@ export default function (pi: ExtensionAPI) {
 		// updateTerminalTitle() sets the terminal title after extensions
 		// init. We only use renameWorkspace() (with the π prefix) to keep
 		// the cmux workspace name in sync across lifecycle events that
-		// Pi core doesn't know about (session_switch, session_fork, workon:switch).
+		// Pi core doesn't know about (session_start with reason: "fork", workon:switch).
 
-		log("session_started", { workspaceId, surfaceId });
-	});
-
-	pi.on("session_switch", () => {
-		// Session changed — update workspace name for the new session
-		workonProjectName = undefined;
-		updateWorkspaceName();
-	});
-
-	pi.on("session_fork", () => {
-		// Forked session continues from the same conversation, so inherit
-		// the workon project context. Session name is read fresh from the
-		// new session by getSessionName().
-		updateWorkspaceName();
+		log("session_started", { workspaceId, surfaceId, reason: event.reason });
 	});
 
 	// Listen for workon:switch events from pi-workon extension.

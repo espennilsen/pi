@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { ghGraphql, ghJson, gh } from "./gh.ts";
 
 const REPLY_MUTATION = `

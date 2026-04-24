@@ -4,7 +4,7 @@
  * Conversational CRM operations accessible from Pi agent prompts.
  */
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { getCrmStore } from "./store.ts";
 

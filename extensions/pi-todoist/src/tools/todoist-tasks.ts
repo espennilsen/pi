@@ -3,6 +3,10 @@ import { Type } from "typebox";
 import { getClient, isClientReady } from "../client.ts";
 import type { Task } from "@doist/todoist-api-typescript";
 
+function result(text: string) {
+	return { content: [{ type: "text" as const, text }], details: {} };
+}
+
 const actionSchema = Type.Union([
   Type.Literal("list"),
   Type.Literal("get"),
@@ -18,6 +22,7 @@ const actionSchema = Type.Union([
 export function registerTasksTool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "todoist_tasks",
+    label: "Todoist Tasks",
     description: "Manage Todoist tasks — list, get, add, update, complete, reopen, delete, move, and search tasks",
     parameters: Type.Object({
       action: actionSchema,
@@ -39,11 +44,9 @@ export function registerTasksTool(pi: ExtensionAPI) {
       query: Type.Optional(Type.String({ description: "Search query for completed tasks (for search)" })),
       limit: Type.Optional(Type.Number({ description: "Max number of results (for list/search)" })),
     }),
-    execute: async (params, { signal }) => {
+    execute: async (_toolCallId, params, signal) => {
       if (!isClientReady()) {
-        return {
-          content: [{ type: "text", text: "❌ Not configured. Set `pi-todoist.apiToken` in settings.json" }],
-        };
+        return result("❌ Not configured. Set `pi-todoist.apiToken` in settings.json");
       }
 
       const client = getClient();
@@ -85,24 +88,24 @@ export function registerTasksTool(pi: ExtensionAPI) {
             }
 
             if (tasks.length === 0) {
-              return { content: [{ type: "text", text: "No tasks found." }] };
+              return result("No tasks found.");
             }
 
             const output = tasks.map(formatTask).join("\n\n---\n\n");
-            return { content: [{ type: "text", text: `Found ${tasks.length} task(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${tasks.length} task(s):\n\n${output}` }], details: {} };
           }
 
           case "get": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const task = await client.getTask(params.id);
-            return { content: [{ type: "text", text: formatTask(task) }] };
+            return { content: [{ type: "text", text: formatTask(task) }], details: {} };
           }
 
           case "add": {
             if (!params.content) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: content" }] };
+              return result("❌ Missing required parameter: content");
             }
 
             const addArgs: any = { content: params.content };
@@ -119,12 +122,12 @@ export function registerTasksTool(pi: ExtensionAPI) {
             if (params.durationUnit) addArgs.durationUnit = params.durationUnit;
 
             const task = await client.addTask(addArgs);
-            return { content: [{ type: "text", text: `✅ Task created:\n\n${formatTask(task)}` }] };
+            return { content: [{ type: "text", text: `✅ Task created:\n\n${formatTask(task)}` }], details: {} };
           }
 
           case "update": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
 
             const updateArgs: any = {};
@@ -139,44 +142,44 @@ export function registerTasksTool(pi: ExtensionAPI) {
             if (params.durationUnit) updateArgs.durationUnit = params.durationUnit;
 
             if (Object.keys(updateArgs).length === 0) {
-              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+              return result("❌ No fields to update provided");
             }
 
             const task = await client.updateTask(params.id, updateArgs);
-            return { content: [{ type: "text", text: `✅ Task updated:\n\n${formatTask(task)}` }] };
+            return { content: [{ type: "text", text: `✅ Task updated:\n\n${formatTask(task)}` }], details: {} };
           }
 
           case "close": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.closeTask(params.id);
-            return { content: [{ type: "text", text: `✅ Task ${params.id} completed` }] };
+            return { content: [{ type: "text", text: `✅ Task ${params.id} completed` }], details: {} };
           }
 
           case "reopen": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.reopenTask(params.id);
-            return { content: [{ type: "text", text: `✅ Task ${params.id} reopened` }] };
+            return { content: [{ type: "text", text: `✅ Task ${params.id} reopened` }], details: {} };
           }
 
           case "delete": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.deleteTask(params.id);
-            return { content: [{ type: "text", text: `✅ Task ${params.id} deleted` }] };
+            return { content: [{ type: "text", text: `✅ Task ${params.id} deleted` }], details: {} };
           }
 
           case "move": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const destinations = [params.projectId, params.sectionId, params.parentId].filter(Boolean);
             if (destinations.length !== 1) {
-              return { content: [{ type: "text", text: "❌ Must specify exactly one of: projectId, sectionId, parentId" }] };
+              return result("❌ Must specify exactly one of: projectId, sectionId, parentId");
             }
 
             const moveArgs: any = {};
@@ -185,12 +188,12 @@ export function registerTasksTool(pi: ExtensionAPI) {
             if (params.parentId) moveArgs.parentId = params.parentId;
 
             const task = await client.moveTask(params.id, moveArgs);
-            return { content: [{ type: "text", text: `✅ Task moved:\n\n${formatTask(task)}` }] };
+            return { content: [{ type: "text", text: `✅ Task moved:\n\n${formatTask(task)}` }], details: {} };
           }
 
           case "search": {
             if (!params.query) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: query" }] };
+              return result("❌ Missing required parameter: query");
             }
 
             let allItems: Task[] = [];
@@ -204,7 +207,7 @@ export function registerTasksTool(pi: ExtensionAPI) {
             }
 
             if (allItems.length === 0) {
-              return { content: [{ type: "text", text: "No completed tasks found." }] };
+              return result("No completed tasks found.");
             }
 
             let tasks = allItems;
@@ -216,14 +219,14 @@ export function registerTasksTool(pi: ExtensionAPI) {
               return `**${task.content}**\n- ID: \`${task.id}\`\n- Completed: ${task.completedAt || 'N/A'}\n- Project: ${task.projectId || 'None'}`;
             }).join("\n\n");
 
-            return { content: [{ type: "text", text: `Found ${tasks.length} completed task(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${tasks.length} completed task(s):\n\n${output}` }], details: {} };
           }
 
           default:
-            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }] };
+            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }], details: {} };
         }
       } catch (error: any) {
-        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }] };
+        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }], details: {} };
       }
     },
   });

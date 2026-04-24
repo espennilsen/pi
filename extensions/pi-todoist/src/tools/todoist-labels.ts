@@ -3,6 +3,10 @@ import { Type } from "typebox";
 import { getClient, isClientReady } from "../client.ts";
 import type { Label } from "@doist/todoist-api-typescript";
 
+function result(text: string) {
+	return { content: [{ type: "text" as const, text }], details: {} };
+}
+
 const actionSchema = Type.Union([
   Type.Literal("list"),
   Type.Literal("get"),
@@ -14,6 +18,7 @@ const actionSchema = Type.Union([
 export function registerLabelsTool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "todoist_labels",
+    label: "Todoist Labels",
     description: "Manage Todoist labels — list, get, add, update, and delete labels",
     parameters: Type.Object({
       action: actionSchema,
@@ -23,11 +28,9 @@ export function registerLabelsTool(pi: ExtensionAPI) {
       order: Type.Optional(Type.Number({ description: "Label order (for add/update)" })),
       isFavorite: Type.Optional(Type.Boolean({ description: "Mark as favorite (for add/update)" })),
     }),
-    execute: async (params, { signal }) => {
+    execute: async (_toolCallId, params, signal) => {
       if (!isClientReady()) {
-        return {
-          content: [{ type: "text", text: "❌ Not configured. Set `pi-todoist.apiToken` in settings.json" }],
-        };
+        return result("❌ Not configured. Set `pi-todoist.apiToken` in settings.json");
       }
 
       const client = getClient();
@@ -47,24 +50,24 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             }
 
             if (labels.length === 0) {
-              return { content: [{ type: "text", text: "No labels found." }] };
+              return result("No labels found.");
             }
 
             const output = labels.map(formatLabel).join("\n\n---\n\n");
-            return { content: [{ type: "text", text: `Found ${labels.length} label(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${labels.length} label(s):\n\n${output}` }], details: {} };
           }
 
           case "get": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const label = await client.getLabel(params.id);
-            return { content: [{ type: "text", text: formatLabel(label) }] };
+            return { content: [{ type: "text", text: formatLabel(label) }], details: {} };
           }
 
           case "add": {
             if (!params.name) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: name" }] };
+              return result("❌ Missing required parameter: name");
             }
 
             const addArgs: any = { name: params.name };
@@ -73,12 +76,12 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             if (params.isFavorite !== undefined) addArgs.isFavorite = params.isFavorite;
 
             const label = await client.addLabel(addArgs);
-            return { content: [{ type: "text", text: `✅ Label created:\n\n${formatLabel(label)}` }] };
+            return { content: [{ type: "text", text: `✅ Label created:\n\n${formatLabel(label)}` }], details: {} };
           }
 
           case "update": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
 
             const updateArgs: any = {};
@@ -88,26 +91,26 @@ export function registerLabelsTool(pi: ExtensionAPI) {
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;
 
             if (Object.keys(updateArgs).length === 0) {
-              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+              return result("❌ No fields to update provided");
             }
 
             const label = await client.updateLabel(params.id, updateArgs);
-            return { content: [{ type: "text", text: `✅ Label updated:\n\n${formatLabel(label)}` }] };
+            return { content: [{ type: "text", text: `✅ Label updated:\n\n${formatLabel(label)}` }], details: {} };
           }
 
           case "delete": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.deleteLabel(params.id);
-            return { content: [{ type: "text", text: `✅ Label ${params.id} deleted` }] };
+            return { content: [{ type: "text", text: `✅ Label ${params.id} deleted` }], details: {} };
           }
 
           default:
-            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }] };
+            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }], details: {} };
         }
       } catch (error: any) {
-        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }] };
+        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }], details: {} };
       }
     },
   });

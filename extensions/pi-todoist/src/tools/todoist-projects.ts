@@ -3,6 +3,10 @@ import { Type } from "typebox";
 import { getClient, isClientReady } from "../client.ts";
 import type { PersonalProject, WorkspaceProject } from "@doist/todoist-api-typescript";
 
+function result(text: string) {
+	return { content: [{ type: "text" as const, text }], details: {} };
+}
+
 const actionSchema = Type.Union([
   Type.Literal("list"),
   Type.Literal("get"),
@@ -16,6 +20,7 @@ const actionSchema = Type.Union([
 export function registerProjectsTool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "todoist_projects",
+    label: "Todoist Projects",
     description: "Manage Todoist projects — list, get, add, update, delete, archive, and unarchive projects",
     parameters: Type.Object({
       action: actionSchema,
@@ -26,11 +31,9 @@ export function registerProjectsTool(pi: ExtensionAPI) {
       viewStyle: Type.Optional(Type.Union([Type.Literal("list"), Type.Literal("board")], { description: "View style (for add/update)" })),
       isFavorite: Type.Optional(Type.Boolean({ description: "Mark as favorite (for add/update)" })),
     }),
-    execute: async (params, { signal }) => {
+    execute: async (_toolCallId, params, signal) => {
       if (!isClientReady()) {
-        return {
-          content: [{ type: "text", text: "❌ Not configured. Set `pi-todoist.apiToken` in settings.json" }],
-        };
+        return result("❌ Not configured. Set `pi-todoist.apiToken` in settings.json");
       }
 
       const client = getClient();
@@ -50,24 +53,24 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             }
 
             if (projects.length === 0) {
-              return { content: [{ type: "text", text: "No projects found." }] };
+              return result("No projects found.");
             }
 
             const output = projects.map(formatProject).join("\n\n---\n\n");
-            return { content: [{ type: "text", text: `Found ${projects.length} project(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${projects.length} project(s):\n\n${output}` }], details: {} };
           }
 
           case "get": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const project = await client.getProject(params.id);
-            return { content: [{ type: "text", text: formatProject(project) }] };
+            return { content: [{ type: "text", text: formatProject(project) }], details: {} };
           }
 
           case "add": {
             if (!params.name) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: name" }] };
+              return result("❌ Missing required parameter: name");
             }
 
             const addArgs: any = { name: params.name };
@@ -77,12 +80,12 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             if (params.isFavorite !== undefined) addArgs.isFavorite = params.isFavorite;
 
             const project = await client.addProject(addArgs);
-            return { content: [{ type: "text", text: `✅ Project created:\n\n${formatProject(project)}` }] };
+            return { content: [{ type: "text", text: `✅ Project created:\n\n${formatProject(project)}` }], details: {} };
           }
 
           case "update": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
 
             const updateArgs: any = {};
@@ -92,42 +95,42 @@ export function registerProjectsTool(pi: ExtensionAPI) {
             if (params.isFavorite !== undefined) updateArgs.isFavorite = params.isFavorite;
 
             if (Object.keys(updateArgs).length === 0) {
-              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+              return result("❌ No fields to update provided");
             }
 
             const project = await client.updateProject(params.id, updateArgs);
-            return { content: [{ type: "text", text: `✅ Project updated:\n\n${formatProject(project)}` }] };
+            return { content: [{ type: "text", text: `✅ Project updated:\n\n${formatProject(project)}` }], details: {} };
           }
 
           case "delete": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.deleteProject(params.id);
-            return { content: [{ type: "text", text: `✅ Project ${params.id} deleted` }] };
+            return { content: [{ type: "text", text: `✅ Project ${params.id} deleted` }], details: {} };
           }
 
           case "archive": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.archiveProject(params.id);
-            return { content: [{ type: "text", text: `✅ Project ${params.id} archived` }] };
+            return { content: [{ type: "text", text: `✅ Project ${params.id} archived` }], details: {} };
           }
 
           case "unarchive": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.unarchiveProject(params.id);
-            return { content: [{ type: "text", text: `✅ Project ${params.id} unarchived` }] };
+            return { content: [{ type: "text", text: `✅ Project ${params.id} unarchived` }], details: {} };
           }
 
           default:
-            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }] };
+            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }], details: {} };
         }
       } catch (error: any) {
-        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }] };
+        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }], details: {} };
       }
     },
   });

@@ -3,6 +3,10 @@ import { Type } from "typebox";
 import { getClient, isClientReady } from "../client.ts";
 import type { Comment } from "@doist/todoist-api-typescript";
 
+function result(text: string) {
+	return { content: [{ type: "text" as const, text }], details: {} };
+}
+
 const actionSchema = Type.Union([
   Type.Literal("list"),
   Type.Literal("get"),
@@ -14,6 +18,7 @@ const actionSchema = Type.Union([
 export function registerCommentsTool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "todoist_comments",
+    label: "Todoist Comments",
     description: "Manage Todoist comments — list, get, add, update, and delete comments on tasks and projects",
     parameters: Type.Object({
       action: actionSchema,
@@ -30,11 +35,9 @@ export function registerCommentsTool(pi: ExtensionAPI) {
         }, { description: "Attachment object (for add)" })
       ),
     }),
-    execute: async (params, { signal }) => {
+    execute: async (_toolCallId, params, signal) => {
       if (!isClientReady()) {
-        return {
-          content: [{ type: "text", text: "❌ Not configured. Set `pi-todoist.apiToken` in settings.json" }],
-        };
+        return result("❌ Not configured. Set `pi-todoist.apiToken` in settings.json");
       }
 
       const client = getClient();
@@ -43,7 +46,7 @@ export function registerCommentsTool(pi: ExtensionAPI) {
         switch (params.action) {
           case "list": {
             if (!params.taskId && !params.projectId) {
-              return { content: [{ type: "text", text: "❌ Must specify either taskId or projectId" }] };
+              return result("❌ Must specify either taskId or projectId");
             }
 
             let comments: Comment[] = [];
@@ -62,27 +65,27 @@ export function registerCommentsTool(pi: ExtensionAPI) {
             }
 
             if (comments.length === 0) {
-              return { content: [{ type: "text", text: "No comments found." }] };
+              return result("No comments found.");
             }
 
             const output = comments.map(formatComment).join("\n\n---\n\n");
-            return { content: [{ type: "text", text: `Found ${comments.length} comment(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${comments.length} comment(s):\n\n${output}` }], details: {} };
           }
 
           case "get": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const comment = await client.getComment(params.id);
-            return { content: [{ type: "text", text: formatComment(comment) }] };
+            return { content: [{ type: "text", text: formatComment(comment) }], details: {} };
           }
 
           case "add": {
             if (!params.content) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: content" }] };
+              return result("❌ Missing required parameter: content");
             }
             if (!params.taskId && !params.projectId) {
-              return { content: [{ type: "text", text: "❌ Must specify either taskId or projectId" }] };
+              return result("❌ Must specify either taskId or projectId");
             }
 
             const addArgs: any = { content: params.content };
@@ -91,34 +94,34 @@ export function registerCommentsTool(pi: ExtensionAPI) {
             if (params.attachment) addArgs.attachment = params.attachment;
 
             const comment = await client.addComment(addArgs);
-            return { content: [{ type: "text", text: `✅ Comment added:\n\n${formatComment(comment)}` }] };
+            return { content: [{ type: "text", text: `✅ Comment added:\n\n${formatComment(comment)}` }], details: {} };
           }
 
           case "update": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             if (!params.content) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: content" }] };
+              return result("❌ Missing required parameter: content");
             }
 
             const comment = await client.updateComment(params.id, { content: params.content });
-            return { content: [{ type: "text", text: `✅ Comment updated:\n\n${formatComment(comment)}` }] };
+            return { content: [{ type: "text", text: `✅ Comment updated:\n\n${formatComment(comment)}` }], details: {} };
           }
 
           case "delete": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.deleteComment(params.id);
-            return { content: [{ type: "text", text: `✅ Comment ${params.id} deleted` }] };
+            return { content: [{ type: "text", text: `✅ Comment ${params.id} deleted` }], details: {} };
           }
 
           default:
-            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }] };
+            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }], details: {} };
         }
       } catch (error: any) {
-        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }] };
+        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }], details: {} };
       }
     },
   });

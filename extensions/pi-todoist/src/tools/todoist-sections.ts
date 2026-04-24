@@ -3,6 +3,10 @@ import { Type } from "typebox";
 import { getClient, isClientReady } from "../client.ts";
 import type { Section } from "@doist/todoist-api-typescript";
 
+function result(text: string) {
+	return { content: [{ type: "text" as const, text }], details: {} };
+}
+
 const actionSchema = Type.Union([
   Type.Literal("list"),
   Type.Literal("get"),
@@ -14,6 +18,7 @@ const actionSchema = Type.Union([
 export function registerSectionsTool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "todoist_sections",
+    label: "Todoist Sections",
     description: "Manage Todoist sections — list, get, add, update, and delete sections",
     parameters: Type.Object({
       action: actionSchema,
@@ -22,11 +27,9 @@ export function registerSectionsTool(pi: ExtensionAPI) {
       projectId: Type.Optional(Type.String({ description: "Project ID (for list/add)" })),
       order: Type.Optional(Type.Number({ description: "Section order (for add)" })),
     }),
-    execute: async (params, { signal }) => {
+    execute: async (_toolCallId, params, signal) => {
       if (!isClientReady()) {
-        return {
-          content: [{ type: "text", text: "❌ Not configured. Set `pi-todoist.apiToken` in settings.json" }],
-        };
+        return result("❌ Not configured. Set `pi-todoist.apiToken` in settings.json");
       }
 
       const client = getClient();
@@ -49,27 +52,27 @@ export function registerSectionsTool(pi: ExtensionAPI) {
             }
 
             if (sections.length === 0) {
-              return { content: [{ type: "text", text: "No sections found." }] };
+              return result("No sections found.");
             }
 
             const output = sections.map(formatSection).join("\n\n---\n\n");
-            return { content: [{ type: "text", text: `Found ${sections.length} section(s):\n\n${output}` }] };
+            return { content: [{ type: "text", text: `Found ${sections.length} section(s):\n\n${output}` }], details: {} };
           }
 
           case "get": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             const section = await client.getSection(params.id);
-            return { content: [{ type: "text", text: formatSection(section) }] };
+            return { content: [{ type: "text", text: formatSection(section) }], details: {} };
           }
 
           case "add": {
             if (!params.name) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: name" }] };
+              return result("❌ Missing required parameter: name");
             }
             if (!params.projectId) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: projectId" }] };
+              return result("❌ Missing required parameter: projectId");
             }
 
             const addArgs: any = {
@@ -79,38 +82,38 @@ export function registerSectionsTool(pi: ExtensionAPI) {
             if (params.order !== undefined) addArgs.order = params.order;
 
             const section = await client.addSection(addArgs);
-            return { content: [{ type: "text", text: `✅ Section created:\n\n${formatSection(section)}` }] };
+            return { content: [{ type: "text", text: `✅ Section created:\n\n${formatSection(section)}` }], details: {} };
           }
 
           case "update": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
 
             const updateArgs: any = {};
             if (params.name !== undefined) updateArgs.name = params.name;
 
             if (Object.keys(updateArgs).length === 0) {
-              return { content: [{ type: "text", text: "❌ No fields to update provided" }] };
+              return result("❌ No fields to update provided");
             }
 
             const section = await client.updateSection(params.id, updateArgs);
-            return { content: [{ type: "text", text: `✅ Section updated:\n\n${formatSection(section)}` }] };
+            return { content: [{ type: "text", text: `✅ Section updated:\n\n${formatSection(section)}` }], details: {} };
           }
 
           case "delete": {
             if (!params.id) {
-              return { content: [{ type: "text", text: "❌ Missing required parameter: id" }] };
+              return result("❌ Missing required parameter: id");
             }
             await client.deleteSection(params.id);
-            return { content: [{ type: "text", text: `✅ Section ${params.id} deleted` }] };
+            return { content: [{ type: "text", text: `✅ Section ${params.id} deleted` }], details: {} };
           }
 
           default:
-            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }] };
+            return { content: [{ type: "text", text: `❌ Unknown action: ${params.action}` }], details: {} };
         }
       } catch (error: any) {
-        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }] };
+        return { content: [{ type: "text", text: `❌ Error: ${error.message || String(error)}` }], details: {} };
       }
     },
   });

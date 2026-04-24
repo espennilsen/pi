@@ -11,7 +11,7 @@
  *   - cmux_browser    — Open URL, snapshot DOM, click, fill, eval JS
  */
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { CmuxClient } from "./client.ts";
 import type { LogFn } from "./logger.ts";

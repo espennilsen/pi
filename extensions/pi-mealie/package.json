@@ -19,11 +19,11 @@
 	},
 	"peerDependencies": {
 		"@mariozechner/pi-coding-agent": ">=0.65.2",
-		"@sinclair/typebox": ">=0.34.0"
+		"typebox": "^1.1.24"
 	},
 	"devDependencies": {
 		"@mariozechner/pi-coding-agent": "^0.65.2",
-		"@sinclair/typebox": "^0.34.49",
+		"typebox": "^1.1.24",
 		"typescript": "^5.9.3"
 	},
 	"license": "MIT",

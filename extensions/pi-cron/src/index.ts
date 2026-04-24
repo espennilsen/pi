@@ -19,7 +19,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { ensureTabFile, loadJobs, addJob, removeJob, updateJob, initTabPath, type CronJob } from "./crontab.ts";
 import { CronScheduler, validateCron } from "./scheduler.ts";

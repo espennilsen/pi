@@ -12,7 +12,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { resolveProject, listProjectDirs } from "./resolver.ts";
 import { detectStack, type ProjectProfile } from "./detector.ts";

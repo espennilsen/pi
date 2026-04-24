@@ -6,7 +6,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { Text } from "@mariozechner/pi-tui";
 import { generateAudio, type TtsResult } from "./tts-client.ts";
 import { resolveVoicePath, getAvailableVoices } from "./voices.ts";

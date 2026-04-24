@@ -20,7 +20,7 @@
     "@mariozechner/pi-coding-agent": "*"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.33",
+    "typebox": "^1.1.24",
     "better-sqlite3": "^11.9.1"
   },
   "devDependencies": {

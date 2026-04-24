@@ -15,7 +15,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { runIsolatedAgent } from "./runner.ts";

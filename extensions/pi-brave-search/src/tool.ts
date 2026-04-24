@@ -6,7 +6,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { search, type SearchOptions } from "./search.ts";
 
 function text(s: string) {

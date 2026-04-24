@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import * as http from "node:http";
 
 const POOL_PORT = process.env.PI_POOL_PORT;

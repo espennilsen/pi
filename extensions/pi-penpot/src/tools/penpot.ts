@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { apiGet, apiPost, apiDownload, isClientReady, getEndpoint } from "../client.ts";
 import { truncateHead, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@mariozechner/pi-coding-agent";

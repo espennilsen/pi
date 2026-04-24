@@ -29,7 +29,7 @@
 	},
 	"peerDependencies": {
 		"@mariozechner/pi-ai": "*",
-		"@sinclair/typebox": "*",
+		"typebox": "^1.1.24",
 		"@mariozechner/pi-coding-agent": "*"
 	},
 	"license": "MIT",

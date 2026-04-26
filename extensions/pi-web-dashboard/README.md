@@ -6,7 +6,8 @@ Live agent dashboard with SSE streaming for [pi](https://github.com/mariozechner
 
 - **Live event stream** — SSE feed of agent lifecycle events (start/end, turns, tool calls, responses)
 - **Prompt submission** — send prompts to the agent from the browser (rate-limited: 10/min per IP)
-- **Status endpoint** — check SSE client count and server time
+- **Slash command routing** — `/commands` are dispatched via event bus (extensions), expanded from disk (skills/templates), or sent as literal text (unknown)
+- **Command listing** — `GET /api/dashboard/commands` returns available slash commands for autocomplete
 - **Auto-cleanup** — closes all SSE connections on shutdown
 - **Requires [pi-webserver](../pi-webserver)** — mounts automatically when pi-webserver is ready
 
@@ -17,14 +18,18 @@ Mounts on pi-webserver at session start (listens for `web:ready`):
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/dashboard` | GET | Dashboard HTML (`dashboard.html`) |
+| `/api/dashboard/commands` | GET | List available slash commands |
 | `/api/dashboard/events` | GET | SSE event stream |
-| `/api/dashboard/prompt` | POST | Submit a prompt `{ "prompt": "..." }` |
+| `/api/dashboard/prompt` | POST | Submit a prompt — auto-routes `/commands` |
+| `/api/dashboard/stop` | POST | Abort the running agent |
 | `/api/dashboard/config` | GET | Status: SSE client count, server time |
 
 ### SSE events
 
 | Event type | Fields | Description |
 |------------|--------|-------------|
+| `user_message` | `text`, `time` | User submitted a prompt (non-command) |
+| `command_dispatched` | `command`, `args`, `time` | Slash command routed (extension/skill/template) |
 | `connected` | `time` | Initial connection handshake |
 | `agent_start` | `time` | Agent loop started |
 | `agent_end` | `time` | Agent loop finished |

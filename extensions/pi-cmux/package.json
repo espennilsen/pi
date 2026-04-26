@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-cmux",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "cmux terminal app integration for pi — notifications, pane management, screen reading, and browser automation",
   "type": "module",
   "keywords": [

@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-jobs",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Agent run tracking extension for pi — job history, cost analysis, and session telemetry",
 	"type": "module",
 	"keywords": [

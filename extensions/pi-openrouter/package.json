@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-openrouter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenRouter provider with OAuth PKCE and dynamic model filtering",
   "type": "module",
   "license": "MIT",
@@ -10,9 +10,18 @@
     "url": "https://github.com/espennilsen/pi",
     "directory": "extensions/pi-openrouter"
   },
-  "keywords": ["pi", "openrouter", "llm", "ai", "oauth", "provider"],
+  "keywords": [
+    "pi",
+    "openrouter",
+    "llm",
+    "ai",
+    "oauth",
+    "provider"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -25,5 +34,10 @@
   "devDependencies": {
     "typescript": "^5.9.3"
   },
-  "files": ["CHANGELOG.md", "README.md", "package.json", "src"]
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ]
 }

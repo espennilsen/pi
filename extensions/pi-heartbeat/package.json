@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-heartbeat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Periodic health check extension for pi — runs a heartbeat prompt as an isolated subprocess",
   "type": "module",
   "keywords": [

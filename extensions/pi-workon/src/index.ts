@@ -73,14 +73,14 @@ export default function (pi: ExtensionAPI) {
 
 		// Event bus listener for web/mobile slash command support
 		pi.events.on("command:workon", (data: unknown) => {
-			const { args } = data as { args: string };
+			const { args, source } = data as { args: string; source?: string };
 			const project = args?.trim();
 			if (!project) {
 				pi.sendMessage({ customType: "command_result", content: "Usage: /workon <project-name>", display: true, details: { type: "info" } });
 				return;
 			}
 			pi.sendMessage({ customType: "command_result", content: `Switching to ${project}…`, display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "workon", message: `Switching to ${project}…`, type: "info" });
+			pi.events.emit("command_result", { command: "workon", message: `Switching to ${project}…`, type: "info", source: source ?? "" });
 			pi.sendUserMessage(`/workon ${project}`, { deliverAs: "followUp" });
 		});
 

@@ -115,13 +115,13 @@ export default function (pi: ExtensionAPI) {
 
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:openrouter", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		const cmd = rawArgs?.trim().toLowerCase();
 		const shimmedCtx = {
 			ui: {
 				notify: (msg: string, type?: "info" | "error" | "warning") => {
 					pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type: type ?? "info" } });
-					pi.events.emit("command_result", { command: "openrouter", message: msg, type: type ?? "info" });
+					pi.events.emit("command_result", { command: "openrouter", message: msg, type: type ?? "info", source: source ?? "" });
 				},
 			},
 		};

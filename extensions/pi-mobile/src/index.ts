@@ -246,7 +246,7 @@ async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath:
 				if (route.action === "event-bus") {
 					// Extension command — emit on event bus
 					const parsed = parseCommand(prompt.trim())!;
-					_pi.events.emit(route.eventName!, { args: parsed.args });
+					_pi.events.emit(route.eventName!, { args: parsed.args, source: "pi-mobile" });
 					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 200, { ok: true, dispatched: true, command: parsed.name, source: "extension" });
 					return;
@@ -829,8 +829,11 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Command result forwarding ──────────────────────────────
 	// When extensions send command_result via pi.sendMessage(), forward to SSE clients.
+	// Only forward results intended for this extension (source matching).
 	pi.events.on("command_result", (data: unknown) => {
-		const d = data as { command?: string; message?: string; type?: string };
+		const d = data as { command?: string; message?: string; type?: string; source?: string };
+		// Only forward if source is empty (TUI/channels) or matches pi-mobile
+		if (d.source && d.source !== "pi-mobile") return;
 		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
 	});
 

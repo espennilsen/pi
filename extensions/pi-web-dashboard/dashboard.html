@@ -227,6 +227,18 @@
   .prompt-spinner.visible { display: block; }
   @keyframes promptSpin { to { transform: rotate(360deg); } }
 
+  /* ── Command autocomplete ─────────────────────────── */
+  .cmd-dropdown { position: absolute; bottom: 100%; left: 0; right: 0; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; max-height: 240px; overflow-y: auto; display: none; z-index: 10; box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
+  .cmd-dropdown.visible { display: block; }
+  .cmd-item { display: flex; align-items: baseline; padding: 8px 12px; cursor: pointer; gap: 8px; }
+  .cmd-item:hover, .cmd-item.active { background: var(--hover); }
+  .cmd-item .cmd-name { color: var(--accent); font-weight: 600; font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; white-space: nowrap; }
+  .cmd-item .cmd-desc { color: var(--fg3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmd-item .cmd-source { font-size: 10px; font-weight: 600; margin-left: auto; border-radius: 3px; padding: 1px 5px; text-transform: uppercase; }
+  .cmd-item .cmd-source.source-extension { background: rgba(124,111,240,0.15); color: #7c6ff0; }
+  .cmd-item .cmd-source.source-skill { background: rgba(52,211,153,0.15); color: #34d399; }
+  .cmd-item .cmd-source.source-prompt { background: rgba(251,191,36,0.15); color: #fbbf24; }
+
   /* ── Events ─────────────────────────────────────────── */
   .events-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
   .events-filters { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -304,7 +316,8 @@
       </div>
       <div class="chat-body" id="chat-body"></div>
       <div class="live-body" id="live-body" style="display:none"></div>
-      <div class="prompt-bar">
+      <div class="prompt-bar" style="position:relative;">
+        <div class="cmd-dropdown" id="cmd-dropdown"></div>
         <textarea id="prompt-input" placeholder="Send a prompt to the agent…" autocomplete="off" rows="1"></textarea>
         <span class="prompt-spinner" id="prompt-spinner"></span>
         <button class="prompt-stop" id="prompt-stop">⬛ Stop</button>
@@ -814,6 +827,10 @@ function handleSSE(d) {
       messageStore.addUserMessage(d.text, d.time);
       break;
 
+    case 'command_dispatched':
+      handleCommandEvent(d);
+      break;
+
     case 'turn_start':
       messageStore.startAssistantMessage(d.turn);
       break;
@@ -937,6 +954,7 @@ async function sendPrompt() {
     });
     if (res.ok) {
       promptInput.value = '';
+      hideCmdDropdown();
       autoGrowTextarea();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -956,6 +974,75 @@ promptInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
   // Shift+Enter: default textarea behaviour inserts a newline
 });
+
+// ── Command autocomplete ────────────────────────────
+const cmdDropdown = $('cmd-dropdown');
+let cmdList = [];
+let cmdActiveIndex = -1;
+let cmdVisible = false;
+
+async function loadCommands() {
+  try {
+    const res = await fetch('/api/dashboard/commands');
+    if (res.ok) { const data = await res.json(); cmdList = data.commands || []; }
+  } catch {}
+}
+loadCommands();
+
+function showCmdDropdown(filter) {
+  if (!filter.startsWith('/')) { hideCmdDropdown(); return; }
+  const query = filter.slice(1).toLowerCase();
+  const matches = cmdList.filter(c => c.name.toLowerCase().startsWith(query) || (c.description || '').toLowerCase().includes(query)).slice(0, 8);
+  if (!matches.length || (matches.length === 1 && '/' + matches[0].name === filter)) { hideCmdDropdown(); return; }
+  cmdActiveIndex = -1;
+  cmdDropdown.innerHTML = matches.map((c, i) =>
+    `<div class="cmd-item" data-index="${i}" data-name="${c.name}" data-source="${c.source}">` +
+    `<span class="cmd-name">/${c.name}</span>` +
+    `<span class="cmd-desc">${esc(c.description || '')}</span>` +
+    `<span class="cmd-source source-${c.source}">${c.source}</span></div>`
+  ).join('');
+  cmdDropdown.classList.add('visible');
+  cmdVisible = true;
+  // Click handler for dropdown items
+  cmdDropdown.querySelectorAll('.cmd-item').forEach(el => {
+    el.addEventListener('click', () => {
+      promptInput.value = '/' + el.dataset.name + ' ';
+      hideCmdDropdown();
+      promptInput.focus();
+    });
+  });
+}
+
+function hideCmdDropdown() {
+  cmdDropdown.classList.remove('visible');
+  cmdVisible = false;
+  cmdActiveIndex = -1;
+}
+
+promptInput.addEventListener('input', () => showCmdDropdown(promptInput.value.trim()));
+promptInput.addEventListener('keydown', (e) => {
+  if (!cmdVisible) return;
+  const items = cmdDropdown.querySelectorAll('.cmd-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); cmdActiveIndex = Math.min(cmdActiveIndex + 1, items.length - 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdActiveIndex = Math.max(cmdActiveIndex - 1, 0); }
+  else if (e.key === 'Escape') { e.preventDefault(); hideCmdDropdown(); return; }
+  else if (e.key === 'Tab' || (e.key === 'Enter' && cmdActiveIndex >= 0)) {
+    e.preventDefault();
+    const idx = cmdActiveIndex >= 0 ? cmdActiveIndex : 0;
+    const item = items[idx];
+    if (item) { promptInput.value = '/' + item.dataset.name + ' '; hideCmdDropdown(); promptInput.focus(); }
+    return;
+  }
+  else return;
+  items.forEach((el, i) => el.classList.toggle('active', i === cmdActiveIndex));
+});
+
+// Handle SSE command_dispatched events
+function handleCommandEvent(data) {
+  if (data.type === 'command_dispatched') {
+    addEvent('info', `⚡ /${data.command} dispatched` + (data.args ? ' ' + esc(data.args) : ''));
+  }
+}
 
 promptStop.addEventListener('click', async () => {
   try {

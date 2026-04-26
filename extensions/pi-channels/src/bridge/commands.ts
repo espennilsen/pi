@@ -1,12 +1,13 @@
 /**
  * pi-channels — Bot command handler.
  *
- * Detects messages starting with / and handles them without routing
- * to the agent. Provides built-in commands and a registry for custom ones.
- *
- * Built-in: /start, /help, /abort, /status, /new
+ * Detects messages starting with / and handles them:
+ *   1. Built-in commands (start, help, abort, status, new)
+ *   2. Registered pi slash commands (extension, skill, prompt)
+ *   3. Unrecognized — fall through to agent
  */
 
+import * as fs from "node:fs";
 import type { SenderSession } from "../types.ts";
 
 export interface BotCommand {
@@ -21,6 +22,28 @@ export interface CommandContext {
 	resetSession: (sender: string) => void;
 	/** Check if a given sender is using persistent (RPC) mode. */
 	isPersistent: (sender: string) => boolean;
+	/** Available pi slash commands for help display. */
+	slashCommands?: SlashCommandInfo[];
+}
+
+/** Slash command info, mirrors pi's SlashCommandInfo but simplified for transport. */
+export interface SlashCommandInfo {
+	name: string;
+	description?: string;
+	source: "extension" | "prompt" | "skill";
+	sourceInfo: {
+		path: string;
+		baseDir?: string;
+	};
+}
+
+/** Result of routing a slash command. */
+export interface CommandRouteResult {
+	action: "handled" | "unknown";
+	/** For extension commands, the event name to emit. */
+	eventName?: string;
+	/** For skill/prompt commands, the expanded text to use as prompt. */
+	expandedText?: string;
 }
 
 const commands = new Map<string, BotCommand>();
@@ -48,8 +71,8 @@ export function getAllCommands(): BotCommand[] {
 }
 
 /**
- * Handle a command. Returns reply text, or null if unrecognized
- * (fall through to agent).
+ * Handle a built-in command. Returns reply text, or null if unrecognized
+ * (fall through to slash command routing or agent).
  */
 export function handleCommand(
 	text: string,
@@ -64,6 +87,118 @@ export function handleCommand(
 	return cmd.handler(args, session, ctx);
 }
 
+/**
+ * Route a slash command against pi's registered slash commands.
+ * Returns the routing decision for the caller to act on.
+ */
+export function routeSlashCommand(
+	text: string,
+	slashCommands: SlashCommandInfo[],
+): CommandRouteResult | null {
+	const parsed = parseCommand(text);
+	if (!parsed.command) return null;
+
+	const cmd = slashCommands.find(c => c.name === parsed.command);
+	if (!cmd) return null;
+
+	if (cmd.source === "extension") {
+		return {
+			action: "handled",
+			eventName: `command:${parsed.command}`,
+		};
+	}
+
+	if (cmd.source === "skill") {
+		const expandedText = expandSkill(cmd.sourceInfo.path, parsed.args, cmd.sourceInfo.baseDir);
+		if (expandedText) {
+			return { action: "handled", expandedText };
+		}
+		return null;
+	}
+
+	if (cmd.source === "prompt") {
+		const expandedText = expandPrompt(cmd.sourceInfo.path, parsed.args);
+		if (expandedText) {
+			return { action: "handled", expandedText };
+		}
+		return null;
+	}
+
+	return null;
+}
+
+/** Try to expand a skill command by reading the SKILL.md file. */
+function expandSkill(skillPath: string, args: string, baseDir?: string): string | null {
+	try {
+		if (!fs.existsSync(skillPath)) return null;
+		let content = fs.readFileSync(skillPath, "utf-8");
+		// Strip YAML frontmatter
+		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+		if (fmMatch) content = content.slice(fmMatch[0].length);
+		content = content.trim();
+		if (!content) return null;
+		const dir = baseDir || skillPath.replace(/\/[^/]+$/, "");
+		const block = `<skill name="${skillPath}" location="${skillPath}">\nReferences are relative to ${dir}.\n\n${content}\n</skill>`;
+		return args ? `${block}\n\n${args}` : block;
+	} catch {
+		return null;
+	}
+}
+
+/** Try to expand a prompt command by reading the template file and substituting args. */
+function expandPrompt(promptPath: string, argsString: string): string | null {
+	try {
+		if (!fs.existsSync(promptPath)) return null;
+		let content = fs.readFileSync(promptPath, "utf-8");
+		// Strip YAML frontmatter
+		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+		if (fmMatch) content = content.slice(fmMatch[0].length);
+		content = content.trim();
+		if (!content) return null;
+
+		// Parse bash-style args
+		const args = parseCommandArgs(argsString);
+
+		// Substitute $1, $@, $ARGUMENTS, ${@:N}, ${@:N:L}
+		content = content.replace(/\$(\d+)/g, (_, num: string) => args[parseInt(num, 10) - 1] ?? "");
+		content = content.replace(/\$\{@:(\d+)(?::(\d+))?\}/g, (_, startStr: string, lengthStr?: string) => {
+			let start = parseInt(startStr, 10) - 1;
+			if (start < 0) start = 0;
+			if (lengthStr) return args.slice(start, start + parseInt(lengthStr, 10)).join(" ");
+			return args.slice(start).join(" ");
+		});
+		const allArgs = args.join(" ");
+		content = content.replace(/\$ARGUMENTS/g, allArgs);
+		content = content.replace(/\$@/g, allArgs);
+
+		return content;
+	} catch {
+		return null;
+	}
+}
+
+/** Bash-style argument parsing — respects quoted strings. */
+function parseCommandArgs(argsString: string): string[] {
+	const args: string[] = [];
+	let current = "";
+	let inQuote: string | null = null;
+	for (let i = 0; i < argsString.length; i++) {
+		const char = argsString[i];
+		if (inQuote) {
+			if (char === inQuote) inQuote = null;
+			else current += char;
+		} else if (char === '"' || char === "'") {
+			inQuote = char;
+		} else if (char === " " || char === "\t") {
+			if (current) { args.push(current); current = ""; }
+		} else {
+			current += char;
+		}
+	}
+	if (current) args.push(current);
+	return args;
+}
+
 // ── Built-in commands ───────────────────────────────────────────
 
 registerCommand({
@@ -71,15 +206,27 @@ registerCommand({
 	description: "Welcome message",
 	handler: () =>
 		"👋 Hi! I'm your Pi assistant.\n\n" +
-		"Send me a message and I'll process it. Use /help to see available commands.",
+		"Send me a message and I'll process it. Use /help to see available commands.\n" +
+		"You can also use any /command registered in pi (e.g. /model, /workon).",
 });
 
 registerCommand({
 	name: "help",
 	description: "Show available commands",
-	handler: () => {
+	handler: (_args, _session, ctx) => {
 		const lines = getAllCommands().map((c) => `/${c.name} — ${c.description}`);
-		return `**Available commands:**\n\n${lines.join("\n")}`;
+		const builtIn = lines.length > 0
+			? `**Built-in:**\n${lines.join("\n")}`
+			: "";
+
+		const slashLines = (ctx.slashCommands ?? [])
+			.filter(c => c.source !== "extension")
+			.map(c => `/${c.name}${c.description ? ` — ${c.description}` : ""}`);
+		const slashSection = slashLines.length > 0
+			? `\n**Slash commands:**\n${slashLines.join("\n")}`
+			: "";
+
+		return [builtIn, slashSection, ``, `Type / followed by any pi slash command (e.g. /model, /workon).`].filter(Boolean).join("\n");
 	},
 });
 

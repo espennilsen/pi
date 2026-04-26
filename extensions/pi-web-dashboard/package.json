@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-web-dashboard",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Live agent dashboard for pi — SSE streaming, session view, and prompt submission",
 	"type": "module",
 	"keywords": [

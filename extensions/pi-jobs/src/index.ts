@@ -40,7 +40,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = resolveSettings(ctx.cwd);
 
 		if (settings.useKysely) {
@@ -121,7 +121,7 @@ export default function (pi: ExtensionAPI) {
 			];
 			return items.filter((i) => i.value.startsWith(prefix));
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			try {
 				const { getJobsStore } = await import("./store.ts");
 				const store = getJobsStore();
@@ -138,5 +138,24 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`pi-jobs: ${e.message}`, "error");
 			}
 		},
+	});
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:jobs", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		try {
+			const { getJobsStore } = await import("./store.ts");
+			const store = getJobsStore();
+			const channel = rawArgs?.trim() || undefined;
+			const totals = await store.getTotals(channel);
+			const label = channel ? ` (${channel})` : "";
+			const lines = [
+				`Jobs${label}: ${totals.jobs} runs · ${totals.errors} errors`,
+				`Tokens: ${totals.tokens.toLocaleString()} · Cost: $${totals.cost.toFixed(4)}`,
+				`Tools: ${totals.toolCalls} calls · Avg: ${(totals.avgDurationMs / 1000).toFixed(1)}s`,
+			];
+			pi.sendMessage({ customType: "command_result", content: lines.join("\n"), display: true, details: { type: "info" } });
+		} catch (e: any) {
+			pi.sendMessage({ customType: "command_result", content: `pi-jobs: ${e.message}`, display: true, details: { type: "error" } });
+		}
 	});
 }

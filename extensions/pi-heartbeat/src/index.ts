@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		cwd = ctx.cwd;
 		const settings = resolveSettings(cwd);
 
@@ -179,7 +179,7 @@ export default function (pi: ExtensionAPI) {
 			];
 			return items.filter((i) => i.value.startsWith(prefix));
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const arg = args?.trim().toLowerCase();
 
 			if (arg === "on" || arg === "start") {
@@ -235,5 +235,61 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		},
+	});
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:heartbeat", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const arg = rawArgs?.trim().toLowerCase();
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (arg === "on" || arg === "start") {
+			const result = startHeartbeat();
+			notify(result, result.startsWith("✓") ? "info" : "error");
+		} else if (arg === "off" || arg === "stop") {
+			const result = stopHeartbeat();
+			notify(result, result.startsWith("✓") ? "info" : "error");
+		} else if (arg === "run" || arg === "now") {
+			if (!runner) runner = createRunner();
+			notify("Running heartbeat check…");
+			const result = await runner.runNow();
+			const msg = result.ok
+				? `✅ HEARTBEAT_OK (${(result.durationMs / 1000).toFixed(1)}s)`
+				: `🫀 Alert (${(result.durationMs / 1000).toFixed(1)}s):\n${result.response.slice(0, 200)}`;
+			notify(msg, result.ok ? "info" : "warning");
+		} else {
+			const s = runner?.getStatus();
+			if (!s || !s.active) {
+				notify("Heartbeat: inactive. Use /heartbeat on to start.");
+			} else {
+				let runCount = s.runCount;
+				let okCount = s.okCount;
+				let alertCount = s.alertCount;
+				let lastRunStr = s.lastRun ? s.lastRun.toLocaleTimeString() : null;
+				let lastOkLabel = s.lastResult?.ok ? "OK" : "alert";
+
+				if (isStoreReady()) {
+					try {
+						const dbStats = await getStore().getStats();
+						runCount = dbStats.runCount;
+						okCount = dbStats.okCount;
+						alertCount = dbStats.alertCount;
+						if (dbStats.lastRun) {
+							lastRunStr = new Date(dbStats.lastRun).toLocaleTimeString();
+							lastOkLabel = dbStats.lastOk ? "OK" : "alert";
+						}
+					} catch { /* fall back to in-memory */ }
+				}
+
+				const lines = [
+					`Heartbeat: ✅ active (every ${s.intervalMinutes}m)`,
+					`Runs: ${runCount} · OK: ${okCount} · Alerts: ${alertCount}`,
+					lastRunStr ? `Last: ${lastRunStr} (${lastOkLabel})` : "No runs yet",
+				];
+				notify(lines.join("\n"));
+			}
+		}
 	});
 }

@@ -27,7 +27,7 @@ export default function (pi: ExtensionAPI) {
 
 	let settings: BraveSearchSettings = {};
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		settings = getSettings(ctx.cwd);
 
 		if (settings.apiKey) {
@@ -52,7 +52,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("search", {
 		description: "Search the web: /search <query>",
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const query = args?.trim();
 			if (!query) {
 				ctx.ui.notify("Usage: /search <query>", "error");
@@ -89,5 +89,44 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.notify(lines.join("\n\n"), "info");
 		},
+	});
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:search", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const query = rawArgs?.trim();
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (!query) {
+			notify("Usage: /search <query>", "error");
+			return;
+		}
+
+		if (!settings.apiKey) {
+			notify("Brave Search API key not configured.\nAdd to settings: \"pi-brave-search\": {\"apiKey\": \"YOUR_KEY\"}\nGet a key at https://brave.com/search/api/", "error");
+			return;
+		}
+
+		const response = await search(settings.apiKey, {
+			query,
+			count: settings.defaultCount ?? 5,
+			safesearch: settings.safesearch as "off" | "moderate" | "strict" ?? "moderate",
+		});
+
+		if (response.error) {
+			notify(`Search error: ${response.error}`, "error");
+			return;
+		}
+
+		if (response.results.length === 0) {
+			notify(`No results for: ${query}`);
+			return;
+		}
+
+		const lines = response.results.map((r, i) =>
+			`${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description}${r.age ? ` (${r.age})` : ""}`,
+		);
+		notify(lines.join("\n\n"));
 	});
 }

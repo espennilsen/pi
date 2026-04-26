@@ -77,7 +77,7 @@ export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 
 	// Initialize DB on session start
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = getSettings(ctx.cwd);
 
 		if (settings.useKysely) {
@@ -146,7 +146,7 @@ export default function (pi: ExtensionAPI) {
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const arg = args?.trim() ?? "";
 
 			// /crm-web status
@@ -193,7 +193,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("crm-export", {
 		description: "Export CRM contacts as CSV to stdout",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string | undefined, ctx: any) => {
 			const { getCrmStore } = await import("./store.ts");
 			const csv = await getCrmStore().exportContactsCsv();
 			const lines = csv.split("\n");
@@ -210,7 +210,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("crm-import", {
 		description: "Import contacts from a CSV file: /crm-import path/to/file.csv",
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			if (!args) {
 				ctx.ui.notify("Usage: /crm-import path/to/file.csv", "error");
 				return;
@@ -235,6 +235,69 @@ export default function (pi: ExtensionAPI) {
 			}
 			ctx.ui.notify(msg, result.errors.length > 0 ? "warning" : "info");
 		},
+	});
+
+
+	// Event bus listeners for web/mobile slash command support
+	pi.events.on("command:crm-web", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const arg = rawArgs?.trim() ?? "";
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (arg === "status") {
+			const lines: string[] = [];
+			if (isMountedOnWebServer()) { lines.push("Mounted on pi-webserver at /crm"); }
+			if (lines.length === 0) {
+				lines.push("CRM web UI is not running");
+				lines.push("Use /crm-web [port] to start standalone, or install pi-webserver");
+			}
+			notify(lines.join("\n"));
+			return;
+		}
+		if (arg === "stop") {
+			const was = stopStandaloneServer();
+			notify(was ? "CRM standalone server stopped" : "Standalone server is not running");
+			return;
+		}
+		const port = parseInt(arg || "4100") || 4100;
+		const running = stopStandaloneServer();
+		if (running && !arg) { notify("CRM standalone server stopped"); return; }
+		const url = startStandaloneServer(port);
+		let msg = `CRM web UI: ${url}`;
+		if (isMountedOnWebServer()) { msg += "\n(Also available via pi-webserver at /crm)"; }
+			notify(msg);
+	});
+
+	pi.events.on("command:crm-export", async (_data: unknown) => {
+		const { getCrmStore } = await import("./store.ts");
+		const csv = await getCrmStore().exportContactsCsv();
+		const lines = csv.split("\n");
+		pi.sendMessage({ customType: "command_result", content: `Exported ${lines.length - 1} contacts`, display: true, details: { type: "info" } });
+		const outPath = path.join(pi.cwd, "crm-contacts.csv");
+		fs.writeFileSync(outPath, csv, "utf-8");
+		pi.sendMessage({ customType: "command_result", content: `Saved to ${outPath}`, display: true, details: { type: "info" } });
+	});
+
+	pi.events.on("command:crm-import", async (data: unknown) => {
+		const { args } = data as { args: string };
+		if (!args) {
+			pi.sendMessage({ customType: "command_result", content: "Usage: /crm-import path/to/file.csv", display: true, details: { type: "error" } });
+			return;
+		}
+		const filePath = path.resolve(args.trim());
+		if (!fs.existsSync(filePath)) {
+			pi.sendMessage({ customType: "command_result", content: `File not found: ${filePath}`, display: true, details: { type: "error" } });
+			return;
+		}
+		const { getCrmStore } = await import("./store.ts");
+		const csv = fs.readFileSync(filePath, "utf-8");
+		const result = await getCrmStore().importContactsCsv(csv);
+		let msg = `Created: ${result.created}, Skipped: ${result.skipped}`;
+		if (result.duplicates.length > 0) { msg += `, Duplicates: ${result.duplicates.length}`; }
+		if (result.errors.length > 0) { msg += `, Errors: ${result.errors.length}`; }
+		pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type: result.errors.length > 0 ? "warning" : "info" } });
 	});
 
 	// ── Cleanup ─────────────────────────────────────────────────

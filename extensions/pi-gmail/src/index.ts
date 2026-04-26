@@ -183,7 +183,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ───────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const agentDir = getAgentDir();
 		cachedSettings = getSettings(ctx.cwd);
 
@@ -232,7 +232,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("gmail-auth", {
 		description: "Connect your Gmail account via OAuth",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string | undefined, ctx: any) => {
 			const agentDir = getAgentDir();
 			const settings = getSettings(ctx.cwd);
 			const clientId = settings.clientId ?? "";
@@ -277,7 +277,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("gmail-logout", {
 		description: "Disconnect Gmail account",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string | undefined, ctx: any) => {
 			const agentDir = getAgentDir();
 			const email = getAuthenticatedEmail(agentDir);
 
@@ -302,7 +302,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("gmail-status", {
 		description: "Show Gmail connection status",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string | undefined, ctx: any) => {
 			const agentDir = getAgentDir();
 			if (isAuthenticated(agentDir)) {
 				const email = getAuthenticatedEmail(agentDir);
@@ -311,5 +311,17 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("⚠️ Gmail not connected. Run /gmail-auth to connect.", "info");
 			}
 		},
+	});
+
+	// Event bus listener for web/mobile slash command support
+	// Note: /gmail-auth and /gmail-logout need ctx.ui.confirm() — skipped
+	pi.events.on("command:gmail-status", async (_data: unknown) => {
+		const agentDir = getAgentDir();
+		if (isAuthenticated(agentDir)) {
+			const email = getAuthenticatedEmail(agentDir);
+			pi.sendMessage({ customType: "command_result", content: `✅ Gmail connected as ${email}`, display: true, details: { type: "info" } });
+		} else {
+			pi.sendMessage({ customType: "command_result", content: "⚠️ Gmail not connected. Run /gmail-auth to connect.", display: true, details: { type: "info" } });
+		}
 	});
 }

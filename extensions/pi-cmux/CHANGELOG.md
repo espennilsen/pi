@@ -10,13 +10,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Event bus command handlers now forward the `source` field, allowing web/mobile clients to route `command_result` events to the originating UI
-
-## [0.1.0] - 2026-02-18
-
-### Added
-
-- Initial release
-- OpenRouter provider with OAuth PKCE authentication via `/login openrouter-oauth`
-- Dynamic model discovery from OpenRouter API with local caching
-- Glob-pattern model filtering via `pi-openrouter.models` setting (default: all models)
-- `/openrouter refresh` command to fetch latest models from API

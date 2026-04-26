@@ -2212,4 +2212,6 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
 }

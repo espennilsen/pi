@@ -60,4 +60,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 
+
+	// Skipped: event bus command listeners — 6+ dual commands via registerDualCommand — needs manual implementation
 }

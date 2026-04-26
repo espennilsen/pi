@@ -162,4 +162,6 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(`Audio saved: ${result.file_path} (${sizeKb} KB)`, "info");
 		},
 	});
+
+	// Skipped: /tts event bus listener — needs ctx.sessionManager
 }

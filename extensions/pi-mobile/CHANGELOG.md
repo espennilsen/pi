@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Added
 
-- **Slash command support** — typing `/command` in the prompt bar now routes through the correct handler instead of sending literal text to the LLM:
+- **Slash command support** — typing `/command` in the chat input now routes through the correct handler instead of sending literal text to the LLM:
   - Extension commands (e.g. `/workon`, `/web`, `/compact`) are dispatched via the event bus (`command:<name>`)
-  - Skills (e.g. `/skill:handoff`) are expanded from disk and sent as a user message with arguments
+  - Skills (e.g. `/skill:handoff`) are expanded from disk and sent as a user message with arguments appended
   - Prompt templates (e.g. `/implement`) are expanded with argument substitution (`$1`, `$@`, `$ARGUMENTS`) and sent as a user message
   - Unknown `/commands` fall through as literal text
-- **`GET /api/dashboard/commands`** endpoint — returns available slash commands from `pi.getCommands()` for autocomplete UIs
-- **`command_dispatched` SSE event** — broadcast when a slash command is routed, so dashboard UIs can show feedback
+- **`GET /api/mobile/chat/commands`** endpoint — returns available slash commands from `pi.getCommands()` for autocomplete UIs
+- **`command_dispatched` SSE event** — broadcast when a slash command is routed, so mobile UIs can show feedback
 
-## [0.1.0] - 2026-02-17 (7839f93)
+## [0.1.0] - 2026-02-17
 
 ### Added
 

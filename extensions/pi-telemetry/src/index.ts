@@ -66,7 +66,7 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
   }
 
   // ── Session events ──────────────────────────────────────────────────
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (_event: any, ctx: any) => {
     loadConfigFromSettings();
 
     if (config.mode === "off") return;
@@ -159,7 +159,7 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
   // ── Command: /telemetry ─────────────────────────────────────────────
   pi.registerCommand("telemetry", {
     description: "View or change telemetry mode/level",
-    handler: async (args, ctx) => {
+    handler: async (args: string | undefined, ctx: any) => {
       if (!args || args.trim().length === 0) {
         ctx.ui.notify(`Telemetry: mode=${config.mode}, level=${config.level}`, "info");
         return;
@@ -177,4 +177,21 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
       ctx.ui.notify(`Telemetry updated: mode=${config.mode}, level=${config.level}`, "info");
     },
   });
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:telemetry", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		if (!rawArgs || rawArgs.trim().length === 0) {
+			pi.sendMessage({ customType: "command_result", content: `Telemetry: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry: mode=${config.mode}, level=${config.level}`, type: "info" });
+			return;
+		}
+		const parts = rawArgs.trim().split(/\s+/);
+		for (const part of parts) {
+			if (part === "on" || part === "off") { config.mode = part; }
+			else if (["NONE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"].includes(part.toUpperCase())) { config.level = part.toUpperCase() as TelemetryLevel; }
+		}
+		pi.sendMessage({ customType: "command_result", content: `Telemetry updated: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry updated: mode=${config.mode}, level=${config.level}`, type: "info" });
+	});
 }

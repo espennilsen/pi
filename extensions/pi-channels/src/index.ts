@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const config = loadConfig(ctx.cwd);
 		registry.setModelRegistry(ctx.modelRegistry);
 		await registry.loadConfig(config, ctx.cwd);
@@ -115,7 +115,7 @@ export default function (pi: ExtensionAPI) {
 				.filter(c => c.startsWith(prefix))
 				.map(c => ({ value: c, label: c }));
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const cmd = args?.trim().toLowerCase();
 
 			if (cmd === "on") {
@@ -162,4 +162,38 @@ export default function (pi: ExtensionAPI) {
 	// ── LLM tool ──────────────────────────────────────────────
 
 	registerChannelTool(pi, registry);
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:chat-bridge", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const cmd = rawArgs?.trim().toLowerCase();
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "chat-bridge", message: msg, type });
+		};
+
+		if (cmd === "on") {
+			if (!bridge) { notify("Chat bridge not initialized — no channel config?", "warning"); return; }
+			if (bridge.isActive()) { notify("Chat bridge is already running."); return; }
+			bridge.start();
+			notify("✓ Chat bridge started");
+			return;
+		}
+		if (cmd === "off") {
+			if (!bridge?.isActive()) { notify("Chat bridge is not running."); return; }
+			bridge.stop();
+			notify("✓ Chat bridge stopped");
+			return;
+		}
+		// Default: status
+		if (!bridge) { notify("Chat bridge: not initialized"); return; }
+		const stats = bridge.getStats();
+		const lines = [
+			`Chat bridge: ${stats.active ? "🟢 Active" : "⚪ Inactive"}`,
+			`Sessions: ${stats.sessions}`,
+			`Active prompts: ${stats.activePrompts}`,
+			`Queued: ${stats.totalQueued}`,
+		];
+		notify(lines.join("\n"));
+	});
 }

@@ -540,4 +540,6 @@ export default function (pi: ExtensionAPI) {
 		closeDb();
 		setFinanceStore(null);
 	});
+
+	// Skipped: event bus command listeners — 14 finance commands — needs manual implementation
 }

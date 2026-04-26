@@ -8,6 +8,8 @@
  *   Page: /mobile/screens/*.js  — Screen modules
  *   API:  /api/mobile/health   — Health check
  *   API:  /api/mobile/chat/*   — Chat proxy (prompt submission)
+ *   API:  /api/mobile/chat/commands — List available slash commands
+ *   API:  /api/mobile/chat/prompt   — Submit prompt (auto-routes /commands)
  *   API:  /api/mobile/status   — Agent status
  *   API:  /api/mobile/td/*     — Task management proxy
  *   API:  /api/mobile/files/*  — File browser
@@ -23,7 +25,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, SlashCommandInfo } from "@mariozechner/pi-coding-agent";
 
 // ── Static files ─────────────────────────────────────────────
 
@@ -82,6 +84,113 @@ function readBody(req: IncomingMessage): Promise<string> {
 	});
 }
 
+// ── Slash command routing ─────────────────────────────────────
+
+/** Parse a slash command string into name and args. */
+function parseCommand(text: string): { name: string; args: string } | null {
+	const trimmed = text.trim();
+	if (!trimmed.startsWith("/")) return null;
+
+	if (trimmed.startsWith("/skill:")) {
+		const rest = trimmed.slice(7);
+		const spaceIndex = rest.indexOf(" ");
+		if (spaceIndex === -1) return { name: `skill:${rest}`, args: "" };
+		return { name: `skill:${rest.slice(0, spaceIndex)}`, args: rest.slice(spaceIndex + 1) };
+	}
+
+	const spaceIndex = trimmed.indexOf(" ");
+	if (spaceIndex === -1) return { name: trimmed.slice(1), args: "" };
+	return { name: trimmed.slice(1, spaceIndex), args: trimmed.slice(spaceIndex + 1) };
+}
+
+/** Strip YAML frontmatter from file content. */
+function stripFrontmatter(content: string): string {
+	const match = content.match(/^---\n([\s\S]*?)\n---\n?/);
+	if (!match) return content;
+	return content.slice(match[0].length);
+}
+
+/** Bash-style argument parsing — respects quoted strings. */
+function parseCommandArgs(argsString: string): string[] {
+	const args: string[] = [];
+	let current = "";
+	let inQuote: string | null = null;
+	for (let i = 0; i < argsString.length; i++) {
+		const char = argsString[i];
+		if (inQuote) {
+			if (char === inQuote) inQuote = null;
+			else current += char;
+		} else if (char === '"' || char === "'") {
+			inQuote = char;
+		} else if (char === ' ' || char === '\t') {
+			if (current) { args.push(current); current = ""; }
+		} else {
+			current += char;
+		}
+	}
+	if (current) args.push(current);
+	return args;
+}
+
+/** Substitute $1, $@, $ARGUMENTS, ${@:N}, ${@:N:L} in template content. */
+function substituteArgs(content: string, args: string[]): string {
+	let result = content;
+	result = result.replace(/\$(\d+)/g, (_, num: string) => args[parseInt(num, 10) - 1] ?? "");
+	result = result.replace(/\$\{@:(\d+)(?::(\d+))?\}/g, (_, startStr: string, lengthStr?: string) => {
+		let start = parseInt(startStr, 10) - 1;
+		if (start < 0) start = 0;
+		if (lengthStr) return args.slice(start, start + parseInt(lengthStr, 10)).join(" ");
+		return args.slice(start).join(" ");
+	});
+	const allArgs = args.join(" ");
+	result = result.replace(/\$ARGUMENTS/g, allArgs);
+	result = result.replace(/\$@/g, allArgs);
+	return result;
+}
+
+/** Determine how to route a slash command. */
+function routeCommand(text: string, commands: SlashCommandInfo[]): {
+	action: "event-bus" | "expand-and-send" | "unknown";
+	eventName?: string;
+	expandedText?: string;
+	info?: SlashCommandInfo;
+} {
+	const parsed = parseCommand(text);
+	if (!parsed) return { action: "unknown" };
+
+	const cmd = commands.find(c => c.name === parsed.name);
+	if (!cmd) return { action: "unknown" };
+
+	if (cmd.source === "extension") {
+		return { action: "event-bus", eventName: `command:${parsed.name}`, info: cmd };
+	}
+
+	if (cmd.source === "skill") {
+		try {
+			const content = fs.readFileSync(cmd.sourceInfo.path, "utf-8");
+			const body = stripFrontmatter(content).trim();
+			const baseDir = cmd.sourceInfo.baseDir || cmd.sourceInfo.path.replace(/\/[^\/]+$/, "");
+			const block = `<skill name="${parsed.name.replace("skill:", "")}" location="${cmd.sourceInfo.path}">\nReferences are relative to ${baseDir}.\n\n${body}\n</skill>`;
+			return { action: "expand-and-send", expandedText: parsed.args ? `${block}\n\n${parsed.args}` : block, info: cmd };
+		} catch {
+			return { action: "unknown" };
+		}
+	}
+
+	if (cmd.source === "prompt") {
+		try {
+			const content = fs.readFileSync(cmd.sourceInfo.path, "utf-8");
+			const body = stripFrontmatter(content).trim();
+			const args = parseCommandArgs(parsed.args);
+			return { action: "expand-and-send", expandedText: substituteArgs(body, args), info: cmd };
+		} catch {
+			return { action: "unknown" };
+		}
+	}
+
+	return { action: "unknown" };
+}
+
 // ── API: Chat ────────────────────────────────────────────────
 
 let _pi: ExtensionAPI | null = null;
@@ -110,6 +219,15 @@ function broadcast(data: unknown): void {
 }
 
 async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath: string): Promise<void> {
+	// GET /commands — list available slash commands
+	if (subPath === "/commands" && req.method === "GET") {
+		if (!_pi) { json(res, 503, { error: "Agent not ready" }); return; }
+		const commands = _pi.getCommands();
+		json(res, 200, { commands });
+		return;
+	}
+
+	// POST /prompt — submit a prompt (handles slash commands)
 	if (subPath === "/prompt" && req.method === "POST") {
 		try {
 			const body = JSON.parse(await readBody(req));
@@ -119,7 +237,32 @@ async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath:
 				json(res, 400, { error: "Missing 'prompt' string in request body" });
 				return;
 			}
-			// Inject the message into the main agent conversation
+
+			// Route slash commands through event bus or expansion
+			if (prompt.trim().startsWith("/")) {
+				const commands = _pi.getCommands();
+				const route = routeCommand(prompt.trim(), commands);
+
+				if (route.action === "event-bus") {
+					// Extension command — emit on event bus
+					const parsed = parseCommand(prompt.trim())!;
+					_pi.events.emit(route.eventName!, { args: parsed.args });
+					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
+					json(res, 200, { ok: true, dispatched: true, command: parsed.name, source: "extension" });
+					return;
+				}
+
+				if (route.action === "expand-and-send") {
+					// Skill or prompt template — expand and send as user message
+					_pi.sendUserMessage(route.expandedText!);
+					const parsed = parseCommand(prompt.trim())!;
+					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
+					json(res, 200, { ok: true, dispatched: true, command: parsed.name, source: route.info?.source });
+					return;
+				}
+			}
+
+			// Regular prompt — no matching slash command, send as-is
 			_pi.sendMessage(
 				{
 					customType: "mobile-prompt",
@@ -682,6 +825,13 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		broadcast({ type: "tool_end", toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError, content });
+	});
+
+	// ── Command result forwarding ──────────────────────────────
+	// When extensions send command_result via pi.sendMessage(), forward to SSE clients.
+	pi.events.on("command_result", (data: unknown) => {
+		const d = data as { command?: string; message?: string; type?: string };
+		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
 	});
 
 	// ── Log event forwarding ──────────────────────────────

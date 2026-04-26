@@ -6,7 +6,7 @@ PWA mobile app for Pi coding agents. Mounts on pi-webserver at `/mobile`, giving
 
 | Tab | Description |
 |-----|-------------|
-| 💬 **Chat** | Send messages with streaming responses via SSE |
+| 💬 **Chat** | Send messages with streaming responses via SSE. Type `/commands` to invoke extension commands, skills, or prompt templates |
 | 📊 **Status** | Agent health, system metrics, uptime, tool count |
 | 📋 **Tasks** | td issue list with filters, create/update tasks |
 | 📁 **Files** | Browse workspace files, view content |

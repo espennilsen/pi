@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-mobile",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "PWA mobile app for Pi agents — mounts on pi-webserver at /mobile",
 	"type": "module",
 	"keywords": [

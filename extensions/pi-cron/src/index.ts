@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		cwd = ctx.cwd;
 		initTabPath(cwd);
 		initLockPath(cwd);
@@ -215,7 +215,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("cron", {
 		description: "Toggle cron scheduler: /cron on | /cron off | /cron status",
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const arg = args?.trim().toLowerCase();
 
 			if (arg === "on" || arg === "start") {
@@ -372,5 +372,32 @@ export default function (pi: ExtensionAPI) {
 				details: {},
 			};
 		},
+	});
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:cron", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const arg = rawArgs?.trim().toLowerCase();
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "cron", message: msg, type });
+		};
+
+		if (arg === "on" || arg === "start") {
+			const result = startScheduler();
+			notify(result, result.startsWith("✓") ? "info" : "error");
+		} else if (arg === "off" || arg === "stop") {
+			const result = stopScheduler();
+			notify(result, result.startsWith("✓") ? "info" : "error");
+		} else {
+			const s = getStatus();
+			const lines = [
+				`Scheduler: ${s.schedulerActive ? "✅ active" : "⏸ inactive"}`,
+				`PID: ${s.pid}`,
+				s.lockHolder ? `Lock: PID ${s.lockHolder}` : "Lock: free",
+				`Jobs: ${s.jobCount}`,
+			];
+			notify(lines.join(" · "));
+		}
 	});
 }

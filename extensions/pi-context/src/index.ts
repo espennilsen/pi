@@ -346,4 +346,6 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(output, "info");
 		},
 	});
+
+	// Skipped: /context event bus listener — needs ctx.getContextUsage()
 }

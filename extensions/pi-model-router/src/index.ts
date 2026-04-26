@@ -222,4 +222,6 @@ export default function (pi: ExtensionAPI) {
 			log("switch-error", { tier, model: model.id, error: String(err) }, "WARN");
 		}
 	});
+
+	// Skipped: /model-router event bus listener — needs ctx.hasUI, ctx.model, ctx.modelRegistry
 }

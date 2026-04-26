@@ -41,7 +41,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = resolveSettings(ctx.cwd);
 		devDir = settings.devDir;
 		setDevDir(devDir);
@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("projects", {
 		description: "Show project overview: /projects [search]",
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			try {
 				const search = args?.trim().toLowerCase();
 				let projects = await scanProjects(devDir);
@@ -140,5 +140,32 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`pi-projects: ${e.message}`, "error");
 			}
 		},
+	});
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:projects", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		try {
+			const search = rawArgs?.trim().toLowerCase();
+			let projects = await scanProjects(devDir);
+			if (search) {
+				projects = projects.filter(p =>
+					p.name.toLowerCase().includes(search) ||
+					(p.branch ?? "").toLowerCase().includes(search),
+				);
+			}
+			const gitProjects = projects.filter(p => p.is_git);
+			const dirty = gitProjects.filter(p => (p.dirty_count ?? 0) > 0);
+			const lines = [
+				`Projects: ${projects.length} total · ${gitProjects.length} git · ${dirty.length} dirty`,
+			];
+			if (dirty.length > 0) {
+				lines.push("Dirty: " + dirty.map(p => `${p.name} (${p.dirty_count})`).join(", "));
+			}
+			pi.sendMessage({ customType: "command_result", content: lines.join("\n"), display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "projects", message: lines.join("\n"), type: "info" });
+		} catch (e: any) {
+			pi.sendMessage({ customType: "command_result", content: `pi-projects: ${e.message}`, display: true, details: { type: "error" } });
+			pi.events.emit("command_result", { command: "projects", message: `pi-projects: ${e.message}`, type: "error" });
+		}
 	});
 }

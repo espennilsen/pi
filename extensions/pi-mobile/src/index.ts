@@ -247,7 +247,6 @@ async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath:
 					// Extension command — emit on event bus
 					const parsed = parseCommand(prompt.trim())!;
 					_pi.events.emit(route.eventName!, { args: parsed.args, source: "pi-mobile" });
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 200, { ok: true, dispatched: true, command: parsed.name, source: "extension" });
 					return;
 				}

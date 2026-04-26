@@ -827,10 +827,6 @@ function handleSSE(d) {
       messageStore.addUserMessage(d.text, d.time);
       break;
 
-    case 'command_dispatched':
-      handleCommandEvent(d);
-      break;
-
     case 'command_result':
       // Show extension command result feedback in the chat
       messageStore.addSystemMessage(d.message || d.command || 'Command result', 'command_result');
@@ -1044,12 +1040,6 @@ promptInput.addEventListener('keydown', (e) => {
 });
 
 // Handle SSE command_dispatched events
-function handleCommandEvent(data) {
-  if (data.type === 'command_dispatched') {
-    addEvent('info', `⚡ /${data.command} dispatched` + (data.args ? ' ' + esc(data.args) : ''));
-  }
-}
-
 promptStop.addEventListener('click', async () => {
   try {
     await fetch('/api/dashboard/stop', { method: 'POST' });

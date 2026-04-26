@@ -552,9 +552,6 @@
 										return updated;
 									});
 									break;
-								case "command_dispatched":
-									setMessages(prev => [...prev, { type: "system", text: "⚡ /" + data.command + (data.args ? " " + data.args : "") + " dispatched", time: Date.now() }]);
-									break;
 								case "command_result":
 									setMessages(prev => [...prev, { type: "system", text: data.message || data.command || "Command result", time: Date.now() }]);
 									break;

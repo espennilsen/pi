@@ -163,4 +163,6 @@ export default function (pi: ExtensionAPI) {
 		description: "Toggle Prism sidebar",
 		handler: async (ctx) => toggle(ctx),
 	});
+
+	// Skipped: /prism event bus listener — needs ctx.hasUI
 }

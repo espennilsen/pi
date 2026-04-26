@@ -161,7 +161,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ───────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		cwd = ctx.cwd;
 		setup();
 		writeLogEntry("logger:start", "INFO", {
@@ -193,7 +193,7 @@ export default function (pi: ExtensionAPI) {
 			];
 			return items.filter((i) => i.value.startsWith(prefix));
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const parts = (args ?? "").trim().split(/\s+/);
 			const cmd = parts[0]?.toLowerCase();
 
@@ -241,5 +241,49 @@ export default function (pi: ExtensionAPI) {
 			];
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
+	});
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:logger", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const parts = (rawArgs ?? "").trim().split(/\s+/);
+		const cmd = parts[0]?.toLowerCase();
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (cmd === "level" && parts[1]) {
+			const lvl = parts[1].toUpperCase() as LogLevel;
+			if (LEVEL_ORDER[lvl] === undefined) { notify("Invalid level. Use: DEBUG, INFO, WARN, ERROR", "error"); return; }
+			settings.level = lvl;
+			notify(`Log level set to ${lvl}`);
+			writeLogEntry("logger:level_change", "INFO", { level: lvl }, settings.scope, cwd, settings.timezone);
+			return;
+		}
+		if (cmd === "scope" && parts[1]) {
+			const s = parts[1].toLowerCase();
+			if (s !== "global" && s !== "project") { notify("Invalid scope. Use: global, project", "error"); return; }
+			settings.scope = s;
+			notify(`Log scope set to ${s}`);
+			writeLogEntry("logger:scope_change", "INFO", { scope: s }, settings.scope, cwd, settings.timezone);
+			return;
+		}
+		if (cmd === "reload") {
+			setup();
+			notify(`Logger reloaded: level=${settings.level}, scope=${settings.scope}, tz=${settings.timezone}`);
+			return;
+		}
+		// Default: status
+		const fmt = (arr: string[], label: string) => arr.length > 0 ? `${label}: ${arr.join(", ")}` : `${label}: all`;
+		const lines = [
+			`Logger: level=${settings.level}, scope=${settings.scope}`,
+			`Timezone: ${settings.timezone}`,
+			fmt(settings.events_whitelist, "Events whitelist"),
+			settings.events_ignore.length > 0 ? `Events ignore: ${settings.events_ignore.join(", ")}` : "Events ignore: none",
+			fmt(settings.channels_whitelist, "Channels whitelist"),
+			settings.channels_ignore.length > 0 ? `Channels ignore: ${settings.channels_ignore.join(", ")}` : "Channels ignore: none",
+			`Subscriptions: ${subscriptions.length}`,
+		];
+		notify(lines.join("\n"));
 	});
 }

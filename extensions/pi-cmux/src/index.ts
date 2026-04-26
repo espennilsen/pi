@@ -196,7 +196,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("cmux-status", {
 		description: "Show cmux connection status and environment info",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string | undefined, ctx: any) => {
 			const lines: string[] = [
 				"## cmux Integration Status",
 				"",
@@ -225,7 +225,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerShortcut("ctrl+shift+w", {
 		description: "List cmux panes",
-		handler: async (ctx) => {
+		handler: async (ctx: any) => {
 			try {
 				const surfaces = await client.listSurfaces();
 				if (!Array.isArray(surfaces) || surfaces.length === 0) {
@@ -259,5 +259,29 @@ export default function (pi: ExtensionAPI) {
 		surfaceId,
 		socketPath: client.socketPath,
 		tools: ["cmux_list", "cmux_split", "cmux_read", "cmux_send", "cmux_close", "cmux_notify", "cmux_browser"],
+	});
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:cmux-status", async (_data: unknown) => {
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+		const lines: string[] = [
+			"## cmux Integration Status", "",
+			`- **Socket**: ${client.socketPath} (${client.isAvailable() ? "✅ connected" : "❌ unavailable"})`,
+			`- **Workspace ID**: ${workspaceId}`,
+			`- **Surface ID**: ${surfaceId}`,
+		];
+		try {
+			const surfaces = await client.listSurfaces();
+			const workspaces = await client.listWorkspaces();
+			lines.push(`- **Surfaces**: ${Array.isArray(surfaces) ? surfaces.length : "?"}`);
+			lines.push(`- **Workspaces**: ${Array.isArray(workspaces) ? workspaces.length : "?"}`);
+		} catch {
+			lines.push("- **API**: ⚠️ Could not query cmux");
+		}
+		lines.push("", "### Registered Tools");
+		lines.push("cmux_list, cmux_split, cmux_read, cmux_send, cmux_close, cmux_notify, cmux_browser");
+		notify(lines.join("\n"));
 	});
 }

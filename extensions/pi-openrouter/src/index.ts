@@ -28,7 +28,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ── Refresh models on session start ──────────────────────────────────────
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		settings = resolveSettings(ctx.cwd);
 
 		try {
@@ -58,7 +58,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Manage OpenRouter: /openrouter [refresh]",
 		getArgumentCompletions: (prefix: string) =>
 			[{ value: "refresh", label: "Fetch latest models from API" }].filter((i) => i.value.startsWith(prefix)),
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const cmd = args?.trim().toLowerCase();
 
 			if (cmd === "refresh") {
@@ -111,5 +111,23 @@ export default function (pi: ExtensionAPI) {
 		];
 
 		ctx.ui.notify(lines.join("\n"), "info");
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:openrouter", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const cmd = rawArgs?.trim().toLowerCase();
+		const shimmedCtx = {
+			ui: {
+				notify: (msg: string, type?: "info" | "error" | "warning") => {
+					pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type: type ?? "info" } });
+				},
+			},
+		};
+		if (cmd === "refresh") {
+			await handleRefresh(shimmedCtx);
+		} else {
+			handleStatus(shimmedCtx);
+		}
+	});
 	}
 }

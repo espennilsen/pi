@@ -64,7 +64,7 @@ export default function (pi: ExtensionAPI) {
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const input = (args ?? "").trim();
 			const [cmd, ...rest] = input.length ? input.split(/\s+/) : ["status"];
 
@@ -126,7 +126,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = loadKyselySettings(ctx.cwd);
 		activeDefaultDriver = settings.defaultDriver;
 		configureDefaults({
@@ -197,5 +197,50 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		await clearDatabases({ destroy: true });
+	});
+
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:kysely", async (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const input = (rawArgs ?? "").trim();
+		const [cmd, ...rest] = input.length ? input.split(/\s+/) : ["status"];
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (cmd === "close") {
+			const name = rest.join(" ").trim();
+			if (!name) { notify("Usage: /kysely close <name>", "warning"); return; }
+			const ok = await unregisterDatabase(name, { destroy: true });
+			notify(ok ? `Closed database: ${name}` : `No database named "${name}"`, ok ? "info" : "warning");
+			return;
+		}
+		if (cmd === "close-all") {
+			await clearDatabases({ destroy: true });
+			notify("Closed all registered databases");
+			return;
+		}
+		if (cmd === "migrations") {
+			try {
+				const actor = rest.join(" ").trim() || undefined;
+				const db = requireDatabase();
+				const records = await getMigrationStatus(db, actor);
+				if (records.length === 0) { notify(actor ? `No migrations for ${actor}` : "No migrations applied"); return; }
+				let msg = `Applied migrations (${records.length}):`;
+				for (const r of records) { msg += `\n  ${r.actor} / ${r.name}  (${r.applied_at})  [${r.checksum}]`; }
+				notify(msg);
+			} catch (err: any) { notify(`Error: ${err.message}`, "warning"); }
+			return;
+		}
+		if (cmd !== "status") { notify("Usage: /kysely [status|close <name>|close-all|migrations [actor]]", "warning"); return; }
+		const dbs = listDatabases();
+		if (dbs.length === 0) { notify("No databases registered"); return; }
+		let msg = `Registered databases (${dbs.length}):`;
+		for (const db of dbs) {
+			msg += `\n  ${db.name} [${db.driver}]`;
+			if (db.label) msg += ` — ${db.label}`;
+			if (db.description) msg += ` (${db.description})`;
+		}
+		notify(msg)
 	});
 }

@@ -83,7 +83,7 @@ export default function (pi: ExtensionAPI) {
 			const filtered = items.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
 		},
-		handler: async (args, ctx) => {
+		handler: async (args: string | undefined, ctx: any) => {
 			const arg = args?.trim() ?? "";
 
 			// /web stop
@@ -239,10 +239,152 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Event bus listener for web/mobile slash command support
+	pi.events.on("command:web", (data: unknown) => {
+		const { args: rawArgs } = data as { args: string };
+		const arg = rawArgs?.trim() ?? "";
+		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
+			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+		};
+
+		if (arg === "stop") {
+			const was = stop();
+			notify(was ? "Web server stopped" : "Web server is not running");
+			return;
+		}
+
+		if (arg === "auth" || arg.startsWith("auth ")) {
+			const authArg = arg.slice(5).trim();
+			if (!authArg || authArg === "status") {
+				const auth = getAuth();
+				notify(auth.enabled ? `Auth enabled (user: ${auth.username})` : "Auth disabled");
+				return;
+			}
+			if (authArg === "off") {
+				setAuth(null);
+				notify("Auth disabled");
+				return;
+			}
+			const colon = authArg.indexOf(":");
+			if (colon !== -1) {
+				setAuth({ username: authArg.slice(0, colon), password: authArg.slice(colon + 1) });
+				notify(`Auth enabled (user: ${authArg.slice(0, colon)})`);
+			} else {
+				setAuth({ password: authArg });
+				notify("Auth enabled (user: pi)");
+			}
+			return;
+		}
+
+		if (arg === "api" || arg.startsWith("api ")) {
+			const apiArg = arg.slice(4).trim();
+			if (!apiArg || apiArg === "status") {
+				const tokenStatus = getApiTokenStatus();
+				const apiMounts = getApiMounts();
+				let msg = `API token: ${tokenStatus.enabled ? "enabled" : "disabled"}`;
+				msg += `\nAPI read token: ${tokenStatus.readEnabled ? "enabled" : "disabled"}`;
+				if (apiMounts.length > 0) {
+					msg += `\nAPI mounts (${apiMounts.length}):`;
+					for (const m of apiMounts) {
+						msg += `\n  ${m.prefix} — ${m.label}`;
+						if (m.skipAuth) msg += " (custom auth)";
+						if (m.description) msg += ` (${m.description})`;
+					}
+				} else {
+					msg += "\nNo API extensions mounted";
+				}
+				notify(msg);
+				return;
+			}
+			if (apiArg === "off") {
+				setApiToken(null);
+				setApiReadToken(null);
+				notify("API token auth disabled — /api/* routes are open");
+				return;
+			}
+			if (apiArg === "read" || apiArg.startsWith("read ")) {
+				const readArg = apiArg.slice(5).trim();
+				if (!readArg) {
+					const tokenStatus = getApiTokenStatus();
+					notify(`API read token: ${tokenStatus.readEnabled ? "enabled" : "disabled"}`);
+					return;
+				}
+				if (readArg === "off") {
+					setApiReadToken(null);
+					notify("API read token disabled");
+					return;
+				}
+				setApiReadToken(readArg);
+				notify("API read token enabled — GET/HEAD on /api/* allowed with this token");
+				return;
+			}
+			setApiToken(apiArg);
+			notify("API token auth enabled — /api/* requires Bearer token");
+			return;
+		}
+
+		if (arg === "port" || arg.startsWith("port ")) {
+			const portArg = arg.slice(5).trim();
+			if (!portArg) {
+				const current = getPort();
+				notify(current ? `Current port: ${current}` : "Web server is not running");
+				return;
+			}
+			const newPort = parseInt(portArg);
+			if (isNaN(newPort) || newPort < 1 || newPort > 65535) {
+				notify("Invalid port number (must be 1–65535)", "error");
+				return;
+			}
+			const url = start(newPort);
+			notify(`Web server restarted on port ${newPort}: ${url}`);
+			return;
+		}
+
+		if (arg === "status") {
+			if (!isRunning()) {
+				notify("Web server is not running");
+				return;
+			}
+			const mountList = getMounts();
+			const auth = getAuth();
+			const tokenStatus = getApiTokenStatus();
+			let msg = `Web server running at ${getUrl()}`;
+			msg += `\nAuth: ${auth.enabled ? `enabled (user: ${auth.username})` : "disabled"}`;
+			msg += `\nAPI token: ${tokenStatus.enabled ? "enabled" : "disabled"}`;
+			msg += `\nAPI read token: ${tokenStatus.readEnabled ? "enabled" : "disabled"}`;
+			if (mountList.length > 0) {
+				msg += "\nMounts:";
+				for (const m of mountList) {
+					msg += `\n  ${m.prefix} — ${m.label}`;
+					if (m.description) msg += ` (${m.description})`;
+				}
+			} else {
+				msg += "\nNo extensions mounted";
+			}
+			notify(msg);
+			return;
+		}
+
+		// /web [port] — toggle or start on specific port
+		const port = parseInt(arg || "4100") || 4100;
+		const wasRunning = stop();
+		if (wasRunning && !arg) {
+			notify("Web server stopped");
+			return;
+		}
+		const url = start(port);
+		const mountList = getMounts();
+		let msg = `Web server: ${url}`;
+		if (mountList.length > 0) {
+			msg += `\n${mountList.length} mount${mountList.length > 1 ? "s" : ""}: ${mountList.map((m) => m.prefix).join(", ")}`;
+		}
+		notify(msg);
+	});
+
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	// Pick up auth from settings and notify other extensions
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = resolveSettings(ctx.cwd);
 
 		if (settings.auth) {

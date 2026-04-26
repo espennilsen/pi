@@ -483,6 +483,9 @@
 			const [input, setInput] = useState("");
 			const [sending, setSending] = useState(false);
 			const [agentWorking, setAgentWorking] = useState(false);
+			const [cmdList, setCmdList] = useState([]);
+			const [cmdVisible, setCmdVisible] = useState(false);
+			const [cmdActiveIdx, setCmdActiveIdx] = useState(-1);
 			const messagesRef = useRef(null);
 			const inputRef = useRef(null);
 

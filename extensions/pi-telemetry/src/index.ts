@@ -183,6 +183,7 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
 		const { args: rawArgs } = data as { args: string };
 		if (!rawArgs || rawArgs.trim().length === 0) {
 			pi.sendMessage({ customType: "command_result", content: `Telemetry: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry: mode=${config.mode}, level=${config.level}`, type: "info" });
 			return;
 		}
 		const parts = rawArgs.trim().split(/\s+/);
@@ -191,5 +192,6 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
 			else if (["NONE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"].includes(part.toUpperCase())) { config.level = part.toUpperCase() as TelemetryLevel; }
 		}
 		pi.sendMessage({ customType: "command_result", content: `Telemetry updated: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry updated: mode=${config.mode}, level=${config.level}`, type: "info" });
 	});
 }

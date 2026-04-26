@@ -265,6 +265,7 @@ export default function (pi: ExtensionAPI) {
 	pi.events.on("command:cmux-status", async (_data: unknown) => {
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "cmux-status", message: msg, type });
 		};
 		const lines: string[] = [
 			"## cmux Integration Status", "",

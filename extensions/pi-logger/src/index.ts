@@ -250,6 +250,7 @@ export default function (pi: ExtensionAPI) {
 		const cmd = parts[0]?.toLowerCase();
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "logger", message: msg, type });
 		};
 
 		if (cmd === "level" && parts[1]) {

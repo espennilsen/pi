@@ -827,6 +827,13 @@ export default function (pi: ExtensionAPI) {
 		broadcast({ type: "tool_end", toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError, content });
 	});
 
+	// ── Command result forwarding ──────────────────────────────
+	// When extensions send command_result via pi.sendMessage(), forward to SSE clients.
+	pi.events.on("command_result", (data: unknown) => {
+		const d = data as { command?: string; message?: string; type?: string };
+		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
+	});
+
 	// ── Log event forwarding ──────────────────────────────
 
 	pi.on("tool_call", async (event) => {

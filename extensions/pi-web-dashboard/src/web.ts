@@ -77,6 +77,7 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
 // ── Saved reference to pi for prompt submission ─────────────────
 
 let _pi: ExtensionAPI | null = null;
+let _piUnmountCleanup: (() => void)[] = [];
 
 /** Abort callback set while the agent is running; cleared on agent_end. */
 let _abortFn: (() => void) | null = null;
@@ -353,6 +354,43 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 export function mountDashboard(pi: ExtensionAPI): void {
 	_pi = pi;
 
+	// Forward command_result events from extensions to SSE clients
+	const unsubCommandResult = pi.events.on("command_result", (data: unknown) => {
+		const d = data as { command?: string; message?: string; type?: string };
+		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
+	});
+
+	// Forward agent lifecycle events to SSE clients
+	pi.on("agent_start", async () => {
+		broadcast({ type: "agent_start", time: new Date().toISOString() });
+	});
+	pi.on("agent_end", async () => {
+		broadcast({ type: "agent_end", time: new Date().toISOString() });
+	});
+	pi.on("turn_end", async (event) => {
+		const content: unknown[] = [];
+		if (event.message?.role === "assistant" && Array.isArray(event.message?.content)) {
+			for (const block of event.message.content as unknown[]) {
+				const b = block as Record<string, unknown>;
+				if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 8192) });
+			}
+		}
+		broadcast({ type: "turn_end", content, time: new Date().toISOString() });
+	});
+	pi.on("tool_call", async (event) => {
+		broadcast({ type: "tool_start", toolName: event.toolName, toolCallId: event.toolCallId, time: new Date().toISOString() });
+	});
+	pi.on("tool_result", async (event) => {
+		const content: unknown[] = [];
+		for (const c of event.content ?? []) {
+			const b = c as unknown as Record<string, unknown>;
+			if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 4096) });
+		}
+		broadcast({ type: "tool_end", toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError, content, time: new Date().toISOString() });
+	});
+
+	_piUnmountCleanup = [unsubCommandResult];  // pi.on() returns void, cannot unsubscribe those
+
 	pi.events.emit("web:mount", {
 		name: "dashboard",
 		label: "Dashboard",
@@ -371,6 +409,10 @@ export function mountDashboard(pi: ExtensionAPI): void {
 }
 
 export function unmountDashboard(pi: ExtensionAPI): void {
+	// Clean up event listeners
+	for (const fn of _piUnmountCleanup) { try { fn(); } catch {} }
+	_piUnmountCleanup = [];
+
 	_pi = null;
 
 	// Close all SSE connections

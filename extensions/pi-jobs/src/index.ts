@@ -154,8 +154,10 @@ export default function (pi: ExtensionAPI) {
 				`Tools: ${totals.toolCalls} calls · Avg: ${(totals.avgDurationMs / 1000).toFixed(1)}s`,
 			];
 			pi.sendMessage({ customType: "command_result", content: lines.join("\n"), display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "jobs", message: lines.join("\n"), type: "info" });
 		} catch (e: any) {
 			pi.sendMessage({ customType: "command_result", content: `pi-jobs: ${e.message}`, display: true, details: { type: "error" } });
+			pi.events.emit("command_result", { command: "jobs", message: `pi-jobs: ${e.message}`, type: "error" });
 		}
 	});
 }

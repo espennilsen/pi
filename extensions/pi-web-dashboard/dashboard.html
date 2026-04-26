@@ -831,6 +831,12 @@ function handleSSE(d) {
       handleCommandEvent(d);
       break;
 
+    case 'command_result':
+      // Show extension command result feedback in the chat
+      messageStore.addSystemMessage(d.message || d.command || 'Command result', 'command_result');
+      addEvent('cmd-result', esc(d.message || d.command || ''));
+      break;
+
     case 'turn_start':
       messageStore.startAssistantMessage(d.turn);
       break;

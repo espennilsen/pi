@@ -169,6 +169,7 @@ export default function (pi: ExtensionAPI) {
 		const cmd = rawArgs?.trim().toLowerCase();
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "chat-bridge", message: msg, type });
 		};
 
 		if (cmd === "on") {

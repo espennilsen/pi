@@ -80,6 +80,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			pi.sendMessage({ customType: "command_result", content: `Switching to ${project}…`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "workon", message: `Switching to ${project}…`, type: "info" });
 			pi.sendUserMessage(`/workon ${project}`, { deliverAs: "followUp" });
 		});
 

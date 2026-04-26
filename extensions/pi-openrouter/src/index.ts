@@ -111,6 +111,7 @@ export default function (pi: ExtensionAPI) {
 		];
 
 		ctx.ui.notify(lines.join("\n"), "info");
+	}
 
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:openrouter", async (data: unknown) => {
@@ -120,6 +121,7 @@ export default function (pi: ExtensionAPI) {
 			ui: {
 				notify: (msg: string, type?: "info" | "error" | "warning") => {
 					pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type: type ?? "info" } });
+					pi.events.emit("command_result", { command: "openrouter", message: msg, type: type ?? "info" });
 				},
 			},
 		};
@@ -129,5 +131,4 @@ export default function (pi: ExtensionAPI) {
 			handleStatus(shimmedCtx);
 		}
 	});
-	}
 }

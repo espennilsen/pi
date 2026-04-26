@@ -244,6 +244,7 @@ export default function (pi: ExtensionAPI) {
 		const arg = rawArgs?.trim() ?? "";
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
+			pi.events.emit("command_result", { command: "crm-web", message: msg, type });
 		};
 
 		if (arg === "status") {
@@ -267,7 +268,7 @@ export default function (pi: ExtensionAPI) {
 		const url = startStandaloneServer(port);
 		let msg = `CRM web UI: ${url}`;
 		if (isMountedOnWebServer()) { msg += "\n(Also available via pi-webserver at /crm)"; }
-			notify(msg);
+		notify(msg);
 	});
 
 	pi.events.on("command:crm-export", async (_data: unknown) => {
@@ -275,20 +276,24 @@ export default function (pi: ExtensionAPI) {
 		const csv = await getCrmStore().exportContactsCsv();
 		const lines = csv.split("\n");
 		pi.sendMessage({ customType: "command_result", content: `Exported ${lines.length - 1} contacts`, display: true, details: { type: "info" } });
+		pi.events.emit("command_result", { command: "crm-export", message: `Exported ${lines.length - 1} contacts`, type: "info" });
 		const outPath = path.join(pi.cwd, "crm-contacts.csv");
 		fs.writeFileSync(outPath, csv, "utf-8");
 		pi.sendMessage({ customType: "command_result", content: `Saved to ${outPath}`, display: true, details: { type: "info" } });
+		pi.events.emit("command_result", { command: "crm-export", message: `Saved to ${outPath}`, type: "info" });
 	});
 
 	pi.events.on("command:crm-import", async (data: unknown) => {
 		const { args } = data as { args: string };
 		if (!args) {
 			pi.sendMessage({ customType: "command_result", content: "Usage: /crm-import path/to/file.csv", display: true, details: { type: "error" } });
+			pi.events.emit("command_result", { command: "crm-import", message: "Usage: /crm-import path/to/file.csv", type: "error" });
 			return;
 		}
 		const filePath = path.resolve(args.trim());
 		if (!fs.existsSync(filePath)) {
 			pi.sendMessage({ customType: "command_result", content: `File not found: ${filePath}`, display: true, details: { type: "error" } });
+			pi.events.emit("command_result", { command: "crm-import", message: `File not found: ${filePath}`, type: "error" });
 			return;
 		}
 		const { getCrmStore } = await import("./store.ts");
@@ -298,6 +303,7 @@ export default function (pi: ExtensionAPI) {
 		if (result.duplicates.length > 0) { msg += `, Duplicates: ${result.duplicates.length}`; }
 		if (result.errors.length > 0) { msg += `, Errors: ${result.errors.length}`; }
 		pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type: result.errors.length > 0 ? "warning" : "info" } });
+		pi.events.emit("command_result", { command: "crm-import", message: msg, type: result.errors.length > 0 ? "warning" : "info" });
 	});
 
 	// ── Cleanup ─────────────────────────────────────────────────

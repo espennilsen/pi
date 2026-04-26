@@ -320,8 +320,10 @@ export default function (pi: ExtensionAPI) {
 		if (isAuthenticated(agentDir)) {
 			const email = getAuthenticatedEmail(agentDir);
 			pi.sendMessage({ customType: "command_result", content: `✅ Gmail connected as ${email}`, display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "gmail-status", message: `✅ Gmail connected as ${email}`, type: "info" });
 		} else {
 			pi.sendMessage({ customType: "command_result", content: "⚠️ Gmail not connected. Run /gmail-auth to connect.", display: true, details: { type: "info" } });
+			pi.events.emit("command_result", { command: "gmail-status", message: "⚠️ Gmail not connected. Run /gmail-auth to connect.", type: "info" });
 		}
 	});
 }

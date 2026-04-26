@@ -276,12 +276,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 				if (route.action === "event-bus") {
 					const parsed = parseCommand(trimmed)!;
 					_pi.events.emit(route.eventName!, { args: parsed.args, source: "pi-web-dashboard" });
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 202, { status: "accepted", dispatched: true, command: parsed.name, source: "extension" });
 					return;
 				}
 
 				if (route.action === "expand-and-send") {
+					const parsed = parseCommand(trimmed)!;
 					try {
 						_pi.sendUserMessage(route.expandedText!);
 					} catch (sendErr: unknown) {
@@ -289,8 +289,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 						json(res, 500, { error: `Agent rejected message: ${msg}` });
 						return;
 					}
-					const parsed = parseCommand(trimmed)!;
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 202, { status: "accepted", dispatched: true, command: parsed.name, source: route.info?.source });
 					return;
 				}

@@ -253,9 +253,9 @@ async function handleChatApi(req: IncomingMessage, res: ServerResponse, subPath:
 
 				if (route.action === "expand-and-send") {
 					// Skill or prompt template — expand and send as user message
-					_pi.sendUserMessage(route.expandedText!);
 					const parsed = parseCommand(prompt.trim())!;
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
+					_pi.sendUserMessage(route.expandedText!);
+
 					json(res, 200, { ok: true, dispatched: true, command: parsed.name, source: route.info?.source });
 					return;
 				}

@@ -1039,7 +1039,6 @@ promptInput.addEventListener('keydown', (e) => {
   items.forEach((el, i) => el.classList.toggle('active', i === cmdActiveIndex));
 });
 
-// Handle SSE command_dispatched events
 promptStop.addEventListener('click', async () => {
   try {
     await fetch('/api/dashboard/stop', { method: 'POST' });

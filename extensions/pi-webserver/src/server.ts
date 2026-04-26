@@ -415,17 +415,22 @@ export function start(port: number = 4100): string {
 		}
 
 		if (!isApiPath) {
-			if (authCredentials) {
-				// Basic auth configured — use it
-				if (!checkAuth(req, res)) return;
-			} else if (apiToken || apiReadToken) {
-				// No Basic auth but API token configured — require session cookie
-				const session = checkSessionCookie(req);
-				if (!session) {
-					const redirect = encodeURIComponent(pathname + url.search);
-					res.writeHead(302, { Location: `/_auth/login?redirect=${redirect}` });
-					res.end();
-					return;
+			// PWA public paths — skip auth for manifest.json, sw.js, and icons
+			const isPublicPath = /\/(manifest\.json|sw\.js|icons\/.*|favicon\..*)$/.test(pathname);
+
+			if (!isPublicPath) {
+				if (authCredentials) {
+					// Basic auth configured — use it
+					if (!checkAuth(req, res)) return;
+				} else if (apiToken || apiReadToken) {
+					// No Basic auth but API token configured — require session cookie
+					const session = checkSessionCookie(req);
+					if (!session) {
+						const redirect = encodeURIComponent(pathname + url.search);
+						res.writeHead(302, { Location: `/_auth/login?redirect=${redirect}` });
+						res.end();
+						return;
+					}
 				}
 			}
 			// No auth configured at all → open

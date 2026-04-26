@@ -104,8 +104,7 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
       type: "config_change",
       level: "INFO",
       provider: event.model.provider,
-      modelId: event.model.id,
-      source: event.source,
+      modelId: event.model.id, source: event.source,
     });
   });
 
@@ -180,10 +179,10 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
 
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:telemetry", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		if (!rawArgs || rawArgs.trim().length === 0) {
 			pi.sendMessage({ customType: "command_result", content: `Telemetry: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry: mode=${config.mode}, level=${config.level}`, type: "info" });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry: mode=${config.mode}, level=${config.level}`, type: "info", source: source ?? "" });
 			return;
 		}
 		const parts = rawArgs.trim().split(/\s+/);
@@ -192,6 +191,6 @@ export default function piTelemetryExtension(pi: ExtensionAPI) {
 			else if (["NONE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"].includes(part.toUpperCase())) { config.level = part.toUpperCase() as TelemetryLevel; }
 		}
 		pi.sendMessage({ customType: "command_result", content: `Telemetry updated: mode=${config.mode}, level=${config.level}`, display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry updated: mode=${config.mode}, level=${config.level}`, type: "info" });
+			pi.events.emit("command_result", { command: "telemetry", message: `Telemetry updated: mode=${config.mode}, level=${config.level}`, type: "info", source: source ?? "" });
 	});
 }

@@ -137,8 +137,7 @@ export default function (pi: ExtensionAPI) {
 		// Notify via pi-channels (Telegram, etc.)
 		pi.events.emit("channel:send", {
 			route: "ops",
-			text: msg,
-			source: "pi-myfinance",
+			text: msg, source: "pi-myfinance",
 		});
 	}
 

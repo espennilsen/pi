@@ -40,7 +40,7 @@ export class ChannelRegistry {
 			const result = this.onIncoming(msg);
 			if (result instanceof Promise) result.catch((err: any) => this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` }));
 		} catch (err: any) {
-			this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err.message}` });
+			this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` });
 		}
 	}
 

@@ -212,4 +212,30 @@ export class ChannelRegistry {
 	getAdapter(name: string): ChannelAdapter | undefined {
 		return this.adapters.get(name);
 	}
+
+	/** Send a file to a recipient via an adapter. Resolves routes. */
+	async sendFile(adapterName: string, recipient: string, filePath: string, fileName?: string, caption?: string): Promise<{ ok: boolean; error?: string }> {
+		// Check route alias
+		const route = this.routes.get(adapterName);
+		if (route) {
+			adapterName = route.adapter;
+			if (!recipient) recipient = route.recipient;
+		}
+
+		const adapter = this.adapters.get(adapterName);
+		if (!adapter) {
+			return { ok: false, error: `No adapter "${adapterName}"` };
+		}
+
+		if (!adapter.sendFile) {
+			return { ok: false, error: `Adapter "${adapterName}" does not support file sending` };
+		}
+
+		try {
+			await adapter.sendFile(recipient, filePath, fileName, caption);
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: err.message };
+		}
+	}
 }

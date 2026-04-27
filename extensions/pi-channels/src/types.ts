@@ -88,7 +88,7 @@ export interface IncomingMessage {
 export type AdapterDirection = "outgoing" | "incoming" | "bidirectional";
 
 /** Callback for adapters to emit incoming messages */
-export type OnIncomingMessage = (message: IncomingMessage) => void;
+export type OnIncomingMessage = (message: IncomingMessage) => void | Promise<void>;
 
 // ── Adapter handler ─────────────────────────────────────────────
 

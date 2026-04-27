@@ -30,12 +30,12 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 
 	// ── Incoming messages → channel:receive (+ bridge) ──────
 
-	registry.setOnIncoming((message: IncomingMessage) => {
+	registry.setOnIncoming(async (message: IncomingMessage) => {
 		pi.events.emit("channel:receive", message);
 
 		// Route to bridge if active
 		if (activeBridge?.isActive()) {
-			activeBridge.handleMessage(message);
+			await activeBridge.handleMessage(message);
 		}
 	});
 

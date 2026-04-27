@@ -7,7 +7,7 @@
  *   3. Unrecognized — fall through to agent
  */
 
-import * as fs from "node:fs";
+import * as fs from "node:fs/promises";
 import type { SenderSession } from "../types.ts";
 
 export interface BotCommand {
@@ -44,6 +44,10 @@ export interface CommandRouteResult {
 	eventName?: string;
 	/** For skill/prompt commands, the expanded text to use as prompt. */
 	expandedText?: string;
+	/** Parsed command name. */
+	command: string;
+	/** Parsed args string. */
+	args: string;
 }
 
 const commands = new Map<string, BotCommand>();
@@ -91,10 +95,10 @@ export function handleCommand(
  * Route a slash command against pi's registered slash commands.
  * Returns the routing decision for the caller to act on.
  */
-export function routeSlashCommand(
+export async function routeSlashCommand(
 	text: string,
 	slashCommands: SlashCommandInfo[],
-): CommandRouteResult | null {
+): Promise<CommandRouteResult | null> {
 	const parsed = parseCommand(text);
 	if (!parsed.command) return null;
 
@@ -105,21 +109,23 @@ export function routeSlashCommand(
 		return {
 			action: "handled",
 			eventName: `command:${parsed.command}`,
+			command: parsed.command,
+			args: parsed.args,
 		};
 	}
 
 	if (cmd.source === "skill") {
-		const expandedText = expandSkill(cmd.sourceInfo.path, parsed.args, cmd.sourceInfo.baseDir);
+		const expandedText = await expandSkill(cmd.sourceInfo.path, parsed.args, cmd.sourceInfo.baseDir);
 		if (expandedText) {
-			return { action: "handled", expandedText };
+			return { action: "handled", expandedText, command: parsed.command, args: parsed.args };
 		}
 		return null;
 	}
 
 	if (cmd.source === "prompt") {
-		const expandedText = expandPrompt(cmd.sourceInfo.path, parsed.args);
+		const expandedText = await expandPrompt(cmd.sourceInfo.path, parsed.args);
 		if (expandedText) {
-			return { action: "handled", expandedText };
+			return { action: "handled", expandedText, command: parsed.command, args: parsed.args };
 		}
 		return null;
 	}
@@ -128,10 +134,9 @@ export function routeSlashCommand(
 }
 
 /** Try to expand a skill command by reading the SKILL.md file. */
-function expandSkill(skillPath: string, args: string, baseDir?: string): string | null {
+async function expandSkill(skillPath: string, args: string, baseDir?: string): Promise<string | null> {
 	try {
-		if (!fs.existsSync(skillPath)) return null;
-		let content = fs.readFileSync(skillPath, "utf-8");
+		let content = await fs.readFile(skillPath, "utf-8");
 		// Strip YAML frontmatter
 		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
 		if (fmMatch) content = content.slice(fmMatch[0].length);
@@ -146,10 +151,9 @@ function expandSkill(skillPath: string, args: string, baseDir?: string): string 
 }
 
 /** Try to expand a prompt command by reading the template file and substituting args. */
-function expandPrompt(promptPath: string, argsString: string): string | null {
+async function expandPrompt(promptPath: string, argsString: string): Promise<string | null> {
 	try {
-		if (!fs.existsSync(promptPath)) return null;
-		let content = fs.readFileSync(promptPath, "utf-8");
+		let content = await fs.readFile(promptPath, "utf-8");
 		// Strip YAML frontmatter
 		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
 		if (fmMatch) content = content.slice(fmMatch[0].length);

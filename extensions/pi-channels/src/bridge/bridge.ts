@@ -18,7 +18,7 @@ import type { ChannelRegistry } from "../registry.ts";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
-import { isCommand, handleCommand, routeSlashCommand, parseCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";
+import { isCommand, handleCommand, routeSlashCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";
 
 interface BridgeDeps {
 	/** Available slash commands from pi's registry. Updated on session start. */
@@ -119,7 +119,7 @@ export class ChatBridge {
 
 	// ── Main entry point ──────────────────────────────────────
 
-	handleMessage(message: IncomingMessage): void {
+	async handleMessage(message: IncomingMessage): Promise<void> {
 		if (!this.running) return;
 
 		const text = message.text?.trim();
@@ -151,11 +151,11 @@ export class ChatBridge {
 			}
 
 			// 2. Try pi slash commands (extension/skill/prompt)
-			const slashRoute = routeSlashCommand(text, this.deps.slashCommands);
+			const slashRoute = await routeSlashCommand(text, this.deps.slashCommands);
 			if (slashRoute) {
 				if (slashRoute.action === "handled" && slashRoute.eventName) {
 					// Extension command — emit on event bus
-					const { command: cmdName, args } = parseCommand(text);
+					const { command: cmdName, args } = slashRoute;
 					this.events.emit(slashRoute.eventName, { args });
 					this.sendReply(message.adapter, message.sender, `⏳ /${cmdName} dispatched.`);
 					this.log("slash-command", { command: cmdName, args, source: "extension" });
@@ -164,8 +164,8 @@ export class ChatBridge {
 
 				if (slashRoute.action === "handled" && slashRoute.expandedText) {
 					// Skill or prompt command — use expanded text as the prompt
-					const { command: cmdName } = parseCommand(text);
-					this.log("slash-command", { command: cmdName, source: slashRoute.expandedText ? "skill/prompt" : "unknown" });
+					const { command: cmdName } = slashRoute;
+					this.log("slash-command", { command: cmdName, source: "skill/prompt" });
 
 					// Modify the queued prompt text to use the expanded content
 					const expandedPrompt: QueuedPrompt = {

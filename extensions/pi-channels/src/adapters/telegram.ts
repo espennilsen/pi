@@ -218,7 +218,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 			method = "sendDocument";
 		}
 
-		const fileBuffer = fs.readFileSync(filePath);
+		const fileBuffer = await fs.promises.readFile(filePath);
 		const blob = new Blob([fileBuffer]);
 
 		const form = new FormData();

@@ -453,7 +453,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 		// ── Photo ──────────────────────────────────────────
 		if (msg.photo && msg.photo.length > 0) {
 			const largest = msg.photo[msg.photo.length - 1];
-			const effectiveMaxSize = fileUploadEnabled ? fileUploadMaxSize : MAX_FILE_SIZE;
+			const effectiveMaxSize = fileUploadEnabled ? Math.min(fileUploadMaxSize, TELEGRAM_DOWNLOAD_LIMIT) : MAX_FILE_SIZE;
 
 			// Size check
 			if (largest.file_size && largest.file_size > effectiveMaxSize) {

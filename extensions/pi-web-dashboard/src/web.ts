@@ -361,36 +361,12 @@ export function mountDashboard(pi: ExtensionAPI): void {
 		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
 	});
 
-	// Forward agent lifecycle events to SSE clients
-	pi.on("agent_start", async () => {
-		broadcast({ type: "agent_start", time: new Date().toISOString() });
-	});
-	pi.on("agent_end", async () => {
-		broadcast({ type: "agent_end", time: new Date().toISOString() });
-	});
-	pi.on("turn_end", async (event) => {
-		const content: unknown[] = [];
-		if (event.message?.role === "assistant" && Array.isArray(event.message?.content)) {
-			for (const block of event.message.content as unknown[]) {
-				const b = block as Record<string, unknown>;
-				if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 8192) });
-			}
-		}
-		broadcast({ type: "turn_end", content, time: new Date().toISOString() });
-	});
-	pi.on("tool_call", async (event) => {
-		broadcast({ type: "tool_start", toolName: event.toolName, toolCallId: event.toolCallId, time: new Date().toISOString() });
-	});
-	pi.on("tool_result", async (event) => {
-		const content: unknown[] = [];
-		for (const c of event.content ?? []) {
-			const b = c as unknown as Record<string, unknown>;
-			if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 4096) });
-		}
-		broadcast({ type: "tool_end", toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError, content, time: new Date().toISOString() });
-	});
+	// Agent lifecycle events (agent_start, agent_end, turn_end, tool_call,
+	// tool_result) are handled by index.ts. Those listeners are more complete
+	// (thinking blocks, turn indices, tool input, structured content).
+	// Duplicating them here caused every SSE event to fire twice (issue #160).
 
-	_piUnmountCleanup = [unsubCommandResult];  // pi.on() returns void, cannot unsubscribe those
+	_piUnmountCleanup = [unsubCommandResult];
 
 	pi.events.emit("web:mount", {
 		name: "dashboard",

@@ -79,7 +79,9 @@ export default function (pi: ExtensionAPI) {
 		await registry.startListening();
 
 		// Sync bot commands with platforms (e.g. Telegram /command menu)
-		const botCommands = getAllCommands().map(c => ({ command: c.name, description: c.description }));
+		// Telegram limits descriptions to 256 chars — truncate if needed
+		const truncate = (desc: string) => desc.length > 256 ? desc.slice(0, 253) + "..." : desc;
+		const botCommands = getAllCommands().map(c => ({ command: c.name, description: truncate(c.description) }));
 		await registry.syncBotCommands(botCommands);
 
 		const startErrors = registry.getErrors().filter(e => e.error.startsWith("Failed to start"));

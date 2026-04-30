@@ -234,7 +234,6 @@ registerCommand({
 			: "";
 
 		const slashLines = (ctx.slashCommands ?? [])
-			.filter(c => c.source !== "extension")
 			.map(c => `/${c.name}${c.description ? ` — ${c.description}` : ""}`);
 		const slashSection = slashLines.length > 0
 			? `\n**Slash commands:**\n${slashLines.join("\n")}`

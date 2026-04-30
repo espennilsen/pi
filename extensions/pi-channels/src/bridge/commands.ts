@@ -39,7 +39,7 @@ export interface SlashCommandInfo {
 
 /** Result of routing a slash command. */
 export interface CommandRouteResult {
-	action: "handled" | "unknown";
+	action: "handled";
 	/** For extension commands, the event name to emit. */
 	eventName?: string;
 	/** For skill/prompt commands, the expanded text to use as prompt. */
@@ -163,6 +163,10 @@ async function expandPrompt(promptPath: string, argsString: string): Promise<str
 		// Parse bash-style args
 		const args = parseCommandArgs(argsString);
 
+		// Escape $$ → placeholder before substitution
+		const DOLLAR_ESCAPE = "\u0001DOLLAR\u0001";
+		content = content.replace(/\$\$/g, DOLLAR_ESCAPE);
+
 		// Substitute $1, $@, $ARGUMENTS, ${@:N}, ${@:N:L}
 		content = content.replace(/\$(\d+)/g, (_, num: string) => args[parseInt(num, 10) - 1] ?? "");
 		content = content.replace(/\$\{@:(\d+)(?::(\d+))?\}/g, (_, startStr: string, lengthStr?: string) => {
@@ -174,6 +178,9 @@ async function expandPrompt(promptPath: string, argsString: string): Promise<str
 		const allArgs = args.join(" ");
 		content = content.replace(/\$ARGUMENTS/g, allArgs);
 		content = content.replace(/\$@/g, allArgs);
+
+		// Restore escaped $
+		content = content.replace(new RegExp(DOLLAR_ESCAPE, "g"), "$");
 
 		return content;
 	} catch {
@@ -200,6 +207,7 @@ function parseCommandArgs(argsString: string): string[] {
 		}
 	}
 	if (current) args.push(current);
+	if (inQuote) throw new Error(`Unterminated quote '${inQuote}'`);
 	return args;
 }
 

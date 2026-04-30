@@ -20,11 +20,12 @@ import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
 import { isCommand, handleCommand, routeSlashCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";
 
+import { startTyping } from "./typing.ts";
+
 interface BridgeDeps {
 	/** Available slash commands from pi's registry. Updated on session start. */
 	slashCommands: SlashCommandInfo[];
 }
-import { startTyping } from "./typing.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,

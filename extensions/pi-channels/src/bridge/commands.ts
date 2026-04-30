@@ -230,7 +230,10 @@ registerCommand({
 			? `\n**Slash commands:**\n${slashLines.join("\n")}`
 			: "";
 
-		return [builtIn, slashSection, ``, `Type / followed by any pi slash command (e.g. /model, /workon).`].filter(Boolean).join("\n");
+		const parts = [builtIn, slashSection].filter(Boolean);
+		if (parts.length > 0) parts.push("");
+		parts.push(`Type / followed by any pi slash command (e.g. /model, /workon).`);
+		return parts.join("\n");
 	},
 });
 

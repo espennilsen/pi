@@ -110,7 +110,7 @@ export class ChannelRegistry {
 				});
 				this.adapters.set(name, adapter);
 			} catch (err: any) {
-				this.errors.push({ adapter: name, error: err.message });
+				this.errors.push({ adapter: name, error: err?.message ?? err });
 			}
 		}
 	}
@@ -124,7 +124,7 @@ export class ChannelRegistry {
 						this.invokeIncoming({ ...msg, adapter: name });
 					});
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to start: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to start: ${err?.message ?? err}` });
 				}
 			}
 		}
@@ -137,7 +137,7 @@ export class ChannelRegistry {
 				try {
 					await adapter.syncBotCommands(commands);
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err?.message ?? err}` });
 				}
 			}
 		}

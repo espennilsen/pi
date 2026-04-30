@@ -154,6 +154,11 @@ export class ChatBridge {
 			// 2. Try pi slash commands (extension/skill/prompt)
 			const slashRoute = await routeSlashCommand(text, this.deps.slashCommands);
 			if (slashRoute) {
+				if (slashRoute.action === "error") {
+					this.sendReply(message.adapter, message.sender, `❌ /${slashRoute.command}: ${slashRoute.errorMessage}`);
+					return;
+				}
+
 				if (slashRoute.action === "handled" && slashRoute.eventName) {
 					// Extension command — emit on event bus
 					const { command: cmdName, args } = slashRoute;
@@ -167,6 +172,17 @@ export class ChatBridge {
 					// Skill or prompt command — use expanded text as the prompt
 					const { command: cmdName } = slashRoute;
 					this.log("slash-command", { command: cmdName, source: "skill/prompt" });
+
+					// Queue depth check (same guard as regular messages)
+					if (session.queue.length >= this.config.maxQueuePerSender) {
+						this.sendReply(
+							message.adapter,
+							message.sender,
+							`⚠️ Queue full (${this.config.maxQueuePerSender} pending). ` +
+							`Wait for current prompts to finish or use /abort.`,
+						);
+						return;
+					}
 
 					// Modify the queued prompt text to use the expanded content
 					const expandedPrompt: QueuedPrompt = {

@@ -39,11 +39,13 @@ export interface SlashCommandInfo {
 
 /** Result of routing a slash command. */
 export interface CommandRouteResult {
-	action: "handled";
+	action: "handled" | "error";
 	/** For extension commands, the event name to emit. */
 	eventName?: string;
 	/** For skill/prompt commands, the expanded text to use as prompt. */
 	expandedText?: string;
+	/** Error message when action is "error". */
+	errorMessage?: string;
 	/** Parsed command name. */
 	command: string;
 	/** Parsed args string. */
@@ -57,7 +59,7 @@ export function isCommand(text: string): boolean {
 }
 
 export function parseCommand(text: string): { command: string; args: string } {
-	const match = text.trim().match(/^\/([a-zA-Z_]+)(?:@\S+)?\s*(.*)/s);
+	const match = text.trim().match(/^\/([a-zA-Z_-]+)(?:@\S+)?\s*(.*)/s);
 	if (!match) return { command: "", args: "" };
 	return { command: match[1].toLowerCase(), args: match[2].trim() };
 }
@@ -119,7 +121,7 @@ export async function routeSlashCommand(
 		if (expandedText) {
 			return { action: "handled", expandedText, command: parsed.command, args: parsed.args };
 		}
-		return null;
+		return { action: "error", errorMessage: "Failed to load skill file.", command: parsed.command, args: parsed.args };
 	}
 
 	if (cmd.source === "prompt") {
@@ -127,7 +129,7 @@ export async function routeSlashCommand(
 		if (expandedText) {
 			return { action: "handled", expandedText, command: parsed.command, args: parsed.args };
 		}
-		return null;
+		return { action: "error", errorMessage: "Failed to expand prompt template.", command: parsed.command, args: parsed.args };
 	}
 
 	return null;

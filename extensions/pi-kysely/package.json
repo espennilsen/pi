@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-kysely",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Shared Kysely database registry for pi — multi-dialect SQL with table-level RBAC",
 	"type": "module",
 	"keywords": [

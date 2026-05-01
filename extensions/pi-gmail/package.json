@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-gmail",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Gmail extension for pi — read, search, compose, and send emails via Gmail API",
   "type": "module",
   "keywords": [

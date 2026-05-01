@@ -1,6 +1,6 @@
 {
 	"name": "@e9n/pi-projects",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Project tracking extension for pi — auto-discovers git repos with health status dashboard",
 	"type": "module",
 	"keywords": [

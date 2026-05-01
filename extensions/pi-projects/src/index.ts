@@ -143,7 +143,7 @@ export default function (pi: ExtensionAPI) {
 	});
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:projects", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		try {
 			const search = rawArgs?.trim().toLowerCase();
 			let projects = await scanProjects(devDir);
@@ -162,10 +162,10 @@ export default function (pi: ExtensionAPI) {
 				lines.push("Dirty: " + dirty.map(p => `${p.name} (${p.dirty_count})`).join(", "));
 			}
 			pi.sendMessage({ customType: "command_result", content: lines.join("\n"), display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "projects", message: lines.join("\n"), type: "info" });
+			pi.events.emit("command_result", { command: "projects", message: lines.join("\n"), type: "info", source: source ?? "" });
 		} catch (e: any) {
 			pi.sendMessage({ customType: "command_result", content: `pi-projects: ${e.message}`, display: true, details: { type: "error" } });
-			pi.events.emit("command_result", { command: "projects", message: `pi-projects: ${e.message}`, type: "error" });
+			pi.events.emit("command_result", { command: "projects", message: `pi-projects: ${e.message}`, type: "error", source: source ?? "" });
 		}
 	});
 }

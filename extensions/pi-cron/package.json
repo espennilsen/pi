@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-cron",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cron scheduler extension for pi — schedule recurring prompts as isolated subprocesses",
   "keywords": [
     "pi-package"

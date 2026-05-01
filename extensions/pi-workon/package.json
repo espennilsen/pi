@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-workon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Project context switching and initialization for pi — switch projects, detect stacks, scaffold AGENTS.md",
   "type": "module",
   "keywords": [

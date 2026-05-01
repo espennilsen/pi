@@ -30,13 +30,19 @@ export interface ChannelMessage {
 	rawBody?: unknown;
 	/** Webhook transport overrides for this message */
 	webhook?: WebhookRequestOptions;
+	/** Local file path to send as an attachment (for adapters that support file sends) */
+	filePath?: string;
+	/** Filename for the attachment (used when filePath is set) */
+	fileName?: string;
+	/** Caption for the file attachment (used when filePath is set) */
+	caption?: string;
 }
 
 // ── Incoming message (from external → pi) ───────────────────────
 
 export interface IncomingAttachment {
 	/** Attachment type */
-	type: "image" | "document" | "audio";
+	type: "image" | "document" | "audio" | "file";
 	/** Local file path (temporary, downloaded by the adapter) */
 	path: string;
 	/** Original filename (if available) */
@@ -106,14 +112,20 @@ export interface ChannelAdapter {
 	 * Optional — only supported by adapters that have real-time presence (e.g. Telegram).
 	 */
 	sendTyping?(recipient: string): Promise<void>;
-	/**
-	 * Sync bot commands with the platform (e.g. Telegram's /command menu).
-	 * Optional — only supported by adapters with a command menu API.
-	 */
+	/** Sync bot commands with the platform (e.g. Telegram's /command menu). Optional — only supported by adapters with a command menu API. */
 	syncBotCommands?(commands: Array<{ command: string; description: string }>): Promise<void>;
+	/** Send a file to a recipient. Optional — only supported by adapters with file send capability. */
+	sendFile?(recipient: string, filePath: string, fileName?: string, caption?: string): Promise<void>;
 }
 
 // ── Config (lives under "pi-channels" key in pi settings.json) ──
+
+export interface FileUploadConfig {
+	/** Enable file uploads — save incoming files to temp and pass path to LLM (default: false). */
+	enabled?: boolean;
+	/** Max file size in bytes for uploaded files (default: 52428800 = 50MB). */
+	maxSize?: number;
+}
 
 export interface AdapterConfig {
 	type: string;

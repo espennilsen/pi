@@ -275,13 +275,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 
 				if (route.action === "event-bus") {
 					const parsed = parseCommand(trimmed)!;
-					_pi.events.emit(route.eventName!, { args: parsed.args });
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
+					_pi.events.emit(route.eventName!, { args: parsed.args, source: "pi-web-dashboard" });
 					json(res, 202, { status: "accepted", dispatched: true, command: parsed.name, source: "extension" });
 					return;
 				}
 
 				if (route.action === "expand-and-send") {
+					const parsed = parseCommand(trimmed)!;
 					try {
 						_pi.sendUserMessage(route.expandedText!);
 					} catch (sendErr: unknown) {
@@ -289,8 +289,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 						json(res, 500, { error: `Agent rejected message: ${msg}` });
 						return;
 					}
-					const parsed = parseCommand(trimmed)!;
-					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 202, { status: "accepted", dispatched: true, command: parsed.name, source: route.info?.source });
 					return;
 				}
@@ -355,41 +353,20 @@ export function mountDashboard(pi: ExtensionAPI): void {
 	_pi = pi;
 
 	// Forward command_result events from extensions to SSE clients
+	// Only forward results intended for this extension (source matching).
 	const unsubCommandResult = pi.events.on("command_result", (data: unknown) => {
-		const d = data as { command?: string; message?: string; type?: string };
+		const d = data as { command?: string; message?: string; type?: string; source?: string };
+		// Only forward if source is empty (TUI/channels) or matches pi-web-dashboard
+		if (d.source && d.source !== "pi-web-dashboard") return;
 		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
 	});
 
-	// Forward agent lifecycle events to SSE clients
-	pi.on("agent_start", async () => {
-		broadcast({ type: "agent_start", time: new Date().toISOString() });
-	});
-	pi.on("agent_end", async () => {
-		broadcast({ type: "agent_end", time: new Date().toISOString() });
-	});
-	pi.on("turn_end", async (event) => {
-		const content: unknown[] = [];
-		if (event.message?.role === "assistant" && Array.isArray(event.message?.content)) {
-			for (const block of event.message.content as unknown[]) {
-				const b = block as Record<string, unknown>;
-				if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 8192) });
-			}
-		}
-		broadcast({ type: "turn_end", content, time: new Date().toISOString() });
-	});
-	pi.on("tool_call", async (event) => {
-		broadcast({ type: "tool_start", toolName: event.toolName, toolCallId: event.toolCallId, time: new Date().toISOString() });
-	});
-	pi.on("tool_result", async (event) => {
-		const content: unknown[] = [];
-		for (const c of event.content ?? []) {
-			const b = c as unknown as Record<string, unknown>;
-			if (b.type === "text") content.push({ type: "text", text: String(b.text ?? "").slice(0, 4096) });
-		}
-		broadcast({ type: "tool_end", toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError, content, time: new Date().toISOString() });
-	});
+	// Agent lifecycle events (agent_start, agent_end, turn_end, tool_call,
+	// tool_result) are handled by index.ts. Those listeners are more complete
+	// (thinking blocks, turn indices, tool input, structured content).
+	// Duplicating them here caused every SSE event to fire twice (issue #160).
 
-	_piUnmountCleanup = [unsubCommandResult];  // pi.on() returns void, cannot unsubscribe those
+	_piUnmountCleanup = [unsubCommandResult];
 
 	pi.events.emit("web:mount", {
 		name: "dashboard",

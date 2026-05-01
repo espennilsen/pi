@@ -262,10 +262,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Event bus listener for web/mobile slash command support
-	pi.events.on("command:cmux-status", async (_data: unknown) => {
+	pi.events.on("command:cmux-status", async (data: unknown) => {
+		const { source } = data as { args: string; source?: string };
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
-			pi.events.emit("command_result", { command: "cmux-status", message: msg, type });
+			pi.events.emit("command_result", { command: "cmux-status", message: msg, type, source: source ?? "" });
 		};
 		const lines: string[] = [
 			"## cmux Integration Status", "",

@@ -76,9 +76,10 @@ export default function (pi: ExtensionAPI) {
 		await registry.startListening();
 
 		// Sync bot commands with platforms (e.g. Telegram /command menu)
-		// Include both built-in and pi slash commands
-		const builtInCommands = getAllCommands().map(c => ({ command: c.name, description: c.description }));
-		const piCommands = pi.getCommands().map(c => ({ command: c.name, description: c.description || c.name }));
+		// Telegram limits descriptions to 256 chars — truncate if needed
+		const truncate = (desc: string) => desc.length > 256 ? desc.slice(0, 253) + "..." : desc;
+		const builtInCommands = getAllCommands().map(c => ({ command: c.name, description: truncate(c.description) }));
+		const piCommands = pi.getCommands().map(c => ({ command: c.name, description: truncate(c.description || c.name) }));
 		const allBotCommands = [...builtInCommands, ...piCommands];
 		await registry.syncBotCommands(allBotCommands);
 
@@ -166,11 +167,11 @@ export default function (pi: ExtensionAPI) {
 
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:chat-bridge", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		const cmd = rawArgs?.trim().toLowerCase();
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
-			pi.events.emit("command_result", { command: "chat-bridge", message: msg, type });
+			pi.events.emit("command_result", { command: "chat-bridge", message: msg, type, source: source ?? "" });
 		};
 
 		if (cmd === "on") {

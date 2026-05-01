@@ -8,6 +8,7 @@
  */
 
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { SenderSession } from "../types.ts";
 
 export interface BotCommand {
@@ -144,7 +145,7 @@ async function expandSkill(skillPath: string, args: string, baseDir?: string): P
 		if (fmMatch) content = content.slice(fmMatch[0].length);
 		content = content.trim();
 		if (!content) return null;
-		const dir = baseDir || skillPath.replace(/\/[^/]+$/, "");
+		const dir = baseDir ?? path.dirname(skillPath);
 		const block = `<skill name="${skillPath}" location="${skillPath}">\nReferences are relative to ${dir}.\n\n${content}\n</skill>`;
 		return args ? `${block}\n\n${args}` : block;
 	} catch {

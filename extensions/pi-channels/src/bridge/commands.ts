@@ -140,7 +140,7 @@ async function expandSkill(skillPath: string, args: string, baseDir?: string): P
 	try {
 		let content = await fs.readFile(skillPath, "utf-8");
 		// Strip YAML frontmatter
-		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+		const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?/);
 		if (fmMatch) content = content.slice(fmMatch[0].length);
 		content = content.trim();
 		if (!content) return null;
@@ -157,7 +157,7 @@ async function expandPrompt(promptPath: string, argsString: string): Promise<str
 	try {
 		let content = await fs.readFile(promptPath, "utf-8");
 		// Strip YAML frontmatter
-		const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+		const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?/);
 		if (fmMatch) content = content.slice(fmMatch[0].length);
 		content = content.trim();
 		if (!content) return null;
@@ -195,6 +195,7 @@ function parseCommandArgs(argsString: string): string[] {
 	const args: string[] = [];
 	let current = "";
 	let inQuote: string | null = null;
+	let tokenStarted = false;
 	for (let i = 0; i < argsString.length; i++) {
 		const char = argsString[i];
 		if (inQuote) {
@@ -202,14 +203,16 @@ function parseCommandArgs(argsString: string): string[] {
 			else current += char;
 		} else if (char === '"' || char === "'") {
 			inQuote = char;
+			tokenStarted = true;
 		} else if (char === " " || char === "\t") {
-			if (current) { args.push(current); current = ""; }
+			if (tokenStarted) { args.push(current); current = ""; tokenStarted = false; }
 		} else {
 			current += char;
+			tokenStarted = true;
 		}
 	}
-	if (current) args.push(current);
 	if (inQuote) throw new Error(`Unterminated quote '${inQuote}'`);
+	if (tokenStarted) args.push(current);
 	return args;
 }
 

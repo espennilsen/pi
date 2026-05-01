@@ -13,35 +13,32 @@
  *   - /chat-bridge on command
  *   - settings.json: { "pi-channels": { "bridge": { "enabled": true } } }
  *
- * Config in settings.json under "pi-channels":
- * {
- *   "pi-channels": {
- *     "adapters": {
- *       "telegram": { "type": "telegram", "botToken": "your-telegram-bot-token", "polling": true }
- *     },
- *     "routes": {
- *       "ops": { "adapter": "telegram", "recipient": "-100987654321" }
- *     },
- *     "bridge": {
- *       "enabled": false,
- *       "maxQueuePerSender": 5,
- *       "timeoutMs": 300000,
- *       "maxConcurrent": 2,
- *       "typingIndicators": true,
- *       "commands": true
- *     }
- *   }
- * }
+ * Slash command routing: incoming /commands are checked against pi's
+ * registered slash commands. Extension commands are dispatched via the
+ * event bus; skill/prompt commands are expanded into the agent prompt.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, SlashCommandInfo } from "@mariozechner/pi-coding-agent";
 import { loadConfig } from "./config.ts";
 import { ChannelRegistry } from "./registry.ts";
 import { registerChannelEvents, setBridge } from "./events.ts";
 import { registerChannelTool } from "./tool.ts";
 import { ChatBridge } from "./bridge/bridge.ts";
-import { getAllCommands } from "./bridge/commands.ts";
+import { getAllCommands, type SlashCommandInfo as ChannelSlashCommand } from "./bridge/commands.ts";
 import { createLogger } from "./logger.ts";
+
+/** Convert pi's SlashCommandInfo to the bridge's simplified format. */
+function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashCommand[] {
+	return commands.map(cmd => ({
+		name: cmd.name,
+		description: cmd.description,
+		source: cmd.source,
+		sourceInfo: {
+			path: cmd.sourceInfo.path,
+			baseDir: cmd.sourceInfo.baseDir,
+		},
+	}));
+}
 
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
@@ -81,16 +78,19 @@ export default function (pi: ExtensionAPI) {
 		// Sync bot commands with platforms (e.g. Telegram /command menu)
 		// Telegram limits descriptions to 256 chars — truncate if needed
 		const truncate = (desc: string) => desc.length > 256 ? desc.slice(0, 253) + "..." : desc;
-		const botCommands = getAllCommands().map(c => ({ command: c.name, description: truncate(c.description) }));
-		await registry.syncBotCommands(botCommands);
+		const builtInCommands = getAllCommands().map(c => ({ command: c.name, description: truncate(c.description) }));
+		const piCommands = pi.getCommands().map(c => ({ command: c.name, description: truncate(c.description || c.name) }));
+		const allBotCommands = [...builtInCommands, ...piCommands];
+		await registry.syncBotCommands(allBotCommands);
 
 		const startErrors = registry.getErrors().filter(e => e.error.startsWith("Failed to start"));
 		for (const err of startErrors) {
 			ctx.ui.notify(`pi-channels: ${err.adapter}: ${err.error}`, "warning");
 		}
 
-		// Initialize bridge
-		bridge = new ChatBridge(config.bridge, ctx.cwd, registry, pi.events, log);
+		// Initialize bridge with slash commands
+		const slashCommands = toChannelSlashCommands(pi.getCommands());
+		bridge = new ChatBridge(config.bridge, ctx.cwd, registry, pi.events, log, { slashCommands });
 		setBridge(bridge);
 
 		const flagEnabled = pi.getFlag("--chat-bridge");

@@ -33,6 +33,17 @@ export class ChannelRegistry {
 	private routes = new Map<string, { adapter: string; recipient: string }>();
 	private errors: Array<{ adapter: string; error: string }> = [];
 	private onIncoming: OnIncomingMessage = () => {};
+
+	/** Safely invoke the incoming callback, catching async rejections. */
+	private invokeIncoming(msg: IncomingMessage & { adapter: string }): void {
+		try {
+			const result = this.onIncoming(msg);
+			if (result instanceof Promise) result.catch((err: any) => this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` }));
+		} catch (err: any) {
+			this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` });
+		}
+	}
+
 	private log?: AdapterLogger;
 	private modelRegistry?: ModelRegistry;
 
@@ -99,7 +110,7 @@ export class ChannelRegistry {
 				});
 				this.adapters.set(name, adapter);
 			} catch (err: any) {
-				this.errors.push({ adapter: name, error: err.message });
+				this.errors.push({ adapter: name, error: err?.message ?? err });
 			}
 		}
 	}
@@ -110,10 +121,10 @@ export class ChannelRegistry {
 			if ((adapter.direction === "incoming" || adapter.direction === "bidirectional") && adapter.start) {
 				try {
 					await adapter.start((msg: IncomingMessage) => {
-						this.onIncoming({ ...msg, adapter: name });
+						this.invokeIncoming({ ...msg, adapter: name });
 					});
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to start: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to start: ${err?.message ?? err}` });
 				}
 			}
 		}
@@ -126,7 +137,7 @@ export class ChannelRegistry {
 				try {
 					await adapter.syncBotCommands(commands);
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err?.message ?? err}` });
 				}
 			}
 		}
@@ -145,7 +156,7 @@ export class ChannelRegistry {
 		// Auto-start if it receives
 		if ((adapter.direction === "incoming" || adapter.direction === "bidirectional") && adapter.start) {
 			adapter.start((msg: IncomingMessage) => {
-				this.onIncoming({ ...msg, adapter: name });
+				this.invokeIncoming({ ...msg, adapter: name });
 			});
 		}
 	}

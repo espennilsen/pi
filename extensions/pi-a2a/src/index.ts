@@ -108,6 +108,14 @@ export default function (pi: ExtensionAPI) {
 	/** Captured from session_start for use in async callbacks. */
 	let sessionCtx: ExtensionContext | null = null;
 
+	/**
+	 * Active A2A task context — captured when processMessage is called and
+	 * cleared after onTaskResultSaved fires. This is separate from pendingResolve
+	 * because agent_end clears pendingResolve/pendingNonce before the executor's
+	 * onTaskResultSaved callback fires.
+	 */
+	let activeA2aTask: { nonce: string; startTime: number; taskId?: string } | null = null;
+
 	// ── Powerbar segment ──────────────────────────────────────
 
 	pi.events.emit("powerbar:register-segment", {
@@ -256,6 +264,9 @@ export default function (pi: ExtensionAPI) {
 			pendingStartTime = start;
 			pendingNonce = nonce;
 
+			// Capture active A2A task context for onTaskResultSaved callback
+			activeA2aTask = { nonce, startTime: start };
+
 			// Inject into the main conversation — triggers a full agent turn.
 			// The nonce in details lets agent_end correlate this turn's response.
 			pi.sendMessage(
@@ -319,6 +330,8 @@ export default function (pi: ExtensionAPI) {
 				pendingResolve = null;
 				pendingReject = null;
 				pendingNonce = null;
+				// Note: activeA2aTask is NOT cleared here — it's cleared by
+				// onTaskResultSaved after the task result is saved to the store.
 
 				if (response) {
 					resolve({ ok: true, response, durationMs });
@@ -526,6 +539,8 @@ export default function (pi: ExtensionAPI) {
 		if (isRunning()) {
 			await stopServer(log);
 		}
+		// Clear active A2A task context
+		activeA2aTask = null;
 
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
@@ -565,10 +580,11 @@ export default function (pi: ExtensionAPI) {
 		// Show completion message after task result is saved to the store.
 		// This fires AFTER saveTaskResult() completes, ensuring the message
 		// accurately reflects that the result is persisted.
+		// Uses activeA2aTask context (not pendingResolve/pendingNonce) because
+		// agent_end clears those before this callback fires.
 		executor.onTaskResultSaved = (taskId: string, success: boolean) => {
-			if (pendingResolve && pendingNonce) {
-				// Find the matching A2A request to get the duration
-				const durationMs = Date.now() - pendingStartTime;
+			if (activeA2aTask) {
+				const durationMs = Date.now() - activeA2aTask.startTime;
 				const status = success ? "completed" : "failed";
 				const emoji = success ? "✅" : "❌";
 				pi.sendMessage(
@@ -579,6 +595,10 @@ export default function (pi: ExtensionAPI) {
 					},
 					{ triggerTurn: false },
 				);
+				// Update activeA2aTask with taskId for better logging
+				activeA2aTask.taskId = taskId;
+				// Clear activeA2aTask after message is sent
+				activeA2aTask = null;
 			}
 		};
 		pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
@@ -827,6 +847,8 @@ export default function (pi: ExtensionAPI) {
 		if (isRunning()) {
 			await stopServer(log);
 		}
+		// Clear active A2A task context
+		activeA2aTask = null;
 	});
 
 	// ── Clarification Response Poller ─────────────────────────

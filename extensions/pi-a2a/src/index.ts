@@ -527,6 +527,9 @@ export default function (pi: ExtensionAPI) {
 		}
 		hubAgentId = null;
 		staticRegistry = null;
+		// Clear active A2A task context BEFORE aborting executor to prevent
+		// stale onTaskResultSaved callbacks from firing in the new session
+		activeA2aTask = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -539,8 +542,6 @@ export default function (pi: ExtensionAPI) {
 		if (isRunning()) {
 			await stopServer(log);
 		}
-		// Clear active A2A task context
-		activeA2aTask = null;
 
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
@@ -835,6 +836,9 @@ export default function (pi: ExtensionAPI) {
 		hubAgentId = null;
 		staticRegistry = null;
 
+		// Clear active A2A task context BEFORE aborting executor to prevent
+		// stale onTaskResultSaved callbacks from firing after shutdown
+		activeA2aTask = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -847,8 +851,6 @@ export default function (pi: ExtensionAPI) {
 		if (isRunning()) {
 			await stopServer(log);
 		}
-		// Clear active A2A task context
-		activeA2aTask = null;
 	});
 
 	// ── Clarification Response Poller ─────────────────────────

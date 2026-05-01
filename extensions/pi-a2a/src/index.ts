@@ -321,16 +321,6 @@ export default function (pi: ExtensionAPI) {
 				pendingNonce = null;
 
 				if (response) {
-					// Show completion in chat — result is saved to the task store,
-					// callers retrieve it via tasks/get polling
-					pi.sendMessage(
-						{
-							customType: "a2a-task-completed",
-							content: `✅ **A2A task completed** (${fmtDuration(durationMs)}) — result saved to task store`,
-							display: true,
-						},
-						{ triggerTurn: false },
-					);
 					resolve({ ok: true, response, durationMs });
 				} else {
 					lastTurnStatus = "failed";
@@ -569,6 +559,26 @@ export default function (pi: ExtensionAPI) {
 			updateStatusLine();
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
+			}
+		};
+
+		// Show completion message after task result is saved to the store.
+		// This fires AFTER saveTaskResult() completes, ensuring the message
+		// accurately reflects that the result is persisted.
+		executor.onTaskResultSaved = (taskId: string, success: boolean) => {
+			if (pendingResolve && pendingNonce) {
+				// Find the matching A2A request to get the duration
+				const durationMs = Date.now() - pendingStartTime;
+				const status = success ? "completed" : "failed";
+				const emoji = success ? "✅" : "❌";
+				pi.sendMessage(
+					{
+						customType: "a2a-task-completed",
+						content: `${emoji} **A2A task ${status}** (${fmtDuration(durationMs)}) — result saved to task store (task: ${taskId.slice(0, 8)}…)`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
 			}
 		};
 		pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);

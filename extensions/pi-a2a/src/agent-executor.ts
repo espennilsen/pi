@@ -138,8 +138,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	private lastTaskDurationMs?: number;
 	/** Last completed/failed task status for telemetry reporting. */
 	private lastTaskStatus?: "completed" | "failed";
-	/** Optional callback invoked after each task completes or fails. */
+	/** Optional callback invoked after each task completes or fails (before saving result). */
 	onTaskFinished?: () => void;
+	/** Optional callback invoked after task result is successfully saved to TaskStore. */
+	onTaskResultSaved?: (taskId: string, success: boolean) => void;
 
 	constructor(
 		log: LogFn,
@@ -781,6 +783,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			await this.saveTaskResult(taskId, contextId, result, loopMetadata);
 			this.taskContexts.delete(taskId);
 			this.inputRoundCounts.delete(taskId);
+			
+			// Notify that result has been persisted
+			this.onTaskResultSaved?.(taskId, result.ok);
 		} catch (err: unknown) {
 			this.activeTaskId = null;
 			this.activeLoopMetadata = null;
@@ -812,6 +817,9 @@ export class PiAgentExecutor implements AgentExecutor {
 			const parkedTimeout = this.parkedInputTimeouts.get(taskId);
 			if (parkedTimeout) clearTimeout(parkedTimeout);
 			this.parkedInputTimeouts.delete(taskId);
+			
+			// Notify that result has been persisted (even on error)
+			this.onTaskResultSaved?.(taskId, false);
 		} finally {
 			// Clean up timeout handle to prevent timer leak
 			if (timeoutHandle) {

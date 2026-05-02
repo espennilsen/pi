@@ -571,7 +571,10 @@ export default function (pi: ExtensionAPI) {
 		// send telemetry so the hub sees "idle" immediately — agent_end
 		// fires before the executor clears activeTaskId, so this callback
 		// is the earliest reliable point where executor.isBusy() is false.
+		// Capture sessionToken to prevent stale callbacks after restart
+		const taskFinishedSession = sessionToken;
 		executor.onTaskFinished = () => {
+			if (sessionToken !== taskFinishedSession) return;
 			updateStatusLine();
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
@@ -583,7 +586,11 @@ export default function (pi: ExtensionAPI) {
 		// accurately reflects that the result is persisted.
 		// Uses activeA2aTask context (not pendingResolve/pendingNonce) because
 		// agent_end clears those before this callback fires.
+		// Capture sessionToken to prevent stale callbacks from affecting new session
+		const resultSavedSession = sessionToken;
 		executor.onTaskResultSaved = (taskId: string, success: boolean) => {
+			// Bail out if session restarted while callback was pending
+			if (sessionToken !== resultSavedSession) return;
 			if (activeA2aTask) {
 				const durationMs = Date.now() - activeA2aTask.startTime;
 				const status = success ? "completed" : "failed";

@@ -108,6 +108,14 @@ export default function (pi: ExtensionAPI) {
 	/** Captured from session_start for use in async callbacks. */
 	let sessionCtx: ExtensionContext | null = null;
 
+	/**
+	 * Active A2A task context — captured when processMessage is called and
+	 * cleared after onTaskResultSaved fires. This is separate from pendingResolve
+	 * because agent_end clears pendingResolve/pendingNonce before the executor's
+	 * onTaskResultSaved callback fires.
+	 */
+	let activeA2aTask: { nonce: string; startTime: number; taskId?: string } | null = null;
+
 	// ── Powerbar segment ──────────────────────────────────────
 
 	pi.events.emit("powerbar:register-segment", {
@@ -256,6 +264,9 @@ export default function (pi: ExtensionAPI) {
 			pendingStartTime = start;
 			pendingNonce = nonce;
 
+			// Capture active A2A task context for onTaskResultSaved callback
+			activeA2aTask = { nonce, startTime: start };
+
 			// Inject into the main conversation — triggers a full agent turn.
 			// The nonce in details lets agent_end correlate this turn's response.
 			pi.sendMessage(
@@ -319,18 +330,10 @@ export default function (pi: ExtensionAPI) {
 				pendingResolve = null;
 				pendingReject = null;
 				pendingNonce = null;
+				// Note: activeA2aTask is NOT cleared here — it's cleared by
+				// onTaskResultSaved after the task result is saved to the store.
 
 				if (response) {
-					// Show completion in chat — result is saved to the task store,
-					// callers retrieve it via tasks/get polling
-					pi.sendMessage(
-						{
-							customType: "a2a-task-completed",
-							content: `✅ **A2A task completed** (${fmtDuration(durationMs)}) — result saved to task store`,
-							display: true,
-						},
-						{ triggerTurn: false },
-					);
 					resolve({ ok: true, response, durationMs });
 				} else {
 					lastTurnStatus = "failed";
@@ -524,6 +527,9 @@ export default function (pi: ExtensionAPI) {
 		}
 		hubAgentId = null;
 		staticRegistry = null;
+		// Clear active A2A task context BEFORE aborting executor to prevent
+		// stale onTaskResultSaved callbacks from firing in the new session
+		activeA2aTask = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;
@@ -565,10 +571,42 @@ export default function (pi: ExtensionAPI) {
 		// send telemetry so the hub sees "idle" immediately — agent_end
 		// fires before the executor clears activeTaskId, so this callback
 		// is the earliest reliable point where executor.isBusy() is false.
+		// Capture sessionToken to prevent stale callbacks after restart
+		const taskFinishedSession = sessionToken;
 		executor.onTaskFinished = () => {
+			if (sessionToken !== taskFinishedSession) return;
 			updateStatusLine();
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
+			}
+		};
+
+		// Show completion message after task result is saved to the store.
+		// This fires AFTER saveTaskResult() completes, ensuring the message
+		// accurately reflects that the result is persisted.
+		// Uses activeA2aTask context (not pendingResolve/pendingNonce) because
+		// agent_end clears those before this callback fires.
+		// Capture sessionToken to prevent stale callbacks from affecting new session
+		const resultSavedSession = sessionToken;
+		executor.onTaskResultSaved = (taskId: string, success: boolean) => {
+			// Bail out if session restarted while callback was pending
+			if (sessionToken !== resultSavedSession) return;
+			if (activeA2aTask) {
+				const durationMs = Date.now() - activeA2aTask.startTime;
+				const status = success ? "completed" : "failed";
+				const emoji = success ? "✅" : "❌";
+				pi.sendMessage(
+					{
+						customType: "a2a-task-completed",
+						content: `${emoji} **A2A task ${status}** (${fmtDuration(durationMs)}) — result saved to task store (task: ${taskId.slice(0, 8)}…)`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				// Update activeA2aTask with taskId for better logging
+				activeA2aTask.taskId = taskId;
+				// Clear activeA2aTask after message is sent
+				activeA2aTask = null;
 			}
 		};
 		pushNotificationStore = new SQLitePushNotificationStore(taskStore.getDb(), log);
@@ -805,6 +843,9 @@ export default function (pi: ExtensionAPI) {
 		hubAgentId = null;
 		staticRegistry = null;
 
+		// Clear active A2A task context BEFORE aborting executor to prevent
+		// stale onTaskResultSaved callbacks from firing after shutdown
+		activeA2aTask = null;
 		if (executor) {
 			executor.abortAll();
 			executor = null;

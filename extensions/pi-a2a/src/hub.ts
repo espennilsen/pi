@@ -741,16 +741,6 @@ export async function reportHubTaskStatus(
 
 // ── Orchestrator ───────────────────────────────────────────
 
-export interface AgentSelectionResult {
-	agentId: string;
-}
-
-export interface AgentStrategy {
-	name: string;
-	description: string;
-	weights?: Record<string, number>;
-}
-
 export async function selectAgent(
 	params: {
 		projectId: string;
@@ -794,7 +784,7 @@ export async function createProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.create", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_create");
-	return result ? (result as ProjectSettings) : null;
+	return result ? (result as unknown as ProjectSettings) : null;
 }
 
 export async function getProject(
@@ -804,7 +794,7 @@ export async function getProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.get", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_get");
-	return result ? (result as ProjectSettings) : null;
+	return result ? (result as unknown as ProjectSettings) : null;
 }
 
 export async function listProjects(
@@ -835,7 +825,7 @@ export async function updateProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.update", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_update");
-	return result ? (result as ProjectSettings) : null;
+	return result ? (result as unknown as ProjectSettings) : null;
 }
 
 // ── SSE Stream ───────────────────────────────────────────

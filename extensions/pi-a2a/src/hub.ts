@@ -841,6 +841,8 @@ export async function connectToPipelineStream(
 	hubConfig: HubConfig,
 ): Promise<{ url: string }> {
 	const baseUrl = hubConfig.url.replace(/\/$/, "");
+	// Normalize: avoid double /api when hubConfig.url already ends with /api
+	const apiBase = baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
 	const params = new URLSearchParams();
 	
 	if (options?.project) params.append("project", options.project);
@@ -849,8 +851,8 @@ export async function connectToPipelineStream(
 	
 	const queryString = params.toString();
 	const url = queryString 
-		? `${baseUrl}/api/v1/pipeline/stream?${queryString}`
-		: `${baseUrl}/api/v1/pipeline/stream`;
+		? `${apiBase}/v1/pipeline/stream?${queryString}`
+		: `${apiBase}/v1/pipeline/stream`;
 	
 	return { url };
 }
@@ -892,7 +894,13 @@ export async function listenToSSEStream(
 			
 			while (!controller.signal.aborted) {
 				const { done, value } = await reader.read();
-				if (done) break;
+				if (done) {
+					// Clean stream close — treat as error to trigger reconnect
+					if (!controller.signal.aborted) {
+						throw new Error("SSE stream closed by server");
+					}
+					return;
+				}
 				
 				buffer += decoder.decode(value, { stream: true });
 				const lines = buffer.split("\n");
@@ -928,7 +936,8 @@ export async function listenToSSEStream(
 		}
 	};
 	
-	connect();
+	// Start connection and await initial handshake
+	await connect();
 	
 	return {
 		abort: () => {

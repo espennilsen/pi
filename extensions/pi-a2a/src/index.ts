@@ -289,6 +289,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", (event) => {
 		agentBusy = false;
+		// Abort any active SSE subscriptions from previous session
+		for (const [, conn] of sseConnections) {
+			conn.abort();
+		}
+		sseConnections.clear();
 
 		// Record turn duration for telemetry
 		if (lastTurnStartMs > 0) {
@@ -479,6 +484,8 @@ export default function (pi: ExtensionAPI) {
 		await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
 	}
 
+    const sseConnections = new Map<string, { abort: () => void }>();
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -494,6 +501,11 @@ export default function (pi: ExtensionAPI) {
 		credentialCache.clear();
 		conversationContexts.clear();
 		agentBusy = false;
+		// Abort any active SSE subscriptions from previous session
+		for (const [, conn] of sseConnections) {
+			conn.abort();
+		}
+		sseConnections.clear();
 		const staleResolvers = idleResolvers;
 		idleResolvers = [];
 		for (const r of staleResolvers) r();
@@ -754,6 +766,11 @@ export default function (pi: ExtensionAPI) {
 		sessionCtx?.ui.setStatus("a2a", undefined);
 		pi.events.emit("powerbar:update", { id: "a2a", text: undefined });
 		sessionCtx = null;
+		// Abort any active SSE subscriptions
+		for (const [, conn] of sseConnections) {
+			conn.abort();
+		}
+		sseConnections.clear();
 		// Reject pending A2A request if any
 		if (pendingResolve) {
 			pendingResolve({ ok: false, response: "", error: "Session shutdown", durationMs: Date.now() - pendingStartTime });
@@ -2439,7 +2456,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	const sseConnections = new Map<string, { abort: () => void; connected: boolean }>();
 
 	pi.registerTool({
 		name: "pipeline_stream_subscribe",
@@ -2489,7 +2505,7 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				const { abort } = await listenToSSEStream(url, handleEvent, log, hubConfig.apiKey);
-				sseConnections.set(subscriptionId, { abort, connected: true });
+				sseConnections.set(subscriptionId, { abort });
 				
 				const filters = [];
 				if (params.project) filters.push(`project=${params.project}`);
@@ -2539,7 +2555,7 @@ export default function (pi: ExtensionAPI) {
 			
 			const lines = [`# Active SSE Subscriptions (${sseConnections.size})\n`];
 			for (const [id, conn] of sseConnections.entries()) {
-				lines.push(`- **${id}** — ${conn.connected ? "✓ Connected" : "✗ Disconnected"}`);
+				lines.push(`- **${id}** — Subscribed (stream active)`);
 			}
 			return txt(lines.join("\n"));
 		},

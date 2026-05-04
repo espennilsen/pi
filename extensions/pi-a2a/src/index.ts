@@ -703,6 +703,8 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
 		log("server_start_rejected", { bind, reason: "no_api_key_on_external_interface" }, "ERROR");
 		// Clean up resources allocated before server start
+		if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
+		if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
 		if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 		executor = null;
 		pushNotificationStore = null;
@@ -715,6 +717,8 @@ export default function (pi: ExtensionAPI) {
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start
+			if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
+			if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
 			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 			executor = null;
 			pushNotificationStore = null;
@@ -1158,13 +1162,19 @@ export default function (pi: ExtensionAPI) {
 	async function restoreLongRunningTasks(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
 		if (!config.longRunningTasks?.enabled || !longRunningTaskStore) return;
 
-		const pendingTasks = longRunningTaskStore.getPendingTasks();
-		if (pendingTasks.length === 0) return;
+		// Get all tasks (including terminal states) for restoration
+		const allTasks = longRunningTaskStore.getPendingTasks();
+		// Also get completed/failed tasks that may need resume
+		const completedTasks = longRunningTaskStore.getByState('completed' as any);
+		const failedTasks = longRunningTaskStore.getByState('failed' as any);
+		const tasksToRestore = [...allTasks, ...completedTasks, ...failedTasks];
+		
+		if (tasksToRestore.length === 0) return;
 
-		log("long_running_tasks_restored", { count: pendingTasks.length });
+		log("long_running_tasks_restored", { count: tasksToRestore.length });
 
-		// Queue resume requests for completed tasks
-		for (const task of pendingTasks) {
+		// Queue resume requests for completed/failed tasks
+		for (const task of tasksToRestore) {
 			if (task.state === 'completed' || task.state === 'failed') {
 				const resumeRequest: ResumeRequest = {
 					taskId: task.taskId,
@@ -1215,16 +1225,19 @@ export default function (pi: ExtensionAPI) {
 				// Check task status on hub
 				const hubTask = await getHubTask(task.taskId, config.hub, log);
 				if (hubTask) {
+					// Map hub pipeline state to LongRunningTask state
+					const mappedState = mapHubStateToLongRunningState(hubTask.state);
+					
 					// Task state changed - update and queue resume if terminal state
 					const updatedTask: LongRunningTask = {
 						...task,
-						state: hubTask.state as any,
+						state: mappedState,
 						lastUpdatedAt: Date.now(),
 					};
 					longRunningTaskStore.save(updatedTask);
 
 					// Queue resume for terminal states
-					if (hubTask.state === 'pr_ready' || hubTask.state === 'approved' || hubTask.state === 'cancelled') {
+					if (mappedState === 'completed' || mappedState === 'failed') {
 						const resumeRequest: ResumeRequest = {
 							taskId: task.taskId,
 							contextId: task.contextId,
@@ -1233,7 +1246,10 @@ export default function (pi: ExtensionAPI) {
 							retryCount: 0,
 						};
 						longRunningTaskStore.enqueueResume(resumeRequest);
-						log("long_running_task_completed", { taskId: task.taskId, state: hubTask.state });
+						log("long_running_task_completed", { taskId: task.taskId, state: mappedState });
+						
+						// Trigger resume processing immediately
+						await processResumeQueue(config);
 					}
 				}
 			} catch (err) {
@@ -1241,6 +1257,22 @@ export default function (pi: ExtensionAPI) {
 				log("long_running_task_poll_error", { taskId: task.taskId, error: msg }, "WARN");
 			}
 		}
+	}
+
+	/**
+	 * Map hub pipeline state to LongRunningTask state.
+	 */
+	function mapHubStateToLongRunningState(hubState: string): LongRunningTask['state'] {
+		// Terminal states
+		if (hubState === 'approved' || hubState === 'pr_ready') return 'completed';
+		if (hubState === 'cancelled') return 'failed';
+		// Non-terminal states
+		if (hubState === 'queued' || hubState === 'planning') return 'submitted';
+		if (hubState === 'building') return 'working';
+		if (hubState === 'reviewing') return 'working';
+		if (hubState === 'blocked') return 'working';
+		// Default to working for unknown states
+		return 'working';
 	}
 
 	/**

@@ -18,8 +18,14 @@ import type { ChannelRegistry } from "../registry.ts";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
-import { isCommand, handleCommand, type CommandContext } from "./commands.ts";
+import { isCommand, handleCommand, routeSlashCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";
+
 import { startTyping } from "./typing.ts";
+
+interface BridgeDeps {
+	/** Available slash commands from pi's registry. Updated on session start. */
+	slashCommands: SlashCommandInfo[];
+}
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
 	enabled: false,
@@ -52,6 +58,7 @@ export class ChatBridge {
 	private activeCount = 0;
 	private running = false;
 	private rpcManager: RpcSessionManager | null = null;
+	private deps: BridgeDeps;
 
 	constructor(
 		bridgeConfig: BridgeConfig | undefined,
@@ -59,12 +66,14 @@ export class ChatBridge {
 		registry: ChannelRegistry,
 		events: EventBus,
 		log: LogFn = () => {},
+		deps?: BridgeDeps,
 	) {
 		this.config = { ...BRIDGE_DEFAULTS, ...bridgeConfig };
 		this.cwd = cwd;
 		this.registry = registry;
 		this.events = events;
 		this.log = log;
+		this.deps = deps ?? { slashCommands: [] };
 	}
 
 	// ── Lifecycle ─────────────────────────────────────────────
@@ -104,9 +113,14 @@ export class ChatBridge {
 		this.config = { ...BRIDGE_DEFAULTS, ...cfg };
 	}
 
+	/** Update slash commands from pi's registry. */
+	updateSlashCommands(commands: SlashCommandInfo[]): void {
+		this.deps.slashCommands = commands;
+	}
+
 	// ── Main entry point ──────────────────────────────────────
 
-	handleMessage(message: IncomingMessage): void {
+	async handleMessage(message: IncomingMessage): Promise<void> {
 		if (!this.running) return;
 
 		const text = message.text?.trim();
@@ -130,11 +144,69 @@ export class ChatBridge {
 
 		// Bot commands (only for text-only messages)
 		if (text && !hasAttachments && this.config.commands && isCommand(text)) {
-			const reply = handleCommand(text, session, this.commandContext());
-			if (reply !== null) {
-				this.sendReply(message.adapter, message.sender, reply);
+			// 1. Try built-in commands first
+			const builtInReply = handleCommand(text, session, this.commandContext());
+			if (builtInReply !== null) {
+				this.sendReply(message.adapter, message.sender, builtInReply);
 				return;
 			}
+
+			// 2. Try pi slash commands (extension/skill/prompt)
+			const slashRoute = await routeSlashCommand(text, this.deps.slashCommands);
+			if (slashRoute) {
+				if (slashRoute.action === "error") {
+					this.sendReply(message.adapter, message.sender, `❌ /${slashRoute.command}: ${slashRoute.errorMessage}`);
+					return;
+				}
+
+				if (slashRoute.action === "handled" && slashRoute.eventName) {
+					// Extension command — emit on event bus
+					const { command: cmdName, args } = slashRoute;
+					this.events.emit(slashRoute.eventName, { args });
+					this.sendReply(message.adapter, message.sender, `⏳ /${cmdName} dispatched.`);
+					this.log("slash-command", { command: cmdName, args, source: "extension" });
+					return;
+				}
+
+				if (slashRoute.action === "handled" && slashRoute.expandedText) {
+					// Skill or prompt command — use expanded text as the prompt
+					const { command: cmdName } = slashRoute;
+					this.log("slash-command", { command: cmdName, source: "skill/prompt" });
+
+					// Queue depth check (same guard as regular messages)
+					if (session.queue.length >= this.config.maxQueuePerSender) {
+						this.sendReply(
+							message.adapter,
+							message.sender,
+							`⚠️ Queue full (${this.config.maxQueuePerSender} pending). ` +
+							`Wait for current prompts to finish or use /abort.`,
+						);
+						return;
+					}
+
+					// Modify the queued prompt text to use the expanded content
+					const expandedPrompt: QueuedPrompt = {
+						id: nextId(),
+						adapter: message.adapter,
+						sender: message.sender,
+						text: slashRoute.expandedText,
+						attachments: message.attachments,
+						metadata: { ...message.metadata, slashCommand: cmdName, expandedFromText: text },
+						enqueuedAt: Date.now(),
+					};
+					session.queue.push(expandedPrompt);
+					session.messageCount++;
+
+					this.events.emit("bridge:enqueue", {
+						id: expandedPrompt.id, adapter: message.adapter, sender: message.sender,
+						queueDepth: session.queue.length, slashCommand: cmdName,
+					});
+
+					this.processNext(senderKey);
+					return;
+				}
+			}
+
 			// Unrecognized command — fall through to agent
 		}
 
@@ -346,6 +418,7 @@ export class ChatBridge {
 
 	private commandContext(): CommandContext {
 		return {
+			slashCommands: this.deps.slashCommands,
 			isPersistent: (sender: string) => {
 				// Find the sender key to check mode
 				for (const [key, session] of this.sessions) {

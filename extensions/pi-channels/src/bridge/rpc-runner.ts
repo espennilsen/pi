@@ -189,6 +189,7 @@ export class RpcSession {
 			// Attach images as base64
 			if (options?.attachments?.length) {
 				const images: Array<Record<string, string>> = [];
+				const filePaths: string[] = [];
 				for (const att of options.attachments) {
 					if (att.type === "image") {
 						try {
@@ -202,9 +203,17 @@ export class RpcSession {
 						} catch {
 							// Skip unreadable attachments
 						}
+					} else if (att.type === "file" || att.type === "document" || att.type === "audio") {
+						// Include file path info in the prompt for non-image attachments
+						const label = att.filename ? `${att.filename} (${att.path})` : att.path;
+						filePaths.push(label);
 					}
 				}
 				if (images.length > 0) cmd.images = images;
+				if (filePaths.length > 0) {
+					const fileInfo = filePaths.map(f => `- ${f}`).join("\n");
+					cmd.message = `[Attached files]\n${fileInfo}\n\n${prompt}`;
+				}
 			}
 
 			this.sendCommand(cmd);

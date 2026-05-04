@@ -196,7 +196,18 @@
 			background: var(--color-bg-surface);
 			border-top: 1px solid var(--color-border);
 			flex-shrink: 0;
+			position: relative;
 		}
+		.cmd-dropdown { position: absolute; bottom: 100%; left: 12px; right: 12px; background: var(--color-bg-elevated); border: 1px solid var(--color-border); border-radius: 8px; max-height: 220px; overflow-y: auto; display: none; z-index: 10; box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
+		.cmd-dropdown.visible { display: block; }
+		.cmd-item { display: flex; align-items: baseline; padding: 10px 14px; gap: 8px; cursor: pointer; }
+		.cmd-item:hover, .cmd-item.active { background: rgba(124,111,240,0.1); }
+		.cmd-item .cmd-name { color: var(--color-accent); font-weight: 600; font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; white-space: nowrap; }
+		.cmd-item .cmd-desc { color: var(--color-text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+		.cmd-item .cmd-source { font-size: 10px; font-weight: 600; margin-left: auto; border-radius: 3px; padding: 1px 5px; text-transform: uppercase; }
+		.cmd-item .cmd-source.source-extension { background: rgba(124,111,240,0.15); color: #7c6ff0; }
+		.cmd-item .cmd-source.source-skill { background: rgba(52,211,153,0.15); color: #34d399; }
+		.cmd-item .cmd-source.source-prompt { background: rgba(251,191,36,0.15); color: #fbbf24; }
 		.chat-input {
 			flex: 1;
 			background: var(--color-bg-elevated);
@@ -541,6 +552,9 @@
 										return updated;
 									});
 									break;
+								case "command_result":
+									setMessages(prev => [...prev, { type: "system", text: data.message || data.command || "Command result", time: Date.now() }]);
+									break;
 							}
 						} catch {}
 					};
@@ -558,6 +572,25 @@
 				};
 			}, []);
 
+			// Load slash commands for autocomplete
+			useEffect(() => {
+				api("/chat/commands").then(data => {
+					if (data && data.commands) setCmdList(data.commands);
+				}).catch(() => {});
+			}, []);
+
+			// Show/hide command dropdown based on input
+			const filteredCmds = useMemo(() => {
+				if (!input.trim().startsWith("/")) return [];
+				const q = input.trim().slice(1).toLowerCase();
+				return cmdList.filter(c => c.name.toLowerCase().startsWith(q) || (c.description || "").toLowerCase().includes(q)).slice(0, 8);
+			}, [input, cmdList]);
+
+			useEffect(() => {
+				setCmdVisible(filteredCmds.length > 0 && !(filteredCmds.length === 1 && "/" + filteredCmds[0].name === input.trim()));
+				setCmdActiveIdx(-1);
+			}, [filteredCmds]);
+
 			const handleSend = useCallback(async () => {
 				const text = input.trim();
 				if (!text || sending) return;
@@ -572,11 +605,22 @@
 			}, [input, sending]);
 
 			const handleKeyDown = useCallback((e) => {
+				if (cmdVisible) {
+					if (e.key === "ArrowDown") { e.preventDefault(); setCmdActiveIdx(i => Math.min(i + 1, filteredCmds.length - 1)); return; }
+					if (e.key === "ArrowUp") { e.preventDefault(); setCmdActiveIdx(i => Math.max(i - 1, 0)); return; }
+					if (e.key === "Escape") { e.preventDefault(); setCmdVisible(false); return; }
+					if (e.key === "Tab" || (e.key === "Enter" && cmdActiveIdx >= 0)) {
+					e.preventDefault();
+					const idx = cmdActiveIdx >= 0 ? cmdActiveIdx : 0;
+					if (filteredCmds[idx]) { setInput("/" + filteredCmds[idx].name + " "); setCmdVisible(false); }
+					return;
+					}
+				}
 				if (e.key === "Enter" && !e.shiftKey) {
 					e.preventDefault();
 					handleSend();
 				}
-			}, [handleSend]);
+			}, [handleSend, cmdVisible, filteredCmds, cmdActiveIdx]);
 
 			// Auto-resize textarea
 			const handleInput = useCallback((e) => {
@@ -621,6 +665,20 @@
 						`}
 					</div>
 					<div class="chat-input-bar">
+						${cmdVisible && html`
+							<div class="cmd-dropdown visible">
+								${filteredCmds.map((c, i) => html`
+									<div
+										class=${"cmd-item" + (i === cmdActiveIdx ? " active" : "")}
+										onClick=${() => { setInput("/" + c.name + " "); setCmdVisible(false); inputRef.current?.focus(); }}
+									>
+										<span class="cmd-name">/${c.name}</span>
+										<span class="cmd-desc">${c.description || ""}</span>
+										<span class=${"cmd-source source-" + c.source}>${c.source}</span>
+									</div>
+								`)}
+							</div>
+						`}
 						<textarea
 							ref=${inputRef}
 							class="chat-input"

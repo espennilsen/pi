@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-channels",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Two-way channel extension for pi — route messages between agents and Telegram, webhooks, and custom adapters",
   "keywords": [
     "pi-package"

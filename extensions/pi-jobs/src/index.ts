@@ -141,7 +141,7 @@ export default function (pi: ExtensionAPI) {
 	});
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:jobs", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		try {
 			const { getJobsStore } = await import("./store.ts");
 			const store = getJobsStore();
@@ -154,10 +154,10 @@ export default function (pi: ExtensionAPI) {
 				`Tools: ${totals.toolCalls} calls · Avg: ${(totals.avgDurationMs / 1000).toFixed(1)}s`,
 			];
 			pi.sendMessage({ customType: "command_result", content: lines.join("\n"), display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "jobs", message: lines.join("\n"), type: "info" });
+			pi.events.emit("command_result", { command: "jobs", message: lines.join("\n"), type: "info", source: source ?? "" });
 		} catch (e: any) {
 			pi.sendMessage({ customType: "command_result", content: `pi-jobs: ${e.message}`, display: true, details: { type: "error" } });
-			pi.events.emit("command_result", { command: "jobs", message: `pi-jobs: ${e.message}`, type: "error" });
+			pi.events.emit("command_result", { command: "jobs", message: `pi-jobs: ${e.message}`, type: "error", source: source ?? "" });
 		}
 	});
 }

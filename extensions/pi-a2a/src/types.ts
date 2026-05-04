@@ -60,6 +60,11 @@ export interface A2AConfig {
 	 *  When enabled, periodically checks the hub for answered owner clarifications
 	 *  and spawns a fresh pi subprocess to handle each response. */
 	poller?: PollerConfig;
+	/** Long-running task support.
+	 *  When enabled, tasks can run for hours/days without timeouts.
+	 *  State is persisted to disk and survives Pi restarts.
+	 *  Uses a smart resume queue that waits for agent to be idle. */
+	longRunningTasks?: LongRunningTasksConfig;
 }
 
 /** Configuration for the background clarification poller. */
@@ -74,6 +79,22 @@ export interface PollerConfig {
 	skills?: string[];
 	/** Model to use for spawned pi subprocesses. */
 	model?: string;
+}
+
+/** Configuration for long-running task support. */
+export interface LongRunningTasksConfig {
+	/** Enable long-running task support. Defaults to false. */
+	enabled?: boolean;
+	/** Maximum task age in hours. Tasks older than this are pruned.
+	 *  Defaults to 168 hours (7 days). */
+	maxTaskAgeHours?: number;
+	/** Maximum retry attempts for resume requests. Defaults to 3. */
+	resumeRetryAttempts?: number;
+	/** Delay between resume retry attempts in milliseconds. Defaults to 5000. */
+	resumeRetryDelayMs?: number;
+	/** Polling interval for checking completed tasks in milliseconds.
+	 *  Defaults to 300000 (5 minutes). */
+	pollingIntervalMs?: number;
 }
 
 /** Configuration for a manually defined remote agent. */

@@ -30,12 +30,12 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 
 	// ── Incoming messages → channel:receive (+ bridge) ──────
 
-	registry.setOnIncoming((message: IncomingMessage) => {
+	registry.setOnIncoming(async (message: IncomingMessage) => {
 		pi.events.emit("channel:receive", message);
 
 		// Route to bridge if active
 		if (activeBridge?.isActive()) {
-			activeBridge.handleMessage(message);
+			await activeBridge.handleMessage(message);
 		}
 	});
 
@@ -109,5 +109,20 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 			text: `🏓 pi-channels test — ${new Date().toISOString()}`,
 			source: "channel:test",
 		}).then(r => data.callback?.(r));
+	});
+
+	// ── channel:send_file — send a file ────────────────────────
+
+	pi.events.on("channel:send_file", (raw: unknown) => {
+		const data = raw as {
+			adapter: string;
+			recipient: string;
+			filePath: string;
+			fileName?: string;
+			caption?: string;
+			callback?: (result: { ok: boolean; error?: string }) => void;
+		};
+		registry.sendFile(data.adapter, data.recipient, data.filePath, data.fileName, data.caption)
+			.then(r => data.callback?.(r));
 	});
 }

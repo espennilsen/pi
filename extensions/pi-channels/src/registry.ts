@@ -33,6 +33,17 @@ export class ChannelRegistry {
 	private routes = new Map<string, { adapter: string; recipient: string }>();
 	private errors: Array<{ adapter: string; error: string }> = [];
 	private onIncoming: OnIncomingMessage = () => {};
+
+	/** Safely invoke the incoming callback, catching async rejections. */
+	private invokeIncoming(msg: IncomingMessage & { adapter: string }): void {
+		try {
+			const result = this.onIncoming(msg);
+			if (result instanceof Promise) result.catch((err: any) => this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` }));
+		} catch (err: any) {
+			this.errors.push({ adapter: msg.adapter, error: `Incoming handler failed: ${err?.message ?? err}` });
+		}
+	}
+
 	private log?: AdapterLogger;
 	private modelRegistry?: ModelRegistry;
 
@@ -99,7 +110,7 @@ export class ChannelRegistry {
 				});
 				this.adapters.set(name, adapter);
 			} catch (err: any) {
-				this.errors.push({ adapter: name, error: err.message });
+				this.errors.push({ adapter: name, error: err?.message ?? err });
 			}
 		}
 	}
@@ -110,10 +121,10 @@ export class ChannelRegistry {
 			if ((adapter.direction === "incoming" || adapter.direction === "bidirectional") && adapter.start) {
 				try {
 					await adapter.start((msg: IncomingMessage) => {
-						this.onIncoming({ ...msg, adapter: name });
+						this.invokeIncoming({ ...msg, adapter: name });
 					});
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to start: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to start: ${err?.message ?? err}` });
 				}
 			}
 		}
@@ -126,7 +137,7 @@ export class ChannelRegistry {
 				try {
 					await adapter.syncBotCommands(commands);
 				} catch (err: any) {
-					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err.message}` });
+					this.errors.push({ adapter: name, error: `Failed to sync commands: ${err?.message ?? err}` });
 				}
 			}
 		}
@@ -145,7 +156,7 @@ export class ChannelRegistry {
 		// Auto-start if it receives
 		if ((adapter.direction === "incoming" || adapter.direction === "bidirectional") && adapter.start) {
 			adapter.start((msg: IncomingMessage) => {
-				this.onIncoming({ ...msg, adapter: name });
+				this.invokeIncoming({ ...msg, adapter: name });
 			});
 		}
 	}
@@ -211,5 +222,31 @@ export class ChannelRegistry {
 	/** Get an adapter by name (for direct access, e.g. typing indicators). */
 	getAdapter(name: string): ChannelAdapter | undefined {
 		return this.adapters.get(name);
+	}
+
+	/** Send a file to a recipient via an adapter. Resolves routes. */
+	async sendFile(adapterName: string, recipient: string, filePath: string, fileName?: string, caption?: string): Promise<{ ok: boolean; error?: string }> {
+		// Check route alias
+		const route = this.routes.get(adapterName);
+		if (route) {
+			adapterName = route.adapter;
+			if (!recipient) recipient = route.recipient;
+		}
+
+		const adapter = this.adapters.get(adapterName);
+		if (!adapter) {
+			return { ok: false, error: `No adapter "${adapterName}"` };
+		}
+
+		if (!adapter.sendFile) {
+			return { ok: false, error: `Adapter "${adapterName}" does not support file sending` };
+		}
+
+		try {
+			await adapter.sendFile(recipient, filePath, fileName, caption);
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: err.message };
+		}
 	}
 }

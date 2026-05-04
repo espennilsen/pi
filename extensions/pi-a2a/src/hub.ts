@@ -10,7 +10,17 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PipelineStreamEvent, SSEConnection } from "./types.ts";
+import type {
+	HubConfig,
+	RemoteAgentSummary,
+	RemoteAgentDetail,
+	TelemetrySnapshot,
+	PipelineStreamEvent,
+	SSEConnection,
+	AgentSelectionResult,
+	AgentStrategy,
+	ProjectSettings,
+} from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -766,23 +776,6 @@ export async function listStrategies(
 	return result ? (result.strategies as AgentStrategy[]) ?? null : null;
 }
 
-// ── Projects ───────────────────────────────────────────
-
-export interface ProjectSettings {
-	project: string;
-	displayName?: string;
-	maxConcurrent?: number;
-	stallTimeoutMs?: number;
-	turnTimeoutMs?: number;
-	maxRetryBackoffMs?: number;
-	pollIntervalMs?: number;
-	autoApprove?: boolean;
-	inputRequiredPolicy?: "block" | "ask";
-	eligibleAgents?: string[];
-	createdAt: string;
-	updatedAt: string;
-}
-
 export async function createProject(
 	params: {
 		project: string;
@@ -801,7 +794,7 @@ export async function createProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.create", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_create");
-	return result ? (result as unknown as ProjectSettings) : null;
+	return result ? (result as ProjectSettings) : null;
 }
 
 export async function getProject(
@@ -811,7 +804,7 @@ export async function getProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.get", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_get");
-	return result ? (result as unknown as ProjectSettings) : null;
+	return result ? (result as ProjectSettings) : null;
 }
 
 export async function listProjects(
@@ -821,7 +814,7 @@ export async function listProjects(
 ): Promise<{ projects: ProjectSettings[]; total: number; page: number; limit: number } | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.list", (params ?? {}) as Record<string, unknown>, hubConfig.apiKey, log, "projects_list");
-	return result ? (result as unknown as { projects: ProjectSettings[]; total: number; page: number; limit: number }) : null;
+	return result ? (result as { projects: ProjectSettings[]; total: number; page: number; limit: number }) : null;
 }
 
 export async function updateProject(
@@ -842,7 +835,7 @@ export async function updateProject(
 ): Promise<ProjectSettings | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.update", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_update");
-	return result ? (result as unknown as ProjectSettings) : null;
+	return result ? (result as ProjectSettings) : null;
 }
 
 // ── SSE Stream ───────────────────────────────────────────
@@ -880,6 +873,7 @@ export async function listenToSSEStream(
 	url: string,
 	callback: SSEEventCallback,
 	log: LogFn,
+	apiKey: string,
 ): Promise<{ abort: () => void }> {
 	const controller = new AbortController();
 	let reconnectAttempts = 0;
@@ -891,6 +885,7 @@ export async function listenToSSEStream(
 				signal: controller.signal,
 				headers: {
 					Accept: "text/event-stream",
+					"X-API-Key": apiKey,
 				},
 			});
 			

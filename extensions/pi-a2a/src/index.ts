@@ -50,12 +50,12 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PipelineStreamEvent } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -2213,8 +2213,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
-}
 
 	// ── Orchestrator (Smart Routing) ───────────────────────────────────────────
 
@@ -2323,7 +2321,7 @@ export default function (pi: ExtensionAPI) {
 				`**Max Concurrent:** ${result.maxConcurrent ?? 10}`,
 				`**Stall Timeout:** ${result.stallTimeoutMs ?? 300000}ms (${(result.stallTimeoutMs ?? 300000) / 1000 / 60}m)`,
 				`**Turn Timeout:** ${result.turnTimeoutMs ?? 3600000}ms (${(result.turnTimeoutMs ?? 3600000) / 1000 / 60 / 60}h)`,
-				`**Max Retry Backoff:** ${result.maxRetryBackoffMs ?? 300000}ms (${(result.maxRetryBackoffMs ?? 300000) / 1000}m)`,
+				`**Max Retry Backoff:** ${result.maxRetryBackoffMs ?? 300000}ms (${(result.maxRetryBackoffMs ?? 300000) / 60000}m)`,
 				`**Poll Interval:** ${result.pollIntervalMs ?? 30000}ms (${(result.pollIntervalMs ?? 30000) / 1000}s)`,
 				result.eligibleAgents && result.eligibleAgents.length > 0
 					? `\n**Eligible Agents:** ${result.eligibleAgents.join(", ")}`
@@ -2441,11 +2439,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
-}
-
-	// ── SSE Stream (Real-time Pipeline Updates) ───────────────────────────────────────────
-
 	const sseConnections = new Map<string, { abort: () => void; connected: boolean }>();
 
 	pi.registerTool({
@@ -2491,11 +2484,11 @@ export default function (pi: ExtensionAPI) {
 					`State: ${data.fromState ?? "(new)"} → **${data.toState}**${agent}${pr}\n` +
 					`Project: ${data.project} | Priority: ${data.priority}`;
 				
-				ctx.ui.notify(message, "info");
+				sessionCtx?.ui.notify(message, "info");
 			};
 
 			try {
-				const { abort } = await listenToSSEStream(url, handleEvent, log);
+				const { abort } = await listenToSSEStream(url, handleEvent, log, hubConfig.apiKey);
 				sseConnections.set(subscriptionId, { abort, connected: true });
 				
 				const filters = [];
@@ -2552,5 +2545,3 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
-}

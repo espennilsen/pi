@@ -10,7 +10,17 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
+import type {
+	HubConfig,
+	RemoteAgentSummary,
+	RemoteAgentDetail,
+	TelemetrySnapshot,
+	PipelineStreamEvent,
+	SSEConnection,
+	AgentSelectionResult,
+	AgentStrategy,
+	ProjectSettings,
+} from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -727,4 +737,227 @@ export async function reportHubTaskStatus(
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_report_status");
 	return result ? asTask(result) : null;
+}
+
+// ── Orchestrator ───────────────────────────────────────────
+
+export async function selectAgent(
+	params: {
+		projectId: string;
+		taskTags?: string[];
+		taskType?: string;
+		strategy?: string;
+		eligibleAgentIds?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<AgentSelectionResult | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "orchestrator.selectAgent", params as Record<string, unknown>, hubConfig.apiKey, log, "orchestrator_select_agent");
+	return result ? { agentId: result.agentId as string } : null;
+}
+
+export async function listStrategies(
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<AgentStrategy[] | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "orchestrator.listStrategies", {}, hubConfig.apiKey, log, "orchestrator_list_strategies");
+	return result ? (result.strategies as AgentStrategy[]) ?? null : null;
+}
+
+export async function createProject(
+	params: {
+		project: string;
+		displayName?: string;
+		maxConcurrent?: number;
+		stallTimeoutMs?: number;
+		turnTimeoutMs?: number;
+		maxRetryBackoffMs?: number;
+		pollIntervalMs?: number;
+		autoApprove?: boolean;
+		inputRequiredPolicy?: "block" | "ask";
+		eligibleAgents?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.create", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_create");
+	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+export async function getProject(
+	params: { project: string },
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.get", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_get");
+	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+export async function listProjects(
+	params: { page?: number; limit?: number } | undefined,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ projects: ProjectSettings[]; total: number; page: number; limit: number } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.list", (params ?? {}) as Record<string, unknown>, hubConfig.apiKey, log, "projects_list");
+	return result ? (result as { projects: ProjectSettings[]; total: number; page: number; limit: number }) : null;
+}
+
+export async function updateProject(
+	params: {
+		project: string;
+		displayName?: string;
+		maxConcurrent?: number;
+		stallTimeoutMs?: number;
+		turnTimeoutMs?: number;
+		maxRetryBackoffMs?: number;
+		pollIntervalMs?: number;
+		autoApprove?: boolean;
+		inputRequiredPolicy?: "block" | "ask";
+		eligibleAgents?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.update", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_update");
+	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+// ── SSE Stream ───────────────────────────────────────────
+
+export interface SSEStreamOptions {
+	project?: string;
+	assignedAgentId?: string;
+	states?: string[];
+}
+
+export async function connectToPipelineStream(
+	options: SSEStreamOptions | undefined,
+	hubConfig: HubConfig,
+): Promise<{ url: string }> {
+	const baseUrl = hubConfig.url.replace(/\/$/, "");
+	// Normalize: avoid double /api when hubConfig.url already ends with /api
+	const apiBase = baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+	const params = new URLSearchParams();
+	
+	if (options?.project) params.append("project", options.project);
+	if (options?.assignedAgentId) params.append("assignedAgentId", options.assignedAgentId);
+	if (options?.states?.length) params.append("states", options.states.join(","));
+	
+	const queryString = params.toString();
+	const url = queryString 
+		? `${apiBase}/v1/pipeline/stream?${queryString}`
+		: `${apiBase}/v1/pipeline/stream`;
+	
+	return { url };
+}
+
+export interface SSEEventCallback {
+	(event: PipelineStreamEvent): void;
+}
+
+export async function listenToSSEStream(
+	url: string,
+	callback: SSEEventCallback,
+	log: LogFn,
+	apiKey: string,
+): Promise<{ abort: () => void }> {
+	const controller = new AbortController();
+	let reconnectAttempts = 0;
+	const maxReconnectDelay = 30_000;
+	
+	/** Background read loop — processes SSE events with reconnect on close/error. */
+	const runReadLoop = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> => {
+		const decoder = new TextDecoder();
+		let buffer = "";
+		
+		try {
+			while (!controller.signal.aborted) {
+				const { done, value } = await reader.read();
+				if (done) {
+					// Clean stream close — trigger reconnect
+					if (!controller.signal.aborted) {
+						throw new Error("SSE stream closed by server");
+					}
+					return;
+				}
+				
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() ?? "";
+				
+				for (const line of lines) {
+					if (line.startsWith("data: ")) {
+						try {
+							const data = JSON.parse(line.slice(6)) as PipelineStreamEvent;
+							if (data.type === "task.stateChanged") {
+								callback(data);
+							}
+						} catch (e) {
+							log("sse_parse_error", { error: e instanceof Error ? e.message : String(e) }, "WARN");
+						}
+					}
+				}
+			}
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			log("sse_connection_error", { error: errorMsg, attempt: reconnectAttempts }, "ERROR");
+			
+			// Exponential backoff
+			const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+			reconnectAttempts++;
+			
+			log("sse_reconnect_scheduled", { delay, attempt: reconnectAttempts }, "WARN");
+			
+			await new Promise(resolve => setTimeout(resolve, delay));
+			if (!controller.signal.aborted) {
+				// Re-handshake and pass new reader to runReadLoop
+				try {
+					const newReader = await performHandshake();
+					void runReadLoop(newReader);
+				} catch {
+					// Handshake failed again — runReadLoop's catch will handle retry
+				}
+			}
+		}
+	};
+	
+	/** Perform initial handshake — returns reader on success, throws on failure. */
+	const performHandshake = async (): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
+		const response = await fetch(url, {
+			signal: controller.signal,
+			headers: {
+				Accept: "text/event-stream",
+				"X-API-Key": apiKey,
+			},
+		});
+		
+		if (!response.ok) {
+			throw new Error(`SSE connection failed: HTTP ${response.status}`);
+		}
+		
+		reconnectAttempts = 0;
+		const reader = response.body?.getReader();
+		if (!reader) throw new Error("No response body");
+		return reader;
+	};
+	
+	// Perform handshake before returning abort handle
+	const reader = await performHandshake();
+	
+	// Start background read loop (don't await — runs indefinitely)
+	void runReadLoop(reader);
+	
+	return {
+		abort: () => {
+			controller.abort();
+		},
+	};
 }

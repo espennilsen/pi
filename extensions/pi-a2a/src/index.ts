@@ -289,11 +289,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", (event) => {
 		agentBusy = false;
-		// Abort any active SSE subscriptions from previous session
-		for (const [, conn] of sseConnections) {
-			conn.abort();
-		}
-		sseConnections.clear();
 
 		// Record turn duration for telemetry
 		if (lastTurnStartMs > 0) {

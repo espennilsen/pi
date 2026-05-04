@@ -871,31 +871,16 @@ export async function listenToSSEStream(
 	let reconnectAttempts = 0;
 	const maxReconnectDelay = 30_000;
 	
-	const connect = async () => {
+	/** Background read loop — processes SSE events with reconnect on close/error. */
+	const runReadLoop = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> => {
+		const decoder = new TextDecoder();
+		let buffer = "";
+		
 		try {
-			const response = await fetch(url, {
-				signal: controller.signal,
-				headers: {
-					Accept: "text/event-stream",
-					"X-API-Key": apiKey,
-				},
-			});
-			
-			if (!response.ok) {
-				throw new Error(`SSE connection failed: HTTP ${response.status}`);
-			}
-			
-			reconnectAttempts = 0;
-			const reader = response.body?.getReader();
-			if (!reader) throw new Error("No response body");
-			
-			const decoder = new TextDecoder();
-			let buffer = "";
-			
 			while (!controller.signal.aborted) {
 				const { done, value } = await reader.read();
 				if (done) {
-					// Clean stream close — treat as error to trigger reconnect
+					// Clean stream close — trigger reconnect
 					if (!controller.signal.aborted) {
 						throw new Error("SSE stream closed by server");
 					}
@@ -932,12 +917,43 @@ export async function listenToSSEStream(
 			log("sse_reconnect_scheduled", { delay, attempt: reconnectAttempts }, "WARN");
 			
 			await new Promise(resolve => setTimeout(resolve, delay));
-			connect();
+			if (!controller.signal.aborted) {
+				// Re-handshake and pass new reader to runReadLoop
+				try {
+					const newReader = await performHandshake();
+					void runReadLoop(newReader);
+				} catch {
+					// Handshake failed again — runReadLoop's catch will handle retry
+				}
+			}
 		}
 	};
 	
-	// Start connection and await initial handshake
-	await connect();
+	/** Perform initial handshake — returns reader on success, throws on failure. */
+	const performHandshake = async (): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
+		const response = await fetch(url, {
+			signal: controller.signal,
+			headers: {
+				Accept: "text/event-stream",
+				"X-API-Key": apiKey,
+			},
+		});
+		
+		if (!response.ok) {
+			throw new Error(`SSE connection failed: HTTP ${response.status}`);
+		}
+		
+		reconnectAttempts = 0;
+		const reader = response.body?.getReader();
+		if (!reader) throw new Error("No response body");
+		return reader;
+	};
+	
+	// Perform handshake before returning abort handle
+	const reader = await performHandshake();
+	
+	// Start background read loop (don't await — runs indefinitely)
+	void runReadLoop(reader);
 	
 	return {
 		abort: () => {

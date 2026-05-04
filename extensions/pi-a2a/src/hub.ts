@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PipelineStreamEvent, SSEConnection } from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -843,4 +843,111 @@ export async function updateProject(
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "projects.update", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_update");
 	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+// ── SSE Stream ───────────────────────────────────────────
+
+export interface SSEStreamOptions {
+	project?: string;
+	assignedAgentId?: string;
+	states?: string[];
+}
+
+export async function connectToPipelineStream(
+	options: SSEStreamOptions | undefined,
+	hubConfig: HubConfig,
+): Promise<{ url: string }> {
+	const baseUrl = hubConfig.url.replace(/\/$/, "");
+	const params = new URLSearchParams();
+	
+	if (options?.project) params.append("project", options.project);
+	if (options?.assignedAgentId) params.append("assignedAgentId", options.assignedAgentId);
+	if (options?.states?.length) params.append("states", options.states.join(","));
+	
+	const queryString = params.toString();
+	const url = queryString 
+		? `${baseUrl}/api/v1/pipeline/stream?${queryString}`
+		: `${baseUrl}/api/v1/pipeline/stream`;
+	
+	return { url };
+}
+
+export interface SSEEventCallback {
+	(event: PipelineStreamEvent): void;
+}
+
+export async function listenToSSEStream(
+	url: string,
+	callback: SSEEventCallback,
+	log: LogFn,
+): Promise<{ abort: () => void }> {
+	const controller = new AbortController();
+	let reconnectAttempts = 0;
+	const maxReconnectDelay = 30_000;
+	
+	const connect = async () => {
+		try {
+			const response = await fetch(url, {
+				signal: controller.signal,
+				headers: {
+					Accept: "text/event-stream",
+				},
+			});
+			
+			if (!response.ok) {
+				throw new Error(`SSE connection failed: HTTP ${response.status}`);
+			}
+			
+			reconnectAttempts = 0;
+			const reader = response.body?.getReader();
+			if (!reader) throw new Error("No response body");
+			
+			const decoder = new TextDecoder();
+			let buffer = "";
+			
+			while (!controller.signal.aborted) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() ?? "";
+				
+				for (const line of lines) {
+					if (line.startsWith("data: ")) {
+						try {
+							const data = JSON.parse(line.slice(6)) as PipelineStreamEvent;
+							if (data.type === "task.stateChanged") {
+								callback(data);
+							}
+						} catch (e) {
+							log("sse_parse_error", { error: e instanceof Error ? e.message : String(e) }, "WARN");
+						}
+					}
+				}
+			}
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			log("sse_connection_error", { error: errorMsg, attempt: reconnectAttempts }, "ERROR");
+			
+			// Exponential backoff
+			const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+			reconnectAttempts++;
+			
+			log("sse_reconnect_scheduled", { delay, attempt: reconnectAttempts }, "WARN");
+			
+			await new Promise(resolve => setTimeout(resolve, delay));
+			connect();
+		}
+	};
+	
+	connect();
+	
+	return {
+		abort: () => {
+			controller.abort();
+		},
+	};
 }

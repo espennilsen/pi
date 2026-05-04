@@ -2443,3 +2443,114 @@ export default function (pi: ExtensionAPI) {
 
 	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
 }
+
+	// ── SSE Stream (Real-time Pipeline Updates) ───────────────────────────────────────────
+
+	const sseConnections = new Map<string, { abort: () => void; connected: boolean }>();
+
+	pi.registerTool({
+		name: "pipeline_stream_subscribe",
+		label: "Pipeline Stream Subscribe",
+		description:
+			"Subscribe to real-time pipeline task state changes via Server-Sent Events (SSE). " +
+			"Receive instant notifications when tasks transition between states (queued→planning→building→reviewing→pr_ready). " +
+			"Call without filters to subscribe to all events, or provide project/agent/state filters. " +
+			"Returns a subscription ID — use pipeline_stream_unsubscribe to stop receiving events.",
+		parameters: Type.Object({
+			project: Type.Optional(Type.String({ description: "Filter to specific project (e.g. 'aivena', 'e9n.dev')" })),
+			assignedAgentId: Type.Optional(Type.String({ description: "Filter to tasks assigned to specific agent" })),
+			states: Type.Optional(Type.Array(Type.String(), { 
+				description: "Filter to specific target states (queued, planning, building, reviewing, pr_ready, blocked)",
+			})),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const { url } = await connectToPipelineStream(params, hubConfig);
+			const subscriptionId = `sse-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+			
+			// Event handler: notify user via TUI
+			const handleEvent = (event: PipelineStreamEvent) => {
+				const { data } = event;
+				const emoji: Record<string, string> = {
+					queued: "📋", planning: "📐", building: "🔨",
+					reviewing: "👀", pr_ready: "🚀", blocked: "🚧",
+					approved: "✅", cancelled: "❌",
+				};
+				const icon = emoji[data.toState] ?? "📝";
+				const agent = data.assignedAgentId ? ` → agent:${data.assignedAgentId.slice(0, 8)}…` : "";
+				const ext = data.externalTaskId ? ` [${data.externalTaskId}]` : "";
+				const pr = data.prUrl ? ` PR#${data.prNumber}` : "";
+				
+				const message = `${icon} **${data.title}**${ext}\n` +
+					`State: ${data.fromState ?? "(new)"} → **${data.toState}**${agent}${pr}\n` +
+					`Project: ${data.project} | Priority: ${data.priority}`;
+				
+				ctx.ui.notify(message, "info");
+			};
+
+			try {
+				const { abort } = await listenToSSEStream(url, handleEvent, log);
+				sseConnections.set(subscriptionId, { abort, connected: true });
+				
+				const filters = [];
+				if (params.project) filters.push(`project=${params.project}`);
+				if (params.assignedAgentId) filters.push(`agent=${params.assignedAgentId}`);
+				if (params.states?.length) filters.push(`states=${params.states.join(",")}`);
+				const filterStr = filters.length > 0 ? ` (${filters.join(", ")})` : " (all events)";
+				
+				return txt(`✅ Subscribed to pipeline stream${filterStr}\n**Subscription ID:** ${subscriptionId}\n\nYou will receive real-time notifications when tasks change state.\nUse /tool pipeline_stream_unsubscribe subscriptionId=${subscriptionId} to stop.`);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				return txt(`❌ Failed to subscribe: ${msg}`);
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "pipeline_stream_unsubscribe",
+		label: "Pipeline Stream Unsubscribe",
+		description:
+			"Stop receiving real-time pipeline events from a previous subscription. " +
+			"Use the subscription ID returned from pipeline_stream_subscribe.",
+		parameters: Type.Object({
+			subscriptionId: Type.String({ description: "Subscription ID from pipeline_stream_subscribe" }),
+		}),
+		async execute(_toolCallId, params) {
+			const conn = sseConnections.get(params.subscriptionId);
+			if (!conn) {
+				return txt(`❌ Subscription not found: ${params.subscriptionId}`);
+			}
+			
+			conn.abort();
+			sseConnections.delete(params.subscriptionId);
+			return txt(`✅ Unsubscribed from pipeline stream: ${params.subscriptionId}`);
+		},
+	});
+
+	pi.registerTool({
+		name: "pipeline_stream_status",
+		label: "Pipeline Stream Status",
+		description:
+			"Show active SSE subscriptions and their connection status.",
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params) {
+			if (sseConnections.size === 0) {
+				return txt("No active SSE subscriptions.\nUse /tool pipeline_stream_subscribe to start receiving real-time updates.");
+			}
+			
+			const lines = [`# Active SSE Subscriptions (${sseConnections.size})\n`];
+			for (const [id, conn] of sseConnections.entries()) {
+				lines.push(`- **${id}** — ${conn.connected ? "✓ Connected" : "✗ Disconnected"}`);
+			}
+			return txt(lines.join("\n"));
+		},
+	});
+
+	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
+}

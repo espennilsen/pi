@@ -188,3 +188,31 @@ export interface ProjectSettings {
 	createdAt: string;
 	updatedAt: string;
 }
+
+// ── SSE Stream Types ──────────────────────────────────────────
+
+export interface PipelineStreamEvent {
+	type: "task.stateChanged";
+	data: {
+		taskId: string;
+		fromState: string | null;
+		toState: string;
+		project: string;
+		assignedAgentId: string | null;
+		externalTaskId: string | null;
+		branch: string | null;
+		prUrl: string | null;
+		prNumber: number | null;
+		title: string;
+		priority: string;
+	};
+	timestamp: string;
+}
+
+export interface SSEConnection {
+	url: string;
+	connected: boolean;
+	lastEventAt: string | null;
+	error: string | null;
+	reconnectAttempts: number;
+}

@@ -55,7 +55,8 @@ import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts"
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, LongRunningTasksConfig } from "./types.ts";
+import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -125,10 +126,13 @@ export default function (pi: ExtensionAPI) {
 	let telemetryInterval: ReturnType<typeof setInterval> | null = null;
 	let pollerInterval: ReturnType<typeof setInterval> | null = null;
 	let expiryInterval: ReturnType<typeof setInterval> | null = null;
+	let longRunningTaskPollerInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
+	/** Active long-running task store — survives Pi restarts. */
+	let longRunningTaskStore: LongRunningTaskStore | null = null;
 	/** Active push notification store — shares DB with taskStore. */
 	let pushNotificationStore: SQLitePushNotificationStore | null = null;
 	/** Agent's canonical public URL (set on session_start, used for loop metadata). */
@@ -151,6 +155,9 @@ export default function (pi: ExtensionAPI) {
 	let pendingStartTime = 0;
 	/** Nonce embedded in the injected message to correlate with agent_end. */
 	let pendingNonce: string | null = null;
+
+	/** Current session ID — persists across agent_end/agent_start cycles, changes on session restart. */
+	let currentSessionId: string = randomUUID();
 
 	/**
 	 * Pending outbound input-required resolvers — keyed by nonce.
@@ -489,6 +496,8 @@ export default function (pi: ExtensionAPI) {
 		sessionCtx = ctx;
 		cardEnriched = false;
 		firstTurnEnriched = false;
+		// Generate new session ID for this session
+		currentSessionId = randomUUID();
 
 		// Clean restart — reset all async state from previous session
 		outboundPending = 0;
@@ -525,6 +534,10 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(expiryInterval);
 			expiryInterval = null;
 		}
+		if (longRunningTaskPollerInterval) {
+			clearInterval(longRunningTaskPollerInterval);
+			longRunningTaskPollerInterval = null;
+		}
 		hubAgentId = null;
 		staticRegistry = null;
 		// Clear active A2A task context BEFORE aborting executor to prevent
@@ -538,6 +551,10 @@ export default function (pi: ExtensionAPI) {
 		if (taskStore) {
 			taskStore.close();
 			taskStore = null;
+		}
+		if (longRunningTaskStore) {
+			longRunningTaskStore.close();
+			longRunningTaskStore = null;
 		}
 		if (isRunning()) {
 			await stopServer(log);
@@ -554,6 +571,10 @@ export default function (pi: ExtensionAPI) {
 		// Initialize persistent task store (must be created before executor)
 		const dbPath = join(getAgentDir(), "db", "a2a.db");
 		taskStore = new SQLiteTaskStore(dbPath, log);
+
+		// Initialize long-running task store
+		const longRunningDbPath = join(getAgentDir(), "db", "a2a-long-running.db");
+		longRunningTaskStore = new LongRunningTaskStore(longRunningDbPath, log);
 
 		// Set up executor — uses taskStore to persist results after background processing.
 		// No onAsyncResult callback — results go into the store, callers poll via tasks/get.
@@ -579,6 +600,8 @@ export default function (pi: ExtensionAPI) {
 			if (hubAgentId) {
 				sendTelemetry(config).catch(() => {});
 			}
+			// Process resume queue after task finishes
+			processResumeQueue(config).catch(() => {});
 		};
 
 		// Show completion message after task result is saved to the store.
@@ -635,6 +658,12 @@ export default function (pi: ExtensionAPI) {
 			pushNotificationSender,
 			undefined,
 		);
+
+		// Restore long-running tasks from previous session
+		restoreLongRunningTasks(config);
+
+		// Start long-running task poller if enabled
+		startLongRunningTaskPoller(config);
 
 		// Wrap getTask to consult in-memory fallback statuses when DB write failed
 		const originalGetTask = requestHandler.getTask.bind(requestHandler);
@@ -712,6 +741,8 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
 		log("server_start_rejected", { bind, reason: "no_api_key_on_external_interface" }, "ERROR");
 		// Clean up resources allocated before server start
+		if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
+		if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
 		if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 		executor = null;
 		pushNotificationStore = null;
@@ -724,6 +755,8 @@ export default function (pi: ExtensionAPI) {
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start
+			if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
+			if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
 			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
 			executor = null;
 			pushNotificationStore = null;
@@ -821,6 +854,18 @@ export default function (pi: ExtensionAPI) {
 		if (expiryInterval) {
 			clearInterval(expiryInterval);
 			expiryInterval = null;
+		}
+
+		// Stop long-running task poller interval
+		if (longRunningTaskPollerInterval) {
+			clearInterval(longRunningTaskPollerInterval);
+			longRunningTaskPollerInterval = null;
+		}
+
+		// Close long-running task store
+		if (longRunningTaskStore) {
+			longRunningTaskStore.close();
+			longRunningTaskStore = null;
 		}
 
 		// Send final "idle" telemetry report before shutting down
@@ -1147,6 +1192,185 @@ export default function (pi: ExtensionAPI) {
 		pollerInterval = setInterval(() => {
 			pollForClarificationResponses().catch(() => {});
 		}, intervalMs);
+	}
+
+	// ── Long-Running Task Support ─────────────────────────────────
+
+	/**
+	 * Restore long-running tasks from disk on session start.
+	 * Re-queues resume requests for completed tasks.
+	 */
+	async function restoreLongRunningTasks(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
+		if (!config.longRunningTasks?.enabled || !longRunningTaskStore) return;
+
+		// Get all tasks (including terminal states) for restoration
+		const allTasks = longRunningTaskStore.getPendingTasks();
+		// Also get completed/failed tasks that may need resume
+		const completedTasks = longRunningTaskStore.getByState('completed' as any);
+		const failedTasks = longRunningTaskStore.getByState('failed' as any);
+		const tasksToRestore = [...allTasks, ...completedTasks, ...failedTasks];
+		
+		if (tasksToRestore.length === 0) return;
+
+		log("long_running_tasks_restored", { count: tasksToRestore.length });
+
+		// Queue resume requests for completed/failed tasks
+		for (const task of tasksToRestore) {
+			if (task.state === 'completed' || task.state === 'failed') {
+				const resumeRequest: ResumeRequest = {
+					taskId: task.taskId,
+					contextId: task.contextId,
+					priority: 'normal',
+					enqueuedAt: Date.now(),
+					retryCount: 0,
+				};
+				longRunningTaskStore.enqueueResume(resumeRequest);
+			}
+		}
+
+		// Process any queued resumes immediately if agent is idle
+		await processResumeQueue(config);
+	}
+
+	/**
+	 * Start polling for completed long-running tasks.
+	 * Checks hub for task status updates and queues resume requests.
+	 */
+	function startLongRunningTaskPoller(config: ReturnType<typeof loadConfig>["config"]): void {
+		if (!config.longRunningTasks?.enabled || !config.hub?.apiKey) return;
+
+		const pollerConfig = config.longRunningTasks;
+		const intervalMs = pollerConfig.pollingIntervalMs ?? 300_000; // 5 minutes default
+
+		log("long_running_task_poller_started", { intervalMs });
+
+		// Run initial poll immediately
+		pollForCompletedLongRunningTasks(config).catch(() => {});
+
+		longRunningTaskPollerInterval = setInterval(() => {
+			pollForCompletedLongRunningTasks(config).catch(() => {});
+		}, intervalMs);
+	}
+
+	/**
+	 * Poll hub for completed long-running tasks and queue resume requests.
+	 */
+	async function pollForCompletedLongRunningTasks(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
+		if (!longRunningTaskStore || !config.hub?.apiKey) return;
+
+		const pendingTasks = longRunningTaskStore.getPendingTasks();
+		if (pendingTasks.length === 0) return;
+
+		for (const task of pendingTasks) {
+			try {
+				// Check task status on hub
+				const hubTask = await getHubTask(task.taskId, config.hub, log);
+				if (hubTask) {
+					// Map hub pipeline state to LongRunningTask state
+					const mappedState = mapHubStateToLongRunningState(hubTask.state);
+					
+					// Task state changed - update and queue resume if terminal state
+					const updatedTask: LongRunningTask = {
+						...task,
+						state: mappedState,
+						lastUpdatedAt: Date.now(),
+					};
+					longRunningTaskStore.save(updatedTask);
+
+					// Queue resume for terminal states
+					if (mappedState === 'completed' || mappedState === 'failed') {
+						const resumeRequest: ResumeRequest = {
+							taskId: task.taskId,
+							contextId: task.contextId,
+							priority: 'normal',
+							enqueuedAt: Date.now(),
+							retryCount: 0,
+						};
+						longRunningTaskStore.enqueueResume(resumeRequest);
+						log("long_running_task_completed", { taskId: task.taskId, state: mappedState });
+						
+						// Trigger resume processing immediately
+						await processResumeQueue(config);
+					}
+				}
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				log("long_running_task_poll_error", { taskId: task.taskId, error: msg }, "WARN");
+			}
+		}
+	}
+
+	/**
+	 * Map hub pipeline state to LongRunningTask state.
+	 */
+	function mapHubStateToLongRunningState(hubState: string): LongRunningTask['state'] {
+		// Terminal states
+		if (hubState === 'approved' || hubState === 'pr_ready') return 'completed';
+		if (hubState === 'cancelled') return 'failed';
+		// Non-terminal states
+		if (hubState === 'queued' || hubState === 'planning') return 'submitted';
+		if (hubState === 'building') return 'working';
+		if (hubState === 'reviewing') return 'working';
+		if (hubState === 'blocked') return 'working';
+		// Default to working for unknown states
+		return 'working';
+	}
+
+	/**
+	 * Process the resume queue - deliver completed task responses when agent is idle.
+	 * Processes one request per call to avoid flooding.
+	 */
+	async function processResumeQueue(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
+		if (!longRunningTaskStore || agentBusy) return;
+
+		const request = longRunningTaskStore.dequeueResume();
+		if (!request) return;
+
+		try {
+			// Load task state
+			const task = longRunningTaskStore.load(request.taskId);
+			if (!task) {
+				log("resume_queue_task_not_found", { taskId: request.taskId });
+				return;
+			}
+
+			// Check if this task belongs to current session
+			if (task.sessionId !== currentSessionId) {
+				log("resume_queue_stale_session", { taskId: request.taskId, taskSession: task.sessionId, currentSession: currentSessionId });
+				// Task belongs to old session - skip it
+				return;
+			}
+
+			// Inject completion message into chat
+			const status = task.state === 'completed' ? 'completed' : 'failed';
+			const emoji = task.state === 'completed' ? '✅' : '❌';
+			const content = task.response || task.error || 'No response';
+
+			pi.sendMessage(
+				{
+					customType: "a2a-long-running-task-completed",
+					content: `${emoji} **Long-running A2A task ${status}** (task: ${task.taskId.slice(0, 8)}…)\n\n${content.slice(0, 500)}${content.length > 500 ? '...' : ''}`,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+
+			log("resume_queue_processed", { taskId: request.taskId, state: task.state });
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			log("resume_queue_error", { taskId: request.taskId, error: msg }, "ERROR");
+
+			// Retry logic
+			if (request.retryCount < (config.longRunningTasks?.resumeRetryAttempts ?? 3)) {
+				const retryRequest: ResumeRequest = {
+					...request,
+					retryCount: request.retryCount + 1,
+					enqueuedAt: Date.now(),
+				};
+				longRunningTaskStore.enqueueResume(retryRequest);
+				log("resume_queue_retry_scheduled", { taskId: request.taskId, retryCount: retryRequest.retryCount });
+			}
+		}
 	}
 
 	// ── Tools ─────────────────────────────────────────────────

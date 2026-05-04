@@ -39,7 +39,7 @@ Enable in `settings.json`:
     }
   }
 }
-```
+```text
 
 ### Configuration Options
 

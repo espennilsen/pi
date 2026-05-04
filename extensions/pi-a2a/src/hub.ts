@@ -728,3 +728,119 @@ export async function reportHubTaskStatus(
 	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_report_status");
 	return result ? asTask(result) : null;
 }
+
+// ── Orchestrator ───────────────────────────────────────────
+
+export interface AgentSelectionResult {
+	agentId: string;
+}
+
+export interface AgentStrategy {
+	name: string;
+	description: string;
+	weights?: Record<string, number>;
+}
+
+export async function selectAgent(
+	params: {
+		projectId: string;
+		taskTags?: string[];
+		taskType?: string;
+		strategy?: string;
+		eligibleAgentIds?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<AgentSelectionResult | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "orchestrator.selectAgent", params as Record<string, unknown>, hubConfig.apiKey, log, "orchestrator_select_agent");
+	return result ? { agentId: result.agentId as string } : null;
+}
+
+export async function listStrategies(
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<AgentStrategy[] | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "orchestrator.listStrategies", {}, hubConfig.apiKey, log, "orchestrator_list_strategies");
+	return result ? (result.strategies as AgentStrategy[]) ?? null : null;
+}
+
+// ── Projects ───────────────────────────────────────────
+
+export interface ProjectSettings {
+	project: string;
+	displayName?: string;
+	maxConcurrent?: number;
+	stallTimeoutMs?: number;
+	turnTimeoutMs?: number;
+	maxRetryBackoffMs?: number;
+	pollIntervalMs?: number;
+	autoApprove?: boolean;
+	inputRequiredPolicy?: "block" | "ask";
+	eligibleAgents?: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+export async function createProject(
+	params: {
+		project: string;
+		displayName?: string;
+		maxConcurrent?: number;
+		stallTimeoutMs?: number;
+		turnTimeoutMs?: number;
+		maxRetryBackoffMs?: number;
+		pollIntervalMs?: number;
+		autoApprove?: boolean;
+		inputRequiredPolicy?: "block" | "ask";
+		eligibleAgents?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.create", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_create");
+	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+export async function getProject(
+	params: { project: string },
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.get", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_get");
+	return result ? (result as unknown as ProjectSettings) : null;
+}
+
+export async function listProjects(
+	params: { page?: number; limit?: number } | undefined,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<{ projects: ProjectSettings[]; total: number; page: number; limit: number } | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.list", (params ?? {}) as Record<string, unknown>, hubConfig.apiKey, log, "projects_list");
+	return result ? (result as unknown as { projects: ProjectSettings[]; total: number; page: number; limit: number }) : null;
+}
+
+export async function updateProject(
+	params: {
+		project: string;
+		displayName?: string;
+		maxConcurrent?: number;
+		stallTimeoutMs?: number;
+		turnTimeoutMs?: number;
+		maxRetryBackoffMs?: number;
+		pollIntervalMs?: number;
+		autoApprove?: boolean;
+		inputRequiredPolicy?: "block" | "ask";
+		eligibleAgents?: string[];
+	},
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ProjectSettings | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(rpcUrl, "projects.update", params as Record<string, unknown>, hubConfig.apiKey, log, "projects_update");
+	return result ? (result as unknown as ProjectSettings) : null;
+}

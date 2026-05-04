@@ -161,3 +161,30 @@ export interface TelemetrySnapshot {
 	lastTaskDurationMs?: number;
 	lastTaskStatus?: "completed" | "failed";
 }
+
+// ── Orchestrator Types ──────────────────────────────────────────
+
+export interface AgentSelectionResult {
+	agentId: string;
+}
+
+export interface AgentStrategy {
+	name: string;
+	description: string;
+	weights?: Record<string, number>;
+}
+
+export interface ProjectSettings {
+	project: string;
+	displayName?: string;
+	maxConcurrent?: number;
+	stallTimeoutMs?: number;
+	turnTimeoutMs?: number;
+	maxRetryBackoffMs?: number;
+	pollIntervalMs?: number;
+	autoApprove?: boolean;
+	inputRequiredPolicy?: "block" | "ask";
+	eligibleAgents?: string[];
+	createdAt: string;
+	updatedAt: string;
+}

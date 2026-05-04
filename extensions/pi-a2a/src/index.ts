@@ -2215,3 +2215,231 @@ export default function (pi: ExtensionAPI) {
 
 	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
 }
+
+	// ── Orchestrator (Smart Routing) ───────────────────────────────────────────
+
+	pi.registerTool({
+		name: "orchestrator_select_agent",
+		label: "Orchestrator Select Agent",
+		description:
+			"Select the best agent for a task using skill-weighted, workload-first, round-robin, or historical strategy. " +
+			"Returns the selected agent ID. Use this before dispatching tasks to remote agents.",
+		parameters: Type.Object({
+			projectId: Type.String({ description: "Project name for scoping agent eligibility" }),
+			taskTags: Type.Optional(Type.Array(Type.String(), { description: "Task tags for skill matching" })),
+			taskType: Type.Optional(Type.String({ description: "Task type for skill matching" })),
+			strategy: Type.Optional(Type.Union([
+				Type.Literal("skill-weighted"),
+				Type.Literal("workload-first"),
+				Type.Literal("round-robin"),
+				Type.Literal("historical"),
+			], { description: "Selection strategy (default: skill-weighted)" })),
+			eligibleAgentIds: Type.Optional(Type.Array(Type.String(), { description: "Restrict selection to specific agents" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const result = await selectAgent(params, hubConfig, log);
+			if (!result) {
+				return txt("❌ Failed to select agent — check hub connection and project configuration.");
+			}
+
+			return txt(`✅ Selected agent: **${result.agentId}**\nProject: ${params.projectId}\nStrategy: ${params.strategy ?? "skill-weighted (default)"}`);
+		},
+	});
+
+	pi.registerTool({
+		name: "orchestrator_list_strategies",
+		label: "Orchestrator List Strategies",
+		description:
+			"List available agent selection strategies with their descriptions and scoring weights. " +
+			"Use this to understand which strategy is best for your use case.",
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const strategies = await listStrategies(hubConfig, log);
+			if (!strategies || strategies.length === 0) {
+				return txt("❌ Failed to fetch strategies or none available.");
+			}
+
+			const lines = ["# Agent Selection Strategies\n"];
+			for (const s of strategies) {
+				lines.push(`## ${s.name}`);
+				lines.push(s.description);
+				if (s.weights) {
+					const weights = Object.entries(s.weights)
+						.map(([k, v]) => `${k}: ${v * 100}%`)
+						.join(", ");
+					lines.push(`**Weights:** ${weights}\n`);
+				}
+				lines.push("");
+			}
+			return txt(lines.join("\n"));
+		},
+	});
+
+	// ── Projects (Project Settings) ───────────────────────────────────────────
+
+	pi.registerTool({
+		name: "projects_get",
+		label: "Projects Get",
+		description:
+			"Get project settings including orchestrator config, auto-approve policy, and eligible agents. " +
+			"Returns full project configuration for the specified project name.",
+		parameters: Type.Object({
+			project: Type.String({ description: "Project name (e.g. 'aivena', 'e9n.dev')" }),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const result = await getProject(params, hubConfig, log);
+			if (!result) {
+				return txt(`❌ Project not found: ${params.project}`);
+			}
+
+			const lines = [
+				`# Project: ${result.project}`,
+				result.displayName ? `**Display Name:** ${result.displayName}` : "",
+				`**Auto Approve:** ${result.autoApprove ? "✓ Enabled" : "✗ Disabled"}`,
+				`**Input Policy:** ${result.inputRequiredPolicy ?? "block"}`,
+				"",
+				"## Orchestrator Config",
+				`**Max Concurrent:** ${result.maxConcurrent ?? 10}`,
+				`**Stall Timeout:** ${result.stallTimeoutMs ?? 300000}ms (${(result.stallTimeoutMs ?? 300000) / 1000 / 60}m)`,
+				`**Turn Timeout:** ${result.turnTimeoutMs ?? 3600000}ms (${(result.turnTimeoutMs ?? 3600000) / 1000 / 60 / 60}h)`,
+				`**Max Retry Backoff:** ${result.maxRetryBackoffMs ?? 300000}ms (${(result.maxRetryBackoffMs ?? 300000) / 1000}m)`,
+				`**Poll Interval:** ${result.pollIntervalMs ?? 30000}ms (${(result.pollIntervalMs ?? 30000) / 1000}s)`,
+				result.eligibleAgents && result.eligibleAgents.length > 0
+					? `\n**Eligible Agents:** ${result.eligibleAgents.join(", ")}`
+					: "\n**Eligible Agents:** All agents",
+				"",
+				`**Created:** ${result.createdAt}`,
+				`**Updated:** ${result.updatedAt}`,
+			].filter(Boolean);
+			return txt(lines.join("\n"));
+		},
+	});
+
+	pi.registerTool({
+		name: "projects_list",
+		label: "Projects List",
+		description:
+			"List all projects with their settings. Supports pagination via page and limit parameters.",
+		parameters: Type.Object({
+			page: Type.Optional(Type.Number({ description: "Page number (default: 1)" })),
+			limit: Type.Optional(Type.Number({ description: "Results per page (default: 20)" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const result = await listProjects(params, hubConfig, log);
+			if (!result || result.projects.length === 0) {
+				return txt("No projects found.");
+			}
+
+			const lines = [`# Projects (${result.total} total, page ${result.page})\n`];
+			for (const p of result.projects) {
+				const agents = p.eligibleAgents?.length ?? 0;
+				lines.push(`- **${p.project}**${p.displayName ? ` (${p.displayName})` : ""}`);
+				lines.push(`  Auto-approve: ${p.autoApprove ? "✓" : "✗"} | Max concurrent: ${p.maxConcurrent ?? 10} | Eligible agents: ${agents || "all"}`);
+			}
+			if (result.limit > 0 && result.total > result.page * result.limit) {
+				lines.push(`\n_${result.total - result.page * result.limit} more — use page param to paginate_`);
+			}
+			return txt(lines.join("\n"));
+		},
+	});
+
+	pi.registerTool({
+		name: "projects_create",
+		label: "Projects Create",
+		description:
+			"Create a new project with custom orchestrator settings, auto-approve policy, and eligible agents. " +
+			"All settings are optional — omit to use defaults.",
+		parameters: Type.Object({
+			project: Type.String({ description: "Project name (e.g. 'aivena', 'e9n.dev')" }),
+			displayName: Type.Optional(Type.String({ description: "Display name for UI" })),
+			maxConcurrent: Type.Optional(Type.Number({ description: "Max concurrent tasks (default: 10)" })),
+			stallTimeoutMs: Type.Optional(Type.Number({ description: "Stall timeout in ms (default: 300000 = 5m)" })),
+			turnTimeoutMs: Type.Optional(Type.Number({ description: "Turn timeout in ms (default: 3600000 = 1h)" })),
+			maxRetryBackoffMs: Type.Optional(Type.Number({ description: "Max retry backoff in ms (default: 300000 = 5m)" })),
+			pollIntervalMs: Type.Optional(Type.Number({ description: "Poll interval in ms (default: 30000 = 30s)" })),
+			autoApprove: Type.Optional(Type.Boolean({ description: "Auto-approve tasks (default: false)" })),
+			inputRequiredPolicy: Type.Optional(Type.Union([Type.Literal("block"), Type.Literal("ask")], { description: "Input policy (default: block)" })),
+			eligibleAgents: Type.Optional(Type.Array(Type.String(), { description: "Restrict to specific agent IDs" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const result = await createProject(params, hubConfig, log);
+			if (!result) {
+				return txt(`❌ Failed to create project: ${params.project}`);
+			}
+
+			return txt(`✅ Created project: **${result.project}**${result.displayName ? ` (${result.displayName})` : ""}\nAuto-approve: ${result.autoApprove ? "✓" : "✗"}\nMax concurrent: ${result.maxConcurrent ?? 10}`);
+		},
+	});
+
+	pi.registerTool({
+		name: "projects_update",
+		label: "Projects Update",
+		description:
+			"Update project settings. Only specified fields are updated — omit fields to preserve current values. " +
+			"Use projects_get first to see current settings.",
+		parameters: Type.Object({
+			project: Type.String({ description: "Project name (e.g. 'aivena', 'e9n.dev')" }),
+			displayName: Type.Optional(Type.String({ description: "Display name for UI" })),
+			maxConcurrent: Type.Optional(Type.Number({ description: "Max concurrent tasks" })),
+			stallTimeoutMs: Type.Optional(Type.Number({ description: "Stall timeout in ms" })),
+			turnTimeoutMs: Type.Optional(Type.Number({ description: "Turn timeout in ms" })),
+			maxRetryBackoffMs: Type.Optional(Type.Number({ description: "Max retry backoff in ms" })),
+			pollIntervalMs: Type.Optional(Type.Number({ description: "Poll interval in ms" })),
+			autoApprove: Type.Optional(Type.Boolean({ description: "Auto-approve tasks" })),
+			inputRequiredPolicy: Type.Optional(Type.Union([Type.Literal("block"), Type.Literal("ask")], { description: "Input policy" })),
+			eligibleAgents: Type.Optional(Type.Array(Type.String(), { description: "Restrict to specific agent IDs" })),
+		}),
+		async execute(_toolCallId, params) {
+			const { config } = loadConfig(cwd);
+			const hubConfig = config.hub;
+
+			if (!hubConfig?.apiKey) {
+				return txt("❌ No A2A Hub configured. Set `pi-a2a.hub.url` and `pi-a2a.hub.apiKey` in settings.json.");
+			}
+
+			const result = await updateProject(params, hubConfig, log);
+			if (!result) {
+				return txt(`❌ Failed to update project: ${params.project}`);
+			}
+
+			return txt(`✅ Updated project: **${result.project}**${result.displayName ? ` (${result.displayName})` : ""}\nAuto-approve: ${result.autoApprove ? "✓" : "✗"}\nMax concurrent: ${result.maxConcurrent ?? 10}`);
+		},
+	});
+
+	// Skipped: /a2a event bus listener — complex 198-line handler with many ctx.ui.notify branches
+}

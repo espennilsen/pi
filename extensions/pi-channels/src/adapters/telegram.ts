@@ -122,7 +122,6 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 	const pollingEnabled = config.polling === true;
 	const pollingTimeout = (config.pollingTimeout as number) ?? 30;
 	const allowedChatIds = config.allowedChatIds as string[] | undefined;
-	const log = context.log;
 
 	if (!botToken) {
 		throw new Error("Telegram adapter requires botToken");
@@ -770,27 +769,19 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 		},
 
 		async syncBotCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
-			const res = await fetch(`${apiBase}/setMyCommands`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ commands }),
-			});
-
-			if (!res.ok) {
-				const errBody = await res.text().catch(() => "unknown error");
-				const msg = `Telegram setMyCommands HTTP ${res.status}: ${errBody}`;
-				log?.("telegram-sync-commands-error", { status: res.status, body: errBody }, "ERROR");
-				throw new Error(msg);
+			try {
+				const res = await fetch(`${apiBase}/setMyCommands`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ commands }),
+				});
+				if (!res.ok) {
+					const err = await res.text().catch(() => "unknown error");
+					console.error(`[pi-channels] Failed to sync bot commands: ${res.status} ${err}`);
+				}
+			} catch (err: any) {
+				console.error(`[pi-channels] Failed to sync bot commands: ${err.message}`);
 			}
-
-			const body = await res.json() as { ok: boolean; description?: string };
-			if (!body.ok) {
-				const msg = `Telegram setMyCommands failed: ${body.description ?? "unknown"}`;
-				log?.("telegram-sync-commands-error", { description: body.description }, "ERROR");
-				throw new Error(msg);
-			}
-
-			log?.("telegram-sync-commands", { count: commands.length, commands: commands.map(c => c.command) }, "INFO");
 		},
 	};
 }

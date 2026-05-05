@@ -2,6 +2,7 @@
 name: qa
 description: QA specialist that tests running web applications against acceptance criteria
 tools: read, bash, cmux_browser, cmux_split, cmux_read, cmux_send, cmux_close, cmux_list, cmux_notify
+model: claude-sonnet-4-5
 thinking: medium
 ---
 

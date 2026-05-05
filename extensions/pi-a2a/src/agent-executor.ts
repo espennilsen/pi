@@ -864,20 +864,22 @@ export class PiAgentExecutor implements AgentExecutor {
 			const existing = await this.taskStore.load(taskId);
 			const now = new Date().toISOString();
 
-			// Send push notification only when hub is configured AND agent is registered
+			// Fire push notification asynchronously (don't block persistence)
 			if (this.hubConfig?.apiKey && this.hubAgentId) {
 				const toState = result.ok ? "completed" : "failed";
 				const fromState = existing?.status?.state as string | null || null;
-				await sendTaskStateChanged(
-					this.hubAgentId,
-					taskId,
-					fromState,
-					toState,
-					this.hubConfig,
-					this.log,
-					result.ok ? { response: result.response.slice(0, 500) } : undefined,
-				).catch(err => {
-					this.log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				const hubConfig = this.hubConfig;
+				const log = this.log;
+				const agentId = this.hubAgentId;
+				// Save result first, then send push in background
+				setImmediate(() => {
+					sendTaskStateChanged(
+						agentId, taskId, fromState, toState,
+						hubConfig, log,
+						result.ok ? { response: result.response.slice(0, 500) } : undefined,
+					).catch(err => {
+						log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+					});
 				});
 			}
 

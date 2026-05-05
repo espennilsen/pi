@@ -2117,6 +2117,8 @@ export default function (pi: ExtensionAPI) {
 				const result = await registerWithHub(publicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
+					hubAgentId = result.agentId;
+					executor?.setHubAgentId(result.agentId);
 					if (config.apiKey) {
 						await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");

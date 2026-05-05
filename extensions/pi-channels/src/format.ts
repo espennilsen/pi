@@ -42,43 +42,45 @@ export function formatForPlatform(text: string, adapter: string): FormattedMessa
 
 // ── Telegram HTML formatter ─────────────────────────────────────
 
-const TELEGRAM_ESCAPE = /[<>&]/g;
-const telegramEscapeMap: Record<string, string> = { "<": "&lt;", ">": "&gt;", "&": "&amp;" };
-
+/** Escape HTML special chars for Telegram HTML parse_mode. */
 function escapeTelegram(text: string): string {
-	return text.replace(TELEGRAM_ESCAPE, (ch) => telegramEscapeMap[ch]);
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function toTelegramHtml(text: string): string {
-	// Order matters: fenced code before inline code, links before bold/italic
+	// Strategy: replace Markdown constructs with HTML tags, escaping text portions.
+	// Order matters: fenced code before inline code, links before bold/italic.
 	let result = text;
 
-	// 1. Fenced code blocks: ```...```
+	// 1. Fenced code blocks: ```...``` — escape content, wrap in <pre>
 	result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
 		return `<pre>${escapeTelegram(code.trim())}</pre>`;
 	});
 
-	// 2. Inline code: `...`
+	// 2. Inline code: `...` — escape content, wrap in <code>
 	result = result.replace(/`([^`]+)`/g, (_, code) => `<code>${escapeTelegram(code)}</code>`);
 
-	// 3. Links: [text](url)
+	// 3. Links: [text](url) — escape both text and url
 	result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
 		return `<a href="${escapeTelegram(url)}">${escapeTelegram(text)}</a>`;
 	});
 
-	// 4. Bold: **...**
+	// 4. Bold: **...** — escape inner text
 	result = result.replace(/\*\*([^*]+)\*\*/g, (_, text) => `<b>${escapeTelegram(text)}</b>`);
 
-	// 5. Italic: *text* (not preceded by *, to avoid matching **)
+	// 5. Italic: *text* (not preceded by *, not followed by *) — escape inner text
 	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, (_, before, text, after) => {
 		return `${before}<i>${escapeTelegram(text)}</i>${after}`;
 	});
 
-	// 6. Strikethrough: ~~...~~
+	// 6. Strikethrough: ~~...~~ — escape inner text
 	result = result.replace(/~~([^~]+)~~/g, (_, text) => `<s>${escapeTelegram(text)}</s>`);
 
-	// 7. Headings (# ## ###) → bold
-	result = result.replace(/^#{1,3}\s+(.+)$/gm, (_, text) => `<b>${text}</b>`);
+	// 7. Headings (# ## ###) → bold, escaping the heading text
+	result = result.replace(/^#{1,3}\s+(.+)$/gm, (_, text) => `<b>${escapeTelegram(text)}</b>`);
+
+	// 8. Escape any remaining bare HTML special chars not already inside tags
+	result = result.replace(/(>)([^<]+)(<)/g, (_, gt, text_part, lt) => `${gt}${escapeTelegram(text_part)}${lt}`);
 
 	return result;
 }

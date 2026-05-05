@@ -161,3 +161,31 @@ export interface TelemetrySnapshot {
 	lastTaskDurationMs?: number;
 	lastTaskStatus?: "completed" | "failed";
 }
+
+// ── Push Notification Types ──────────────────────────────────────────
+
+export type PushEventType =
+	| "task.stateChanged"
+	| "task.progress"
+	| "task.error"
+	| "heartbeat";
+
+export interface PushEventPayload {
+	eventType: PushEventType;
+	taskId?: string;
+	fromState?: string | null;
+	toState?: string;
+	progress?: number;
+	message?: string;
+	error?: string;
+	queueDepth?: number;
+	activeTasks?: number;
+	maxConcurrent?: number;
+	timestamp: string;
+}
+
+export interface AgentPushCapabilities {
+	enabled: boolean;
+	url: string;
+	events: PushEventType[];
+}

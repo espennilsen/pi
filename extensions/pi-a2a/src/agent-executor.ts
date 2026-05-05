@@ -149,6 +149,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		taskTimeoutMs?: number,
 		inputRequiredTimeoutMs?: number,
 		maxInputRounds?: number,
+		hubConfig?: HubConfig,
 	) {
 		this.log = log;
 		this.processMessage = processMessage;
@@ -157,6 +158,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.taskTimeoutMs = taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
 		this.inputRequiredTimeoutMs = inputRequiredTimeoutMs ?? DEFAULT_INPUT_REQUIRED_TIMEOUT_MS;
 		this.maxInputRounds = maxInputRounds ?? DEFAULT_MAX_INPUT_ROUNDS;
+		this.hubConfig = hubConfig;
 	}
 
 	/**
@@ -837,6 +839,23 @@ export class PiAgentExecutor implements AgentExecutor {
 		try {
 			const existing = await this.taskStore.load(taskId);
 			const now = new Date().toISOString();
+
+			// Send push notification if hub is configured
+			if (this.hubConfig?.apiKey) {
+				const toState = result.ok ? "completed" : "failed";
+				const fromState = existing?.status?.state as string | null || null;
+				await sendTaskStateChanged(
+					"pi-agent", // agentId
+					taskId,
+					fromState,
+					toState,
+					this.hubConfig,
+					this.log,
+					result.ok ? { response: result.response.slice(0, 500) } : undefined,
+				).catch(err => {
+					this.log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				});
+			}
 
 			const statusMessage = {
 				kind: "message" as const,

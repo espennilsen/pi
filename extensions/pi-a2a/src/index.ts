@@ -50,7 +50,7 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, type HubTask, type PipelineState, type TaskPriority, type PushEventType } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
@@ -556,7 +556,7 @@ export default function (pi: ExtensionAPI) {
 		executor = new PiAgentExecutor(log, processMessage, taskStore, {
 			agentId: publicUrl,
 			defaultMaxHops: maxHops,
-		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds);
+		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds, config.hub);
 
 		// Set abort callback so executor can clean up pendingResolve on timeout
 		executor.setAbortCallback(abortPendingRequest);

@@ -728,3 +728,178 @@ export async function reportHubTaskStatus(
 	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_report_status");
 	return result ? asTask(result) : null;
 }
+
+// ── Push Notifications (Agent → Hub) ───────────────────────────────────────────
+
+export interface RegisterPushEndpointParams {
+	agentId: string;
+	url: string;
+	events: PushEventType[];
+}
+
+export interface RegisterPushEndpointResult {
+	agentId: string;
+	url: string;
+	events: PushEventType[];
+	message: string;
+}
+
+export interface PushEventPayload {
+	eventType: PushEventType;
+	taskId?: string;
+	fromState?: string | null;
+	toState?: string;
+	progress?: number;
+	message?: string;
+	error?: string;
+	queueDepth?: number;
+	activeTasks?: number;
+	maxConcurrent?: number;
+	timestamp: string;
+}
+
+export async function registerPushEndpoint(
+	params: RegisterPushEndpointParams,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<RegisterPushEndpointResult | null> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	
+	const result = await hubRpc(
+		rpcUrl,
+		"telemetry.push.register",
+		params as Record<string, unknown>,
+		hubConfig.apiKey,
+		log,
+		"telemetry_push_register",
+	);
+	
+	if (!result) return null;
+	
+	return {
+		agentId: result.agentId as string,
+		url: result.url as string,
+		events: result.events as PushEventType[],
+		message: result.message as string,
+	};
+}
+
+export async function sendPushEvent(
+	agentId: string,
+	eventType: PushEventType,
+	payload: PushEventPayload,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	
+	const params: Record<string, unknown> = {
+		agentId,
+		eventType,
+		payload: {
+			...payload,
+			timestamp: payload.timestamp || new Date().toISOString(),
+		},
+	};
+	
+	const result = await hubRpc(
+		rpcUrl,
+		"telemetry.push.handle",
+		params,
+		hubConfig.apiKey,
+		log,
+		"telemetry_push_event",
+	);
+	
+	return !!result;
+}
+
+export async function sendTaskStateChanged(
+	agentId: string,
+	taskId: string,
+	fromState: string | null,
+	toState: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+	artifact?: unknown,
+): Promise<boolean> {
+	return sendPushEvent(
+		agentId,
+		"task.stateChanged",
+		{
+			taskId,
+			fromState,
+			toState,
+			artifact,
+			timestamp: new Date().toISOString(),
+		},
+		hubConfig,
+		log,
+	);
+}
+
+export async function sendTaskProgress(
+	agentId: string,
+	taskId: string,
+	progress: number,
+	message?: string,
+	hubConfig?: HubConfig,
+	log?: LogFn,
+): Promise<boolean> {
+	if (!hubConfig || !log) return false;
+	
+	return sendPushEvent(
+		agentId,
+		"task.progress",
+		{
+			taskId,
+			progress: Math.min(100, Math.max(0, progress)),
+			message,
+			timestamp: new Date().toISOString(),
+		},
+		hubConfig,
+		log,
+	);
+}
+
+export async function sendTaskError(
+	agentId: string,
+	taskId: string,
+	error: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	return sendPushEvent(
+		agentId,
+		"task.error",
+		{
+			taskId,
+			error,
+			timestamp: new Date().toISOString(),
+		},
+		hubConfig,
+		log,
+	);
+}
+
+export async function sendHeartbeat(
+	agentId: string,
+	queueDepth: number,
+	activeTasks: number,
+	maxConcurrent: number,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	return sendPushEvent(
+		agentId,
+		"heartbeat",
+		{
+			queueDepth,
+			activeTasks,
+			maxConcurrent,
+			timestamp: new Date().toISOString(),
+		},
+		hubConfig,
+		log,
+	);
+}

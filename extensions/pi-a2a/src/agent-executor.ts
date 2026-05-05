@@ -858,12 +858,12 @@ export class PiAgentExecutor implements AgentExecutor {
 			const existing = await this.taskStore.load(taskId);
 			const now = new Date().toISOString();
 
-			// Send push notification if hub is configured
-			if (this.hubConfig?.apiKey) {
+			// Send push notification only when hub is configured AND agent is registered
+			if (this.hubConfig?.apiKey && this.hubAgentId) {
 				const toState = result.ok ? "completed" : "failed";
 				const fromState = existing?.status?.state as string | null || null;
 				await sendTaskStateChanged(
-					this.hubAgentId ?? "pi-agent", // agentId
+					this.hubAgentId,
 					taskId,
 					fromState,
 					toState,

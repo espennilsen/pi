@@ -55,8 +55,7 @@ export default function (pi: ExtensionAPI) {
 			onAlert: (message) => {
 				pi.events.emit("channel:send", {
 					route: resolveSettings(cwd).route,
-					text: message,
-					source: "pi-heartbeat",
+					text: message, source: "pi-heartbeat",
 				});
 			},
 			log,
@@ -239,11 +238,11 @@ export default function (pi: ExtensionAPI) {
 
 	// Event bus listener for web/mobile slash command support
 	pi.events.on("command:heartbeat", async (data: unknown) => {
-		const { args: rawArgs } = data as { args: string };
+		const { args: rawArgs, source } = data as { args: string; source?: string };
 		const arg = rawArgs?.trim().toLowerCase();
 		const notify = (msg: string, type: "info" | "warning" | "error" = "info") => {
 			pi.sendMessage({ customType: "command_result", content: msg, display: true, details: { type } });
-			pi.events.emit("command_result", { command: "heartbeat", message: msg, type });
+			pi.events.emit("command_result", { command: "heartbeat", message: msg, type, source: source ?? "" });
 		};
 
 		if (arg === "on" || arg === "start") {

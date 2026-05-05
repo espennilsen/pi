@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PushEventPayload, PushEventType } from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -744,20 +744,6 @@ export interface RegisterPushEndpointResult {
 	message: string;
 }
 
-export interface PushEventPayload {
-	eventType: PushEventType;
-	taskId?: string;
-	fromState?: string | null;
-	toState?: string;
-	progress?: number;
-	message?: string;
-	error?: string;
-	queueDepth?: number;
-	activeTasks?: number;
-	maxConcurrent?: number;
-	timestamp: string;
-}
-
 export async function registerPushEndpoint(
 	params: RegisterPushEndpointParams,
 	hubConfig: HubConfig,
@@ -768,7 +754,7 @@ export async function registerPushEndpoint(
 	const result = await hubRpc(
 		rpcUrl,
 		"telemetry.push.register",
-		params as Record<string, unknown>,
+		params as unknown as Record<string, unknown>,
 		hubConfig.apiKey,
 		log,
 		"telemetry_push_register",

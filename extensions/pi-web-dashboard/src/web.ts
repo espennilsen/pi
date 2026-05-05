@@ -275,7 +275,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, subPath: str
 
 				if (route.action === "event-bus") {
 					const parsed = parseCommand(trimmed)!;
-					_pi.events.emit(route.eventName!, { args: parsed.args });
+					_pi.events.emit(route.eventName!, { args: parsed.args, source: "pi-web-dashboard" });
 					broadcast({ type: "command_dispatched", command: parsed.name, args: parsed.args, time: new Date().toISOString() });
 					json(res, 202, { status: "accepted", dispatched: true, command: parsed.name, source: "extension" });
 					return;
@@ -355,8 +355,11 @@ export function mountDashboard(pi: ExtensionAPI): void {
 	_pi = pi;
 
 	// Forward command_result events from extensions to SSE clients
+	// Only forward results intended for this extension (source matching).
 	const unsubCommandResult = pi.events.on("command_result", (data: unknown) => {
-		const d = data as { command?: string; message?: string; type?: string };
+		const d = data as { command?: string; message?: string; type?: string; source?: string };
+		// Only forward if source is empty (TUI/channels) or matches pi-web-dashboard
+		if (d.source && d.source !== "pi-web-dashboard") return;
 		broadcast({ type: "command_result", command: d.command, message: d.message, notificationType: d.type, time: new Date().toISOString() });
 	});
 

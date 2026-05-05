@@ -18,7 +18,7 @@ import type { ChannelRegistry } from "../registry.ts";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
-import { isCommand, handleCommand, type CommandContext } from "./commands.ts";
+import { isCommand, handleCommand, parseCommand, type CommandContext } from "./commands.ts";
 import { startTyping } from "./typing.ts";
 
 const BRIDGE_DEFAULTS: Required<BridgeConfig> = {
@@ -52,6 +52,8 @@ export class ChatBridge {
 	private activeCount = 0;
 	private running = false;
 	private rpcManager: RpcSessionManager | null = null;
+	/** Extension-command names from pi.getCommands(). Emitted via event bus when triggered. */
+	private extensionCommands = new Set<string>();
 
 	constructor(
 		bridgeConfig: BridgeConfig | undefined,
@@ -104,6 +106,19 @@ export class ChatBridge {
 		this.config = { ...BRIDGE_DEFAULTS, ...cfg };
 	}
 
+	/**
+	 * Set the full slash commands list from pi.getCommands().
+	 * Extension-command names are stored for event-bus routing;
+	 * skill and prompt commands fall through to the agent subprocess.
+	 */
+	setSlashCommands(commands: Array<{ name: string; source: string }>): void {
+		this.extensionCommands = new Set(
+			commands
+				.filter(c => c.source === "extension")
+				.map(c => c.name),
+		);
+	}
+
 	// ── Main entry point ──────────────────────────────────────
 
 	handleMessage(message: IncomingMessage): void {
@@ -130,12 +145,26 @@ export class ChatBridge {
 
 		// Bot commands (only for text-only messages)
 		if (text && !hasAttachments && this.config.commands && isCommand(text)) {
+			// Built-in commands (start, help, abort, status, new)
 			const reply = handleCommand(text, session, this.commandContext());
 			if (reply !== null) {
 				this.sendReply(message.adapter, message.sender, reply);
 				return;
 			}
-			// Unrecognized command — fall through to agent
+
+			// Extension commands — emit via event bus (same behaviour as pi-mobile)
+			const parsed = parseCommand(text);
+			if (parsed.command && this.extensionCommands.has(parsed.command)) {
+				this.events.emit(`command:${parsed.command}`, {
+					args: parsed.args,
+					source: `telegram:${message.sender}`,
+				});
+				this.sendReply(message.adapter, message.sender, `✓ /${parsed.command} ${parsed.args}`.trimEnd());
+				return;
+			}
+
+			// Skill / prompt commands — fall through to agent subprocess
+			// (the agent has skills/prompts loaded and handles them natively)
 		}
 
 		// Queue depth check

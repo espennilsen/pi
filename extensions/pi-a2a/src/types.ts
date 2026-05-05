@@ -171,13 +171,13 @@ export type PushEventType =
 	| "heartbeat";
 
 export interface PushEventPayload {
-	eventType: PushEventType;
 	taskId?: string;
 	fromState?: string | null;
 	toState?: string;
 	progress?: number;
 	message?: string;
 	error?: string;
+	artifact?: unknown;
 	queueDepth?: number;
 	activeTasks?: number;
 	maxConcurrent?: number;

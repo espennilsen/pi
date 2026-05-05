@@ -48,7 +48,8 @@ import { randomUUID } from "node:crypto";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
-import type { TelemetrySnapshot } from "./types.ts";
+import type { TelemetrySnapshot, HubConfig } from "./types.ts";
+import { sendTaskStateChanged } from "./hub.ts";
 import {
 	extractLoopMetadata,
 	injectLoopMetadata,
@@ -132,6 +133,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	private inputRequiredTimeoutMs: number;
 	/** Maximum input-required rounds allowed per task. */
 	private maxInputRounds: number;
+	/** Hub configuration for push notifications. */
+	private hubConfig?: HubConfig;
+	/** Registered hub agent ID for push notifications. */
+	private hubAgentId?: string;
 	/** Number of tasks waiting in the queue (not yet active). */
 	private _queueDepth = 0;
 	/** Last completed/failed task duration for telemetry reporting. */
@@ -159,6 +164,11 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.inputRequiredTimeoutMs = inputRequiredTimeoutMs ?? DEFAULT_INPUT_REQUIRED_TIMEOUT_MS;
 		this.maxInputRounds = maxInputRounds ?? DEFAULT_MAX_INPUT_ROUNDS;
 		this.hubConfig = hubConfig;
+	}
+
+	/** Set the hub agent ID after registration (called from index.ts). */
+	setHubAgentId(agentId: string): void {
+		this.hubAgentId = agentId;
 	}
 
 	/**
@@ -845,7 +855,7 @@ export class PiAgentExecutor implements AgentExecutor {
 				const toState = result.ok ? "completed" : "failed";
 				const fromState = existing?.status?.state as string | null || null;
 				await sendTaskStateChanged(
-					"pi-agent", // agentId
+					this.hubAgentId ?? "pi-agent", // agentId
 					taskId,
 					fromState,
 					toState,

@@ -50,12 +50,12 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, type HubTask, type PipelineState, type TaskPriority, type PushEventType } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
 
@@ -717,6 +717,7 @@ export default function (pi: ExtensionAPI) {
 			const result = await registerWithHub(publicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;
+				executor?.setHubAgentId(result.agentId);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may

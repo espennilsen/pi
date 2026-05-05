@@ -60,6 +60,11 @@ export interface A2AConfig {
 	 *  When enabled, periodically checks the hub for answered owner clarifications
 	 *  and spawns a fresh pi subprocess to handle each response. */
 	poller?: PollerConfig;
+	/** Long-running task support.
+	 *  When enabled, tasks can run for hours/days without timeouts.
+	 *  State is persisted to disk and survives Pi restarts.
+	 *  Uses a smart resume queue that waits for agent to be idle. */
+	longRunningTasks?: LongRunningTasksConfig;
 }
 
 /** Configuration for the background clarification poller. */
@@ -74,6 +79,22 @@ export interface PollerConfig {
 	skills?: string[];
 	/** Model to use for spawned pi subprocesses. */
 	model?: string;
+}
+
+/** Configuration for long-running task support. */
+export interface LongRunningTasksConfig {
+	/** Enable long-running task support. Defaults to false. */
+	enabled?: boolean;
+	/** Maximum task age in hours. Tasks older than this are pruned.
+	 *  Defaults to 168 hours (7 days). */
+	maxTaskAgeHours?: number;
+	/** Maximum retry attempts for resume requests. Defaults to 3. */
+	resumeRetryAttempts?: number;
+	/** Delay between resume retry attempts in milliseconds. Defaults to 5000. */
+	resumeRetryDelayMs?: number;
+	/** Polling interval for checking completed tasks in milliseconds.
+	 *  Defaults to 300000 (5 minutes). */
+	pollingIntervalMs?: number;
 }
 
 /** Configuration for a manually defined remote agent. */
@@ -162,30 +183,113 @@ export interface TelemetrySnapshot {
 	lastTaskStatus?: "completed" | "failed";
 }
 
-// ── Push Notification Types ──────────────────────────────────────────
+// ── Orchestrator Types ──────────────────────────────────────────
 
-export type PushEventType =
-	| "task.stateChanged"
-	| "task.progress"
-	| "task.error"
-	| "heartbeat";
+export interface AgentSelectionResult {
+	agentId: string;
+}
 
-export interface PushEventPayload {
-	taskId?: string;
-	fromState?: string | null;
-	toState?: string;
-	progress?: number;
-	message?: string;
-	error?: string;
-	artifact?: unknown;
-	queueDepth?: number;
-	activeTasks?: number;
+export interface AgentStrategy {
+	name: string;
+	description: string;
+	weights?: Record<string, number>;
+}
+
+export interface ProjectSettings {
+	project: string;
+	displayName?: string;
 	maxConcurrent?: number;
+	stallTimeoutMs?: number;
+	turnTimeoutMs?: number;
+	maxRetryBackoffMs?: number;
+	pollIntervalMs?: number;
+	autoApprove?: boolean;
+	inputRequiredPolicy?: "block" | "ask";
+	eligibleAgents?: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+// ── SSE Stream Types ──────────────────────────────────────────
+
+export interface PipelineStreamEvent {
+	type: "task.stateChanged";
+	data: {
+		taskId: string;
+		fromState: string | null;
+		toState: string;
+		project: string;
+		assignedAgentId: string | null;
+		externalTaskId: string | null;
+		branch: string | null;
+		prUrl: string | null;
+		prNumber: number | null;
+		title: string;
+		priority: string;
+	};
 	timestamp: string;
 }
 
-export interface AgentPushCapabilities {
-	enabled: boolean;
+export interface SSEConnection {
 	url: string;
-	events: PushEventType[];
+	connected: boolean;
+	lastEventAt: string | null;
+	error: string | null;
+	reconnectAttempts: number;
+
+// ── Orchestrator Types ──────────────────────────────────────────
+
+export interface AgentSelectionResult {
+	agentId: string;
+}
+
+export interface AgentStrategy {
+	name: string;
+	description: string;
+	weights?: Record<string, number>;
+}
+
+export interface ProjectSettings {
+	project: string;
+	displayName?: string;
+	maxConcurrent?: number;
+	stallTimeoutMs?: number;
+	turnTimeoutMs?: number;
+	maxRetryBackoffMs?: number;
+	pollIntervalMs?: number;
+	autoApprove?: boolean;
+	inputRequiredPolicy?: "block" | "ask";
+	eligibleAgents?: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+// ── SSE Stream Types ──────────────────────────────────────────
+
+export interface PipelineStreamEvent {
+	type: "task.stateChanged";
+	data: {
+		taskId: string;
+		fromState: string | null;
+		toState: string;
+		project: string;
+		assignedAgentId: string | null;
+		externalTaskId: string | null;
+		branch: string | null;
+		prUrl: string | null;
+		prNumber: number | null;
+		title: string;
+		priority: string;
+	};
+	timestamp: string;
+}
+
+export interface SSEConnection {
+	url: string;
+	connected: boolean;
+	lastEventAt: string | null;
+	error: string | null;
+	reconnectAttempts: number;
+}
+
 }

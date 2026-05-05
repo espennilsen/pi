@@ -137,8 +137,7 @@ function startNotifications(
 
 					pi.events.emit("channel:send", {
 						channel,
-						text,
-						source: "pi-gmail",
+						text, source: "pi-gmail",
 					});
 
 					// Mark all fetched messages as seen (not just the displayed ones)
@@ -315,15 +314,16 @@ export default function (pi: ExtensionAPI) {
 
 	// Event bus listener for web/mobile slash command support
 	// Note: /gmail-auth and /gmail-logout need ctx.ui.confirm() — skipped
-	pi.events.on("command:gmail-status", async (_data: unknown) => {
+	pi.events.on("command:gmail-status", async (data: unknown) => {
+		const { source } = data as { args: string; source?: string };
 		const agentDir = getAgentDir();
 		if (isAuthenticated(agentDir)) {
 			const email = getAuthenticatedEmail(agentDir);
 			pi.sendMessage({ customType: "command_result", content: `✅ Gmail connected as ${email}`, display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "gmail-status", message: `✅ Gmail connected as ${email}`, type: "info" });
+			pi.events.emit("command_result", { command: "gmail-status", message: `✅ Gmail connected as ${email}`, type: "info", source: source ?? "" });
 		} else {
 			pi.sendMessage({ customType: "command_result", content: "⚠️ Gmail not connected. Run /gmail-auth to connect.", display: true, details: { type: "info" } });
-			pi.events.emit("command_result", { command: "gmail-status", message: "⚠️ Gmail not connected. Run /gmail-auth to connect.", type: "info" });
+			pi.events.emit("command_result", { command: "gmail-status", message: "⚠️ Gmail not connected. Run /gmail-auth to connect.", type: "info", source: source ?? "" });
 		}
 	});
 }

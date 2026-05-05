@@ -12,14 +12,17 @@ Two-way channel extension for pi — routes messages between agents and external
 ```
 src/
 ├── index.ts              # Extension entry — lifecycle, flags, /chat-bridge command
-├── types.ts              # All shared types (messages, adapters, config, bridge)
+├── types.ts              # All shared types (messages, adapters, config, bridge, file upload)
 ├── config.ts             # Settings loader (reads "pi-channels" from settings.json)
-├── registry.ts           # Adapter registry + route resolution
+├── registry.ts           # Adapter registry + route resolution + sendFile
 ├── events.ts             # channel:* event handlers + bridge wiring
-├── tool.ts               # LLM tool (notify: list/send/test)
+├── tool.ts               # LLM tool (notify: list/send/test/send_file)
 ├── adapters/
-│   ├── telegram.ts       # Telegram Bot API adapter (polling + typing)
-│   └── webhook.ts        # Generic webhook adapter
+│   ├── telegram.ts       # Telegram Bot API adapter (polling + typing + file send)
+│   ├── webhook.ts        # Generic webhook adapter
+│   ├── slack.ts          # Slack adapter (Socket Mode + Web API)
+│   ├── transcription.ts  # Pluggable audio transcription (Apple/OpenAI/ElevenLabs)
+│   └── transcribe-apple-v2/  # Swift helper for macOS SFSpeechRecognizer
 └── bridge/
     ├── bridge.ts         # Core bridge — per-sender queues, concurrency, lifecycle
     ├── commands.ts       # Bot command registry (/start, /help, /abort, /status, /new)

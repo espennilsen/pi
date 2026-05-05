@@ -1,180 +1,288 @@
----
-name: a2a
-description: >
-  Communicate with remote agents via A2A protocol, discover available agents,
-  and ask the human owner for clarification via the A2A Hub. Use when asked
-  to send messages to other agents, discover what agents are available, or
-  when you need human input to proceed.
+# pi-a2a Long-Running Tasks Skill
 
-  **Triggers — use this skill when:**
-  - You need human input to proceed (approval, decision, clarification)
-  - User asks to "send a message to another agent"
-  - User asks to "discover agents" or "what agents are available"
-  - You're stuck and need to escalate to the owner
-  - A long-running task needs human approval before continuing
----
+## Overview
 
-# A2A — Agent-to-Agent Communication & Human-in-the-Loop
+The pi-a2a extension supports **long-running tasks** that can execute for hours or days without timeouts. This is essential for:
 
-## Tools
+- Data processing pipelines
+- Batch operations
+- Research and aggregation tasks
+- External API jobs with unpredictable duration
+- Any A2A task that exceeds the standard timeout
 
-| Tool | Purpose |
-|------|---------|
-| `a2a_discover` | Find remote agents on the hub or static registry |
-| `a2a_send` | Send a message to a remote agent by name, ID, or URL |
-| `ask_owner` | Ask the human owner a question (non-blocking) |
+## When to Use
 
----
+**Use long-running tasks when:**
+- Task execution time is unpredictable or known to exceed 10 minutes
+- The remote agent is processing large datasets
+- Task involves multiple external API calls
+- You want the task to survive Pi restarts
 
-## ask_owner — Human-in-the-Loop
+**Don't use for:**
+- Quick queries (< 5 minutes)
+- Interactive conversations
+- Tasks requiring immediate feedback
 
-Use `ask_owner` when you **genuinely cannot proceed** without human input.
-The tool submits your question to the hub and **returns immediately** — it
-does NOT block your session. When the owner responds, a **fresh pi
-subprocess** is automatically spawned with your handoff context + the
-owner's answer to continue the work.
+## Configuration
 
-### How It Works
-
-1. You call `ask_owner` with a question + handoff context
-2. The question is submitted to the A2A Hub — you get an immediate confirmation
-3. You continue with other work or end your session
-4. The owner answers through the hub's web UI (could be minutes or hours later)
-5. A background poller detects the response
-6. A fresh `pi` subprocess is spawned with a self-contained prompt containing:
-   - The original question
-   - The owner's response
-   - Your full handoff context (done, remaining, decisions, etc.)
-7. The new session picks up where you left off — no prior conversation context needed
-
-### When to Use
-
-- **Approval needed** — destructive operations, merging PRs, deploying
-- **Ambiguous requirements** — multiple valid approaches, unclear scope
-- **Escalation** — blocked on something outside your control
-- **Design decisions** — architectural choices with significant trade-offs
-
-### When NOT to Use
-
-- You can make a reasonable decision yourself
-- The answer is in the codebase, docs, or context
-- It's a minor style/formatting choice
-
-### Always Include Handoff Context
-
-**Every `ask_owner` call MUST include the `handoff` parameter.** The response
-will be handled by a completely fresh session with zero prior context. Without
-handoff context, the new session has no idea what to do.
-
-```json
-{
-  "question": "The PR has conflicting review feedback — reviewer A wants JWT, reviewer B wants session tokens. Which approach should I take?",
-  "handoff": {
-    "done": [
-      "Implemented Express server with route scaffolding",
-      "Added user model with Kysely migrations",
-      "PR #45 created on branch td-abc123/auth"
-    ],
-    "remaining": [
-      "Implement auth middleware (blocked on JWT vs sessions decision)",
-      "Write integration tests for auth endpoints",
-      "Update API docs"
-    ],
-    "decisions": [
-      "Using PostgreSQL via Kysely (not SQLite) for production readiness",
-      "Argon2 for password hashing over bcrypt"
-    ],
-    "uncertain": [
-      "JWT vs session tokens — conflicting reviewer feedback",
-      "Whether to support OAuth2 providers in this PR or defer"
-    ],
-    "project": "my-api",
-    "branch": "td-abc123/auth",
-    "taskId": "td-abc123"
-  },
-  "priority": "normal"
-}
-```
-
-### Handoff Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `done` | Yes | What's been completed — be specific (files, commits, PRs) |
-| `remaining` | Yes | What still needs to be done — ordered by priority |
-| `decisions` | If any | Key choices made and why |
-| `uncertain` | If any | Open questions beyond the one being asked |
-| `project` | Yes | Project name or absolute path to project root |
-| `branch` | If applicable | Git branch being worked on |
-| `taskId` | If applicable | td task ID |
-
-### Priority Levels
-
-| Priority | When to use |
-|----------|-------------|
-| `low` | Nice-to-know, no urgency |
-| `normal` | Default — standard question |
-| `urgent` | Blocking critical work, needs fast response |
-
-### Poller Configuration
-
-The background poller must be enabled in `settings.json` for responses to be
-automatically processed:
+Enable in `settings.json`:
 
 ```json
 {
   "pi-a2a": {
-    "poller": {
+    "longRunningTasks": {
       "enabled": true,
-      "intervalSeconds": 60,
-      "extensions": ["extensions/pi-github", "extensions/pi-memory"],
-      "skills": ["td", "github", "code-review"],
-      "model": "claude-sonnet-4-5"
+      "maxTaskAgeHours": 168,
+      "resumeRetryAttempts": 3,
+      "resumeRetryDelayMs": 5000,
+      "pollingIntervalMs": 300000
+    }
+  }
+}
+```text
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable long-running task support |
+| `maxTaskAgeHours` | number | `168` (7 days) | Maximum task retention period |
+| `resumeRetryAttempts` | number | `3` | Retry attempts for resume failures |
+| `resumeRetryDelayMs` | number | `5000` | Delay between retries |
+| `pollingIntervalMs` | number | `300000` (5 min) | Hub polling interval |
+
+## How It Works
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Task Initiated                                          │
+│     - Task state saved to SQLite                            │
+│     - Session ID assigned                                   │
+│     - Agent continues other work                            │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  2. Background Polling (every 5 min)                        │
+│     - Checks hub for task completion                        │
+│     - Detects state changes                                 │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  3. Task Completes                                          │
+│     - State updated in SQLite                               │
+│     - Resume request queued                                 │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4. Smart Resume Queue                                      │
+│     - Waits for agent to be idle                            │
+│     - Processes one request at a time                       │
+│     - Validates session ID (prevents stale callbacks)       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5. Response Delivered                                      │
+│     - Completion message injected into chat                 │
+│     - Task result available                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Session Persistence
+
+Tasks are stored in `db/a2a-long-running.db` with:
+- `taskId` - A2A task identifier
+- `contextId` - Conversation context
+- `sessionId` - Pi session that owns the task
+- `state` - Current task state
+- `createdAt` / `lastUpdatedAt` - Timestamps
+- `response` / `error` - Task result
+
+### Resume Queue
+
+The resume queue ensures responses are delivered at the right time:
+
+1. **Agent Busy**: Queue the resume request
+2. **Agent Idle**: Process immediately
+3. **Session Mismatch**: Skip (task belongs to old session)
+4. **Failure**: Retry with backoff (up to `resumeRetryAttempts`)
+
+## Usage Patterns
+
+### Pattern 1: Long-Running Data Processing
+
+```typescript
+// Send task to data processing agent
+const result = await a2a_send({
+  agent: "data-processor",
+  message: "Process this 10GB dataset...",
+});
+
+// Agent continues other work immediately
+// Task result delivered when processing completes (hours later)
+```
+
+### Pattern 2: Multi-Agent Pipeline
+
+```typescript
+// Start long-running pipeline
+const pipelineTask = await a2a_send({
+  agent: "pipeline-orchestrator",
+  message: "Run full ETL pipeline",
+});
+
+// Check status periodically or wait for completion notification
+// Result delivered automatically when pipeline finishes
+```
+
+### Pattern 3: Research Aggregation
+
+```typescript
+// Start research task
+const researchTask = await a2a_send({
+  agent: "research-agent",
+  message: "Aggregate all news about AI safety from past month",
+});
+
+// Agent can handle other requests while research runs
+// Results delivered when aggregation completes
+```
+
+## Best Practices
+
+### ✅ Do
+
+1. **Enable for appropriate tasks**: Use when tasks exceed 10 minutes
+2. **Monitor task age**: Set `maxTaskAgeHours` appropriately for your use case
+3. **Handle failures**: Check for error messages in completion notifications
+4. **Test session recovery**: Verify tasks survive Pi restarts
+5. **Set reasonable polling intervals**: Balance responsiveness with resource usage
+
+### ❌ Don't
+
+1. **Don't enable for all tasks**: Overhead not needed for quick operations
+2. **Don't set polling too low**: < 60 seconds creates unnecessary load
+3. **Don't rely on immediate responses**: Long-running tasks are asynchronous
+4. **Don't ignore session boundaries**: Tasks belong to specific sessions
+
+## Monitoring
+
+### Check Task Status
+
+```bash
+# View pending long-running tasks
+sqlite3 db/a2a-long-running.db "SELECT task_id, state, created_at FROM long_running_tasks WHERE state NOT IN ('completed', 'failed');"
+```
+
+### Check Resume Queue
+
+```bash
+# View queued resume requests
+sqlite3 db/a2a-long-running.db "SELECT task_id, priority, retry_count FROM resume_queue ORDER BY enqueued_at;"
+```
+
+### Logs to Monitor
+
+- `long_running_task_saved` - Task state persisted
+- `long_running_task_completed` - Task finished
+- `resume_request_enqueued` - Resume queued
+- `resume_queue_processed` - Response delivered
+- `resume_queue_retry_scheduled` - Retry scheduled
+- `long_running_task_poll_error` - Polling error
+
+## Troubleshooting
+
+### Task Not Completing
+
+**Symptoms**: Task stuck in "working" state for extended period
+
+**Solutions**:
+1. Check remote agent health
+2. Verify hub connectivity
+3. Increase `pollingIntervalMs` if hub is rate-limited
+4. Check logs for `long_running_task_poll_error`
+
+### Resume Not Processing
+
+**Symptoms**: Task completed but response not delivered
+
+**Solutions**:
+1. Check if agent is busy (resume waits for idle)
+2. Verify session ID matches current session
+3. Check retry count (may have exhausted retries)
+4. Review `resume_queue_*` logs
+
+### Session Mismatch
+
+**Symptoms**: `resume_queue_stale_session` in logs
+
+**Cause**: Task belongs to previous Pi session
+
+**Solutions**:
+1. This is expected behavior - prevents cross-session contamination
+2. Task result available in previous session's data
+3. Consider shorter `maxTaskAgeHours` if this occurs frequently
+
+## Limitations
+
+1. **Hub Dependency**: Requires A2A hub for polling (can't poll direct agents)
+2. **Session Boundaries**: Tasks don't cross session boundaries
+3. **Polling Latency**: Completion detected within polling interval (default: 5 min)
+4. **Storage**: Tasks consume SQLite storage (pruned after `maxTaskAgeHours`)
+
+## Example Configuration
+
+### Development
+```json
+{
+  "pi-a2a": {
+    "longRunningTasks": {
+      "enabled": true,
+      "maxTaskAgeHours": 24,
+      "resumeRetryAttempts": 5,
+      "pollingIntervalMs": 60000
     }
   }
 }
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enabled` | `false` | Enable the poller |
-| `intervalSeconds` | `60` | Poll interval (15–600) |
-| `extensions` | `[]` | Extension paths for spawned subprocesses |
-| `skills` | `[]` | Skill paths for spawned subprocesses |
-| `model` | (default) | Model override for spawned subprocesses |
-
-### Security Note
-
-The poller spawns `pi` subprocesses with full tool access, using prompts
-built entirely from hub-returned data (question, response, handoff context).
-**Hub compromise = arbitrary code execution on the agent host.** Use HTTPS
-for `hub.url` in production. The `handoff.project` path is validated (must
-exist and be a directory) before being used as the subprocess working directory.
-
----
-
-## a2a_discover — Find Agents
-
+### Production
 ```json
-{ "q": "search query", "tags": ["coding"], "category": ["development-tools"] }
+{
+  "pi-a2a": {
+    "longRunningTasks": {
+      "enabled": true,
+      "maxTaskAgeHours": 168,
+      "resumeRetryAttempts": 3,
+      "pollingIntervalMs": 300000
+    }
+  }
+}
 ```
 
-All parameters are optional. Omit everything to list all agents.
-Returns agent names, descriptions, skills, availability, and health status.
-
----
-
-## a2a_send — Message an Agent
-
+### Minimal Overhead
 ```json
-{ "agent": "Agent Name", "message": "Your request here" }
+{
+  "pi-a2a": {
+    "longRunningTasks": {
+      "enabled": false
+    }
+  }
+}
 ```
 
-The `agent` field accepts:
-- Agent name (from `a2a_discover` results)
-- Agent ID (UUID from hub)
-- Direct URL (`https://...`)
+## Related Features
 
-The response arrives asynchronously — you'll see it when it comes back.
-If the remote agent acknowledges but needs time, you'll get an ACK and the
-full response arrives later as an inbound message.
+- **A2A Hub**: Task status polling requires hub registration
+- **Session Persistence**: Pi stores sessions on disk for recovery
+- **Smart Resume Queue**: Respects agent workload before delivering responses
+- **Task Timeout**: Standard tasks still have `taskTimeoutMs` (default: 10 min)
+
+## Version History
+
+- **v0.1.0**: Initial implementation
+  - LongRunningTaskStore for SQLite persistence
+  - Session ID tracking
+  - Smart resume queue
+  - Background polling

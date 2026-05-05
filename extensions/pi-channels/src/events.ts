@@ -18,12 +18,19 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { ChannelRegistry } from "./registry.ts";
 import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.ts";
 import type { ChatBridge } from "./bridge/bridge.ts";
+import type { MessageHistory } from "./history.ts";
 
 /** Reference to the active bridge, set by index.ts after construction. */
 let activeBridge: ChatBridge | null = null;
+/** Reference to the message history, set by index.ts after construction. */
+let activeHistory: MessageHistory | null = null;
 
 export function setBridge(bridge: ChatBridge | null): void {
 	activeBridge = bridge;
+}
+
+export function setHistory(history: MessageHistory): void {
+	activeHistory = history;
 }
 
 export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistry): void {
@@ -32,6 +39,9 @@ export function registerChannelEvents(pi: ExtensionAPI, registry: ChannelRegistr
 
 	registry.setOnIncoming(async (message: IncomingMessage) => {
 		pi.events.emit("channel:receive", message);
+
+		// Log to message history (fire-and-forget)
+		activeHistory?.logIncoming(message, message.adapter);
 
 		// Route to bridge if active
 		if (activeBridge?.isActive()) {

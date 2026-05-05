@@ -14,6 +14,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ChannelRegistry } from "./registry.ts";
+import type { MessageHistory, HistoryQuery } from "./history.ts";
 
 interface ChannelToolParams {
 	action: "send" | "send_file" | "list" | "test";
@@ -36,7 +37,13 @@ function formatFileSize(bytes: number): string {
 	return `${(bytes / 1_048_576).toFixed(1)}MB`;
 }
 
-export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry): void {
+function truncateText(text: string | null, maxLen: number = 200): string {
+	if (!text) return "";
+	if (text.length <= maxLen) return text;
+	return text.slice(0, maxLen) + "…";
+}
+
+export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry, history?: MessageHistory): void {
 	pi.registerTool({
 		name: "notify",
 		label: "Channel",
@@ -228,4 +235,102 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry)
 			};
 		},
 	});
+
+	// ── channel_history tool ───────────────────────────────
+
+	if (history) {
+		pi.registerTool({
+			name: "channel_history",
+			label: "Channel History",
+			description:
+				"Query message history across all configured channel adapters (Telegram, Slack, etc.). " +
+				"Use this to check recent conversations, see what was sent/received, or debug message flow. " +
+				"Actions: query (search messages), stats (message counts).",
+			parameters: Type.Object({
+				action: StringEnum(
+					["query", "stats"] as const,
+					{ description: "What to do: query for recent messages, stats for counts by adapter" },
+				) as any,
+				adapter: Type.Optional(
+					Type.String({ description: "Filter by adapter name (e.g. 'slack', 'telegram')." }),
+				),
+				direction: Type.Optional(
+					StringEnum(
+						["in", "out"] as const,
+						{ description: "Filter by direction: in (received) or out (sent)." },
+					) as any,
+				),
+				limit: Type.Optional(
+					Type.Number({ description: "Max messages to return (default: 20, max: 100)." }),
+				),
+				since: Type.Optional(
+					Type.String({ description: "Only show messages since this ISO datetime (e.g. '2026-05-05T00:00:00')." }),
+				),
+			}) as any,
+
+			async execute(_toolCallId, _params) {
+				const params = _params as {
+					action: "query" | "stats";
+					adapter?: string;
+					direction?: "in" | "out";
+					limit?: number;
+					since?: string;
+				};
+
+				if (params.action === "stats") {
+					const adapters = registry
+						.list()
+						.filter((i) => i.type === "adapter")
+						.map((i) => i.name);
+
+					const lines: string[] = ["**Message counts by adapter:**"];
+					let total = 0;
+					for (const a of adapters) {
+						const count = await history!.count({ adapter: a });
+						lines.push(`- ${a}: ${count}`);
+						total += count;
+					}
+					lines.push(`\n**Total:** ${total}`);
+					return {
+						content: [{ type: "text" as const, text: lines.join("\n") }],
+						details: {},
+					};
+				}
+
+				// query
+				const filters: HistoryQuery = {
+					adapter: params.adapter,
+					direction: params.direction,
+					limit: Math.min(params.limit ?? 20, 100),
+					since: params.since,
+				};
+
+				const rows = await history!.query(filters);
+
+				if (rows.length === 0) {
+					return {
+						content: [{ type: "text" as const, text: "No messages found." }],
+						details: {},
+					};
+				}
+
+				const arrow = (d: string) => (d === "in" ? "←" : "→");
+				const source = (row: typeof rows[0]) =>
+					row.direction === "in" ? (row.sender || "?") : (row.recipient || "?");
+
+				const formatted = rows.map((row) => {
+					const ts = row.created_at?.replace("T", " ").slice(0, 19) ?? "?";
+					return `${ts} ${arrow(row.direction)} [${row.adapter}] ${source(row)}: ${truncateText(row.text, 150)}`;
+				});
+
+				return {
+					content: [{
+						type: "text" as const,
+						text: `**Channel History** (${rows.length} messages):\n${formatted.join("\n")}`,
+					}],
+					details: {},
+				};
+			},
+		});
+	}
 }

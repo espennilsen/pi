@@ -737,7 +737,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				return;
 			}
 
-			// Split long messages at newlines
+			// Split long messages at newlines, keeping HTML tags/entities intact
 			let remaining = full;
 			while (remaining.length > 0) {
 				if (remaining.length <= MAX_LENGTH) {
@@ -745,7 +745,7 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 					break;
 				}
 				let splitAt = remaining.lastIndexOf("\n", MAX_LENGTH);
-				if (splitAt < MAX_LENGTH / 2) splitAt = MAX_LENGTH;
+				if (splitAt < MAX_LENGTH / 2) splitAt = safeHtmlSplit(remaining, MAX_LENGTH);
 				await sendTelegram(message.recipient, remaining.slice(0, splitAt));
 				remaining = remaining.slice(splitAt).replace(/^\n/, "");
 			}

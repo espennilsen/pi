@@ -157,7 +157,8 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	async function sendTelegram(chatId: string, text: string): Promise<void> {
 		const body: Record<string, unknown> = { chat_id: chatId, text };
-		if (parseMode) body.parse_mode = parseMode;
+		// Always use HTML parse_mode — messages are pre-formatted by format.ts
+		body.parse_mode = parseMode || "HTML";
 
 		const res = await fetch(`${apiBase}/sendMessage`, {
 			method: "POST",

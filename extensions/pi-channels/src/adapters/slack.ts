@@ -139,6 +139,8 @@ export async function createSlackAdapter(config: AdapterConfig, context: Adapter
 			channel: channelId,
 			text,
 			thread_ts: threadTs,
+			// Enable Slack mrkdwn formatting (bold, italic, code, links, lists)
+			mrkdwn: true,
 			// Unfurl links/media is off by default to keep responses clean
 			unfurl_links: false,
 			unfurl_media: false,

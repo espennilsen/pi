@@ -7,7 +7,7 @@ Fix unresolved review threads on a GitHub pull request.
 After fixing code and pushing, you **MUST** resolve every review thread.
 Do NOT skip this step. Do NOT hand off before all threads are resolved.
 
-```
+```text
 ☐ 1. Get unresolved threads (GraphQL or /gh-pr-review)
 ☐ 2. Fix code issues one by one
 ☐ 3. Verify: npm run typecheck
@@ -22,7 +22,7 @@ Do NOT skip this step. Do NOT hand off before all threads are resolved.
 
 **Preferred method: use the registered tools from pi-github** (no tokens needed, `gh` CLI handles auth):
 
-```
+```text
 # 1. Reply to thread (optional, but good practice)
 tool: github_review_thread_reply
   thread_id: "PRRT_xxx"
@@ -65,9 +65,10 @@ mutation {
 Auto-detects PR from current branch. Fetches unresolved threads via GraphQL,
 presents them with thread IDs, and provides fix instructions.
 
-**After fixing code:** You MUST resolve threads using the GraphQL
-`resolveReviewThread` mutation. Use `gh api` directly (not gh CLI wrappers
-that may return 404). Verify with `isResolved == true` before finishing.
+**After fixing code:** You MUST resolve threads. Use the registered
+`github_resolve_review_thread` tool first (preferred, no tokens needed).
+Fall back to `gh api graphql` with the `resolveReviewThread` mutation if
+the tool isn't available.
 
 ## Manual Workflow
 

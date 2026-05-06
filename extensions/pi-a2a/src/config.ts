@@ -64,6 +64,15 @@ export function loadConfig(cwd: string): ConfigResult {
 			merged.port = port;
 		}
 	}
+	if (merged.portRange !== undefined) {
+		const range = merged.portRange as [number, number];
+		if (!Array.isArray(range) || range.length !== 2 ||
+				!Number.isInteger(range[0]) || !Number.isInteger(range[1]) ||
+				range[0] <= 0 || range[1] > 65535 || range[0] > range[1]) {
+			warnings.push(`Invalid portRange, ignoring`);
+			delete merged.portRange;
+		}
+	}
 	if (merged.bind !== undefined && typeof merged.bind !== "string") {
 		warnings.push(`Invalid bind address "${merged.bind}", falling back to default ("127.0.0.1")`);
 		delete merged.bind;

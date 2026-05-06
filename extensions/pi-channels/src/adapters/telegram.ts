@@ -714,18 +714,19 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	/** HTML-safe split: finds > or ; boundary to avoid breaking tags/entities. */
 	function safeHtmlSplit(html: string, maxLen: number): number {
-		// Scan from maxLen-1 to avoid returning > maxLen chars
-		for (let i = maxLen - 1; i >= maxLen / 2; i--) {
+		const len = Math.min(maxLen, html.length);
+		// Scan backwards from len-1 for a safe boundary (> closes tag, ; closes entity)
+		for (let i = len - 1; i >= Math.floor(len / 2); i--) {
 			const ch = html[i];
 			if (ch === '>' || ch === ';') {
 				let safe = true;
-				for (let j = i + 1; j < maxLen; j++) {
+				for (let j = i + 1; j < len; j++) {
 					if (html[j] === '<' || html[j] === '&') { safe = false; break; }
 				}
 				if (safe) return i + 1;
 			}
 		}
-		return maxLen;
+		return len;
 	}
 
 	return {
@@ -753,16 +754,45 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				return;
 			}
 
-			// Split long messages at newlines, keeping HTML tags/entities intact
+			// Split long messages at HTML-safe boundaries, falling back to plain text
+			// when a single HTML block (e.g., <pre>...</pre>) exceeds MAX_LENGTH.
 			let remaining = full;
 			while (remaining.length > 0) {
 				if (remaining.length <= MAX_LENGTH) {
 					await sendTelegram(message.recipient, remaining);
 					break;
 				}
-				let splitAt = remaining.lastIndexOf("\n", MAX_LENGTH);
-				if (splitAt < MAX_LENGTH / 2) splitAt = safeHtmlSplit(remaining, MAX_LENGTH);
-				await sendTelegram(message.recipient, remaining.slice(0, splitAt));
+
+				// Try HTML-aware split first
+				let splitAt = safeHtmlSplit(remaining, MAX_LENGTH);
+
+				// If HTML-safe split is too aggressive, fall back to newline split
+				if (splitAt < MAX_LENGTH / 2) {
+					const newlineAt = remaining.lastIndexOf("\n", MAX_LENGTH);
+					if (newlineAt >= MAX_LENGTH / 2) splitAt = newlineAt;
+				}
+
+				let chunk = remaining.slice(0, splitAt);
+
+				// Check if chunk has unbalanced opening HTML tags (e.g., <pre> without </pre>)
+				const openTagRe = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g;
+				const closeTagRe = /<\/([a-zA-Z][a-zA-Z0-9]*)>/g;
+				const openTags: string[] = [];
+				let match: RegExpExecArray | null;
+				while ((match = openTagRe.exec(chunk)) !== null) {
+					openTags.push(match[1]);
+				}
+				while ((match = closeTagRe.exec(chunk)) !== null) {
+					const idx = openTags.lastIndexOf(match[1]);
+					if (idx !== -1) openTags.splice(idx, 1);
+				}
+
+				if (openTags.length > 0) {
+					// Chunk has unbalanced tags — escape as plain text to avoid broken HTML
+					chunk = chunk.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+				}
+
+				await sendTelegram(message.recipient, chunk);
 				remaining = remaining.slice(splitAt).replace(/^\n/, "");
 			}
 		},

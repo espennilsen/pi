@@ -1082,20 +1082,23 @@ export async function listenToSSEStream(
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			log("sse_connection_error", { error: errorMsg, attempt: reconnectAttempts }, "ERROR");
 			
-			// Exponential backoff
-			const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
-			reconnectAttempts++;
-			
-			log("sse_reconnect_scheduled", { delay, attempt: reconnectAttempts }, "WARN");
-			
-			await new Promise(resolve => setTimeout(resolve, delay));
-			if (!controller.signal.aborted) {
-				// Re-handshake and pass new reader to runReadLoop
+			// Retry loop with exponential backoff
+			while (!controller.signal.aborted) {
+				const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+				reconnectAttempts++;
+
+				log("sse_reconnect_scheduled", { delay, attempt: reconnectAttempts }, "WARN");
+
+				await new Promise(resolve => setTimeout(resolve, delay));
+				if (controller.signal.aborted) return;
+
 				try {
 					const newReader = await performHandshake();
 					void runReadLoop(newReader);
-				} catch {
-					// Handshake failed again — runReadLoop's catch will handle retry
+					return;
+				} catch (handshakeErr) {
+					const hsMsg = handshakeErr instanceof Error ? handshakeErr.message : String(handshakeErr);
+					log("sse_handshake_failed", { error: hsMsg, attempt: reconnectAttempts }, "ERROR");
 				}
 			}
 		}

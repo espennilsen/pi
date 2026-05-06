@@ -2167,6 +2167,12 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
 					hubAgentId = result.agentId;
 					executor?.setHubAgentId(result.agentId);
+
+					// Start telemetry heartbeat and send initial snapshot
+					if (telemetryInterval) clearInterval(telemetryInterval);
+					telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
+					sendTelemetry(config).catch(() => {});
+
 					if (config.apiKey) {
 						await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");

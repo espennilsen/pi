@@ -485,6 +485,9 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.fallbackStatuses.set(taskId, { state: "failed", response: `Loop control: ${supervisorResult.reason}` });
 			}
 
+			// Fire push notification for automatic failure
+			this.fireFailurePush(taskId, contextId, `Loop control: ${supervisorResult.reason}`);
+
 			return;
 		}
 
@@ -515,6 +518,9 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.log("executor_empty_store_error", { taskId, error: e instanceof Error ? e.message : String(e) }, "WARN");
 				this.fallbackStatuses.set(taskId, { state: "failed", response: "No processable content in message" });
 			}
+
+			// Fire push notification for automatic failure
+			this.fireFailurePush(taskId, contextId, "No processable content in message");
 
 			return;
 		}
@@ -967,6 +973,25 @@ export class PiAgentExecutor implements AgentExecutor {
 	getFallbackStatus(taskId: string): { state: "completed" | "failed" | "canceled"; response: string } | undefined {
 		return this.fallbackStatuses.get(taskId);
 	}
+
+	/** Send push notification for automatic task failures (loop control, empty messages). */
+	private fireFailurePush(taskId: string, _contextId: string, error: string): void {
+		if (this.hubConfig?.apiKey && this.hubAgentId) {
+			const hubConfig = this.hubConfig;
+			const log = this.log;
+			const agentId = this.hubAgentId;
+			setImmediate(() => {
+				sendTaskStateChanged(
+					agentId, taskId, null, "failed",
+					hubConfig, log,
+					{ response: error.slice(0, 500) },
+				).catch(err => {
+					log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				});
+			});
+		}
+	}
+
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {
 		eventBus.publish({

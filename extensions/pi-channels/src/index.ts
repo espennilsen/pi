@@ -53,6 +53,7 @@ async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 			if (!resolved) {
 				resolved = true;
 				clearTimeout(timeout);
+				pi.events.off("kysely:ready", done);
 				resolve();
 			}
 		};
@@ -268,7 +269,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── LLM tool ──────────────────────────────────────────────
 
-	registerChannelTool(pi, registry);
+	// Tool registered in session_start after history is available (line ~170)
 
 	// ── Command: /channel-history ─────────────────────────────
 

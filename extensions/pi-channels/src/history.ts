@@ -126,8 +126,9 @@ export class MessageHistory {
 		return result.rows as unknown as MessageRow[];
 	}
 
-	/** Delete messages older than retentionDays. */
+	/** Delete messages older than retentionDays. 0 or negative = keep forever. */
 	async cleanup(): Promise<number> {
+		if (this.retentionDays <= 0) return 0;
 		const sql = `DELETE FROM ${TABLE_NAME} WHERE created_at < datetime('now', ?)`;
 		const result = await this.queryRaw(sql, [`-${this.retentionDays} days`]);
 		return result.numAffectedRows ?? 0;
@@ -155,16 +156,20 @@ export class MessageHistory {
 	// ── Internal ─────────────────────────────────────────────
 
 	private async queryRaw(sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; numAffectedRows?: number }> {
+		const TIMEOUT_MS = 10_000;
 		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => reject(new Error("History query timed out (kysely not responding)")), TIMEOUT_MS);
 			try {
 				this.events.emit("kysely:query", {
 					actor: "pi-channels",
 					input: { sql, params },
 					reply: (result: { rows: Record<string, unknown>[]; numAffectedRows?: number }) => {
+						clearTimeout(timeout);
 						resolve(result);
 					},
 				} as any);
 			} catch (err) {
+				clearTimeout(timeout);
 				reject(err);
 			}
 		});

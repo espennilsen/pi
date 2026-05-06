@@ -25,3 +25,4 @@ pi-debug.log
 .pilot
 models.json
 package/
+.worktrees/

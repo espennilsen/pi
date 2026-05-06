@@ -195,6 +195,12 @@ export interface ChannelConfig {
 	routes?: Record<string, { adapter: string; recipient: string }>;
 	/** Chat bridge configuration. */
 	bridge?: BridgeConfig;
+	/**
+	 * Number of days to retain message history (default: 30).
+	 * Messages older than this are purged on startup and periodically.
+	 * Set to 0 to disable retention (keep forever).
+	 */
+	messageRetentionDays?: number;
 }
 
 // ── Bridge types ────────────────────────────────────────────────

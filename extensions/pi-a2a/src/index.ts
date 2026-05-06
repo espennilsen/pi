@@ -50,11 +50,12 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
+import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
@@ -137,6 +138,8 @@ export default function (pi: ExtensionAPI) {
 	let pushNotificationStore: SQLitePushNotificationStore | null = null;
 	/** Agent's canonical public URL (set on session_start, used for loop metadata). */
 	let agentPublicUrl: string = "http://localhost:3100";
+	/** Resolved port (fixed or from dynamic discovery). */
+	let agentPort: number = DEFAULT_PORT;
 	/** Configured max hops (set on session_start, used for seeding outbound metadata). */
 	let configuredMaxHops: number = DEFAULT_MAX_HOPS;
 	/** Rate limiter for outbound response injection — 10 triggers per 60s window. */
@@ -545,6 +548,7 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(longRunningTaskPollerInterval);
 			longRunningTaskPollerInterval = null;
 		}
+		const oldHubAgentId = hubAgentId;
 		hubAgentId = null;
 		staticRegistry = null;
 		// Clear active A2A task context BEFORE aborting executor to prevent
@@ -569,11 +573,27 @@ export default function (pi: ExtensionAPI) {
 
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
-		const port = config.port ?? DEFAULT_PORT;
-		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+		agentPort = config.port ?? DEFAULT_PORT;
+		// If portRange is set, find a free port in the range
+		if (config.portRange) {
+			const [start, end] = config.portRange;
+			const free = await findFreePort(start, end);
+			if (free !== null) {
+				agentPort = free;
+				log("dynamic_port_assigned", { port: free, range: config.portRange });
+			} else {
+				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: agentPort }, "WARN");
+			}
+		}
+		const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		const agentCard = buildAgentCard(config, publicUrl);
+
+		// Deregister previous instance from hub (before re-registering)
+		if (oldHubAgentId && config.hub?.apiKey) {
+			deregisterFromHub(oldHubAgentId, config.hub, log).catch(() => {});
+		}
 
 		// Initialize persistent task store (must be created before executor)
 		const dbPath = join(getAgentDir(), "db", "a2a.db");
@@ -757,8 +777,29 @@ export default function (pi: ExtensionAPI) {
 		return;
 		}
 		try {
-			await startServer({ port, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
-			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${port}`, "info");
+			// Try to start server, retrying next port on EADDRINUSE
+			while (true) {
+				try {
+					await startServer({ port: agentPort, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
+					break;
+				} catch (e: unknown) {
+					const code = (e as NodeJS.ErrnoException).code;
+					if (code === "EADDRINUSE" && config.portRange) {
+						const [start, end] = config.portRange;
+						if (agentPort < end) {
+							agentPort++;
+							log("server_port_retry", { port: agentPort, reason: "EADDRINUSE" }, "WARN");
+							continue;
+						}
+					}
+					throw e;
+				}
+			}
+			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${agentPort}`, "info");
+			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
+			const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
+			agentPublicUrl = publicUrl;
+			updateAgentCard(buildAgentCard(config, publicUrl));
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start
@@ -792,7 +833,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(publicUrl, config.hub, log);
+			const result = await registerWithHub(agentPublicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;
 				executor?.setHubAgentId(result.agentId);
@@ -896,6 +937,13 @@ export default function (pi: ExtensionAPI) {
 					config.hub,
 					log,
 				).catch(() => {});
+			}
+		}
+		// Deregister this instance from the hub
+		if (hubAgentId) {
+			const { config } = loadConfig(cwd);
+			if (config.hub?.apiKey) {
+				deregisterFromHub(hubAgentId, config.hub, log).catch(() => {});
 			}
 		}
 		hubAgentId = null;
@@ -2051,8 +2099,8 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
-			const port = config.port ?? DEFAULT_PORT;
-			const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
+			const port = agentPort;
+			const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
 
 			if (action === "status") {
 				if (isRunning()) {
@@ -2063,7 +2111,7 @@ export default function (pi: ExtensionAPI) {
 						? ` | Processing: 1 task${queued > 0 ? ` + ${queued} queued` : ""}`
 						: "";
 					let statusMsg =
-						`A2A server running on port ${port}\n` +
+						`A2A server running on port ${agentPort}\n` +
 						`Agent Card: ${publicUrl}/.well-known/agent-card.json\n` +
 						`Protocol: A2A v0.3.0 | Mode: inline (main process)${busy}\n` +
 						`Skills: ${skillCount} | Streaming: ✓ | Push Notifications: ✓\n` +
@@ -2114,7 +2162,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(publicUrl, config.hub, log);
+				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
 					if (config.apiKey) {
@@ -2139,7 +2187,7 @@ export default function (pi: ExtensionAPI) {
 
 				// We need the agentId. Use registerWithHub which handles conflict
 				// (returns existing agentId if already registered).
-				const reg = await registerWithHub(publicUrl, config.hub, log);
+				const reg = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
 					return;

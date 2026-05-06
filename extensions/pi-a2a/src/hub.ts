@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PushEventPayload, PushEventType, AgentSelectionResult, AgentStrategy, ProjectSettings, PipelineStreamEvent, SSEConnection } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PushEventPayload, PushEventType, AgentSelectionResult, AgentStrategy, ProjectSettings, PipelineStreamEvent, } from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
@@ -160,6 +160,28 @@ export async function registerWithHub(
 	}
 
 	return null;
+}
+
+/** Deregister an agent instance from the hub (e.g., on session shutdown). */
+export async function deregisterFromHub(
+	agentId: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpc(
+		rpcUrl,
+		"agents.deregister",
+		{ agentId },
+		hubConfig.apiKey,
+		log,
+		"hub_deregister",
+	);
+	if (result) {
+		log("hub_deregister_success", { agentId });
+		return true;
+	}
+	return false;
 }
 
 /**

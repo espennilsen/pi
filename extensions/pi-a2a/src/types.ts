@@ -9,6 +9,10 @@
 export interface A2AConfig {
 	/** HTTP port for the A2A server. Defaults to 3100. */
 	port?: number;
+	/** Port range for dynamic port discovery (inclusive). When set, pi-a2a
+	 *  finds the first free port in this range instead of using a fixed port.
+	 *  E.g. [3100, 3199]. Takes precedence over `port`. */
+	portRange?: [number, number];
 	/** Bind address for the HTTP server. Defaults to "127.0.0.1" (localhost only).
 	 *  Set to "0.0.0.0" for external access (requires apiKey). */
 	bind?: string;

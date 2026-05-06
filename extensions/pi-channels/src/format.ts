@@ -93,7 +93,9 @@ function toSlackMrkdwn(text: string): string {
 	//   - Links: <url|text> instead of [text](url)
 	//   - Lists use • or 1. 2. 3. (no - auto-formatting)
 	//   - No heading support → bold + newline
-	//   - Bold/italic/code are the same (*, _, `)
+	//   - Bold is the same (*)
+	//   - Italic: *text* → _text_
+	//   - Strikethrough: ~~text~~ → ~text~
 
 	let result = text;
 
@@ -103,8 +105,11 @@ function toSlackMrkdwn(text: string): string {
 	// 2. Headings (# ## ###) → bold text
 	result = result.replace(/^#{1,3}\s+(.+)$/gm, "*$1*");
 
-	// Everything else (bold, italic, code, strikethrough, lists) is already standard
-	// Slack-compatible Markdown and doesn't need transformation.
+	// 3. Italic: *text* → _text_ (Slack uses _ for italic, * for bold)
+	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1_$2_$3");
+
+	// 4. Strikethrough: ~~text~~ → ~text~ (Slack uses single tilde)
+	result = result.replace(/~~([^~]+)~~/g, "~$1~");
 
 	return result;
 }

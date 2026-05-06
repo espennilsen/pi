@@ -48,7 +48,8 @@ import { randomUUID } from "node:crypto";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
-import type { TelemetrySnapshot } from "./types.ts";
+import type { TelemetrySnapshot, HubConfig } from "./types.ts";
+import { sendTaskStateChanged } from "./hub.ts";
 import {
 	extractLoopMetadata,
 	injectLoopMetadata,
@@ -132,6 +133,10 @@ export class PiAgentExecutor implements AgentExecutor {
 	private inputRequiredTimeoutMs: number;
 	/** Maximum input-required rounds allowed per task. */
 	private maxInputRounds: number;
+	/** Hub configuration for push notifications. */
+	private hubConfig?: HubConfig;
+	/** Registered hub agent ID for push notifications. */
+	private hubAgentId?: string;
 	/** Number of tasks waiting in the queue (not yet active). */
 	private _queueDepth = 0;
 	/** Last completed/failed task duration for telemetry reporting. */
@@ -151,6 +156,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		taskTimeoutMs?: number,
 		inputRequiredTimeoutMs?: number,
 		maxInputRounds?: number,
+		hubConfig?: HubConfig,
 	) {
 		this.log = log;
 		this.processMessage = processMessage;
@@ -159,6 +165,12 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.taskTimeoutMs = taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
 		this.inputRequiredTimeoutMs = inputRequiredTimeoutMs ?? DEFAULT_INPUT_REQUIRED_TIMEOUT_MS;
 		this.maxInputRounds = maxInputRounds ?? DEFAULT_MAX_INPUT_ROUNDS;
+		this.hubConfig = hubConfig;
+	}
+
+	/** Set the hub agent ID after registration (called from index.ts). */
+	setHubAgentId(agentId: string): void {
+		this.hubAgentId = agentId;
 	}
 
 	/**
@@ -473,6 +485,9 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.fallbackStatuses.set(taskId, { state: "failed", response: `Loop control: ${supervisorResult.reason}` });
 			}
 
+			// Fire push notification for automatic failure
+			this.fireFailurePush(taskId, contextId, `Loop control: ${supervisorResult.reason}`);
+
 			return;
 		}
 
@@ -503,6 +518,9 @@ export class PiAgentExecutor implements AgentExecutor {
 				this.log("executor_empty_store_error", { taskId, error: e instanceof Error ? e.message : String(e) }, "WARN");
 				this.fallbackStatuses.set(taskId, { state: "failed", response: "No processable content in message" });
 			}
+
+			// Fire push notification for automatic failure
+			this.fireFailurePush(taskId, contextId, "No processable content in message");
 
 			return;
 		}
@@ -846,6 +864,23 @@ export class PiAgentExecutor implements AgentExecutor {
 			const existing = await this.taskStore.load(taskId);
 			const now = new Date().toISOString();
 
+			// Send push notification only when hub is configured AND agent is registered
+			if (this.hubConfig?.apiKey && this.hubAgentId) {
+				const toState = result.ok ? "completed" : "failed";
+				const fromState = existing?.status?.state as string | null || null;
+				await sendTaskStateChanged(
+					this.hubAgentId,
+					taskId,
+					fromState,
+					toState,
+					this.hubConfig,
+					this.log,
+					result.ok ? { response: result.response.slice(0, 500) } : undefined,
+				).catch(err => {
+					this.log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				});
+			}
+
 			const statusMessage = {
 				kind: "message" as const,
 				messageId: randomUUID(),
@@ -938,6 +973,25 @@ export class PiAgentExecutor implements AgentExecutor {
 	getFallbackStatus(taskId: string): { state: "completed" | "failed" | "canceled"; response: string } | undefined {
 		return this.fallbackStatuses.get(taskId);
 	}
+
+	/** Send push notification for automatic task failures (loop control, empty messages). */
+	private fireFailurePush(taskId: string, _contextId: string, error: string): void {
+		if (this.hubConfig?.apiKey && this.hubAgentId) {
+			const hubConfig = this.hubConfig;
+			const log = this.log;
+			const agentId = this.hubAgentId;
+			setImmediate(() => {
+				sendTaskStateChanged(
+					agentId, taskId, null, "failed",
+					hubConfig, log,
+					{ response: error.slice(0, 500) },
+				).catch(err => {
+					log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				});
+			});
+		}
+	}
+
 
 	private publishError(taskId: string, contextId: string, eventBus: ExecutionEventBus, error: string): void {
 		eventBus.publish({

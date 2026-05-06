@@ -42,10 +42,12 @@ and LLM tools for agentic workflows (PR review thread resolution).
 
 ### PR Thread Tools (for agents fixing review feedback)
 
+These tools use `gh` CLI under the hood — no API tokens needed. **Always prefer these over raw REST/GraphQL calls.**
+
 | Tool | Purpose |
 |------|---------|
 | `github_review_thread_reply` | Reply to a PR review thread (`thread_id`, `message`) |
-| `github_resolve_review_thread` | Mark a review thread as resolved (`thread_id`) |
+| `github_resolve_review_thread` | Mark a review thread as resolved (`thread_id`) — **MANDATORY after each fix** |
 | `github_post_pr_comment` | Post a summary comment on a PR (`owner`, `repo`, `pr_number`, `body`) |
 
 ## Repo Reference Syntax
@@ -75,6 +77,7 @@ For complex PR operations, see the reference docs:
 
 - **Fixing PR review threads** — [references/pr-fix.md](references/pr-fix.md)
   Read when fixing unresolved review feedback, resolving threads, or using `/gh-pr-fix`.
+  **⚠️ Mandatory: after pushing code fixes, resolve ALL threads via GraphQL `resolveReviewThread`.**
 
 - **Parallel PR fixes** — [references/pr-fix-parallel.md](references/pr-fix-parallel.md)
   Read when fixing review feedback across multiple PRs simultaneously using

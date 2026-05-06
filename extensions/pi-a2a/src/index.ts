@@ -50,12 +50,12 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
 const DEFAULT_PORT = 3100;
@@ -590,7 +590,7 @@ export default function (pi: ExtensionAPI) {
 		executor = new PiAgentExecutor(log, processMessage, taskStore, {
 			agentId: publicUrl,
 			defaultMaxHops: maxHops,
-		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds);
+		}, config.taskTimeoutMs, config.inputRequiredTimeoutMs, config.maxInputRounds, config.hub);
 
 		// Set abort callback so executor can clean up pendingResolve on timeout
 		executor.setAbortCallback(abortPendingRequest);
@@ -795,6 +795,7 @@ export default function (pi: ExtensionAPI) {
 			const result = await registerWithHub(publicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;
+				executor?.setHubAgentId(result.agentId);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may

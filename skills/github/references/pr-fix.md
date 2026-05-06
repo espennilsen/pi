@@ -2,6 +2,60 @@
 
 Fix unresolved review threads on a GitHub pull request.
 
+## ⚠️ MANDATORY CHECKLIST — Complete Every Step
+
+After fixing code and pushing, you **MUST** resolve every review thread.
+Do NOT skip this step. Do NOT hand off before all threads are resolved.
+
+```text
+☐ 1. Get unresolved threads (GraphQL or /gh-pr-review)
+☐ 2. Fix code issues one by one
+☐ 3. Verify: npm run typecheck
+☐ 4. Commit and push fixes
+☐ 5. Resolve EVERY thread (GraphQL resolveReviewThread mutation)
+☐ 6. Verify: all threads isResolved == true
+☐ 7. Post summary comment
+☐ 8. Ask user to mark as resolved via gh CLI
+```
+
+## ⚠️ Thread Resolution IS NOT Optional
+
+**Preferred method: use the registered tools from pi-github** (no tokens needed, `gh` CLI handles auth):
+
+```text
+# 1. Reply to thread (optional, but good practice)
+tool: github_review_thread_reply
+  thread_id: "PRRT_xxx"
+  message: "Fixed — summary of change"
+
+# 2. Resolve (MANDATORY)
+tool: github_resolve_review_thread
+  thread_id: "PRRT_xxx"
+```
+
+**Fallback: use gh CLI directly** (if tools aren't available):
+
+```bash
+# Resolve a single thread
+gh api graphql -f query='
+mutation {
+  resolveReviewThread(input: {threadId: "PRRT_xxx"}) {
+    thread { isResolved }
+  }
+}'
+
+# Resolve all unresolved threads in one call
+gh api graphql -f query='
+mutation {
+  t1: resolveReviewThread(input: {threadId: "PRRT_xxx"}) { thread { isResolved } }
+  t2: resolveReviewThread(input: {threadId: "PRRT_yyy"}) { thread { isResolved } }
+}'
+```
+
+> **Why gh CLI?** `gh api` inherits `gh auth login` credentials — no separate API
+> tokens to manage. The REST API endpoints (`/repos/.../comments/.../replies`)
+> sometimes return 404 for valid comment IDs; the GraphQL mutation is reliable.
+
 ## Quick Path
 
 ```
@@ -10,6 +64,11 @@ Fix unresolved review threads on a GitHub pull request.
 
 Auto-detects PR from current branch. Fetches unresolved threads via GraphQL,
 presents them with thread IDs, and provides fix instructions.
+
+**After fixing code:** You MUST resolve threads. Use the registered
+`github_resolve_review_thread` tool first (preferred, no tokens needed).
+Fall back to `gh api graphql` with the `resolveReviewThread` mutation if
+the tool isn't available.
 
 ## Manual Workflow
 

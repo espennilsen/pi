@@ -230,10 +230,30 @@ export interface PipelineStreamEvent {
 	timestamp: string;
 }
 
-export interface SSEConnection {
+// ── Push Notification Types ──────────────────────────────────────────
+
+export type PushEventType =
+	| "task.stateChanged"
+	| "task.progress"
+	| "task.error"
+	| "heartbeat";
+
+export interface PushEventPayload {
+	taskId?: string;
+	fromState?: string | null;
+	toState?: string;
+	progress?: number;
+	message?: string;
+	error?: string;
+	artifact?: unknown;
+	queueDepth?: number;
+	activeTasks?: number;
+	maxConcurrent?: number;
+	timestamp: string;
+}
+
+export interface AgentPushCapabilities {
+	enabled: boolean;
 	url: string;
-	connected: boolean;
-	lastEventAt: string | null;
-	error: string | null;
-	reconnectAttempts: number;
+	events: PushEventType[];
 }

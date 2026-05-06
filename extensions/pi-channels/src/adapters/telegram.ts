@@ -714,7 +714,8 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	/** HTML-safe split: finds > or ; boundary to avoid breaking tags/entities. */
 	function safeHtmlSplit(html: string, maxLen: number): number {
-		for (let i = maxLen; i >= maxLen / 2; i--) {
+		// Scan from maxLen-1 to avoid returning > maxLen chars
+		for (let i = maxLen - 1; i >= maxLen / 2; i--) {
 			const ch = html[i];
 			if (ch === '>' || ch === ';') {
 				let safe = true;

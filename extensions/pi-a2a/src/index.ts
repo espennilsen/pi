@@ -55,6 +55,7 @@ import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts"
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
+import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
@@ -569,7 +570,18 @@ export default function (pi: ExtensionAPI) {
 
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
-		const port = config.port ?? DEFAULT_PORT;
+		let port = config.port ?? DEFAULT_PORT;
+		// If portRange is set, find a free port in the range
+		if (config.portRange) {
+			const [start, end] = config.portRange;
+			const free = await findFreePort(start, end);
+			if (free !== null) {
+				port = free;
+				log("dynamic_port_assigned", { port, range: config.portRange });
+			} else {
+				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: port }, "WARN");
+			}
+		}
 		const publicUrl = config.publicUrl ?? `http://localhost:${port}`;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;

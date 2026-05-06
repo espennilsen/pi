@@ -10,7 +10,7 @@
  * that need to call this agent.
  */
 
-import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PushEventPayload, PushEventType, AgentSelectionResult, AgentStrategy, ProjectSettings, PipelineStreamEvent, SSEConnection } from "./types.ts";
+import type { HubConfig, RemoteAgentSummary, RemoteAgentDetail, TelemetrySnapshot, PushEventPayload, PushEventType, AgentSelectionResult, AgentStrategy, ProjectSettings, PipelineStreamEvent, } from "./types.ts";
 
 export type PipelineState = "queued" | "planning" | "building" | "reviewing" | "pr_ready" | "blocked" | "approved" | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";

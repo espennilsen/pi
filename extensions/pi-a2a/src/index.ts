@@ -833,7 +833,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(publicUrl, config.hub, log);
+			const result = await registerWithHub(agentPublicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;
 				executor?.setHubAgentId(result.agentId);
@@ -2162,7 +2162,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(publicUrl, config.hub, log);
+				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
 					if (config.apiKey) {
@@ -2187,7 +2187,7 @@ export default function (pi: ExtensionAPI) {
 
 				// We need the agentId. Use registerWithHub which handles conflict
 				// (returns existing agentId if already registered).
-				const reg = await registerWithHub(publicUrl, config.hub, log);
+				const reg = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
 					return;

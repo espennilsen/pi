@@ -796,6 +796,10 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${agentPort}`, "info");
+			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
+			const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
+			agentPublicUrl = publicUrl;
+			updateAgentCard(buildAgentCard(config, publicUrl));
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start

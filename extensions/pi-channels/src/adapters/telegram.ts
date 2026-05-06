@@ -712,6 +712,21 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	// ── Adapter ─────────────────────────────────────────────
 
+	/** HTML-safe split: finds > or ; boundary to avoid breaking tags/entities. */
+	function safeHtmlSplit(html: string, maxLen: number): number {
+		for (let i = maxLen; i >= maxLen / 2; i--) {
+			const ch = html[i];
+			if (ch === '>' || ch === ';') {
+				let safe = true;
+				for (let j = i + 1; j < maxLen; j++) {
+					if (html[j] === '<' || html[j] === '&') { safe = false; break; }
+				}
+				if (safe) return i + 1;
+			}
+		}
+		return maxLen;
+	}
+
 	return {
 		direction: "bidirectional" as const,
 

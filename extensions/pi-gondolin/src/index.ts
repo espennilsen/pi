@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 
 import type {
@@ -50,11 +51,35 @@ function toPosixPath(value: string): string {
 	return value.split(path.sep).join(path.posix.sep);
 }
 
-function normalizeAbsoluteHostPath(value: string, cwd: string): string {
-	const expanded = value.startsWith("~")
-		? path.join(process.env.HOME ?? "", value.slice(1))
-		: value;
-	return path.resolve(cwd, expanded);
+function expandHome(value: string): string {
+	return value.startsWith("~") ? path.join(process.env.HOME ?? "", value.slice(1)) : value;
+}
+
+function realpathClosest(resolvedPath: string): string {
+	try {
+		return realpathSync.native(resolvedPath);
+	} catch {
+		// For writes to files that do not exist yet, canonicalize the deepest
+		// existing parent so /var/... and /private/var/... still match on macOS.
+		const parts: string[] = [];
+		let current = resolvedPath;
+		while (true) {
+			const parent = path.dirname(current);
+			if (parent === current) return resolvedPath;
+			parts.unshift(path.basename(current));
+			current = parent;
+			try {
+				return path.join(realpathSync.native(current), ...parts);
+			} catch {
+				// Keep walking up.
+			}
+		}
+	}
+}
+
+function resolveMountHost(value: string, cwd: string): MountConfig {
+	const resolved = path.resolve(cwd, expandHome(value));
+	return { host: realpathClosest(resolved), guest: normalizeGuestPath(resolved) };
 }
 
 function normalizeGuestPath(value: string): string {
@@ -70,13 +95,11 @@ function parseMountString(value: string, cwd: string): MountConfig | null {
 
 	const separator = trimmed.indexOf(":");
 	if (separator > 0) {
-		const host = normalizeAbsoluteHostPath(trimmed.slice(0, separator), cwd);
-		const guest = normalizeGuestPath(trimmed.slice(separator + 1));
-		return { host, guest };
+		const mount = resolveMountHost(trimmed.slice(0, separator), cwd);
+		return { host: mount.host, guest: normalizeGuestPath(trimmed.slice(separator + 1)) };
 	}
 
-	const host = normalizeAbsoluteHostPath(trimmed, cwd);
-	return { host, guest: normalizeGuestPath(host) };
+	return resolveMountHost(trimmed, cwd);
 }
 
 function parseMountArray(value: unknown, cwd: string): MountConfig[] {
@@ -93,9 +116,8 @@ function parseMountArray(value: unknown, cwd: string): MountConfig[] {
 		if (!entry || typeof entry !== "object") continue;
 		const obj = entry as { host?: unknown; guest?: unknown };
 		if (typeof obj.host !== "string") continue;
-		const host = normalizeAbsoluteHostPath(obj.host, cwd);
-		const guest = typeof obj.guest === "string" ? normalizeGuestPath(obj.guest) : normalizeGuestPath(host);
-		mounts.push({ host, guest });
+		const mount = resolveMountHost(obj.host, cwd);
+		mounts.push({ host: mount.host, guest: typeof obj.guest === "string" ? normalizeGuestPath(obj.guest) : mount.guest });
 	}
 	return mounts;
 }
@@ -141,7 +163,7 @@ function resolveSettings(cwd: string): GondolinSettings {
 }
 
 function toGuestPath(mounts: MountConfig[], localPath: string): string {
-	const absolute = path.resolve(localPath);
+	const absolute = realpathClosest(path.resolve(localPath));
 	const candidates = mounts
 		.filter((mount) => isInsideOrEqual(mount.host, absolute))
 		.sort((a, b) => b.host.length - a.host.length);
@@ -300,7 +322,7 @@ export default function (pi: ExtensionAPI) {
 		settings = resolveSettings(cwd);
 		enabled = settings.enabled && !(pi.getFlag("no-gondolin") as boolean | undefined);
 		mounts = dedupeMounts([
-			{ host: normalizeAbsoluteHostPath(cwd, cwd), guest: normalizeGuestPath(cwd) },
+			resolveMountHost(cwd, cwd),
 			...settings.mounts,
 			...parseCliMounts(pi.getFlag("gondolin-mounts"), cwd),
 		]);

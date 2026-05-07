@@ -1,6 +1,6 @@
 import { chmod, lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 
 interface FallbackFilePayload {
 	version: 1;
@@ -25,6 +25,7 @@ export class FallbackStoreError extends Error {
 export class FallbackSecretStore {
 	readonly filePath: string;
 	private readonly rootDir: string;
+	private mutationQueue: Promise<void> = Promise.resolve();
 
 	constructor(rootOrFilePath: string = join(homedir(), ".pi", "agents", "secret.json")) {
 		const expanded = expandHome(rootOrFilePath);
@@ -40,18 +41,22 @@ export class FallbackSecretStore {
 	}
 
 	async set(account: string, value: string): Promise<void> {
-		const payload = await this.readPayload();
-		payload.secrets[account] = value;
-		payload.updatedAt = new Date().toISOString();
-		await this.writePayload(payload);
+		await this.withMutationLock(async () => {
+			const payload = await this.readPayload();
+			payload.secrets[account] = value;
+			payload.updatedAt = new Date().toISOString();
+			await this.writePayload(payload);
+		});
 	}
 
 	async delete(account: string): Promise<void> {
-		const payload = await this.readPayload();
-		if (payload.secrets[account] === undefined) return;
-		delete payload.secrets[account];
-		payload.updatedAt = new Date().toISOString();
-		await this.writePayload(payload);
+		await this.withMutationLock(async () => {
+			const payload = await this.readPayload();
+			if (payload.secrets[account] === undefined) return;
+			delete payload.secrets[account];
+			payload.updatedAt = new Date().toISOString();
+			await this.writePayload(payload);
+		});
 	}
 
 	async has(account: string): Promise<boolean> {
@@ -107,7 +112,9 @@ export class FallbackSecretStore {
 	}
 
 	private async ensureDirectory(): Promise<void> {
+		await assertNoSymlinksInPath(this.rootDir, true);
 		await mkdir(this.rootDir, { recursive: true, mode: 0o700 });
+		await assertNoSymlinksInPath(this.rootDir, true);
 		await chmod(this.rootDir, 0o700).catch(() => undefined);
 		const stats = await lstat(this.rootDir);
 		if (!stats.isDirectory() || stats.isSymbolicLink()) {
@@ -116,12 +123,25 @@ export class FallbackSecretStore {
 	}
 
 	private async assertRegularFileNoSymlink(): Promise<void> {
+		await assertNoSymlinksInPath(this.filePath, true);
 		const stats = await lstat(this.filePath);
 		if (stats.isSymbolicLink()) {
 			throw new FallbackStoreError("Refusing to use symlinked pi-secret fallback file");
 		}
 		if (!stats.isFile()) {
 			throw new FallbackStoreError("pi-secret fallback path must be a regular file");
+		}
+	}
+
+	private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+		const previous = this.mutationQueue;
+		let release!: () => void;
+		this.mutationQueue = new Promise<void>((resolve) => { release = resolve; });
+		await previous;
+		try {
+			return await fn();
+		} finally {
+			release();
 		}
 	}
 
@@ -147,6 +167,27 @@ function expandHome(input: string): string {
 	if (input === "~") return homedir();
 	if (input.startsWith(`~${sep}`) || input.startsWith("~/")) return join(homedir(), input.slice(2));
 	return input;
+}
+
+async function assertNoSymlinksInPath(targetPath: string, includeTarget: boolean): Promise<void> {
+	const resolved = resolve(targetPath);
+	const root = parse(resolved).root;
+	const parts = resolved.slice(root.length).split(sep).filter(Boolean);
+	let current = root;
+
+	for (let i = 0; i < parts.length; i++) {
+		current = join(current, parts[i]);
+		if (!includeTarget && i === parts.length - 1) continue;
+		try {
+			const stats = await lstat(current);
+			if (stats.isSymbolicLink()) {
+				throw new FallbackStoreError(`Refusing to use pi-secret fallback path with symlink component: ${current}`);
+			}
+		} catch (error: any) {
+			if (error?.code === "ENOENT") return;
+			throw error;
+		}
+	}
 }
 
 async function pathExistsNoFollow(path: string): Promise<boolean> {

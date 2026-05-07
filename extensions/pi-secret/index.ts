@@ -22,15 +22,11 @@ export default function (pi: ExtensionAPI) {
 
 	function ensureApi(): PiSecretApi {
 		if (!api) {
-			settings = loadSettings(process.cwd());
 			api = createSecretApi({ settings });
 			installSecretRegistry(api);
 		}
 		return api;
 	}
-
-	api = createSecretApi({ settings: loadSettings(process.cwd()) });
-	installSecretRegistry(api);
 
 	pi.on("session_start", async (_event, ctx) => {
 		settings = loadSettings(ctx.cwd);
@@ -142,7 +138,8 @@ function loadSettings(cwd: string): PiSecretSettings {
 			throw new SecretPolicyError("pi-secret fallbackFile must not be inside the current project workspace");
 		}
 		return settings;
-	} catch {
+	} catch (error) {
+		if (error instanceof SecretPolicyError) throw error;
 		return { allowFallback: true };
 	}
 }
@@ -150,10 +147,14 @@ function loadSettings(cwd: string): PiSecretSettings {
 function parseExtensionAndSecret(args: string | undefined): { extensionId: string; secretName: string } | undefined {
 	const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
 	if (parts.length !== 2) return undefined;
-	return {
-		extensionId: validateIdentifier(parts[0] ?? "", "extensionId"),
-		secretName: validateIdentifier(parts[1] ?? "", "secretName"),
-	};
+	try {
+		return {
+			extensionId: validateIdentifier(parts[0] ?? "", "extensionId"),
+			secretName: validateIdentifier(parts[1] ?? "", "secretName"),
+		};
+	} catch {
+		return undefined;
+	}
 }
 
 function isInside(cwd: string, candidate: string): boolean {

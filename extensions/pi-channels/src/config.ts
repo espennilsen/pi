@@ -47,6 +47,12 @@ export function loadConfig(cwd: string): ChannelConfig {
 	const projectCh = project?.[SETTINGS_KEY] ?? {};
 
 	// Project overrides global (shallow merge of adapters + routes + bridge)
+	// messageRetentionDays: project overrides global if set, otherwise default 30
+	const messageRetentionDays =
+		(projectCh.messageRetentionDays as number | undefined) ??
+		(globalCh.messageRetentionDays as number | undefined) ??
+		30;
+
 	const merged: ChannelConfig = {
 		adapters: {
 			...(globalCh.adapters ?? {}),
@@ -60,6 +66,7 @@ export function loadConfig(cwd: string): ChannelConfig {
 			...(globalCh.bridge ?? {}),
 			...(projectCh.bridge ?? {}),
 		} as ChannelConfig["bridge"],
+		messageRetentionDays,
 	};
 
 	// Env vars override settings.json values

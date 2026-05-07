@@ -4,6 +4,7 @@
 
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelConfig, AdapterDirection, OnIncomingMessage, IncomingMessage } from "./types.ts";
+import type { MessageHistory } from "./history.ts";
 import { createTelegramAdapter } from "./adapters/telegram.ts";
 import { createWebhookAdapter } from "./adapters/webhook.ts";
 import { createSlackAdapter } from "./adapters/slack.ts";
@@ -46,12 +47,20 @@ export class ChannelRegistry {
 
 	private log?: AdapterLogger;
 	private modelRegistry?: ModelRegistry;
+	private history?: MessageHistory;
 
 	/**
 	 * Set the callback for incoming messages (called by the extension entry).
 	 */
 	setOnIncoming(cb: OnIncomingMessage): void {
 		this.onIncoming = cb;
+	}
+
+	/**
+	 * Set message history for logging outgoing messages.
+	 */
+	setHistory(history: MessageHistory): void {
+		this.history = history;
 	}
 
 	/**
@@ -197,6 +206,7 @@ export class ChannelRegistry {
 
 		try {
 			await adapter.send({ ...message, adapter: adapterName, recipient });
+			this.history?.logOutgoing({ ...message, adapter: adapterName, recipient }, adapterName);
 			return { ok: true };
 		} catch (err: any) {
 			return { ok: false, error: err.message };
@@ -244,6 +254,10 @@ export class ChannelRegistry {
 
 		try {
 			await adapter.sendFile(recipient, filePath, fileName, caption);
+			this.history?.logOutgoing(
+				{ adapter: adapterName, recipient, text: `[FILE: ${fileName || filePath}]` },
+				adapterName,
+			);
 			return { ok: true };
 		} catch (err: any) {
 			return { ok: false, error: err.message };

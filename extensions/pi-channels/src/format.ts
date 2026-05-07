@@ -131,10 +131,13 @@ function toSlackMrkdwn(text: string): string {
 
 	let result = text;
 
-	// 4. Italic: *text* → _text_ (do this BEFORE headings to avoid converting *Heading*)
+	// 4. Bold: **text** → *text* (do this BEFORE italic to avoid conflicts)
+	result = result.replace(/\*\*([^*]+)\*\*/g, "*$1*");
+
+	// 5. Italic: *text* → _text_ (do this BEFORE headings to avoid converting *Heading*)
 	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1_$2_$3");
 
-	// 5. Headings → *bold* (won't match italic anymore since * are now _)
+	// 6. Headings → *bold* (won't match italic anymore since * are now _)
 	result = result.replace(/^#{1,3}\s+(.+)$/gm, "*$1*");
 
 	// 6. Strikethrough: ~~text~~ → ~text~

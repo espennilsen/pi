@@ -44,7 +44,7 @@ export function formatForPlatform(text: string, adapter: string): FormattedMessa
 
 /** Escape HTML special chars for Telegram HTML parse_mode. */
 function escapeTelegram(text: string): string {
-	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+	return escapeTelegram(text);
 }
 
 function toTelegramHtml(text: string): string {
@@ -55,7 +55,7 @@ function toTelegramHtml(text: string): string {
 	// 1. Protect fenced code blocks: ```...``` — escape content first
 	text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
 		const idx = protectedSpans.length;
-		const escapedCode = code.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+		const escapedCode = escapeTelegram(code.trim());
 		protectedSpans.push(`<pre>${escapedCode}</pre>`);
 		return `__PROTECTED_${idx}__`;
 	});
@@ -63,7 +63,7 @@ function toTelegramHtml(text: string): string {
 	// 2. Protect inline code: `...` — escape content first
 	text = text.replace(/`([^`]+)`/g, (_, code) => {
 		const idx = protectedSpans.length;
-		const escapedCode = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+		const escapedCode = escapeTelegram(code);
 		protectedSpans.push(`<code>${escapedCode}</code>`);
 		return `__PROTECTED_${idx}__`;
 	});
@@ -71,7 +71,7 @@ function toTelegramHtml(text: string): string {
 	// 3. Protect links: [text](url) — escape link text, leave URL raw
 	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
 		const idx = protectedSpans.length;
-		const escapedText = linkText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+		const escapedText = escapeTelegram(linkText);
 		protectedSpans.push(`<a href="${url}">${escapedText}</a>`);
 		return `__PROTECTED_${idx}__`;
 	});
@@ -95,7 +95,7 @@ function toTelegramHtml(text: string): string {
 
 	// Restore protected spans
 	for (let i = 0; i < protectedSpans.length; i++) {
-		result = result.replace(`__PROTECTED_${i}__`, protectedSpans[i]);
+		result = result.replace(new RegExp(`__PROTECTED_${i}__`, 'g'), () => protectedSpans[i]);
 	}
 
 	return result;
@@ -131,8 +131,8 @@ function toSlackMrkdwn(text: string): string {
 
 	let result = text;
 
-	// 4. Bold: **text** → *text* (do this BEFORE italic to avoid conflicts)
-	result = result.replace(/\*\*([^*]+)\*\*/g, "*$1*");
+	// 4. Bold: **text** → *_text_* (use underscore to avoid italic pattern)
+	result = result.replace(/\*\*([^*]+)\*\*/g, "_*$1*_");
 
 	// 5. Italic: *text* → _text_ (do this BEFORE headings to avoid converting *Heading*)
 	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1_$2_$3");

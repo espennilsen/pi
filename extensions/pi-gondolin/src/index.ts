@@ -131,12 +131,15 @@ function parseCliMounts(value: unknown, cwd: string): MountConfig[] {
 }
 
 function dedupeMounts(mounts: MountConfig[]): MountConfig[] {
-	const seen = new Set<string>();
+	const seenByGuest = new Map<string, string>();
 	const out: MountConfig[] = [];
 	for (const mount of mounts) {
-		const key = `${mount.guest}\0${mount.host}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
+		const existingHost = seenByGuest.get(mount.guest);
+		if (existingHost && existingHost !== mount.host) {
+			throw new Error(`Conflicting Gondolin mounts for guest path ${mount.guest}: ${existingHost} vs ${mount.host}`);
+		}
+		if (existingHost === mount.host) continue;
+		seenByGuest.set(mount.guest, mount.host);
 		out.push(mount);
 	}
 	return out;
@@ -380,15 +383,19 @@ export default function (pi: ExtensionAPI) {
 
 		ctx.ui.setStatus("gondolin", ctx.ui.theme.fg("accent", "Gondolin: enabled"));
 		if (settings.eagerStart) {
-			await ensureVm(ctx);
+			void ensureVm(ctx).catch((err) => {
+				ctx.ui.notify(`Gondolin VM failed to start: ${err instanceof Error ? err.message : String(err)}`, "error");
+			});
 		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		if (!vm) return;
-		ctx.ui.setStatus("gondolin", ctx.ui.theme.fg("muted", "Gondolin: stopping"));
+		const activeVm = vm ?? (vmStarting ? await vmStarting.catch(() => null) : null);
 		try {
-			await vm.close();
+			if (activeVm) {
+				ctx.ui.setStatus("gondolin", ctx.ui.theme.fg("muted", "Gondolin: stopping"));
+				await activeVm.close();
+			}
 		} finally {
 			vm = null;
 			vmStarting = null;
@@ -448,11 +455,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event) => {
 		if (!enabled) return;
-		return {
-			systemPrompt: event.systemPrompt.replace(
-				`Current working directory: ${hostCwd}`,
-				`Current working directory: ${hostCwd} (Gondolin VM sandbox; host cwd mounted at same path)`,
-			),
-		};
+		const note = "Gondolin VM sandbox; host cwd mounted at same path";
+		const cwdLine = /^Current working directory: .*$/m;
+		const systemPrompt = cwdLine.test(event.systemPrompt)
+			? event.systemPrompt.replace(cwdLine, (line) => `${line} (${note})`)
+			: `${event.systemPrompt}\n\nCurrent working directory: ${hostCwd} (${note})`;
+		return { systemPrompt };
 	});
 }

@@ -34,6 +34,7 @@ export interface HistoryQuery {
 }
 
 const SCHEMA_SQL = `
+PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	adapter TEXT NOT NULL,
@@ -87,7 +88,9 @@ export class MessageHistory {
 		if (!this.initialized) return;
 		const meta = JSON.stringify(msg.metadata ?? {});
 		this.execute(INSERT_SQL, [adapterName, "in", msg.sender, null, msg.text, meta])
-			.catch(() => {}); // best-effort
+			.catch((error) => {
+				this.logErrors?.("history.logIncoming.error", { adapter: adapterName, error }, "ERROR");
+			}); // best-effort
 	}
 
 	/** Log an outgoing message (fire-and-forget). */
@@ -95,7 +98,9 @@ export class MessageHistory {
 		if (!this.initialized) return;
 		const meta = JSON.stringify(msg.metadata ?? {});
 		this.execute(INSERT_SQL, [adapterName, "out", null, msg.recipient, msg.text ?? null, meta])
-			.catch(() => {}); // best-effort
+			.catch((error) => {
+				this.logErrors?.("history.logOutgoing.error", { adapter: adapterName, error }, "ERROR");
+			}); // best-effort
 	}
 
 	/** Query message history. */

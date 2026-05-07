@@ -5,6 +5,7 @@
  * Supports querying, retention cleanup, and TUI display.
  *
  * Table: pi_channels__messages
+ * Migrations: pi_channels_migrations (tracks schema version)
  *
  * Config: messageRetentionDays in pi-channels settings (default: 30)
  */
@@ -13,6 +14,8 @@ import type { EventBus } from "@mariozechner/pi-coding-agent";
 import type { ChannelMessage, IncomingMessage } from "./types.ts";
 
 export const TABLE_NAME = "pi_channels__messages";
+export const MIGRATIONS_TABLE = "pi_channels_migrations";
+const CURRENT_SCHEMA_VERSION = 1;
 
 export interface MessageRow {
 	id: number;
@@ -73,16 +76,50 @@ export class MessageHistory {
 		// Enable WAL mode first (separate statement)
 		await this.execute("PRAGMA journal_mode = WAL");
 
-		// Create schema (each statement separately — SQLite doesn't handle multi-statement well)
-		const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
-		for (const stmt of statements) {
-			await this.execute(stmt);
+		// Create migrations table if it doesn't exist
+		await this.execute(`
+			CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+				id INTEGER PRIMARY KEY CHECK (id = 1),
+				version INTEGER NOT NULL DEFAULT 0
+			)
+		`);
+
+		// Get current version
+		const versionResult = await this.queryRaw(
+			`SELECT COALESCE((SELECT version FROM ${MIGRATIONS_TABLE} WHERE id = 1), 0) as version`
+		);
+		const currentVersion = Number(versionResult.rows[0]?.version ?? 0);
+
+		// Run migrations if needed
+		if (currentVersion < CURRENT_SCHEMA_VERSION) {
+			await this.migrate(currentVersion);
 		}
 
 		// Run initial cleanup
 		await this.cleanup();
 
 		this.initialized = true;
+	}
+
+	/** Run schema migrations from currentVersion to CURRENT_SCHEMA_VERSION. */
+	private async migrate(currentVersion: number): Promise<void> {
+		if (currentVersion === 0) {
+			// Initial schema
+			const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
+			for (const stmt of statements) {
+				await this.execute(stmt);
+			}
+		}
+
+		// Add future migrations here as needed:
+		// if (currentVersion < 2) { ... }
+
+		// Update version
+		await this.execute(
+			`INSERT INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, ?)
+			ON CONFLICT(id) DO UPDATE SET version = ?`,
+			[CURRENT_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION]
+		);
 	}
 
 	/** Log an incoming message (fire-and-forget). */

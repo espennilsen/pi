@@ -44,27 +44,30 @@ function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashComma
 /** Wait for pi-kysely to be ready (or timeout after 10s). */
 async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			reject(new Error("Timed out waiting for pi-kysely"));
-		}, 10_000);
-
+		let unsubscribe: (() => void) | undefined;
 		let resolved = false;
+
 		const done = () => {
 			if (!resolved) {
 				resolved = true;
 				clearTimeout(timeout);
-				pi.events.off("kysely:ready", done);
+				unsubscribe?.();
 				resolve();
 			}
 		};
+
+		const timeout = setTimeout(() => {
+			unsubscribe?.();
+			if (!resolved) reject(new Error("Timed out waiting for pi-kysely"));
+		}, 10_000);
+
+		// Subscribe to kysely:ready BEFORE probing
+		unsubscribe = pi.events.on("kysely:ready", done);
 
 		// Try probing — if already ready, the reply callback fires synchronously
 		pi.events.emit("kysely:info", {
 			reply: (_info: unknown) => done(),
 		});
-
-		// Also listen for the ready event in case it hasn't fired yet
-		pi.events.on("kysely:ready", done);
 	});
 }
 

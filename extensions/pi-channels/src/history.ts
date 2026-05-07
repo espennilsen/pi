@@ -4,7 +4,7 @@
  * Logs all incoming/outgoing messages to a SQLite table via pi-kysely.
  * Supports querying, retention cleanup, and TUI display.
  *
- * Table: pi-channels__messages
+ * Table: pi_channels__messages
  *
  * Config: messageRetentionDays in pi-channels settings (default: 30)
  */
@@ -12,7 +12,7 @@
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import type { ChannelMessage, IncomingMessage } from "./types.ts";
 
-export const TABLE_NAME = "pi-channels__messages";
+export const TABLE_NAME = "pi_channels__messages";
 
 export interface MessageRow {
 	id: number;

@@ -45,12 +45,8 @@ function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashComma
 async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let unsubscribe: (() => void) | undefined;
-		const timeout = setTimeout(() => {
-			unsubscribe?.();
-			reject(new Error("Timed out waiting for pi-kysely"));
-		}, 10_000);
-
 		let resolved = false;
+
 		const done = () => {
 			if (!resolved) {
 				resolved = true;
@@ -60,13 +56,18 @@ async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 			}
 		};
 
+		const timeout = setTimeout(() => {
+			unsubscribe?.();
+			if (!resolved) reject(new Error("Timed out waiting for pi-kysely"));
+		}, 10_000);
+
+		// Subscribe to kysely:ready BEFORE probing
+		unsubscribe = pi.events.on("kysely:ready", done);
+
 		// Try probing — if already ready, the reply callback fires synchronously
 		pi.events.emit("kysely:info", {
 			reply: (_info: unknown) => done(),
 		});
-
-		// Also listen for the ready event in case it hasn't fired yet
-		unsubscribe = pi.events.on("kysely:ready", done);
 	});
 }
 
@@ -77,6 +78,10 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 	const arrow = (d: string) => (d === "in" ? "←" : "→");
 	const source = (row: MessageRow) =>
 		row.direction === "in" ? (row.sender || "?") : (row.recipient || "?");
+
+	// Sanitize text to prevent ANSI/OSC injection from external message content
+	const sanitize = (text: string) =>
+		text.replace(/[\x00-\x1f\x7f]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
 
 	const maxVisible = 15;
 	let scrollOffset = 0;
@@ -95,7 +100,7 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 			for (let i = start; i < end; i++) {
 				const row = rows[i];
 				const ts = row.created_at?.replace("T", " ").slice(5, 16) ?? "?";
-				const preview = (row.text ?? "").slice(0, 80).replace(/\n/g, " ");
+				const preview = sanitize((row.text ?? "")).slice(0, 80).replace(/\n/g, " ");
 				let line = `${ts} ${arrow(row.direction)}[${row.adapter}] ${source(row)}: ${preview}`;
 				if (row.direction === "in") line = `\x1b[34m${line}\x1b[0m`;
 				lines.push(truncateToWidth(line, maxWidth));
@@ -175,6 +180,8 @@ export default function (pi: ExtensionAPI) {
 			log("history-init-failed", { error }, "ERROR");
 			ctx.ui.notify("pi-channels: Message history unavailable (pi-kysely not ready)", "warning");
 			history = null;
+			// Clear shared history hooks to avoid stale references
+			setHistory(null);
 		}
 
 		// Register channel tools (history tool only when history is ready)
@@ -222,6 +229,9 @@ export default function (pi: ExtensionAPI) {
 		if (bridge?.isActive()) log("bridge-stop", {});
 		bridge?.stop();
 		setBridge(null);
+		// Clear shared history hooks on shutdown
+		setHistory(null);
+		history = null;
 		await registry.stopAll();
 	});
 
@@ -303,7 +313,14 @@ export default function (pi: ExtensionAPI) {
 			const parsedLimit = parts[1] ? Number.parseInt(parts[1], 10) : 20;
 			const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 20;
 
-			const rows = await history.query({ adapter, limit });
+			let rows: MessageRow[];
+			try {
+				rows = await history.query({ adapter, limit });
+			} catch (error) {
+				ctx.ui.notify(`Message history query failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				log("history-query-error", { error }, "ERROR");
+				return;
+			}
 
 			if (rows.length === 0) {
 				ctx.ui.notify("No messages found.", "info");
@@ -324,7 +341,14 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Message history not ready yet.", "warning");
 				return;
 			}
-			const rows = await history.query({ limit: 30 });
+			let rows: MessageRow[];
+			try {
+				rows = await history.query({ limit: 30 });
+			} catch (error) {
+				ctx.ui.notify(`Message history query failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				log("history-query-error", { error }, "ERROR");
+				return;
+			}
 			if (rows.length === 0) {
 				ctx.ui.notify("No messages found.", "info");
 				return;

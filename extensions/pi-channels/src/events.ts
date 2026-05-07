@@ -29,7 +29,7 @@ export function setBridge(bridge: ChatBridge | null): void {
 	activeBridge = bridge;
 }
 
-export function setHistory(history: MessageHistory): void {
+export function setHistory(history: MessageHistory | null): void {
 	activeHistory = history;
 }
 

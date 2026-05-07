@@ -34,7 +34,6 @@ export interface HistoryQuery {
 }
 
 const SCHEMA_SQL = `
-PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	adapter TEXT NOT NULL,
@@ -70,6 +69,9 @@ export class MessageHistory {
 	/** Create table and run initial cleanup. Call after kysely is ready. */
 	async init(): Promise<void> {
 		if (this.initialized) return;
+
+		// Enable WAL mode first (separate statement)
+		await this.execute("PRAGMA journal_mode = WAL");
 
 		// Create schema (each statement separately — SQLite doesn't handle multi-statement well)
 		const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
@@ -151,6 +153,10 @@ export class MessageHistory {
 		if (filters.direction) {
 			conditions.push("direction = ?");
 			params.push(filters.direction);
+		}
+		if (filters.since) {
+			conditions.push("created_at >= ?");
+			params.push(filters.since);
 		}
 
 		const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

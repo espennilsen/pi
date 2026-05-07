@@ -125,7 +125,13 @@ export class MessageHistory {
 	/** Log an incoming message (fire-and-forget). */
 	logIncoming(msg: IncomingMessage, adapterName: string): void {
 		if (!this.initialized) return;
-		const meta = JSON.stringify(msg.metadata ?? {});
+		let meta: string;
+		try {
+			meta = JSON.stringify(msg.metadata ?? {});
+		} catch (err) {
+			this.logErrors?.("history.logIncoming.metadata-error", { adapter: adapterName, error: err }, "ERROR");
+			meta = "{}";
+		}
 		this.execute(INSERT_SQL, [adapterName, "in", msg.sender, null, msg.text, meta])
 			.catch((error) => {
 				this.logErrors?.("history.logIncoming.error", { adapter: adapterName, error }, "ERROR");
@@ -135,7 +141,13 @@ export class MessageHistory {
 	/** Log an outgoing message (fire-and-forget). */
 	logOutgoing(msg: ChannelMessage, adapterName: string): void {
 		if (!this.initialized) return;
-		const meta = JSON.stringify(msg.metadata ?? {});
+		let meta: string;
+		try {
+			meta = JSON.stringify(msg.metadata ?? {});
+		} catch (err) {
+			this.logErrors?.("history.logOutgoing.metadata-error", { adapter: adapterName, error: err }, "ERROR");
+			meta = "{}";
+		}
 		this.execute(INSERT_SQL, [adapterName, "out", null, msg.recipient, msg.text ?? null, meta])
 			.catch((error) => {
 				this.logErrors?.("history.logOutgoing.error", { adapter: adapterName, error }, "ERROR");
@@ -163,7 +175,7 @@ export class MessageHistory {
 		const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 		const limit = filters.limit ?? 50;
 		const offset = filters.offset ?? 0;
-		const sql = `SELECT * FROM ${TABLE_NAME} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+		const sql = `SELECT * FROM ${TABLE_NAME} ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`;
 		params.push(limit, offset);
 
 		const result = await this.queryRaw(sql, params);

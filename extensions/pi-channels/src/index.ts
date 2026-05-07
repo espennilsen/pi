@@ -81,7 +81,7 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 
 	// Sanitize text to prevent ANSI/OSC injection from external message content
 	const sanitize = (text: string) =>
-		text.replace(/[\x00-\x1f\x7f]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+		text.replace(/[\x00-\x1f\x7f]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
 
 	const maxVisible = 15;
 	let scrollOffset = 0;

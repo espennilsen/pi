@@ -44,7 +44,9 @@ function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashComma
 /** Wait for pi-kysely to be ready (or timeout after 10s). */
 async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 	return new Promise((resolve, reject) => {
+		let unsubscribe: (() => void) | undefined;
 		const timeout = setTimeout(() => {
+			unsubscribe?.();
 			reject(new Error("Timed out waiting for pi-kysely"));
 		}, 10_000);
 
@@ -53,7 +55,7 @@ async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 			if (!resolved) {
 				resolved = true;
 				clearTimeout(timeout);
-				pi.events.off("kysely:ready", done);
+				unsubscribe?.();
 				resolve();
 			}
 		};
@@ -64,7 +66,7 @@ async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 		});
 
 		// Also listen for the ready event in case it hasn't fired yet
-		pi.events.on("kysely:ready", done);
+		unsubscribe = pi.events.on("kysely:ready", done);
 	});
 }
 
@@ -110,11 +112,13 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 			return lines;
 		},
 		handleInput(data: string): void {
+			const maxScroll = Math.max(0, rows.length - maxVisible);
 			if (matchesKey(data, Key.up) && scrollOffset > 0) {
 				scrollOffset--;
-			} else if (matchesKey(data, Key.down) && scrollOffset < rows.length - maxVisible) {
+			} else if (matchesKey(data, Key.down) && scrollOffset < maxScroll) {
 				scrollOffset++;
 			}
+			scrollOffset = Math.min(scrollOffset, maxScroll);
 		},
 	};
 
@@ -161,13 +165,20 @@ export default function (pi: ExtensionAPI) {
 		const retentionDays = config.messageRetentionDays ?? 30;
 		history = new MessageHistory(pi.events, retentionDays);
 		history.setErrorLogger(log);
-		await waitForKysely(pi).then(() => history!.init());
-		registry.setHistory(history);
-		setHistory(history);
-		log("history-init", { retentionDays });
+		try {
+			await waitForKysely(pi);
+			await history.init();
+			registry.setHistory(history);
+			setHistory(history);
+			log("history-init", { retentionDays });
+		} catch (error) {
+			log("history-init-failed", { error }, "ERROR");
+			ctx.ui.notify("pi-channels: Message history unavailable (pi-kysely not ready)", "warning");
+			history = null;
+		}
 
-		// Register channel_history tool (now that history is ready)
-		registerChannelTool(pi, registry, history);
+		// Register channel tools (history tool only when history is ready)
+		registerChannelTool(pi, registry, history ?? undefined);
 
 		await registry.loadConfig(config, ctx.cwd);
 
@@ -287,11 +298,12 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const parts = (args ?? "").trim().split(/\s+/);
+			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
 			const adapter = parts[0] || undefined;
-			const limit = parts[1] ? parseInt(parts[1], 10) : 20;
+			const parsedLimit = parts[1] ? Number.parseInt(parts[1], 10) : 20;
+			const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 20;
 
-			const rows = await history.query({ adapter, limit: Math.min(limit, 100) });
+			const rows = await history.query({ adapter, limit });
 
 			if (rows.length === 0) {
 				ctx.ui.notify("No messages found.", "info");
@@ -299,7 +311,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Show in overlay popup
-			showHistoryPopup(ctx, rows);
+			await showHistoryPopup(ctx, rows);
 		},
 	});
 
@@ -317,7 +329,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("No messages found.", "info");
 				return;
 			}
-			showHistoryPopup(ctx, rows);
+			await showHistoryPopup(ctx, rows);
 		},
 	});
 

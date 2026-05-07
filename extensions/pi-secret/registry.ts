@@ -6,7 +6,7 @@ import {
 	listPolicySecrets,
 	SecretPolicyError,
 } from "./policy.ts";
-import { SecretStore } from "./store.ts";
+import { SecretStore, redactSensitiveText } from "./store.ts";
 import {
 	PI_SECRET_SERVICE,
 	type AuditEntry,
@@ -150,10 +150,5 @@ function requireSecret<T>(value: T | null): T {
 
 function sanitizedCallbackError(error: unknown): Error {
 	if (!(error instanceof Error)) return new Error("Secret callback failed");
-	return new Error(
-		error.message
-			.replace(/(password|secret|token|api[_-]?key)=([^\s,;]+)/gi, "$1=<redacted>")
-			.replace(/sk-[A-Za-z0-9_-]{8,}/g, "<redacted>")
-			.replace(/[A-Za-z0-9_\-]{32,}/g, "<redacted>"),
-	);
+	return new Error(redactSensitiveText(error.message));
 }

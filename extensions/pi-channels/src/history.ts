@@ -173,8 +173,11 @@ export class MessageHistory {
 		}
 
 		const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-		const limit = filters.limit ?? 50;
-		const offset = filters.offset ?? 0;
+		// Clamp limit and offset to safe bounds
+		const rawLimit = filters.limit ?? 50;
+		const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(rawLimit, 100)) : 50;
+		const rawOffset = filters.offset ?? 0;
+		const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
 		const sql = `SELECT * FROM ${TABLE_NAME} ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`;
 		params.push(limit, offset);
 

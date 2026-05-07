@@ -30,11 +30,18 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
-		settings = loadSettings(ctx.cwd);
-		if (api) uninstallSecretRegistry(api);
-		api = createSecretApi({ settings });
-		installSecretRegistry(api);
-		ctx.ui.setStatus("pi-secret", settings.allowFallback === false ? "secrets: keychain-only" : "secrets: keychain+fallback");
+		try {
+			settings = loadSettings(ctx.cwd);
+			if (api) uninstallSecretRegistry(api);
+			api = createSecretApi({ settings });
+			installSecretRegistry(api);
+			ctx.ui.setStatus("pi-secret", settings.allowFallback === false ? "secrets: keychain-only" : "secrets: keychain+fallback");
+		} catch (error) {
+			// SecretPolicyError (e.g., fallbackFile inside workspace) — fail closed
+			api = undefined;
+			ctx.ui.setStatus("pi-secret", ctx.ui.theme.fg("error", "secrets: unavailable"));
+			ctx.ui.notify(`pi-secret: ${error instanceof Error ? error.message : String(error)}`, "error");
+		}
 	});
 
 	pi.on("session_shutdown", async () => {

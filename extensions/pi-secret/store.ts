@@ -96,8 +96,8 @@ export class SecretStore {
 		let deletedFallback = false;
 
 		try {
-			const deleted = await this.withKeychain(async () => (await deletePassword(PI_SECRET_SERVICE, account)) as unknown as boolean);
-			if (deleted) deletedKeychain = true;
+			await this.withKeychain(async () => deletePassword(PI_SECRET_SERVICE, account));
+			deletedKeychain = true;
 		} catch {
 			// Exceptions indicate keychain backend/permission failures. Continue with fallback cleanup.
 		}

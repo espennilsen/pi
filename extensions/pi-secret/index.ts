@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { relative, resolve } from "node:path";
 import { createSecretApi, installSecretRegistry, uninstallSecretRegistry } from "./registry.ts";
 import { SecretPolicyError, validateIdentifier } from "./policy.ts";
+import { redactSensitiveText } from "./store.ts";
 import type { PiSecretApi, PiSecretSettings } from "./types.ts";
 
 const SETTINGS_KEY = "pi-secret";
@@ -165,8 +166,5 @@ function isInside(cwd: string, candidate: string): boolean {
 
 function safeErrorMessage(error: unknown): string {
 	const message = error instanceof Error ? error.message : "Unknown error";
-	return message
-		.replace(/(password|secret|token|api[_-]?key)=([^\s,;]+)/gi, "$1=<redacted>")
-		.replace(/sk-[A-Za-z0-9_-]{8,}/g, "<redacted>")
-		.replace(/[A-Za-z0-9_\-]{32,}/g, "<redacted>");
+	return redactSensitiveText(message);
 }

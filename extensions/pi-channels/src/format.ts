@@ -48,40 +48,52 @@ function escapeTelegram(text: string): string {
 }
 
 function toTelegramHtml(text: string): string {
-	// Strategy: escape once up-front, then convert Markdown markers to Telegram HTML tags.
-	// Order matters: fenced code before inline code, links before bold/italic.
+	// Strategy: protect code blocks and links first, then process emphasis.
+	// We use placeholders to preserve protected spans, then restore them.
+	const protectedSpans: string[] = [];
+
+	// 1. Protect fenced code blocks: ```...```
+	text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`<pre>${code.trim()}</pre>`);
+		return `__PROTECTED_${idx}__`;
+	});
+
+	// 2. Protect inline code: `...`
+	text = text.replace(/`([^`]+)`/g, (_, code) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`<code>${code}</code>`);
+		return `__PROTECTED_${idx}__`;
+	});
+
+	// 3. Protect links: [text](url)
+	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`<a href="${url}">${linkText}</a>`);
+		return `__PROTECTED_${idx}__`;
+	});
+
+	// Now escape HTML and process emphasis on unprotected text only
 	let result = escapeTelegram(text);
 
-	// 1. Fenced code blocks: ```...``` — content is already escaped, wrap in <pre>
-	result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
-		return `<pre>${code.trim()}</pre>`;
+	// 4. Bold: **...**
+	result = result.replace(/\*\*([^*]+)\*\*/g, (_, txt) => `<b>${txt}</b>`);
+
+	// 5. Italic: *text*
+	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, (_, before, txt, after) => {
+		return `${before}<i>${txt}</i>${after}`;
 	});
 
-	// 2. Inline code: `...` — content already escaped, wrap in <code>
-	result = result.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
+	// 6. Strikethrough: ~~...~~
+	result = result.replace(/~~([^~]+)~~/g, (_, txt) => `<s>${txt}</s>`);
 
-	// 3. Links: [text](url) — href is raw URL, text already escaped
-	result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
-		return `<a href="${url}">${text}</a>`;
-	});
+	// 7. Headings (# ## ###) → bold
+	result = result.replace(/^#{1,3}\s+(.+)$/gm, (_, txt) => `<b>${txt}</b>`);
 
-	// 4. Bold: **...** — content already escaped
-	result = result.replace(/\*\*([^*]+)\*\*/g, (_, text) => `<b>${text}</b>`);
-
-	// 5. Italic: *text* (not preceded by *, not followed by *) — content already escaped
-	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, (_, before, text, after) => {
-		return `${before}<i>${text}</i>${after}`;
-	});
-
-	// 6. Strikethrough: ~~...~~ — content already escaped
-	result = result.replace(/~~([^~]+)~~/g, (_, text) => `<s>${text}</s>`);
-
-	// 7. Headings (# ## ###) → bold, content already escaped
-	result = result.replace(/^#{1,3}\s+(.+)$/gm, (_, text) => `<b>${text}</b>`);
-
-	// Note: all text was escaped before replacements, so bare <, >, & are already encoded.
-	// The Markdown markers (```, *, ~~, #, etc.) were also escaped but are un-escaped
-	// by the replacements above, producing valid HTML.
+	// Restore protected spans
+	for (let i = 0; i < protectedSpans.length; i++) {
+		result = result.replace(`__PROTECTED_${i}__`, protectedSpans[i]);
+	}
 
 	return result;
 }
@@ -89,28 +101,45 @@ function toTelegramHtml(text: string): string {
 // ── Slack mrkdwn formatter ──────────────────────────────────────
 
 function toSlackMrkdwn(text: string): string {
-	// Slack mrkdwn is very similar to basic Markdown.
-	// Key differences:
-	//   - Links: <url|text> instead of [text](url)
-	//   - Lists use • or 1. 2. 3. (no - auto-formatting)
-	//   - No heading support → bold + newline
-	//   - Bold is the same (*)
-	//   - Italic: *text* → _text_
-	//   - Strikethrough: ~~text~~ → ~text~
+	// Protect code blocks and links first to avoid corrupting their contents
+	const protectedSpans: string[] = [];
+
+	// 1. Protect fenced code blocks
+	text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`\`\`${lang}\n${code}\`\``);
+		return `__PROTECTED_${idx}__`;
+	});
+
+	// 2. Protect inline code
+	text = text.replace(/`([^`]+)`/g, (_, code) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`\`${code}\``);
+		return `__PROTECTED_${idx}__`;
+	});
+
+	// 3. Protect links
+	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
+		const idx = protectedSpans.length;
+		protectedSpans.push(`<${url}|${linkText}>`);
+		return `__PROTECTED_${idx}__`;
+	});
 
 	let result = text;
 
-	// 1. Links: [text](url) → <url|text>
-	result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>");
-
-	// 2. Headings (# ## ###) → bold text
+	// 4. Headings → bold
 	result = result.replace(/^#{1,3}\s+(.+)$/gm, "*$1*");
 
-	// 3. Italic: *text* → _text_ (Slack uses _ for italic, * for bold)
+	// 5. Italic: *text* → _text_
 	result = result.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1_$2_$3");
 
-	// 4. Strikethrough: ~~text~~ → ~text~ (Slack uses single tilde)
+	// 6. Strikethrough: ~~text~~ → ~text~
 	result = result.replace(/~~([^~]+)~~/g, "~$1~");
+
+	// Restore protected spans
+	for (let i = 0; i < protectedSpans.length; i++) {
+		result = result.replace(`__PROTECTED_${i}__`, protectedSpans[i]);
+	}
 
 	return result;
 }

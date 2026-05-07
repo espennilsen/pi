@@ -812,8 +812,11 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				const hasUnclosedTags = hasUnclosedHtmlTags(chunk);
 
 				if (hasUnclosedTags) {
-					// Chunk has unbalanced tags — escape as plain text to avoid broken HTML
-					chunk = chunk.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+					// Chunk has unbalanced tags — re-escape to plain text to avoid broken HTML.
+					// The chunk is already HTML-escaped from formatForPlatform(), so we need to
+					// unescape first, then re-escape to avoid double-escaping.
+					const unescaped = chunk.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+					chunk = unescaped.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 				}
 
 				await sendTelegram(message.recipient, chunk);

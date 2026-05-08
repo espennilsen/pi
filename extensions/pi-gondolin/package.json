@@ -22,9 +22,6 @@
   "dependencies": {
     "@earendil-works/gondolin": "^0.8.1"
   },
-  "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
-  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.9.3"

@@ -54,7 +54,7 @@ import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } fro
 import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
-import { createLogger } from "./logger.ts";
+import { createLogger, type LogFn } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
@@ -95,7 +95,7 @@ function getInterfaceIP(interfaceName?: string): string | null {
 }
 
 /** Build publicUrl and bind address from config and port. Returns {publicUrl, bind}. */
-function buildServerConfig(config: any, port: number): { publicUrl: string; bind: string } {
+function buildServerConfig(config: any, port: number, log: LogFn): { publicUrl: string; bind: string } {
 	// Explicit publicUrl override
 	if (config.publicUrl) {
 		return {
@@ -659,9 +659,8 @@ export default function (pi: ExtensionAPI) {
 				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: agentPort }, "WARN");
 			}
 		}
-		const serverConfig = buildServerConfig(config, agentPort);
+		const serverConfig = buildServerConfig(config, agentPort, log);
 		const publicUrl = serverConfig.publicUrl;
-		const bind = serverConfig.bind;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		const agentCard = buildAgentCard(config, publicUrl);
@@ -866,7 +865,7 @@ export default function (pi: ExtensionAPI) {
 							agentPort++;
 							log("server_port_retry", { port: agentPort, reason: "EADDRINUSE" }, "WARN");
 							// Rebuild server config with new port
-							const newConfig = buildServerConfig(config, agentPort);
+							const newConfig = buildServerConfig(config, agentPort, log);
 							bind = newConfig.bind;
 							continue;
 						}
@@ -876,7 +875,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind}:${agentPort}`, "info");
 			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
-			const serverConfigFinal = buildServerConfig(config, agentPort);
+			const serverConfigFinal = buildServerConfig(config, agentPort, log);
 			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
 			updateAgentCard(buildAgentCard(config, publicUrl));
@@ -2180,7 +2179,7 @@ export default function (pi: ExtensionAPI) {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
 			const port = agentPort;
-			const serverConfigCmd = buildServerConfig(config, agentPort);
+			const serverConfigCmd = buildServerConfig(config, agentPort, log);
 			const publicUrl = serverConfigCmd.publicUrl;
 
 			if (action === "status") {
@@ -2246,14 +2245,6 @@ export default function (pi: ExtensionAPI) {
 				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
-					hubAgentId = result.agentId;
-					executor?.setHubAgentId(result.agentId);
-
-					// Start telemetry heartbeat and send initial snapshot
-					if (telemetryInterval) clearInterval(telemetryInterval);
-					telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
-					sendTelemetry(config).catch(() => {});
-
 					if (config.apiKey) {
 						await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");

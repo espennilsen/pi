@@ -5,7 +5,7 @@
  */
 
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { getCrmStore } from "./store.ts";
 
 /** Sanitize a URL: only allow http(s). Returns cleaned URL or undefined. */
@@ -18,7 +18,7 @@ function sanitizeUrl(value: unknown): string | undefined {
 	throw new Error("Invalid URL protocol — only http and https are allowed");
 }
 
-// Note: ExtensionAPI is from @mariozechner/pi-coding-agent
+// Note: ExtensionAPI is from @earendil-works/pi-coding-agent
 // We define minimal interface here to avoid hard dependency
 interface ExtensionAPI {
 	registerTool(tool: any): void;

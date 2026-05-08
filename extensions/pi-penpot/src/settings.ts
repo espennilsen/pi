@@ -10,7 +10,7 @@
  * }
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface PenpotSettings {
 	/** Penpot instance URL (e.g. https://penpot.e9n.dev). */

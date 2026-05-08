@@ -12,8 +12,8 @@
  *   "pi-myfinance": { "useKysely": true }           // pi-kysely shared DB
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { closeDb } from "./db.ts";
 import { getFinanceStore, setFinanceStore, isStoreReady, createSqliteStore, createKyselyStore } from "./store.ts";
 import { registerFinanceTool, setToolLogger } from "./tool.ts";

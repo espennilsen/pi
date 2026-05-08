@@ -12,9 +12,9 @@
  *   recent-ops, system-health, reminders, recent-contacts, session-stats, clock
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { OverlayHandle, TUI } from "@mariozechner/pi-tui";
-import { Key } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import { Key } from "@earendil-works/pi-tui";
 import { resolveSettings, type PrismSettings } from "./settings.ts";
 import { WidgetSidebar } from "./sidebar.ts";
 import { WIDGET_FACTORIES, DEFAULT_WIDGETS, type Widget } from "./widgets/index.ts";

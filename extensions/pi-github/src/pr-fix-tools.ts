@@ -10,7 +10,7 @@
  *   - github_post_pr_comment    — post a top-level PR comment
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ghGraphql, ghJson, gh } from "./gh.ts";
 

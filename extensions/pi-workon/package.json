@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-workon",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Project context switching and initialization for pi — switch projects, detect stacks, scaffold AGENTS.md",
   "type": "module",
   "keywords": [
@@ -20,8 +20,8 @@
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

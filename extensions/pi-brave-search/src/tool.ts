@@ -5,7 +5,7 @@
  * for current information, news, documentation, etc.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { search, type SearchOptions } from "./search.ts";
 

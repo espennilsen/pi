@@ -16,8 +16,8 @@
  * Requires gh CLI installed and authenticated.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerCommands, setSessionCwd } from "./commands.ts";
 import { registerPrFixCommand } from "./pr-fix.ts";
 import { registerPrFixTools } from "./pr-fix-tools.ts";

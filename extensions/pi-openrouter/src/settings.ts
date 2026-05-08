@@ -1,4 +1,4 @@
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface OpenRouterSettings {
 	/** Glob patterns for model IDs to include. Default: ["*"] (all models). */

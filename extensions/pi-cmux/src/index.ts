@@ -16,7 +16,7 @@
  */
 
 import { basename } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { CmuxClient } from "./client.ts";
 import { registerTools } from "./tools.ts";

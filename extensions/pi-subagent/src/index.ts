@@ -25,7 +25,7 @@
  *   - subagent:complete { agent, trackingId, status, tokens, cost, durationMs }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerSubagentTool, disposePool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";
 import { discoverAgents } from "./agents.ts";

@@ -23,8 +23,8 @@
  *   }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { registerGmailTool } from "./tool.ts";
 import { mountGmailRoutes, unmountGmailRoutes } from "./web.ts";

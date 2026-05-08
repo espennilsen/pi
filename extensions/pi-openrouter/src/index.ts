@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { login, refreshToken, getApiKey } from "./oauth.ts";
 import { loadCache, saveCache, fetchModels, filterModels, toProviderModel } from "./models.ts";
 import { resolveSettings, type OpenRouterSettings } from "./settings.ts";

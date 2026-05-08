@@ -6,7 +6,7 @@
  * and cron:job_complete events from other extensions.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getJobsStore, isStoreReady } from "./store.ts";
 
 interface TrackerState {

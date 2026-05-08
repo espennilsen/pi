@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-model-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LLM-classified model routing for pi — automatically selects the right model based on task complexity",
   "keywords": [
     "pi-package"
@@ -17,8 +17,8 @@
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
   },
   "files": [
     "CHANGELOG.md",

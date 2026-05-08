@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-openrouter",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenRouter provider with OAuth PKCE and dynamic model filtering",
   "type": "module",
   "license": "MIT",
@@ -27,8 +27,8 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

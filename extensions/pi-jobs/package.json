@@ -1,42 +1,42 @@
 {
-	"name": "@e9n/pi-jobs",
-	"version": "0.1.1",
-	"description": "Agent run tracking extension for pi — job history, cost analysis, and session telemetry",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-ai": "*",
-		"@mariozechner/pi-coding-agent": "*",
-		"typebox": "^1.1.24"
-	},
-	"dependencies": {
-		"better-sqlite3": "^12.6.2"
-	},
-	"devDependencies": {
-		"@types/better-sqlite3": "^7.6.12",
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"CHANGELOG.md",
-		"README.md",
-		"package.json",
-		"src"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-jobs"
-	}
+  "name": "@e9n/pi-jobs",
+  "version": "0.2.0",
+  "description": "Agent run tracking extension for pi — job history, cost analysis, and session telemetry",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "^1.1.24"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-jobs"
+  }
 }

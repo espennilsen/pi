@@ -21,7 +21,7 @@
  *   tool_end      — { type, toolName, toolCallId, isError, content }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mountDashboard, unmountDashboard, broadcast, setAbortFn } from "./web.ts";
 import { createLogger } from "./logger.ts";
 

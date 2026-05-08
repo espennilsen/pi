@@ -9,7 +9,7 @@
  * Also injects behavioral instructions for when to write/search memory.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as files from "./files.ts";
 
 const MEMORY_INSTRUCTIONS = `

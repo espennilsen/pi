@@ -11,7 +11,7 @@
  * Plus RBAC grant/revoke events.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	executeQuery,
 	grantTableAccess,

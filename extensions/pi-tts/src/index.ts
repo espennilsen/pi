@@ -21,7 +21,7 @@
  *   }
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { registerTtsTool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";

@@ -1,46 +1,46 @@
 {
-	"name": "@e9n/pi-prism",
-	"version": "0.1.0",
-	"description": "Configurable widget sidebar overlay for pi — operational dashboard in the TUI",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-prism"
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": ">=0.65.2",
-		"@mariozechner/pi-tui": ">=0.65.2",
-		"typebox": "^1.1.24"
-	},
-	"dependencies": {
-		"luxon": "^3.7.2"
-	},
-	"devDependencies": {
-		"@mariozechner/pi-coding-agent": ">=0.65.2",
-		"@mariozechner/pi-tui": ">=0.65.2",
-		"typebox": "^1.1.24",
-		"@types/luxon": "^3.7.1",
-		"luxon": "^3.6.1",
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"CHANGELOG.md",
-		"README.md",
-		"package.json",
-		"src"
-	]
+  "name": "@e9n/pi-prism",
+  "version": "0.2.0",
+  "description": "Configurable widget sidebar overlay for pi — operational dashboard in the TUI",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-prism"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.65.2",
+    "@earendil-works/pi-tui": ">=0.65.2",
+    "typebox": "^1.1.24"
+  },
+  "dependencies": {
+    "luxon": "^3.7.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.65.2",
+    "@earendil-works/pi-tui": ">=0.65.2",
+    "typebox": "^1.1.24",
+    "@types/luxon": "^3.7.1",
+    "luxon": "^3.6.1",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ]
 }

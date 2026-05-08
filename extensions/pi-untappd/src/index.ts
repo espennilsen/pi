@@ -14,7 +14,7 @@
  *   - pi-cron: scheduled RSS polling (configured via crontab, see README)
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { initDb } from "./db/init.ts";
 import { mountWebRoutes, unmountWebRoutes } from "./web/index.ts";

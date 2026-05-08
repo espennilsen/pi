@@ -11,7 +11,7 @@
  * Requires pi-kysely extension to be loaded.
  */
 
-import type { EventBus } from "@mariozechner/pi-coding-agent";
+import type { EventBus } from "@earendil-works/pi-coding-agent";
 import { SCHEMA } from "./schema.ts";
 
 const ACTOR = "pi-untappd";

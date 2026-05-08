@@ -12,7 +12,7 @@
 
 import { rmdir } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { gh, ghJson, gitExec, gitExecRetry, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
 import { extractRepoRef, resolveRepo, repoFlag } from "./repo-ref.ts";

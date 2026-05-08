@@ -19,7 +19,7 @@
  * Requires pi-webserver for the web dashboard. Tool works standalone.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveConfig } from "./api-client.ts";
 import { registerObsidianTool } from "./tool.ts";
 import { mountVaultRoutes, unmountVaultRoutes } from "./web.ts";

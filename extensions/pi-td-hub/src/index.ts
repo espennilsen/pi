@@ -21,8 +21,8 @@ import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
 import { Type } from "typebox";
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ── Types ────────────────────────────────────────────────────
 

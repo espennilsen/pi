@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export interface CrossProjectConfig {
 	rootDir: string;

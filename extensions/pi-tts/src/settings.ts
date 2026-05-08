@@ -10,7 +10,7 @@
  * }
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface TtsSettings {
 	/** TTS server base URL (default: "http://192.168.0.27:8001"). */

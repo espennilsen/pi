@@ -2,7 +2,7 @@
  * mealie_organizer tool — Tags, categories, tools, foods, and units.
  */
 
-import type { ExtensionAPI, AgentToolResult } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isClientReady, mealie, apiList } from "../client.ts";
 

@@ -2,7 +2,7 @@
  * pi-channels — Adapter registry + route resolution.
  */
 
-import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ChannelAdapter, ChannelMessage, AdapterConfig, ChannelConfig, AdapterDirection, OnIncomingMessage, IncomingMessage } from "./types.ts";
 import type { MessageHistory } from "./history.ts";
 import { createTelegramAdapter } from "./adapters/telegram.ts";

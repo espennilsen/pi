@@ -32,7 +32,7 @@
  *   pi.events.emit("log:warn", { event: "cache-miss", level: "ERROR", data: { ... } })
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveSettings, type LogLevel, type LoggerSettings } from "./settings.ts";
 import { writeLogEntry } from "./writer.ts";
 

@@ -2,7 +2,7 @@
  * mealie_mealplans tool -- Meal planning: view today/week, add meals, remove meals.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isClientReady, mealie, apiList } from "../client.ts";
 

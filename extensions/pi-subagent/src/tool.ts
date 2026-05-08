@@ -12,12 +12,12 @@
  *   - renderCall / renderResult for TUI display
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { StringEnum } from "@earendil-works/pi-ai";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { runIsolatedAgent } from "./runner.ts";
 import { discoverAgents } from "./agents.ts";
 import { oneShotTracker } from "./tracker.ts";

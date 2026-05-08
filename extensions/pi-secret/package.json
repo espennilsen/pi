@@ -5,7 +5,11 @@
   "description": "Host-side secret broker extension for Pi backed by the OS keychain with a controlled fallback store.",
   "license": "MIT",
   "author": "Espen Nilsen <hi@e9n.dev>",
-  "keywords": ["pi-package", "secrets", "keychain"],
+  "keywords": [
+    "pi-package",
+    "secrets",
+    "keychain"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test *.test.ts"
@@ -17,9 +21,6 @@
     "@types/node": "^24.10.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
   },
   "files": [
     "index.ts",
@@ -37,6 +38,8 @@
     "directory": "extensions/pi-secret"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

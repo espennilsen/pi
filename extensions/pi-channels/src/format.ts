@@ -44,7 +44,7 @@ export function formatForPlatform(text: string, adapter: string): FormattedMessa
 
 /** Escape HTML special chars for Telegram HTML parse_mode. */
 function escapeTelegram(text: string): string {
-	return escapeTelegram(text);
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function toTelegramHtml(text: string): string {

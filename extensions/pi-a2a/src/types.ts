@@ -6,7 +6,7 @@
 
 // ── Extension Config ────────────────────────────────────────────
 
-export interface A2AConfig {
+export interface LocalConfig {
 	/** HTTP port for the A2A server. Defaults to 3100. */
 	port?: number;
 	/** Port range for dynamic port discovery (inclusive). When set, pi-a2a
@@ -20,10 +20,17 @@ export interface A2AConfig {
 	 *  When set, publicUrl uses this interface's IP instead of the primary IP.
 	 *  Examples: "en0", "eth0", "192.168.1.100". Requires `bind` to be set if not localhost. */
 	bindInterface?: string;
-	/** API key for authenticating RPC requests. Required when bind is not localhost. */
-	apiKey?: string;
 	/** Public-facing base URL. Defaults to http://localhost:{port}. */
 	publicUrl?: string;
+	/** Require an API key for inbound requests. When true and apiKey is unset, one is auto-generated. */
+	requireApiKey?: boolean;
+	/** API key for authenticating RPC requests. Required when bind is not localhost. */
+	apiKey?: string;
+}
+
+export interface A2AConfig {
+	/** Local server settings (port, bind, apiKey, etc.). */
+	local?: LocalConfig;
 	/** Agent display name. Defaults to "Pi Agent". */
 	name?: string;
 	/** Agent description. */

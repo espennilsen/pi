@@ -61,6 +61,8 @@ import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, Pu
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
 const DEFAULT_PORT = 3100;
+const DEFAULT_DYNAMIC_RANGE_START = 27100;
+const DEFAULT_DYNAMIC_RANGE_END = 27199;
 
 /** Get interface IP by name, or primary non-loopback IPv4 if not specified. */
 function getInterfaceIP(interfaceName?: string): string | null {
@@ -648,15 +650,30 @@ export default function (pi: ExtensionAPI) {
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
 		agentPort = config.port ?? DEFAULT_PORT;
-		// If portRange is set, find a free port in the range
-		if (config.portRange) {
-			const [start, end] = config.portRange;
-			const free = await findFreePort(start, end);
+		// Resolve the intended bind address so findFreePort checks the right interface
+		let bindHost = "127.0.0.1";
+		if (config.publicUrl) {
+			bindHost = config.bind ?? "127.0.0.1";
+		} else if (config.bindInterface) {
+			const interfaceIP = getInterfaceIP(config.bindInterface);
+			if (interfaceIP) {
+				bindHost = interfaceIP;
+			} else if (config.bind) {
+				bindHost = config.bind;
+			}
+		} else if (config.bind) {
+			bindHost = config.bind;
+		}
+		// If port is not explicitly configured, find a free one on the bind address
+		if (config.port == null) {
+			const rangeStart = config.portRange?.[0] ?? DEFAULT_DYNAMIC_RANGE_START;
+			const rangeEnd = config.portRange?.[1] ?? DEFAULT_DYNAMIC_RANGE_END;
+			const free = await findFreePort(rangeStart, rangeEnd, bindHost);
 			if (free !== null) {
 				agentPort = free;
-				log("dynamic_port_assigned", { port: free, range: config.portRange });
+				log("dynamic_port_assigned", { port: free, range: [rangeStart, rangeEnd], bindHost });
 			} else {
-				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: agentPort }, "WARN");
+				log("dynamic_port_range_exhausted", { range: [rangeStart, rangeEnd], fallback: agentPort, bindHost }, "WARN");
 			}
 		}
 		const serverConfig = buildServerConfig(config, agentPort, log);

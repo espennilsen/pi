@@ -1,10 +1,10 @@
 import { createServer } from "node:net";
 
 /**
- * Find a free port in the given range (inclusive).
+ * Find a free port in the given range (inclusive) on the specified host.
  * Returns the first available port, or null if none found.
  */
-export function findFreePort(rangeStart: number, rangeEnd: number): Promise<number | null> {
+export function findFreePort(rangeStart: number, rangeEnd: number, host = "127.0.0.1"): Promise<number | null> {
 	return new Promise((resolve) => {
 		if (rangeStart > rangeEnd) {
 			resolve(null);
@@ -24,7 +24,7 @@ export function findFreePort(rangeStart: number, rangeEnd: number): Promise<numb
 			server.once("listening", () => {
 				server.close(() => resolve(port));
 			});
-			server.listen(port, "127.0.0.1");
+			server.listen(port, host);
 		}
 	});
 }

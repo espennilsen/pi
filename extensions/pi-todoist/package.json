@@ -24,6 +24,9 @@
     "@doist/todoist-api-typescript": "^6.10.0"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@types/node": "^24.3.0",
+    "typebox": "^1.1.24",
     "typescript": "^5.9.3"
   },
   "license": "MIT",

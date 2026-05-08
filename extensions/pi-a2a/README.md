@@ -70,7 +70,6 @@ Add to `~/.pi/agent/settings.json`:
 {
   "pi-a2a": {
     "port": 3100,
-    "publicUrl": "http://localhost:3100",
     "name": "Pi Agent",
     "description": "Personal AI coding agent",
     "version": "1.0.0",
@@ -94,14 +93,56 @@ Add to `~/.pi/agent/settings.json`:
 }
 ```
 
+### Examples
+
+**Localhost only (default):**
+```json
+{}
+```
+Server binds to `127.0.0.1:3100`, publicUrl auto-generates as `http://localhost:3100`.
+
+**LAN access (auto-detects IP):**
+```json
+{
+  "pi-a2a": {
+    "bind": "0.0.0.0",
+    "apiKey": "lan-secret"
+  }
+}
+```
+Server binds to all interfaces, publicUrl auto-detects primary IP (e.g., `http://192.168.1.100:3100`).
+
+**LAN access (specific interface):**
+```json
+{
+  "pi-a2a": {
+    "bindInterface": "en1"
+  }
+}
+```
+Server binds to localhost, but advertises en1's IP (e.g., `http://192.168.50.25:3100`). Useful for multi-homed machines.
+
+**Reverse proxy:**
+```json
+{
+  "pi-a2a": {
+    "bind": "127.0.0.1",
+    "publicUrl": "https://agent.mydomain.com"
+  }
+}
+```
+Server binds to localhost, but advertises external URL for reverse proxy setups.
+
 ### Config Reference
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `port` | number | `3100` | HTTP server port |
 | `bind` | string | `"127.0.0.1"` | Bind address (`"0.0.0.0"` for external access) |
+| `bindInterface` | string | — | Network interface name or IP for publicUrl auto-detection (e.g., `"en0"`, `"eth0"`, `"192.168.1.100"`). When set, publicUrl uses this interface's IP instead of the primary IP. |
 | `apiKey` | string | — | API key for Bearer auth (required for external access) |
-| `publicUrl` | string | `http://localhost:{port}` | Public-facing URL for the Agent Card |
+| `publicUrl` | string | auto-detected | Public-facing URL for the Agent Card. Auto-detects primary IP when `bind: "0.0.0.0"` or `bindInterface` is set. |
+| `name` | string | `"Pi Agent"` | Agent display name |
 | `name` | string | `"Pi Agent"` | Agent display name |
 | `description` | string | — | Agent description |
 | `version` | string | `"1.0.0"` | Agent version |

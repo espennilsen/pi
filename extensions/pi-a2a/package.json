@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-a2a",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "A2A protocol extension for pi — serves an Agent Card, handles JSON-RPC requests, and optionally registers with an A2A Hub",
   "type": "module",
   "keywords": [

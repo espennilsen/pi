@@ -157,7 +157,8 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	async function sendTelegram(chatId: string, text: string): Promise<void> {
 		const body: Record<string, unknown> = { chat_id: chatId, text };
-		if (parseMode) body.parse_mode = parseMode;
+		// Messages are pre-formatted by format.ts as Telegram HTML — hardcode HTML
+		body.parse_mode = "HTML";
 
 		const res = await fetch(`${apiBase}/sendMessage`, {
 			method: "POST",
@@ -711,6 +712,59 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 
 	// ── Adapter ─────────────────────────────────────────────
 
+	/** Find safe split point that doesn't break inside HTML tags or entities. */
+	function findSafeHtmlSplit(html: string, maxLen: number): number {
+		const len = Math.min(maxLen, html.length);
+
+		// Scan backwards from len-1 for a safe boundary
+		for (let i = len - 1; i >= Math.floor(len / 2); i--) {
+			const ch = html[i];
+
+			// Safe to split after closing tag or entity
+			if (ch === '>' || ch === ';') {
+				// Verify no opening < or & between i and len
+				let safe = true;
+				for (let j = i + 1; j < len; j++) {
+					if (html[j] === '<' || html[j] === '&') { safe = false; break; }
+				}
+				if (safe) return i + 1;
+			}
+
+			// Also safe to split before opening tag (don't cut inside <tag...>)
+			if (ch === '<' || ch === '&') {
+				return i;
+			}
+		}
+
+		// Fallback: return maxLen if no safe boundary found
+		return len;
+	}
+
+	/** Check if HTML has unclosed opening tags (e.g., <pre> without </pre>). */
+	function hasUnclosedHtmlTags(html: string): boolean {
+		const openTagRe = /<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g;
+		const closeTagRe = /<\/([a-zA-Z][a-zA-Z0-9]*)>/g;
+		const voidElements = new Set(['br', 'hr', 'img', 'input', 'meta', 'link']);
+
+		const openTags: string[] = [];
+		let match: RegExpExecArray | null;
+
+		while ((match = openTagRe.exec(html)) !== null) {
+			const tagName = match[1].toLowerCase();
+			if (!voidElements.has(tagName)) {
+				openTags.push(tagName);
+			}
+		}
+
+		while ((match = closeTagRe.exec(html)) !== null) {
+			const tagName = match[1].toLowerCase();
+			const idx = openTags.lastIndexOf(tagName);
+			if (idx !== -1) openTags.splice(idx, 1);
+		}
+
+		return openTags.length > 0;
+	}
+
 	return {
 		direction: "bidirectional" as const,
 
@@ -736,16 +790,36 @@ export async function createTelegramAdapter(config: AdapterConfig, context: Adap
 				return;
 			}
 
-			// Split long messages at newlines
+			// Split long messages at HTML-safe boundaries, falling back to plain text
+			// when a single HTML block (e.g., <pre>...</pre>) exceeds MAX_LENGTH.
 			let remaining = full;
 			while (remaining.length > 0) {
 				if (remaining.length <= MAX_LENGTH) {
 					await sendTelegram(message.recipient, remaining);
 					break;
 				}
-				let splitAt = remaining.lastIndexOf("\n", MAX_LENGTH);
-				if (splitAt < MAX_LENGTH / 2) splitAt = MAX_LENGTH;
-				await sendTelegram(message.recipient, remaining.slice(0, splitAt));
+
+				// Find safe split point that doesn't break HTML tags
+				let splitAt = findSafeHtmlSplit(remaining, MAX_LENGTH);
+
+				// If HTML-aware split is too aggressive, fall back to newline split
+				if (splitAt < MAX_LENGTH / 2) {
+					const newlineAt = remaining.lastIndexOf("\n", MAX_LENGTH);
+					if (newlineAt >= MAX_LENGTH / 2) splitAt = newlineAt;
+				}
+
+				let chunk = remaining.slice(0, splitAt);
+				const hasUnclosedTags = hasUnclosedHtmlTags(chunk);
+
+				if (hasUnclosedTags) {
+					// Chunk has unbalanced tags — re-escape to plain text to avoid broken HTML.
+					// The chunk is already HTML-escaped from formatForPlatform(), so we need to
+					// unescape first, then re-escape to avoid double-escaping.
+					const unescaped = chunk.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+					chunk = unescaped.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+				}
+
+				await sendTelegram(message.recipient, chunk);
 				remaining = remaining.slice(splitAt).replace(/^\n/, "");
 			}
 		},

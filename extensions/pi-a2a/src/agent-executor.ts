@@ -864,23 +864,6 @@ export class PiAgentExecutor implements AgentExecutor {
 			const existing = await this.taskStore.load(taskId);
 			const now = new Date().toISOString();
 
-			// Send push notification only when hub is configured AND agent is registered
-			if (this.hubConfig?.apiKey && this.hubAgentId) {
-				const toState = result.ok ? "completed" : "failed";
-				const fromState = existing?.status?.state as string | null || null;
-				await sendTaskStateChanged(
-					this.hubAgentId,
-					taskId,
-					fromState,
-					toState,
-					this.hubConfig,
-					this.log,
-					result.ok ? { response: result.response.slice(0, 500) } : undefined,
-				).catch(err => {
-					this.log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
-				});
-			}
-
 			const statusMessage = {
 				kind: "message" as const,
 				messageId: randomUUID(),
@@ -928,6 +911,22 @@ export class PiAgentExecutor implements AgentExecutor {
 				state: result.ok ? "completed" : "failed",
 				hadExisting: !!existing,
 			});
+
+			// Fire push notification after persistence succeeds (fire-and-forget)
+			if (this.hubConfig?.apiKey && this.hubAgentId) {
+				const toState = result.ok ? "completed" : "failed";
+				const fromState = existing?.status?.state as string | null || null;
+				const hubConfig = this.hubConfig;
+				const log = this.log;
+				const agentId = this.hubAgentId;
+				sendTaskStateChanged(
+					agentId, taskId, fromState, toState,
+					hubConfig, log,
+					result.ok ? { response: result.response.slice(0, 500) } : undefined,
+				).catch(err => {
+					log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+				});
+			}
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.log("task_result_save_error", { taskId, error: msg, attempt: 1 }, "ERROR");
@@ -952,6 +951,21 @@ export class PiAgentExecutor implements AgentExecutor {
 				};
 				await this.taskStore.save(fallbackTask);
 				this.log("task_result_saved_retry", { taskId, state: result.ok ? "completed" : "failed" });
+
+				// Fire push notification after retry-save succeeds
+				if (this.hubConfig?.apiKey && this.hubAgentId) {
+					const toState = result.ok ? "completed" : "failed";
+					const hubConfig = this.hubConfig;
+					const log = this.log;
+					const agentId = this.hubAgentId;
+					sendTaskStateChanged(
+						agentId, taskId, null, toState,
+						hubConfig, log,
+						result.ok ? { response: result.response.slice(0, 500) } : undefined,
+					).catch(err => {
+						log("push_notification_failed", { error: err instanceof Error ? err.message : String(err) }, "WARN");
+					});
+				}
 			} catch (retryErr: unknown) {
 				const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
 				this.log("task_result_save_error", { taskId, error: retryMsg, attempt: 2 }, "ERROR");

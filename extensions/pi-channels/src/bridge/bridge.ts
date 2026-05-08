@@ -21,6 +21,7 @@ import { RpcSessionManager } from "./rpc-runner.ts";
 import { isCommand, handleCommand, routeSlashCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";
 
 import { startTyping } from "./typing.ts";
+import { formatForPlatform } from "../format.ts";
 
 interface BridgeDeps {
 	/** Available slash commands from pi's registry. Updated on session start. */
@@ -457,7 +458,8 @@ export class ChatBridge {
 	// ── Reply ─────────────────────────────────────────────────
 
 	private sendReply(adapter: string, recipient: string, text: string): void {
-		this.registry.send({ adapter, recipient, text });
+		const formatted = formatForPlatform(text, adapter);
+		this.registry.send({ adapter, recipient, text: formatted.text });
 	}
 }
 

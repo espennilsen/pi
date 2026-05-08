@@ -48,10 +48,10 @@ export function loadConfig(cwd: string): ChannelConfig {
 
 	// Project overrides global (shallow merge of adapters + routes + bridge)
 	// messageRetentionDays: project overrides global if set, otherwise default 30
-	const messageRetentionDays =
+	const messageRetentionDays = validateRetentionDays(
 		(projectCh.messageRetentionDays as number | undefined) ??
-		(globalCh.messageRetentionDays as number | undefined) ??
-		30;
+		(globalCh.messageRetentionDays as number | undefined)
+	);
 
 	const merged: ChannelConfig = {
 		adapters: {
@@ -110,6 +110,13 @@ function applyEnvOverrides(config: ChannelConfig): void {
  *
  * Example: getChannelSetting(cwd, "slack.appToken") reads pi-channels.slack.appToken
  */
+/** Validate messageRetentionDays: must be a finite number >= 0, or default to 30. */
+function validateRetentionDays(value: number | undefined): number {
+	if (value === undefined || value === null) return 30;
+	if (typeof value !== 'number' || !Number.isFinite(value)) return 30;
+	return Math.max(0, Math.floor(value));
+}
+
 export function getChannelSetting(cwd: string, keyPath: string): unknown {
 	const agentDir = getAgentDir();
 	const sm = SettingsManager.create(cwd, agentDir);

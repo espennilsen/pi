@@ -1,0 +1,44 @@
+{
+  "name": "@e9n/pi-gondolin",
+  "version": "0.1.0",
+  "description": "Secure-by-default Gondolin micro-VM sandbox for Pi file and shell tools",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "gondolin",
+    "sandbox"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/gondolin": "^0.8.1"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-gondolin"
+  }
+}

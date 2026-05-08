@@ -14,7 +14,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ChannelRegistry } from "./registry.ts";
-import type { MessageHistory, HistoryQuery } from "./history.ts";
+import type { MessageHistory, HistoryQuery, MessageRow } from "./history.ts";
 
 interface ChannelToolParams {
 	action: "send" | "send_file" | "list" | "test";
@@ -305,7 +305,15 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 					since: params.since,
 				};
 
-				const rows = await history!.query(filters);
+				let rows: MessageRow[];
+				try {
+					rows = await history!.query(filters);
+				} catch (error) {
+					return {
+						content: [{ type: "text" as const, text: `Failed to query history: ${error instanceof Error ? error.message : String(error)}` }],
+						details: {},
+					};
+				}
 
 				if (rows.length === 0) {
 					return {
@@ -318,7 +326,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 				const source = (row: typeof rows[0]) =>
 					row.direction === "in" ? (row.sender || "?") : (row.recipient || "?");
 
-				const formatted = rows.map((row) => {
+				const formatted = rows.map((row: MessageRow) => {
 					const ts = row.created_at?.replace("T", " ").slice(0, 19) ?? "?";
 					return `${ts} ${arrow(row.direction)} [${row.adapter}] ${source(row)}: ${truncateText(row.text, 150)}`;
 				});

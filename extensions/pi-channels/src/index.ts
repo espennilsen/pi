@@ -79,6 +79,10 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 	const source = (row: MessageRow) =>
 		row.direction === "in" ? (row.sender || "?") : (row.recipient || "?");
 
+	// Sanitize text to prevent ANSI/OSC injection from external message content
+	const sanitize = (text: string) =>
+		text.replace(/[\x00-\x1f\x7f]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
+
 	const maxVisible = 15;
 	let scrollOffset = 0;
 
@@ -96,7 +100,7 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 			for (let i = start; i < end; i++) {
 				const row = rows[i];
 				const ts = row.created_at?.replace("T", " ").slice(5, 16) ?? "?";
-				const preview = (row.text ?? "").slice(0, 80).replace(/\n/g, " ");
+				const preview = sanitize((row.text ?? "")).slice(0, 80).replace(/\n/g, " ");
 				let line = `${ts} ${arrow(row.direction)}[${row.adapter}] ${source(row)}: ${preview}`;
 				if (row.direction === "in") line = `\x1b[34m${line}\x1b[0m`;
 				lines.push(truncateToWidth(line, maxWidth));
@@ -113,11 +117,13 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 			return lines;
 		},
 		handleInput(data: string): void {
+			const maxScroll = Math.max(0, rows.length - maxVisible);
 			if (matchesKey(data, Key.up) && scrollOffset > 0) {
 				scrollOffset--;
-			} else if (matchesKey(data, Key.down) && scrollOffset < rows.length - maxVisible) {
+			} else if (matchesKey(data, Key.down) && scrollOffset < maxScroll) {
 				scrollOffset++;
 			}
+			scrollOffset = Math.min(scrollOffset, maxScroll);
 		},
 	};
 
@@ -164,13 +170,22 @@ export default function (pi: ExtensionAPI) {
 		const retentionDays = config.messageRetentionDays ?? 30;
 		history = new MessageHistory(pi.events, retentionDays);
 		history.setErrorLogger(log);
-		await waitForKysely(pi).then(() => history!.init());
-		registry.setHistory(history);
-		setHistory(history);
-		log("history-init", { retentionDays });
+		try {
+			await waitForKysely(pi);
+			await history.init();
+			registry.setHistory(history);
+			setHistory(history);
+			log("history-init", { retentionDays });
+		} catch (error) {
+			log("history-init-failed", { error }, "ERROR");
+			ctx.ui.notify("pi-channels: Message history unavailable (pi-kysely not ready)", "warning");
+			history = null;
+			// Clear shared history hooks to avoid stale references
+			setHistory(null);
+		}
 
-		// Register channel_history tool (now that history is ready)
-		registerChannelTool(pi, registry, history);
+		// Register channel tools (history tool only when history is ready)
+		registerChannelTool(pi, registry, history ?? undefined);
 
 		await registry.loadConfig(config, ctx.cwd);
 
@@ -214,6 +229,9 @@ export default function (pi: ExtensionAPI) {
 		if (bridge?.isActive()) log("bridge-stop", {});
 		bridge?.stop();
 		setBridge(null);
+		// Clear shared history hooks on shutdown
+		setHistory(null);
+		history = null;
 		await registry.stopAll();
 	});
 
@@ -290,11 +308,19 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const parts = (args ?? "").trim().split(/\s+/);
+			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
 			const adapter = parts[0] || undefined;
-			const limit = parts[1] ? parseInt(parts[1], 10) : 20;
+			const parsedLimit = parts[1] ? Number.parseInt(parts[1], 10) : 20;
+			const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 20;
 
-			const rows = await history.query({ adapter, limit: Math.min(limit, 100) });
+			let rows: MessageRow[];
+			try {
+				rows = await history.query({ adapter, limit });
+			} catch (error) {
+				ctx.ui.notify(`Message history query failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				log("history-query-error", { error }, "ERROR");
+				return;
+			}
 
 			if (rows.length === 0) {
 				ctx.ui.notify("No messages found.", "info");
@@ -302,7 +328,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Show in overlay popup
-			showHistoryPopup(ctx, rows);
+			await showHistoryPopup(ctx, rows);
 		},
 	});
 
@@ -315,12 +341,19 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Message history not ready yet.", "warning");
 				return;
 			}
-			const rows = await history.query({ limit: 30 });
+			let rows: MessageRow[];
+			try {
+				rows = await history.query({ limit: 30 });
+			} catch (error) {
+				ctx.ui.notify(`Message history query failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				log("history-query-error", { error }, "ERROR");
+				return;
+			}
 			if (rows.length === 0) {
 				ctx.ui.notify("No messages found.", "info");
 				return;
 			}
-			showHistoryPopup(ctx, rows);
+			await showHistoryPopup(ctx, rows);
 		},
 	});
 

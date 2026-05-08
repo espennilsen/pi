@@ -4,7 +4,8 @@
  * Logs all incoming/outgoing messages to a SQLite table via pi-kysely.
  * Supports querying, retention cleanup, and TUI display.
  *
- * Table: pi-channels__messages
+ * Table: pi_channels__messages
+ * Migrations: pi_channels_migrations (tracks schema version)
  *
  * Config: messageRetentionDays in pi-channels settings (default: 30)
  */
@@ -12,7 +13,9 @@
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import type { ChannelMessage, IncomingMessage } from "./types.ts";
 
-export const TABLE_NAME = "pi-channels__messages";
+export const TABLE_NAME = "pi_channels__messages";
+export const MIGRATIONS_TABLE = "pi_channels_migrations";
+const CURRENT_SCHEMA_VERSION = 1;
 
 export interface MessageRow {
 	id: number;
@@ -70,10 +73,26 @@ export class MessageHistory {
 	async init(): Promise<void> {
 		if (this.initialized) return;
 
-		// Create schema (each statement separately — SQLite doesn't handle multi-statement well)
-		const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
-		for (const stmt of statements) {
-			await this.execute(stmt);
+		// Enable WAL mode first (separate statement)
+		await this.execute("PRAGMA journal_mode = WAL");
+
+		// Create migrations table if it doesn't exist
+		await this.execute(`
+			CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+				id INTEGER PRIMARY KEY CHECK (id = 1),
+				version INTEGER NOT NULL DEFAULT 0
+			)
+		`);
+
+		// Get current version
+		const versionResult = await this.queryRaw(
+			`SELECT COALESCE((SELECT version FROM ${MIGRATIONS_TABLE} WHERE id = 1), 0) as version`
+		);
+		const currentVersion = Number(versionResult.rows[0]?.version ?? 0);
+
+		// Run migrations if needed
+		if (currentVersion < CURRENT_SCHEMA_VERSION) {
+			await this.migrate(currentVersion);
 		}
 
 		// Run initial cleanup
@@ -82,20 +101,57 @@ export class MessageHistory {
 		this.initialized = true;
 	}
 
+	/** Run schema migrations from currentVersion to CURRENT_SCHEMA_VERSION. */
+	private async migrate(currentVersion: number): Promise<void> {
+		if (currentVersion === 0) {
+			// Initial schema
+			const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
+			for (const stmt of statements) {
+				await this.execute(stmt);
+			}
+		}
+
+		// Add future migrations here as needed:
+		// if (currentVersion < 2) { ... }
+
+		// Update version
+		await this.execute(
+			`INSERT INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, ?)
+			ON CONFLICT(id) DO UPDATE SET version = ?`,
+			[CURRENT_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION]
+		);
+	}
+
 	/** Log an incoming message (fire-and-forget). */
 	logIncoming(msg: IncomingMessage, adapterName: string): void {
 		if (!this.initialized) return;
-		const meta = JSON.stringify(msg.metadata ?? {});
+		let meta: string;
+		try {
+			meta = JSON.stringify(msg.metadata ?? {});
+		} catch (err) {
+			this.logErrors?.("history.logIncoming.metadata-error", { adapter: adapterName, error: err }, "ERROR");
+			meta = "{}";
+		}
 		this.execute(INSERT_SQL, [adapterName, "in", msg.sender, null, msg.text, meta])
-			.catch(() => {}); // best-effort
+			.catch((error) => {
+				this.logErrors?.("history.logIncoming.error", { adapter: adapterName, error }, "ERROR");
+			}); // best-effort
 	}
 
 	/** Log an outgoing message (fire-and-forget). */
 	logOutgoing(msg: ChannelMessage, adapterName: string): void {
 		if (!this.initialized) return;
-		const meta = JSON.stringify(msg.metadata ?? {});
+		let meta: string;
+		try {
+			meta = JSON.stringify(msg.metadata ?? {});
+		} catch (err) {
+			this.logErrors?.("history.logOutgoing.metadata-error", { adapter: adapterName, error: err }, "ERROR");
+			meta = "{}";
+		}
 		this.execute(INSERT_SQL, [adapterName, "out", null, msg.recipient, msg.text ?? null, meta])
-			.catch(() => {}); // best-effort
+			.catch((error) => {
+				this.logErrors?.("history.logOutgoing.error", { adapter: adapterName, error }, "ERROR");
+			}); // best-effort
 	}
 
 	/** Query message history. */
@@ -117,9 +173,12 @@ export class MessageHistory {
 		}
 
 		const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-		const limit = filters.limit ?? 50;
-		const offset = filters.offset ?? 0;
-		const sql = `SELECT * FROM ${TABLE_NAME} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+		// Clamp limit and offset to safe bounds
+		const rawLimit = filters.limit ?? 50;
+		const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(rawLimit, 100)) : 50;
+		const rawOffset = filters.offset ?? 0;
+		const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
+		const sql = `SELECT * FROM ${TABLE_NAME} ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`;
 		params.push(limit, offset);
 
 		const result = await this.queryRaw(sql, params);
@@ -146,6 +205,10 @@ export class MessageHistory {
 		if (filters.direction) {
 			conditions.push("direction = ?");
 			params.push(filters.direction);
+		}
+		if (filters.since) {
+			conditions.push("created_at >= ?");
+			params.push(filters.since);
 		}
 
 		const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

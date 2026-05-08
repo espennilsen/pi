@@ -68,11 +68,12 @@ function toTelegramHtml(text: string): string {
 		return `__PROTECTED_${idx}__`;
 	});
 
-	// 3. Protect links: [text](url) — escape link text, leave URL raw
+	// 3. Protect links: [text](url) — escape both link text and URL for HTML safety
 	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
 		const idx = protectedSpans.length;
 		const escapedText = escapeTelegram(linkText);
-		protectedSpans.push(`<a href="${url}">${escapedText}</a>`);
+		const escapedUrl = url.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+		protectedSpans.push(`<a href="${escapedUrl}">${escapedText}</a>`);
 		return `__PROTECTED_${idx}__`;
 	});
 

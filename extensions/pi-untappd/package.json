@@ -24,7 +24,8 @@
     "directory": "extensions/pi-untappd"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",

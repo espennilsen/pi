@@ -6,7 +6,8 @@
   "scripts": {
     "clean": "echo 'nothing to clean'",
     "build": "echo 'nothing to build'",
-    "check": "echo 'nothing to check'"
+    "check": "echo 'nothing to check'",
+    "test": "node --test"
   },
   "pi": {
     "extensions": [

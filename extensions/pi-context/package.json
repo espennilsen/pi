@@ -14,7 +14,8 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

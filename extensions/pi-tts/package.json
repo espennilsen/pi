@@ -3,7 +3,8 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

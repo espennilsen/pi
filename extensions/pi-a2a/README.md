@@ -120,7 +120,7 @@ Server binds to all interfaces, publicUrl auto-detects primary IP (e.g., `http:/
   }
 }
 ```
-Server binds to localhost, but advertises en1's IP (e.g., `http://192.168.50.25:3100`). Useful for multi-homed machines.
+Server binds to en1's IP and advertises it (e.g., binds to `192.168.50.25:3100`, advertises `http://192.168.50.25:3100`). Useful for multi-homed machines to control which interface is used.
 
 **Reverse proxy:**
 ```json
@@ -139,7 +139,7 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 |-----|------|---------|-------------|
 | `port` | number | `3100` | HTTP server port |
 | `bind` | string | `"127.0.0.1"` | Bind address (`"0.0.0.0"` for external access) |
-| `bindInterface` | string | — | Network interface name or IP for publicUrl auto-detection (e.g., `"en0"`, `"eth0"`, `"192.168.1.100"`). When set, publicUrl uses this interface's IP instead of the primary IP. |
+| `bindInterface` | string | — | Network interface name or IP to bind to and advertise (e.g., `"en0"`, `"eth0"`, `"192.168.1.100"`). When set, the server binds to this interface's IP and uses it for the publicUrl. Overrides `bind`. |
 | `apiKey` | string | — | API key for Bearer auth (required for external access) |
 | `publicUrl` | string | auto-detected | Public-facing URL for the Agent Card. Auto-detects primary IP when `bind: "0.0.0.0"` or `bindInterface` is set. |
 | `name` | string | `"Pi Agent"` | Agent display name |

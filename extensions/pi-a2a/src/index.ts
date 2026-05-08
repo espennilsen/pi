@@ -62,8 +62,8 @@ import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "
 
 const DEFAULT_PORT = 3100;
 
-/** Get primary non-loopback IPv4 address, or specific interface if provided. */
-function getPrimaryIP(interfaceName?: string): string {
+/** Get interface IP by name, or primary non-loopback IPv4 if not specified. */
+function getInterfaceIP(interfaceName?: string): string | null {
 	const nets = networkInterfaces();
 	
 	// If interface specified, use it
@@ -75,11 +75,12 @@ function getPrimaryIP(interfaceName?: string): string {
 					return net.address;
 				}
 			}
-			// Interface exists but no IPv4, check if it's an IP address directly
-			if (interfaceName.includes(".")) {
-				return interfaceName; // assume it's an IP
-			}
 		}
+		// Check if it's already an IP address
+		if (interfaceName.includes(".")) {
+			return interfaceName;
+		}
+		return null; // interface not found
 	}
 	
 	// Default: find first non-loopback IPv4
@@ -90,19 +91,47 @@ function getPrimaryIP(interfaceName?: string): string {
 			}
 		}
 	}
-	return "localhost"; // fallback
+	return null;
 }
 
-/** Build publicUrl from config, bind address, and port. Auto-detects IP for external binds. */
-function buildPublicUrl(config: any, bind: string | undefined, port: number): string {
+/** Build publicUrl and bind address from config and port. Returns {publicUrl, bind}. */
+function buildServerConfig(config: any, port: number): { publicUrl: string; bind: string } {
+	// Explicit publicUrl override
 	if (config.publicUrl) {
-		return config.publicUrl; // explicit override
+		return {
+			publicUrl: config.publicUrl,
+			bind: config.bind ?? "127.0.0.1",
+		};
 	}
-	// Auto-detect for external binds or when bindInterface is specified
+	
+	// bindInterface specified: bind to that interface's IP, advertise it
+	if (config.bindInterface) {
+		const interfaceIP = getInterfaceIP(config.bindInterface);
+		if (interfaceIP) {
+			return {
+				publicUrl: `http://${interfaceIP}:${port}`,
+				bind: interfaceIP,
+			};
+		}
+		// Interface not found, fall back to primary
+	}
+	
+	// bind: "0.0.0.0" or "::": auto-detect primary IP for advertising
+	const bind = config.bind ?? "127.0.0.1";
 	const isExternal = bind === "0.0.0.0" || bind === "::";
-	const hasInterface = config.bindInterface !== undefined;
-	const host = (isExternal || hasInterface) ? getPrimaryIP(config.bindInterface) : "localhost";
-	return `http://${host}:${port}`;
+	if (isExternal) {
+		const primaryIP = getInterfaceIP();
+		return {
+			publicUrl: primaryIP ? `http://${primaryIP}:${port}` : `http://localhost:${port}`,
+			bind,
+		};
+	}
+	
+	// Default: localhost
+	return {
+		publicUrl: `http://localhost:${port}`,
+		bind,
+	};
 }
 
 /** Sliding-window rate limiter for outbound response injection. */
@@ -629,7 +658,9 @@ export default function (pi: ExtensionAPI) {
 				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: agentPort }, "WARN");
 			}
 		}
-		const publicUrl = buildPublicUrl(config, config.bind, agentPort);
+		const serverConfig = buildServerConfig(config, agentPort);
+		const publicUrl = serverConfig.publicUrl;
+		const bind = serverConfig.bind;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		const agentCard = buildAgentCard(config, publicUrl);
@@ -804,7 +835,7 @@ export default function (pi: ExtensionAPI) {
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
 		// Start the A2A server
-		const bind = config.bind;
+		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
 		if (!isLocalhost && !config.apiKey) {
 		// Security: refuse to start when binding to external interfaces without authentication
@@ -833,15 +864,19 @@ export default function (pi: ExtensionAPI) {
 						if (agentPort < end) {
 							agentPort++;
 							log("server_port_retry", { port: agentPort, reason: "EADDRINUSE" }, "WARN");
+							// Rebuild server config with new port
+							const newConfig = buildServerConfig(config, agentPort);
+							bind = newConfig.bind;
 							continue;
 						}
 					}
 					throw e;
 				}
 			}
-			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${agentPort}`, "info");
+			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind}:${agentPort}`, "info");
 			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
-			const publicUrl = buildPublicUrl(config, bind, agentPort);
+			const serverConfigFinal = buildServerConfig(config, agentPort);
+			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
 			updateAgentCard(buildAgentCard(config, publicUrl));
 		} catch (err: unknown) {
@@ -2144,7 +2179,8 @@ export default function (pi: ExtensionAPI) {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
 			const port = agentPort;
-			const publicUrl = buildPublicUrl(config, config.bind, agentPort);
+			const serverConfigCmd = buildServerConfig(config, agentPort);
+			const publicUrl = serverConfigCmd.publicUrl;
 
 			if (action === "status") {
 				if (isRunning()) {

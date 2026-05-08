@@ -18,7 +18,7 @@
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "^0.74.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

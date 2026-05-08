@@ -20,7 +20,7 @@
   ],
   "description": "Local telemetry extension for pi — captures session events and writes to disk",
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "^0.74.0"
   },
   "files": [
     "CHANGELOG.md",

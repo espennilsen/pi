@@ -21,11 +21,11 @@
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
     "typebox": "^1.1.24",
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

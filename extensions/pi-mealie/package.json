@@ -15,7 +15,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

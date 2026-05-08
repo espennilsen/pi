@@ -3,7 +3,8 @@
 ## [0.3.0] - 2026-05-08
 
 ### Changed
-- Migrated from @mariozechner/* to @earendil-works/* package scope
+
+- Migrated from `@mariozechner/*` to `@earendil-works/*` package scope
 
 ## 0.2.0 — 2026-04-15
 

@@ -22,7 +22,8 @@
     "directory": "extensions/pi-kysely"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",

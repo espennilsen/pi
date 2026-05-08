@@ -9,8 +9,9 @@
 - `owner` config field for agent owner name/email (displayed in hub UIs)
 
 ### Changed
+
 - `bindInterface` now binds to the specified interface's IP (not just advertising it)
-- Migrated from @mariozechner/* to @earendil-works/* package scope
+- Migrated from `@mariozechner/*` to `@earendil-works/*` package scope
 
 ### Fixed
 - Documentation clarified that `bindInterface` binds to the interface, not just advertises it

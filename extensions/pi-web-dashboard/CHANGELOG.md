@@ -3,7 +3,8 @@
 ## [0.4.0] - 2026-05-08
 
 ### Changed
-- Migrated from @mariozechner/* to @earendil-works/* package scope
+
+- Migrated from `@mariozechner/*` to `@earendil-works/*` package scope
 
 All notable changes to this project will be documented in this file.
 

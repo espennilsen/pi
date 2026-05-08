@@ -10,6 +10,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-export default function (_pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI) {
 	// No-op — all config is now in settings.json
 }

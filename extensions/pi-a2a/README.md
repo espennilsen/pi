@@ -97,12 +97,15 @@ Add to `~/.pi/agent/settings.json`:
 ### Examples
 
 **Localhost only (default):**
+
 ```json
 {}
 ```
+
 Server binds to `127.0.0.1:3100`, publicUrl auto-generates as `http://localhost:3100`.
 
 **LAN access (auto-detects IP):**
+
 ```json
 {
   "pi-a2a": {
@@ -111,9 +114,11 @@ Server binds to `127.0.0.1:3100`, publicUrl auto-generates as `http://localhost:
   }
 }
 ```
+
 Server binds to all interfaces, publicUrl auto-detects primary IP (e.g., `http://192.168.1.100:3100`).
 
 **LAN access (specific interface):**
+
 ```json
 {
   "pi-a2a": {
@@ -121,9 +126,11 @@ Server binds to all interfaces, publicUrl auto-detects primary IP (e.g., `http:/
   }
 }
 ```
+
 Server binds to en1's IP and advertises it (e.g., binds to `192.168.50.25:3100`, advertises `http://192.168.50.25:3100`). Useful for multi-homed machines to control which interface is used.
 
 **Reverse proxy:**
+
 ```json
 {
   "pi-a2a": {
@@ -132,6 +139,7 @@ Server binds to en1's IP and advertises it (e.g., binds to `192.168.50.25:3100`,
   }
 }
 ```
+
 Server binds to localhost, but advertises external URL for reverse proxy setups.
 
 ### Config Reference
@@ -143,7 +151,6 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 | `bindInterface` | string | — | Network interface name or IP to bind to and advertise (e.g., `"en0"`, `"eth0"`, `"192.168.1.100"`). When set, the server binds to this interface's IP and uses it for the publicUrl. Overrides `bind`. |
 | `apiKey` | string | — | API key for Bearer auth (required for external access) |
 | `publicUrl` | string | auto-detected | Public-facing URL for the Agent Card. Auto-detects primary IP when `bind: "0.0.0.0"` or `bindInterface` is set. |
-| `name` | string | `"Pi Agent"` | Agent display name |
 | `name` | string | `"Pi Agent"` | Agent display name |
 | `description` | string | — | Agent description |
 | `version` | string | `"1.0.0"` | Agent version |

@@ -114,6 +114,7 @@ function buildServerConfig(config: any, port: number): { publicUrl: string; bind
 			};
 		}
 		// Interface not found, fall back to primary
+		log("interface_not_found", { bindInterface: config.bindInterface }, "WARN");
 	}
 	
 	// bind: "0.0.0.0" or "::": auto-detect primary IP for advertising

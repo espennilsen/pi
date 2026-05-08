@@ -57,7 +57,7 @@ import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
 const DEFAULT_PORT = 3100;
@@ -455,6 +455,50 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// ── Tool execution tracking for hub telemetry ———————————————
+	pi.on("tool_execution_start", async (event) => {
+		toolCallsInProgress.set(event.toolCallId, {
+			startTime: Date.now(),
+			toolName: event.toolName,
+		});
+	});
+
+	pi.on("tool_execution_end", async (event, ctx) => {
+		const pending = toolCallsInProgress.get(event.toolCallId);
+		if (!pending) return;
+		toolCallsInProgress.delete(event.toolCallId);
+
+		const durationMs = Date.now() - pending.startTime;
+
+		let errorText: string | null = null;
+		if (event.isError && event.result?.content?.[0]?.type === "text") {
+			const text = event.result.content[0].text;
+			errorText = text.length > 200 ? text.slice(0, 200) + "..." : text;
+		}
+
+		const usage = ctx.getContextUsage();
+
+		const record: ToolCallRecord = {
+			toolName: event.toolName,
+			durationMs,
+			isError: event.isError,
+			errorText,
+			modelId: sessionCtx?.model?.id,
+			// @ts-expect-error provider is not on the Model type in the installed version
+			modelProvider: sessionCtx?.model?.provider?.name ?? (sessionCtx?.model as any)?.provider?.name,
+			modelContextWindow: sessionCtx?.model?.contextWindow,
+			sessionId: (sessionCtx?.sessionManager as any)?.getSessionId?.(),
+			contextTokens: usage?.tokens ?? null,
+			contextPercent: usage?.percent ?? null,
+			timestamp: Date.now(),
+		};
+
+		recentToolCalls.push(record);
+		if (recentToolCalls.length > MAX_RECENT_TOOL_CALLS) {
+			recentToolCalls.shift();
+		}
+	});
+
 	// ── Outbound A2A request tracking ─────────────────────────
 	/** Number of outbound a2a_send requests currently in flight. */
 	let outboundPending = 0;
@@ -548,6 +592,20 @@ export default function (pi: ExtensionAPI) {
 	let lastTurnDurationMs: number | undefined;
 	let lastTurnStatus: "completed" | "failed" | undefined;
 
+	// ── Tool telemetry ———————————————————————
+	/** Max completed tool calls retained in the ring buffer. */
+	const MAX_RECENT_TOOL_CALLS = 20;
+	interface ToolCallInProgress {
+		/** Unix timestamp (ms) when the tool started. */
+		startTime: number;
+		/** Tool name at start time. */
+		toolName: string;
+	}
+	/** Active tool calls keyed by toolCallId. */
+	let toolCallsInProgress = new Map<string, ToolCallInProgress>();
+	/** Completed tool calls ready for the next telemetry snapshot. */
+	let recentToolCalls: ToolCallRecord[] = [];
+
 	/** Build a telemetry snapshot from pi's actual state + executor A2A queue. */
 	function buildTelemetrySnapshot(): TelemetrySnapshot {
 		const isActive = sessionCtx ? !sessionCtx.isIdle() : false;
@@ -558,6 +616,10 @@ export default function (pi: ExtensionAPI) {
 		};
 		if (lastTurnDurationMs !== undefined) snapshot.lastTaskDurationMs = lastTurnDurationMs;
 		if (lastTurnStatus !== undefined) snapshot.lastTaskStatus = lastTurnStatus;
+		if (recentToolCalls.length > 0) {
+			snapshot.recentToolCalls = recentToolCalls;
+			recentToolCalls = [];
+		}
 		return snapshot;
 	}
 
@@ -988,6 +1050,10 @@ export default function (pi: ExtensionAPI) {
 		}
 		pendingInputResolvers.clear();
 
+		// Reset tool telemetry
+		toolCallsInProgress.clear();
+		recentToolCalls = [];
+
 		// Stop poller interval
 		if (pollerInterval) {
 			clearInterval(pollerInterval);
@@ -1005,6 +1071,10 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(expiryInterval);
 			expiryInterval = null;
 		}
+
+		// Reset tool telemetry
+		toolCallsInProgress.clear();
+		recentToolCalls = [];
 
 		// Stop long-running task poller interval
 		if (longRunningTaskPollerInterval) {

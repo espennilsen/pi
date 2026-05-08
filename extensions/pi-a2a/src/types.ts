@@ -185,12 +185,36 @@ export interface RemoteAgentDetail {
 
 // ── Telemetry Snapshot ──────────────────────────────────────────
 
+export interface ToolCallRecord {
+	toolName: string;
+	durationMs: number;
+	isError: boolean;
+	/** When isError is true, a truncated error message from the tool result. */
+	errorText: string | null;
+	/** Model ID used during this tool call. */
+	modelId?: string;
+	/** Model provider name. */
+	modelProvider?: string;
+	/** Model context window size. */
+	modelContextWindow?: number;
+	/** Correlates multiple telemetry snapshots to a single agent session. */
+	sessionId?: string;
+	/** Estimated context tokens at the time of the tool call. */
+	contextTokens?: number | null;
+	/** Context usage as percentage of context window. */
+	contextPercent?: number | null;
+	/** Unix timestamp (ms). */
+	timestamp: number;
+}
+
 export interface TelemetrySnapshot {
 	queueDepth: number;
 	activeTasks: number;
 	maxConcurrent: number;
 	lastTaskDurationMs?: number;
 	lastTaskStatus?: "completed" | "failed";
+	/** Recent tool calls since the last telemetry report. */
+	recentToolCalls?: ToolCallRecord[];
 }
 
 // ── Orchestrator Types ──────────────────────────────────────────

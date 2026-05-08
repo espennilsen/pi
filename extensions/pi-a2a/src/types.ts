@@ -34,6 +34,8 @@ export interface A2AConfig {
 	organization?: string;
 	/** Provider URL. */
 	providerUrl?: string;
+	/** Agent owner name or email (displayed in agent discovery and hub UIs). */
+	owner?: string;
 	/** Skills to advertise in the Agent Card. */
 	skills?: Array<{ id: string; name: string; description: string; tags?: string[] }>;
 	/** A2A Hub settings for optional registration. */

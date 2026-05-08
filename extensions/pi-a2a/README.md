@@ -74,6 +74,7 @@ Add to `~/.pi/agent/settings.json`:
     "description": "Personal AI coding agent",
     "version": "1.0.0",
     "organization": "e9n",
+    "owner": "Espen Nilsen <hi@e9n.dev>",
     "skills": [
       {
         "id": "coding",
@@ -148,6 +149,7 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 | `version` | string | `"1.0.0"` | Agent version |
 | `organization` | string | `"Pi"` | Provider organization |
 | `providerUrl` | string | — | Provider website URL |
+| `owner` | string | — | Agent owner name or email (displayed in hub UIs and agent discovery) |
 | `skills` | array | default set | Skills to advertise |
 | `hub` | object | — | Hub registration config (see below) |
 

@@ -16,7 +16,7 @@
  * Get an API key at: https://brave.com/search/api/
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { getSettings, type BraveSearchSettings } from "./settings.ts";
 import { registerSearchTool } from "./tool.ts";

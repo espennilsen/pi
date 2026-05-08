@@ -2,7 +2,7 @@
  * pi-model-router — Settings loader.
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 // ── Types ───────────────────────────────────────────────────────
 

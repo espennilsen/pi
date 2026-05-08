@@ -92,6 +92,10 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		],
 	};
 
+	if (config.owner) {
+		(card as any).owner = config.owner;
+	}
+
 	if (config.iconUrl) {
 		card.iconUrl = config.iconUrl;
 	}

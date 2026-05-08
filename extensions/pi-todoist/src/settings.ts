@@ -9,7 +9,7 @@
  * }
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface TodoistSettings {
 	/** Todoist API token. */

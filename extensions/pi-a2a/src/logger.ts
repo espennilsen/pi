@@ -2,7 +2,7 @@
  * pi-a2a — Structured logger via pi-logger event bus.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 

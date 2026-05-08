@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-channels",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Two-way channel extension for pi — route messages between agents and Telegram, webhooks, and custom adapters",
   "keywords": [
     "pi-package"
@@ -12,13 +12,17 @@
       "./src/index.ts"
     ]
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "dependencies": {

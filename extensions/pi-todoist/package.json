@@ -1,18 +1,23 @@
 {
   "name": "@e9n/pi-todoist",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Todoist task management integration for pi — tasks, projects, sections, labels, and comments",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "dependencies": {
@@ -23,7 +28,11 @@
   },
   "license": "MIT",
   "author": "Espen Nilsen <hi@e9n.dev>",
-  "files": ["README.md", "package.json", "src"],
+  "files": [
+    "README.md",
+    "package.json",
+    "src"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/espennilsen/pi.git",

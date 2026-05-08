@@ -8,7 +8,7 @@
  * (safe to remove from your extensions directory).
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (_pi: ExtensionAPI) {
 	// No-op — all config is now in settings.json

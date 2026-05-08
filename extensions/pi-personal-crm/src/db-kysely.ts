@@ -16,7 +16,7 @@
  */
 
 import { readdirSync, readFileSync } from "node:fs";
-import type { EventBus } from "@mariozechner/pi-coding-agent";
+import type { EventBus } from "@earendil-works/pi-coding-agent";
 import type {
 	Contact,
 	CreateContactData,

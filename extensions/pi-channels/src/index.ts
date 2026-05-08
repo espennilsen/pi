@@ -18,7 +18,7 @@
  * event bus; skill/prompt commands are expanded into the agent prompt.
  */
 
-import type { ExtensionAPI, SlashCommandInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.ts";
 import { ChannelRegistry } from "./registry.ts";
 import { registerChannelEvents, setBridge, setHistory } from "./events.ts";
@@ -73,7 +73,7 @@ async function waitForKysely(pi: ExtensionAPI): Promise<void> {
 
 /** Show message history in a TUI overlay popup. */
 async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
-	const { matchesKey, Key, truncateToWidth } = await import("@mariozechner/pi-tui");
+	const { matchesKey, Key, truncateToWidth } = await import("@earendil-works/pi-tui");
 
 	const arrow = (d: string) => (d === "in" ? "←" : "→");
 	const source = (row: MessageRow) =>

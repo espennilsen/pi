@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-td-hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-project task aggregator — reads td databases across ~/Dev for PM coordination",
   "type": "module",
   "keywords": [
@@ -12,12 +12,13 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "dependencies": {
     "typebox": "^1.1.24",

@@ -2,7 +2,7 @@
  * pi-jobs — Settings loader.
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface JobsSettings {
 	dbPath: string;

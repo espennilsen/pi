@@ -14,7 +14,7 @@
  *   bridge:*          — chat bridge lifecycle events
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ChannelRegistry } from "./registry.ts";
 import type { ChannelAdapter, ChannelMessage, IncomingMessage } from "./types.ts";
 import type { ChatBridge } from "./bridge/bridge.ts";

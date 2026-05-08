@@ -13,7 +13,7 @@
  * No args: auto-detect from branch, or list PRs with feedback
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ghJson, ghGraphql, gitExec, getCurrentBranch, findWorktreeForBranch } from "./gh.ts";
 import { registerDualCommand } from "./commands.ts";
 import { extractRepoRef, resolveRepo, resolveLocalClone, repoFlag } from "./repo-ref.ts";

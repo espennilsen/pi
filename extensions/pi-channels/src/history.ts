@@ -10,7 +10,7 @@
  * Config: messageRetentionDays in pi-channels settings (default: 30)
  */
 
-import type { EventBus } from "@mariozechner/pi-coding-agent";
+import type { EventBus } from "@earendil-works/pi-coding-agent";
 import type { ChannelMessage, IncomingMessage } from "./types.ts";
 
 export const TABLE_NAME = "pi_channels__messages";

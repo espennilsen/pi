@@ -1,5 +1,5 @@
-import type { Theme, ThemeColor } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { hubRpc, type HubTask } from "../helpers.ts";
 import type { Widget, WidgetContext } from "./index.ts";
 

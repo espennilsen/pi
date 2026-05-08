@@ -35,9 +35,10 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { networkInterfaces } from "node:os";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import {
 	A2AError,
@@ -60,6 +61,78 @@ import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, Pu
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 
 const DEFAULT_PORT = 3100;
+
+/** Get interface IP by name, or primary non-loopback IPv4 if not specified. */
+function getInterfaceIP(interfaceName?: string): string | null {
+	const nets = networkInterfaces();
+	
+	// If interface specified, use it
+	if (interfaceName) {
+		const netsForInterface = nets[interfaceName];
+		if (netsForInterface) {
+			for (const net of netsForInterface) {
+				if (net.family === "IPv4" && !net.internal) {
+					return net.address;
+				}
+			}
+		}
+		// Check if it's already an IP address
+		if (interfaceName.includes(".")) {
+			return interfaceName;
+		}
+		return null; // interface not found
+	}
+	
+	// Default: find first non-loopback IPv4
+	for (const name of Object.keys(nets)) {
+		for (const net of nets[name]!) {
+			if (net.family === "IPv4" && !net.internal) {
+				return net.address;
+			}
+		}
+	}
+	return null;
+}
+
+/** Build publicUrl and bind address from config and port. Returns {publicUrl, bind}. */
+function buildServerConfig(config: any, port: number): { publicUrl: string; bind: string } {
+	// Explicit publicUrl override
+	if (config.publicUrl) {
+		return {
+			publicUrl: config.publicUrl,
+			bind: config.bind ?? "127.0.0.1",
+		};
+	}
+	
+	// bindInterface specified: bind to that interface's IP, advertise it
+	if (config.bindInterface) {
+		const interfaceIP = getInterfaceIP(config.bindInterface);
+		if (interfaceIP) {
+			return {
+				publicUrl: `http://${interfaceIP}:${port}`,
+				bind: interfaceIP,
+			};
+		}
+		// Interface not found, fall back to primary
+	}
+	
+	// bind: "0.0.0.0" or "::": auto-detect primary IP for advertising
+	const bind = config.bind ?? "127.0.0.1";
+	const isExternal = bind === "0.0.0.0" || bind === "::";
+	if (isExternal) {
+		const primaryIP = getInterfaceIP();
+		return {
+			publicUrl: primaryIP ? `http://${primaryIP}:${port}` : `http://localhost:${port}`,
+			bind,
+		};
+	}
+	
+	// Default: localhost
+	return {
+		publicUrl: `http://localhost:${port}`,
+		bind,
+	};
+}
 
 /** Sliding-window rate limiter for outbound response injection. */
 class RateLimiter {
@@ -585,7 +658,9 @@ export default function (pi: ExtensionAPI) {
 				log("dynamic_port_range_exhausted", { range: config.portRange, fallback: agentPort }, "WARN");
 			}
 		}
-		const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
+		const serverConfig = buildServerConfig(config, agentPort);
+		const publicUrl = serverConfig.publicUrl;
+		const bind = serverConfig.bind;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		const agentCard = buildAgentCard(config, publicUrl);
@@ -760,7 +835,7 @@ export default function (pi: ExtensionAPI) {
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
 		// Start the A2A server
-		const bind = config.bind;
+		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
 		if (!isLocalhost && !config.apiKey) {
 		// Security: refuse to start when binding to external interfaces without authentication
@@ -789,15 +864,19 @@ export default function (pi: ExtensionAPI) {
 						if (agentPort < end) {
 							agentPort++;
 							log("server_port_retry", { port: agentPort, reason: "EADDRINUSE" }, "WARN");
+							// Rebuild server config with new port
+							const newConfig = buildServerConfig(config, agentPort);
+							bind = newConfig.bind;
 							continue;
 						}
 					}
 					throw e;
 				}
 			}
-			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind ?? "127.0.0.1"}:${agentPort}`, "info");
+			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind}:${agentPort}`, "info");
 			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
-			const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
+			const serverConfigFinal = buildServerConfig(config, agentPort);
+			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
 			updateAgentCard(buildAgentCard(config, publicUrl));
 		} catch (err: unknown) {
@@ -2100,7 +2179,8 @@ export default function (pi: ExtensionAPI) {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
 			const port = agentPort;
-			const publicUrl = config.publicUrl ?? `http://localhost:${agentPort}`;
+			const serverConfigCmd = buildServerConfig(config, agentPort);
+			const publicUrl = serverConfigCmd.publicUrl;
 
 			if (action === "status") {
 				if (isRunning()) {

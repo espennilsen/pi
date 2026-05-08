@@ -1,37 +1,38 @@
 {
-	"name": "@e9n/pi-webserver",
-	"version": "0.2.0",
-	"description": "Shared HTTP server for pi — authenticated web host with extension mount points",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-webserver"
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"devDependencies": {
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"CHANGELOG.md",
-		"README.md",
-		"dashboard.html",
-		"package.json",
-		"src"
-	]
+  "name": "@e9n/pi-webserver",
+  "version": "0.3.0",
+  "description": "Shared HTTP server for pi — authenticated web host with extension mount points",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-webserver"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "dashboard.html",
+    "package.json",
+    "src"
+  ]
 }

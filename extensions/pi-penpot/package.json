@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-penpot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Penpot design tool integration for pi — projects, files, pages, shapes, comments, and more",
   "type": "module",
   "keywords": [
@@ -12,11 +12,12 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

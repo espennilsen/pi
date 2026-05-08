@@ -17,7 +17,7 @@
  * Defaults to cwd if no path is configured.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setBasePath } from "./files.ts";
 import { registerMemoryTools } from "./tools.ts";
 import { registerMemoryContext } from "./context.ts";

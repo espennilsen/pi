@@ -16,7 +16,7 @@
  *   - TUI (ctx.hasUI):    configurable — off / suggest / auto
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveSettings, type InteractiveMode, type RouterSettings, type Tier } from "./settings.ts";
 import { matchOverride } from "./rules.ts";
 import { ClassificationCache } from "./cache.ts";

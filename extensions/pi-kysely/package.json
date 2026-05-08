@@ -1,48 +1,49 @@
 {
-	"name": "@e9n/pi-kysely",
-	"version": "0.1.1",
-	"description": "Shared Kysely database registry for pi — multi-dialect SQL with table-level RBAC",
-	"type": "module",
-	"keywords": [
-		"pi-package",
-		"kysely",
-		"pi-extension"
-	],
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/espennilsen/pi.git",
-		"directory": "extensions/pi-kysely"
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"dependencies": {
-		"better-sqlite3": "*",
-		"kysely": "^0.28.8",
-		"mysql2": "*",
-		"pg": "*"
-	},
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"devDependencies": {
-		"@types/node": "^24.3.0",
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"CHANGELOG.md",
-		"README.md",
-		"package.json",
-		"src"
-	]
+  "name": "@e9n/pi-kysely",
+  "version": "0.2.0",
+  "description": "Shared Kysely database registry for pi — multi-dialect SQL with table-level RBAC",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "kysely",
+    "pi-extension"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/espennilsen/pi.git",
+    "directory": "extensions/pi-kysely"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "*",
+    "kysely": "^0.28.8",
+    "mysql2": "*",
+    "pg": "*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "src"
+  ]
 }

@@ -5,7 +5,7 @@
  * (project overrides global).
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 

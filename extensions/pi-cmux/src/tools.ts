@@ -12,7 +12,7 @@
  */
 
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CmuxClient } from "./client.ts";
 import type { LogFn } from "./logger.ts";
 

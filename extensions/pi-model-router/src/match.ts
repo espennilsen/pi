@@ -12,8 +12,8 @@
  * 4. Partial match on model name — prefer shorter names
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export function findModel(
 	pattern: string,

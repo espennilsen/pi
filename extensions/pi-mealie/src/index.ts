@@ -14,7 +14,7 @@
  *   }
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveSettings } from "./settings.ts";
 import { initClient, resetClient, isClientReady, mealie, apiList } from "./client.ts";
 import { registerRecipesTool } from "./tools/recipes.ts";

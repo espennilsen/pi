@@ -1,15 +1,16 @@
 {
   "name": "@e9n/pi-brave-search",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "license": "MIT",

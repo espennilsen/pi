@@ -2,7 +2,7 @@
  * Widget registry — all available widgets and their factories.
  */
 
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Q } from "../helpers.ts";
 
 // ── Widget interface ─────────────────────────────────────────

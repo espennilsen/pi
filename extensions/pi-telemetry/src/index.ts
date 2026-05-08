@@ -13,8 +13,8 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, VERSION } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
 import { type TelemetryConfig, defaultTelemetryConfig, shouldLog } from "./config.js";
 import type { TelemetryEvent, TelemetryLevel } from "./types.js";
 import { writeTelemetryEvent } from "./writer.js";

@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-cmux",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "cmux terminal app integration for pi — notifications, pane management, screen reading, and browser automation",
   "type": "module",
   "keywords": [
@@ -12,12 +12,13 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

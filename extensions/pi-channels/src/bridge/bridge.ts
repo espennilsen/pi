@@ -15,7 +15,7 @@ import type {
 	BridgeConfig,
 } from "../types.ts";
 import type { ChannelRegistry } from "../registry.ts";
-import type { EventBus } from "@mariozechner/pi-coding-agent";
+import type { EventBus } from "@earendil-works/pi-coding-agent";
 import { runPrompt } from "./runner.ts";
 import { RpcSessionManager } from "./rpc-runner.ts";
 import { isCommand, handleCommand, routeSlashCommand, type CommandContext, type SlashCommandInfo } from "./commands.ts";

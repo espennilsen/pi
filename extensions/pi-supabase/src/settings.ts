@@ -18,7 +18,7 @@
  * }
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface NotificationSettings {
 	/** Enable pi-channels notifications for table changes (default: false). */

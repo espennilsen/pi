@@ -2,7 +2,7 @@
  * Web interface and API for pi-untappd.
  */
 
-import type { EventBus } from "@mariozechner/pi-coding-agent";
+import type { EventBus } from "@earendil-works/pi-coding-agent";
 import type { LogFn } from "../logger.ts";
 import * as http from "node:http";
 

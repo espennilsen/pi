@@ -20,7 +20,7 @@
  *   pi.events.on("cron:reload", (jobs) => ...)
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CronScheduler } from "./scheduler.ts";
 import { loadJobs, getJob, addJob, removeJob, updateJob, type CronJob } from "./crontab.ts";
 import { validateCron } from "./scheduler.ts";

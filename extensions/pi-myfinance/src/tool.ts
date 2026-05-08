@@ -5,7 +5,7 @@
  */
 
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { getFinanceStore } from "./store.ts";
 import { generateInsights, analyzeTrends, autoCategorize } from "./insights.ts";
 import { importBankFile, importBankDirectory } from "./import-bank.ts";

@@ -1,32 +1,33 @@
 {
-	"name": "@e9n/pi-mobile",
-	"version": "0.3.0",
-	"description": "PWA mobile app for Pi agents — mounts on pi-webserver at /mobile",
-	"type": "module",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
-	"author": "Espen Nilsen <hi@e9n.dev>",
-	"license": "MIT",
-	"peerDependencies": {
-		"@mariozechner/pi-coding-agent": "*"
-	},
-	"devDependencies": {
-		"typescript": "^5.9.3"
-	},
-	"files": [
-		"CHANGELOG.md",
-		"README.md",
-		"package.json",
-		"public",
-		"src"
-	]
+  "name": "@e9n/pi-mobile",
+  "version": "0.4.0",
+  "description": "PWA mobile app for Pi agents — mounts on pi-webserver at /mobile",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "package.json",
+    "public",
+    "src"
+  ]
 }

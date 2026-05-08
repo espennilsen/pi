@@ -27,7 +27,7 @@
  * }
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { A2AConfig } from "./types.ts";
 
 const SETTINGS_KEY = "pi-a2a";

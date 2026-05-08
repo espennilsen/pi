@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-github",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GitHub integration for pi — PR management, issue tracking, and review feedback commands",
   "type": "module",
   "keywords": [
@@ -15,10 +15,11 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

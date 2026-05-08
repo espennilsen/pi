@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-logger",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Event bus logger for pi — writes structured JSONL logs from bus events",
   "type": "module",
   "keywords": [
@@ -12,12 +12,13 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

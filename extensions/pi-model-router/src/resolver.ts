@@ -5,8 +5,8 @@
  * from pi's model registry. Delegates to shared fuzzy matching.
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { TierTarget } from "./settings.ts";
 import { findModel } from "./match.ts";
 

@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-subagent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Parallel task delegation for pi — spawn isolated subagents for single, parallel, and chain execution",
   "type": "module",
   "keywords": [
@@ -15,16 +15,17 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "^1.1.24",
-    "@mariozechner/pi-agent-core": "*",
-    "@mariozechner/pi-tui": "*"
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

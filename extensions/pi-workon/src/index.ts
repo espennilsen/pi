@@ -22,7 +22,7 @@
  * Defaults to ~/Dev if nothing is configured.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerWorkonTool, registerProjectInitTool } from "./tool.ts";
 import { resolveSettings } from "./settings.ts";
 import { resolveProject, listProjectDirs } from "./resolver.ts";

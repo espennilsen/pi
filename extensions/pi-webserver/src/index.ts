@@ -9,8 +9,8 @@
  *   2. Event bus:      pi.events.emit("web:mount", config)
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus, setLogger } from "./server.ts";
 import { createLogger } from "./logger.ts";
 import type { MountConfig } from "./server.ts";

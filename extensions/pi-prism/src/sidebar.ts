@@ -5,9 +5,9 @@
  * refresh, and keyboard input.
  */
 
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
-import type { TUI } from "@mariozechner/pi-tui";
-import { matchesKey, truncateToWidth, visibleWidth, Key } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, Key } from "@earendil-works/pi-tui";
 import { createQuery, fmtAgo, type Q } from "./helpers.ts";
 import { resolveSettings } from "./settings.ts";
 import type { Widget, WidgetContext } from "./widgets/index.ts";

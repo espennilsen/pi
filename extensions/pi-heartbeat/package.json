@@ -1,6 +1,6 @@
 {
   "name": "@e9n/pi-heartbeat",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Periodic health check extension for pi — runs a heartbeat prompt as an isolated subprocess",
   "type": "module",
   "keywords": [
@@ -15,12 +15,13 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

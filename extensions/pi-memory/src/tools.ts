@@ -7,9 +7,9 @@
  *   memory_search — Full-text search across all memory files
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import * as files from "./files.ts";
 
 function text(s: string) {

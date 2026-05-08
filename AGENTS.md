@@ -40,7 +40,7 @@ Key extensions:
 
 ### Structure
 - Default export: `export default function (pi: ExtensionAPI) { ... }`
-- Import types from `@mariozechner/pi-coding-agent` (`ExtensionAPI`, `getAgentDir`, `SettingsManager`)
+- Import types from `@earendil-works/pi-coding-agent` (`ExtensionAPI`, `getAgentDir`, `SettingsManager`)
 - TypeScript with `strict: true`, target ES2022, module ESNext, `allowImportingTsExtensions`
 - Use `.ts` extensions in imports (e.g. `import { foo } from "./bar.ts"`)
 - Tool parameter schemas use `@sinclair/typebox` (`Type.Object`, `Type.String`, etc.)

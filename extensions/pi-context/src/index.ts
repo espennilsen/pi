@@ -10,8 +10,8 @@
  *   - Per-item token counts for tools, agents, and skills
  */
 
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { getAgentDir, estimateTokens, SettingsManager } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, estimateTokens, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
 

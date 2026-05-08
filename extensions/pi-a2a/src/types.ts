@@ -16,6 +16,10 @@ export interface A2AConfig {
 	/** Bind address for the HTTP server. Defaults to "127.0.0.1" (localhost only).
 	 *  Set to "0.0.0.0" for external access (requires apiKey). */
 	bind?: string;
+	/** Network interface name or IP to use for publicUrl auto-detection.
+	 *  When set, publicUrl uses this interface's IP instead of the primary IP.
+	 *  Examples: "en0", "eth0", "192.168.1.100". Requires `bind` to be set if not localhost. */
+	bindInterface?: string;
 	/** API key for authenticating RPC requests. Required when bind is not localhost. */
 	apiKey?: string;
 	/** Public-facing base URL. Defaults to http://localhost:{port}. */
@@ -30,6 +34,8 @@ export interface A2AConfig {
 	organization?: string;
 	/** Provider URL. */
 	providerUrl?: string;
+	/** Agent owner name or email (displayed in agent discovery and hub UIs). */
+	owner?: string;
 	/** Skills to advertise in the Agent Card. */
 	skills?: Array<{ id: string; name: string; description: string; tags?: string[] }>;
 	/** A2A Hub settings for optional registration. */

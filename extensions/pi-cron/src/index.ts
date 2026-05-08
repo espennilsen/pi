@@ -18,9 +18,9 @@
  * jobs actually execute on their schedule.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { ensureTabFile, loadJobs, addJob, removeJob, updateJob, initTabPath, type CronJob } from "./crontab.ts";
 import { CronScheduler, validateCron } from "./scheduler.ts";
 import { acquireLock, releaseLock, lockHolder, initLockPath } from "./lock.ts";

@@ -10,9 +10,9 @@
  *   - status:    Show connection status and subscription info
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { getClient, isClientReady } from "./client.ts";
 import { isStoreReady, getStore } from "./store.ts";
 

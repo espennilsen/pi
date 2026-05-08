@@ -2,7 +2,7 @@
  * Settings loader for pi-prism.
  */
 
-import { getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 export interface PrismSettings {
 	/** Widget IDs to show (order matters). */

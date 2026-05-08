@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { badRequest, html, json, notFound, readBody, serverError } from "./http-helpers.ts";
 import { getAllProjectIssues, getCrossProjectStats, getProjectTree } from "./cross-project.ts";
 import { getCrossProjectConfig, loadTdSettings } from "./td-settings.ts";

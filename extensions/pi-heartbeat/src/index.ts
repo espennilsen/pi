@@ -14,7 +14,7 @@
  * If HEARTBEAT.md is missing or empty, does a generic check.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveSettings } from "./settings.ts";
 import { HeartbeatRunner } from "./heartbeat.ts";
 import { mountHeartbeatRoutes, unmountHeartbeatRoutes } from "./web.ts";

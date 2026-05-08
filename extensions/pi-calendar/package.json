@@ -26,8 +26,8 @@
     "better-sqlite3": "^11.10.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
     "typebox": "^1.1.24"
   },
   "devDependencies": {

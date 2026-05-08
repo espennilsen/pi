@@ -33,7 +33,7 @@
     "rss-parser": "^3.13.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "^0.74.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

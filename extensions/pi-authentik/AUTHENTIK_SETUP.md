@@ -43,11 +43,11 @@ If Authentik’s provider UI lets you configure **one regular expression** inste
 ^http://127\.0\.0\.1:\d+/callback$
 ```
 
-That is anchored: scheme `http`, host `127.0.0.1` only (not `localhost` or `[::1]`—Pi listens on **`127.0.0.1`**), **one or more digits** for the port, path **`/callback`** with no trailing slash.
+That is anchored: scheme `http`, host `127.0.0.1` only (not `localhost` or `[::1]`), **one or more digits** for the port, path **`/callback`** with no trailing slash.
 
 Important notes:
 
-- The extension listens on `127.0.0.1`, not `0.0.0.0`
+
 - The port is chosen dynamically
 - The callback server shuts down immediately after the callback is handled
 

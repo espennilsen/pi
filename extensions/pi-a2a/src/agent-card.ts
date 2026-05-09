@@ -103,7 +103,7 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		card.documentationUrl = config.documentationUrl;
 	}
 
-	if (config.apiKey) {
+	if (config.local?.apiKey) {
 		card.securitySchemes = {
 			bearerAuth: {
 				type: "http",

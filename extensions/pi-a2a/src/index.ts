@@ -96,19 +96,19 @@ function getInterfaceIP(interfaceName?: string): string | null {
 	return null;
 }
 
-/** Build publicUrl and bind address from config and port. Returns {publicUrl, bind}. */
-function buildServerConfig(config: any, port: number, log: LogFn): { publicUrl: string; bind: string } {
+/** Build publicUrl and bind address from local config and port. Returns {publicUrl, bind}. */
+function buildServerConfig(local: any, port: number, log: LogFn): { publicUrl: string; bind: string } {
 	// Explicit publicUrl override
-	if (config.publicUrl) {
+	if (local?.publicUrl) {
 		return {
-			publicUrl: config.publicUrl,
-			bind: config.bind ?? "127.0.0.1",
+			publicUrl: local.publicUrl as string,
+			bind: local.bind as string ?? "127.0.0.1",
 		};
 	}
 	
 	// bindInterface specified: bind to that interface's IP, advertise it
-	if (config.bindInterface) {
-		const interfaceIP = getInterfaceIP(config.bindInterface);
+	if (local?.bindInterface) {
+		const interfaceIP = getInterfaceIP(local.bindInterface as string);
 		if (interfaceIP) {
 			return {
 				publicUrl: `http://${interfaceIP}:${port}`,
@@ -116,11 +116,11 @@ function buildServerConfig(config: any, port: number, log: LogFn): { publicUrl: 
 			};
 		}
 		// Interface not found, fall back to primary
-		log("interface_not_found", { bindInterface: config.bindInterface }, "WARN");
+		log("interface_not_found", { bindInterface: local.bindInterface }, "WARN");
 	}
 	
 	// bind: "0.0.0.0" or "::": auto-detect primary IP for advertising
-	const bind = config.bind ?? "127.0.0.1";
+	const bind = local?.bind as string ?? "127.0.0.1";
 	const isExternal = bind === "0.0.0.0" || bind === "::";
 	if (isExternal) {
 		const primaryIP = getInterfaceIP();
@@ -649,25 +649,25 @@ export default function (pi: ExtensionAPI) {
 
 		const { config, warnings } = loadConfig(cwd);
 		for (const w of warnings) log("config_warning", { message: w }, "WARN");
-		agentPort = config.port ?? DEFAULT_PORT;
+		agentPort = config.local?.port ?? DEFAULT_PORT;
 		// Resolve the intended bind address so findFreePort checks the right interface
 		let bindHost = "127.0.0.1";
-		if (config.publicUrl) {
-			bindHost = config.bind ?? "127.0.0.1";
-		} else if (config.bindInterface) {
-			const interfaceIP = getInterfaceIP(config.bindInterface);
+		if (config.local?.publicUrl) {
+			bindHost = config.local?.bind ?? "127.0.0.1";
+		} else if (config.local?.bindInterface) {
+			const interfaceIP = getInterfaceIP(config.local.bindInterface);
 			if (interfaceIP) {
 				bindHost = interfaceIP;
-			} else if (config.bind) {
-				bindHost = config.bind;
+			} else if (config.local?.bind) {
+				bindHost = config.local.bind;
 			}
-		} else if (config.bind) {
-			bindHost = config.bind;
+		} else if (config.local?.bind) {
+			bindHost = config.local.bind;
 		}
 		// If port is not explicitly configured, find a free one on the bind address
-		if (config.port == null) {
-			const rangeStart = config.portRange?.[0] ?? DEFAULT_DYNAMIC_RANGE_START;
-			const rangeEnd = config.portRange?.[1] ?? DEFAULT_DYNAMIC_RANGE_END;
+		if (config.local?.port == null) {
+			const rangeStart = config.local?.portRange?.[0] ?? DEFAULT_DYNAMIC_RANGE_START;
+			const rangeEnd = config.local?.portRange?.[1] ?? DEFAULT_DYNAMIC_RANGE_END;
 			const free = await findFreePort(rangeStart, rangeEnd, bindHost);
 			if (free !== null) {
 				agentPort = free;
@@ -676,7 +676,7 @@ export default function (pi: ExtensionAPI) {
 				log("dynamic_port_range_exhausted", { range: [rangeStart, rangeEnd], fallback: agentPort, bindHost }, "WARN");
 			}
 		}
-		const serverConfig = buildServerConfig(config, agentPort, log);
+		const serverConfig = buildServerConfig(config.local, agentPort, log);
 		const publicUrl = serverConfig.publicUrl;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
@@ -854,11 +854,14 @@ export default function (pi: ExtensionAPI) {
 		// Start the A2A server
 		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
-		if (!isLocalhost && !config.apiKey) {
+		const hasApiKey = !!config.local?.apiKey;
+		const autoGenDisabled = config.local?.requireApiKey !== true;
+		if (!isLocalhost && !hasApiKey && autoGenDisabled) {
 		// Security: refuse to start when binding to external interfaces without authentication
-		const msg = "Refusing to start A2A server: binding to external interface without apiKey. Set pi-a2a.apiKey in settings.json.";
+		// and auto-generation is disabled (requireApiKey is not true).
+		const msg = "Refusing to start A2A server: binding to external interface without apiKey and requireApiKey is not enabled. Set pi-a2a.local.apiKey or pi-a2a.local.requireApiKey in settings.json.";
 		ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
-		log("server_start_rejected", { bind, reason: "no_api_key_on_external_interface" }, "ERROR");
+		log("server_start_rejected", { bind, reason: "no_api_key_external_no_autogen" }, "ERROR");
 		// Clean up resources allocated before server start
 		if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
 		if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
@@ -872,17 +875,17 @@ export default function (pi: ExtensionAPI) {
 			// Try to start server, retrying next port on EADDRINUSE
 			while (true) {
 				try {
-					await startServer({ port: agentPort, bind, apiKey: config.apiKey, agentCard, rpcHandler, log });
+					await startServer({ port: agentPort, bind, apiKey: config.local?.apiKey, agentCard, rpcHandler, log });
 					break;
 				} catch (e: unknown) {
 					const code = (e as NodeJS.ErrnoException).code;
-					if (code === "EADDRINUSE" && config.portRange) {
-						const [start, end] = config.portRange;
+					if (code === "EADDRINUSE" && config.local?.portRange) {
+						const [start, end] = config.local.portRange;
 						if (agentPort < end) {
 							agentPort++;
 							log("server_port_retry", { port: agentPort, reason: "EADDRINUSE" }, "WARN");
 							// Rebuild server config with new port
-							const newConfig = buildServerConfig(config, agentPort, log);
+							const newConfig = buildServerConfig(config.local, agentPort, log);
 							bind = newConfig.bind;
 							continue;
 						}
@@ -892,7 +895,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			ctx.ui.notify(`pi-a2a: A2A server listening on ${bind}:${agentPort}`, "info");
 			// Rebuild publicUrl/agentCard with final port (may have changed via EADDRINUSE retry)
-			const serverConfigFinal = buildServerConfig(config, agentPort, log);
+			const serverConfigFinal = buildServerConfig(config.local, agentPort, log);
 			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
 			updateAgentCard(buildAgentCard(config, publicUrl));
@@ -938,8 +941,8 @@ export default function (pi: ExtensionAPI) {
 				// Always push credential via setCredential — registration may
 				// have been a no-op (conflict/existing) and the credential may
 				// have changed since last registration.
-				if (config.apiKey) {
-					await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
+				if (config.local?.apiKey) {
+					await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 				}
 
 				// Periodic heartbeat (30s) — keeps hub from resetting
@@ -2196,7 +2199,7 @@ export default function (pi: ExtensionAPI) {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
 			const port = agentPort;
-			const serverConfigCmd = buildServerConfig(config, agentPort, log);
+			const serverConfigCmd = buildServerConfig(config.local, agentPort, log);
 			const publicUrl = serverConfigCmd.publicUrl;
 
 			if (action === "status") {
@@ -2262,8 +2265,8 @@ export default function (pi: ExtensionAPI) {
 				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
-					if (config.apiKey) {
-						await setCredentialOnHub(result.agentId, config.apiKey, config.hub, log);
+					if (config.local?.apiKey) {
+						await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");
 					}
 				} else {
@@ -2277,8 +2280,8 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("No hub config — set pi-a2a.hub.url and pi-a2a.hub.apiKey", "warning");
 					return;
 				}
-				if (!config.apiKey) {
-					ctx.ui.notify("No pi-a2a.apiKey configured — nothing to push to hub", "warning");
+				if (!config.local?.apiKey) {
+					ctx.ui.notify("No pi-a2a.local.apiKey configured — nothing to push to hub", "warning");
 					return;
 				}
 
@@ -2290,7 +2293,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await setCredentialOnHub(reg.agentId, config.apiKey, config.hub, log);
+				const result = await setCredentialOnHub(reg.agentId, config.local.apiKey, config.hub, log);
 				if (result) {
 					ctx.ui.notify(
 						`Credential updated on hub: hasCredential=${result.hasCredential}, ` +

@@ -632,7 +632,10 @@ export default function (pi: ExtensionAPI) {
 	/** Send a telemetry snapshot to the hub. Failures are logged but never thrown. */
 	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
 		if (!hubAgentId || !config.hub?.apiKey) return;
+		// Capture sessionToken to prevent stale telemetry sends after session rollover
+		const telemetrySendSession = sessionToken;
 		await runSerializedTelemetrySend(async () => {
+			if (sessionToken !== telemetrySendSession) return;
 			if (!hubAgentId) return;
 			const snapshot = buildTelemetrySnapshot();
 			const sentCount = snapshot.recentToolCalls?.length ?? 0;
@@ -1099,7 +1102,10 @@ export default function (pi: ExtensionAPI) {
 			const { config } = loadConfig(cwd);
 			const hubConfig = config.hub;
 			if (hubConfig?.apiKey) {
+				// Capture sessionToken to prevent stale telemetry sends after session rollover
+				const telemetrySendSession = sessionToken;
 				await runSerializedTelemetrySend(async () => {
+					if (sessionToken !== telemetrySendSession) return;
 					if (!hubAgentId) return;
 					const idleSnap = buildIdleTelemetrySnapshot(recentToolCalls);
 					const sentCount = idleSnap.recentToolCalls?.length ?? 0;

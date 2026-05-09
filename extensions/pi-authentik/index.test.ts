@@ -173,7 +173,7 @@ function createHarness(overrides: Partial<DepsOverride> = {}) {
   let currentModels = overrides.models ?? [{ id: "gpt-4.1" }];
 
   const deps = {
-    resolveSettings: () => overrides.settings ?? configuredSettings,
+    resolveSettings: async () => overrides.settings ?? configuredSettings,
     runFirstRunSetup: overrides.runFirstRunSetup ?? (async () => ({ saved: true, settings: null, connectivityTested: false })),
     saveSettings: overrides.saveSettings ?? (async () => undefined),
     loadStoredSession: overrides.loadStoredSession ?? (async () => null),

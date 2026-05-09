@@ -8,8 +8,8 @@ import { DEFAULT_MODEL_FILTERS, resolveSettings } from "./settings.ts";
 import { loadGlobalSettings, saveGlobalSettings } from "./settings-store.ts";
 import type { AuthentikStoredSettings } from "./types.ts";
 
-test("resolveSettings uses default scopes and omits offline_access by default", () => {
-  const settings = resolveSettings(process.cwd(), {
+test("resolveSettings uses default scopes and omits offline_access by default", async () => {
+  const settings = await resolveSettings(process.cwd(), {
     globalSettings: {},
     projectSettings: {},
   });
@@ -18,8 +18,8 @@ test("resolveSettings uses default scopes and omits offline_access by default", 
   assert.equal(settings.enableOfflineAccess, false);
 });
 
-test("resolveSettings appends offline_access only when enabled", () => {
-  const settings = resolveSettings(process.cwd(), {
+test("resolveSettings appends offline_access only when enabled", async () => {
+  const settings = await resolveSettings(process.cwd(), {
     globalSettings: {
       enableOfflineAccess: true,
       scopes: ["openid", "email", "profile", "offline_access"],
@@ -31,8 +31,8 @@ test("resolveSettings appends offline_access only when enabled", () => {
   assert.deepEqual(settings.scopes, ["openid", "email", "profile", "offline_access"]);
 });
 
-test("resolveSettings merges project settings over global settings", () => {
-  const settings = resolveSettings(process.cwd(), {
+test("resolveSettings merges project settings over global settings", async () => {
+  const settings = await resolveSettings(process.cwd(), {
     globalSettings: {
       authentikHost: "https://global.example",
       providerSlug: "global-provider",
@@ -57,8 +57,8 @@ test("resolveSettings merges project settings over global settings", () => {
   assert.deepEqual(settings.modelFilters, ["o3-*"]);
 });
 
-test("resolveSettings canonicalizes llm base url to an absolute /v1 endpoint", () => {
-  const settings = resolveSettings(process.cwd(), {
+test("resolveSettings canonicalizes llm base url to an absolute /v1 endpoint", async () => {
+  const settings = await resolveSettings(process.cwd(), {
     globalSettings: {
       llmBaseUrl: "https://llm.example/internal/v1/",
     },
@@ -68,8 +68,8 @@ test("resolveSettings canonicalizes llm base url to an absolute /v1 endpoint", (
   assert.equal(settings.llmBaseUrl, "https://llm.example/internal/v1");
 });
 
-test("resolveSettings auto-appends /v1 and rejects invalid urls", () => {
-  const fixed = resolveSettings(process.cwd(), {
+test("resolveSettings auto-appends /v1 and rejects invalid urls", async () => {
+  const fixed = await resolveSettings(process.cwd(), {
     globalSettings: {
       llmBaseUrl: "https://llm.example/internal",
     },
@@ -77,9 +77,9 @@ test("resolveSettings auto-appends /v1 and rejects invalid urls", () => {
   });
   assert.equal(fixed.llmBaseUrl, "https://llm.example/internal/v1");
 
-  assert.throws(
-    () =>
-      resolveSettings(process.cwd(), {
+  await assert.rejects(
+    async () =>
+      await resolveSettings(process.cwd(), {
         globalSettings: {
           llmBaseUrl: "/not/absolute",
         },
@@ -89,8 +89,8 @@ test("resolveSettings auto-appends /v1 and rejects invalid urls", () => {
   );
 });
 
-test("resolveSettings falls back to default model filters", () => {
-  const settings = resolveSettings(process.cwd(), {
+test("resolveSettings falls back to default model filters", async () => {
+  const settings = await resolveSettings(process.cwd(), {
     globalSettings: {
       modelFilters: "",
     },
@@ -131,7 +131,7 @@ test("saveGlobalSettings persists only the extension key atomically", () => {
   assert.equal(fs.existsSync(`${settingsFile}.tmp`), false);
 });
 
-test("loadGlobalSettings returns sanitized persisted values", () => {
+test("loadGlobalSettings returns sanitized persisted values", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-authentik-settings-"));
   const settingsFile = path.join(tempRoot, "settings.json");
   fs.writeFileSync(
@@ -149,7 +149,7 @@ test("loadGlobalSettings returns sanitized persisted values", () => {
     ),
   );
 
-  assert.deepEqual(loadGlobalSettings(settingsFile), {
+  assert.deepEqual(await loadGlobalSettings(settingsFile), {
     authentikHost: "https://auth.example/",
     llmBaseUrl: "https://llm.example/v1/",
     modelFilters: ["anthropic/*"],

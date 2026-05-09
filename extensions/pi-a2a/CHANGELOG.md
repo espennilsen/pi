@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `/a2a apikey` command to show the current effective local API key
+
+### Changed
+- Auto-generate `local.apiKey` for external binds when `hub.url` is configured, even if `local.requireApiKey` is unset
+
+### Fixed
+- Warn when `local.requireApiKey` auto-generates a local API key without hub config, so users know to recover it via `/a2a apikey`
+
 ## [0.4.0] - 2026-05-08
 
 ### Added

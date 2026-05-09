@@ -41,6 +41,14 @@ const SETTINGS_KEY = "pi-a2a";
 // Cache for auto-generated API key to ensure consistency across loadConfig() calls
 let cachedGeneratedApiKey: string | undefined;
 
+function isExternalBind(local: Record<string, unknown>): boolean {
+	if (typeof local.bindInterface === "string" && local.bindInterface.length > 0) {
+		return true;
+	}
+	const bind = typeof local.bind === "string" ? local.bind : undefined;
+	return !!bind && bind !== "127.0.0.1" && bind !== "::1";
+}
+
 export interface ConfigResult {
 	config: A2AConfig;
 	warnings: string[];
@@ -141,12 +149,20 @@ export function loadConfig(cwd: string): ConfigResult {
 		delete local.bind;
 	}
 
-	// ── Auto-generate apiKey when required ──
-	if (local.requireApiKey === true && !local.apiKey) {
+	// ── Auto-generate apiKey when required or implied by hub-backed external exposure ──
+	const hubImpliesApiKey = isExternalBind(local) && typeof (merged.hub as Record<string, unknown> | undefined)?.url === "string";
+	const requireApiKeyImpliesApiKey = local.requireApiKey === true;
+	const shouldAutoGenerateApiKey = !local.apiKey && (requireApiKeyImpliesApiKey || hubImpliesApiKey);
+	if (shouldAutoGenerateApiKey) {
 		// Check for existing generated key before creating a new one
 		if (!cachedGeneratedApiKey) {
 			cachedGeneratedApiKey = "a2a_" + randomBytes(32).toString("hex");
-			// Only warn when newly generating the key
+			if (requireApiKeyImpliesApiKey && !hubImpliesApiKey) {
+				warnings.push(
+					"pi-a2a auto-generated a local API key for external access. " +
+					"Run `/a2a apikey` to view it.",
+				);
+			}
 			if (merged.staticAgents && Array.isArray(merged.staticAgents) && merged.staticAgents.length > 0) {
 				warnings.push(
 					`Warning: an API key was auto-generated but staticAgents are configured. ` +

@@ -38,6 +38,9 @@ import type { A2AConfig } from "./types.ts";
 
 const SETTINGS_KEY = "pi-a2a";
 
+// Cache for auto-generated API key to ensure consistency across loadConfig() calls
+let cachedGeneratedApiKey: string | undefined;
+
 export interface ConfigResult {
 	config: A2AConfig;
 	warnings: string[];
@@ -59,32 +62,46 @@ export function loadConfig(cwd: string): ConfigResult {
 		merged.hub = { ...(globalHub ?? {}), ...(projectHub ?? {}) };
 	}
 
-	// Deep merge `local` — project local settings extend global local settings
-	const globalLocal = globalConf.local as Record<string, unknown> | undefined;
-	const projectLocal = projectConf.local as Record<string, unknown> | undefined;
-	if (globalLocal || projectLocal) {
-		merged.local = { ...(globalLocal ?? {}), ...(projectLocal ?? {}) };
-	}
-
 	const warnings: string[] = [];
 
-	// ── Backward compat: hoist old flat server fields into `local` ──
-	if (!merged.local) {
-		merged.local = {};
-	}
-	const local = merged.local as Record<string, unknown>;
-
+	// ── Backward compat: normalize legacy flat fields into `local` before merge ──
 	const migratedFields = [
 		"port",
 		"portRange",
 		"bind",
 		"bindInterface",
 		"publicUrl",
+		"requireApiKey",
 		"apiKey",
 	] as const;
 
-	const migratedAny = migratedFields.some((f) => merged[f] !== undefined && local[f] === undefined);
-	if (migratedAny) {
+	// Normalize globalConf: move legacy flat fields into globalConf.local
+	if (!globalConf.local) {
+		globalConf.local = {};
+	}
+	const globalLocal = globalConf.local as Record<string, unknown>;
+	let globalMigratedAny = false;
+	for (const field of migratedFields) {
+		if (globalConf[field] !== undefined && globalLocal[field] === undefined) {
+			globalLocal[field] = globalConf[field];
+			globalMigratedAny = true;
+		}
+	}
+
+	// Normalize projectConf: move legacy flat fields into projectConf.local
+	if (!projectConf.local) {
+		projectConf.local = {};
+	}
+	const projectLocal = projectConf.local as Record<string, unknown>;
+	let projectMigratedAny = false;
+	for (const field of migratedFields) {
+		if (projectConf[field] !== undefined && projectLocal[field] === undefined) {
+			projectLocal[field] = projectConf[field];
+			projectMigratedAny = true;
+		}
+	}
+
+	if (globalMigratedAny || projectMigratedAny) {
 		warnings.push(
 			"Deprecation warning: pi-a2a settings using flat fields (port, bind, apiKey, etc.) " +
 			"should be nested under \"local\". Move them to pi-a2a.local in settings.json. " +
@@ -92,11 +109,13 @@ export function loadConfig(cwd: string): ConfigResult {
 		);
 	}
 
-	for (const field of migratedFields) {
-		if (merged[field] !== undefined && local[field] === undefined) {
-			local[field] = merged[field];
-		}
+	// Deep merge `local` after normalization — project local settings override global local settings
+	merged.local = { ...(globalLocal ?? {}), ...(projectLocal ?? {}) };
+
+	if (!merged.local) {
+		merged.local = {};
 	}
+	const local = merged.local as Record<string, unknown>;
 
 	// ── Runtime validation for `local` fields ──
 	if (local.port !== undefined) {
@@ -124,14 +143,18 @@ export function loadConfig(cwd: string): ConfigResult {
 
 	// ── Auto-generate apiKey when required ──
 	if (local.requireApiKey === true && !local.apiKey) {
-		const generated = "a2a_" + randomBytes(32).toString("hex");
-		local.apiKey = generated;
-		if (merged.staticAgents && Array.isArray(merged.staticAgents) && merged.staticAgents.length > 0) {
-			warnings.push(
-				`Warning: an API key was auto-generated but staticAgents are configured. ` +
-				`Update static agent configs with the new key to prevent authentication failures.`,
-			);
+		// Check for existing generated key before creating a new one
+		if (!cachedGeneratedApiKey) {
+			cachedGeneratedApiKey = "a2a_" + randomBytes(32).toString("hex");
+			// Only warn when newly generating the key
+			if (merged.staticAgents && Array.isArray(merged.staticAgents) && merged.staticAgents.length > 0) {
+				warnings.push(
+					`Warning: an API key was auto-generated but staticAgents are configured. ` +
+					`Update static agent configs with the new key to prevent authentication failures.`,
+				);
+			}
 		}
+		local.apiKey = cachedGeneratedApiKey;
 	}
 
 	// ── Runtime validation for top-level fields ──

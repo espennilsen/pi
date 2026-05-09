@@ -24,7 +24,8 @@ export interface LocalConfig {
 	publicUrl?: string;
 	/** Require an API key for inbound requests. When true and apiKey is unset, one is auto-generated. */
 	requireApiKey?: boolean;
-	/** API key for authenticating RPC requests. Required when bind is not localhost. */
+	/** API key for authenticating RPC requests. Required when bind is not localhost.
+	 *  Optional when requireApiKey is true, as loadConfig() will auto-generate one if not provided. */
 	apiKey?: string;
 }
 

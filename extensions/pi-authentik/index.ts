@@ -12,12 +12,12 @@ import { createOpenAICompatibleClient } from "./llm-client.ts";
 import { createLogger } from "./logger.ts";
 import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./models.ts";
 import { generateNonce, createPkcePair, generateState } from "./pkce.ts";
-import { resolveSettings } from "./settings.ts";
+import { createEmptySettings, resolveSettings } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./token-store.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./types.ts";
 
-export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, resolveSettings } from "./settings.ts";
+export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./settings.ts";
 export { normalizeOpenAIBaseUrl, testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./endpoint-validator.ts";
 export { createOpenAICompatibleClient } from "./llm-client.ts";
 export { filterProviderModels, mapOpenAIModelToProviderModel, mapOpenAIModelsToProviderModels } from "./models.ts";
@@ -105,7 +105,7 @@ const defaultDeps: AuthentikExtensionDeps = {
  * @param deps - Optional dependency overrides for tests and alternate runtime wiring.
  */
 export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<AuthentikExtensionDeps> = {}): void {
-  const api = pi as ExtensionApiLike;
+  const api = pi;
   const runtime = { ...defaultDeps, ...deps };
   const log = createLogger(pi, "pi-authentik");
 
@@ -116,7 +116,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     lastCtx: SessionContextLike | CommandContextLike | null;
     discovery: OidcDiscoveryMetadata | null;
   } = {
-    settings: runtime.resolveSettings(process.cwd()),
+    settings: createEmptySettings(),
     session: null,
     models: [],
     lastCtx: null,
@@ -125,7 +125,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
   api.on("session_start", async (_event: unknown, ctx: SessionContextLike) => {
     state.lastCtx = ctx;
-    state.settings = runtime.resolveSettings(ctx.cwd);
+    state.settings = await runtime.resolveSettings(ctx.cwd);
     state.discovery = null;
     await initializeSession(ctx).catch((error) => {
       log.error("session_start failed", error);
@@ -236,7 +236,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     });
 
     if (!result.saved) return;
-    state.settings = runtime.resolveSettings(ctx.cwd);
+    state.settings = await runtime.resolveSettings(ctx.cwd);
     state.discovery = null;
     updateStatus(ctx);
   }

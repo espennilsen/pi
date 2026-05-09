@@ -1,11 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 
 import type { AuthentikStoredSettings } from "./types.ts";
-
-const require = createRequire(import.meta.url);
 
 /** Top-level Pi settings key used by this extension. */
 export const SETTINGS_KEY = "pi-authentik";
@@ -71,12 +68,22 @@ function readJsonFile(filePath: string): Record<string, unknown> {
  * Returns the path to Pi's global settings file.
  * @returns Absolute path to the active global settings file.
  */
-export function getGlobalSettingsPath(): string {
+export async function getGlobalSettingsPath(): Promise<string> {
   try {
-    const piModule = require("@earendil-works/pi-coding-agent") as { getAgentDir: () => string };
-    return path.join(piModule.getAgentDir(), "settings.json");
-  } catch {
-    return path.join(os.homedir(), ".pi", "agent", "settings.json");
+    const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
+    return path.join(getAgentDir(), "settings.json");
+  } catch (error) {
+    // Only fall back to home directory if the module cannot be resolved
+    const isModuleNotFound =
+      (error as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
+      (error instanceof Error && error.message.includes("@earendil-works/pi-coding-agent"));
+
+    if (isModuleNotFound) {
+      return path.join(os.homedir(), ".pi", "agent", "settings.json");
+    }
+
+    // Re-throw genuine runtime or import errors
+    throw error;
   }
 }
 
@@ -85,8 +92,9 @@ export function getGlobalSettingsPath(): string {
  * @param settingsFile - Optional explicit settings file path.
  * @returns Sanitized stored settings.
  */
-export function loadGlobalSettings(settingsFile = getGlobalSettingsPath()): AuthentikStoredSettings {
-  return sanitizeStoredSettings(readJsonFile(settingsFile)[SETTINGS_KEY]);
+export async function loadGlobalSettings(settingsFile?: string): Promise<AuthentikStoredSettings> {
+  const resolvedPath = settingsFile ?? await getGlobalSettingsPath();
+  return sanitizeStoredSettings(readJsonFile(resolvedPath)[SETTINGS_KEY]);
 }
 
 /**
@@ -114,6 +122,6 @@ export function saveGlobalSettings(settingsFile: string, settings: AuthentikStor
  * Saves `pi-authentik` settings into the active Pi global settings file.
  * @param settings - Non-secret extension settings to persist.
  */
-export function saveCurrentGlobalSettings(settings: AuthentikStoredSettings): void {
-  saveGlobalSettings(getGlobalSettingsPath(), settings);
+export async function saveCurrentGlobalSettings(settings: AuthentikStoredSettings): Promise<void> {
+  saveGlobalSettings(await getGlobalSettingsPath(), settings);
 }

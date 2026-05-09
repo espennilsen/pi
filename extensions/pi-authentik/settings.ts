@@ -1,14 +1,29 @@
-import { createRequire } from "node:module";
-
 import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "./types.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
-
-const require = createRequire(import.meta.url);
 
 /** Default scopes requested when no scopes are configured explicitly. */
 export const DEFAULT_SCOPES = ["openid", "profile", "email"];
 /** Default model filter that exposes every discovered model. */
 export const DEFAULT_MODEL_FILTERS = ["*"];
+
+/**
+ * Creates an empty resolved settings object with default values.
+ * @returns Default resolved settings with all auth fields set to null.
+ */
+export function createEmptySettings(): AuthentikResolvedSettings {
+  return {
+    authentikHost: null,
+    providerSlug: null,
+    clientId: null,
+    scopes: DEFAULT_SCOPES,
+    enableOfflineAccess: false,
+    discoveryUrl: null,
+    logoutUrl: null,
+    llmBaseUrl: null,
+    authStorageBackend: null,
+    modelFilters: DEFAULT_MODEL_FILTERS,
+  };
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -110,13 +125,10 @@ function mergeStoredSettings(globalSettings: unknown, projectSettings: unknown):
   };
 }
 
-function readSettingsFromManager(cwd: string): { globalSettings: unknown; projectSettings: unknown } {
+async function readSettingsFromManager(cwd: string): Promise<{ globalSettings: unknown; projectSettings: unknown }> {
   try {
-    const piModule = require("@earendil-works/pi-coding-agent") as {
-      getAgentDir: () => string;
-      SettingsManager: { create: (cwd: string, agentDir: string) => { getGlobalSettings(): unknown; getProjectSettings(): unknown } };
-    };
-    const sm = piModule.SettingsManager.create(cwd, piModule.getAgentDir());
+    const { getAgentDir, SettingsManager } = await import("@earendil-works/pi-coding-agent");
+    const sm = SettingsManager.create(cwd, getAgentDir());
     const global = asRecord(sm.getGlobalSettings())["pi-authentik"];
     const project = asRecord(sm.getProjectSettings())["pi-authentik"];
     return {
@@ -140,9 +152,9 @@ function readSettingsFromManager(cwd: string): { globalSettings: unknown; projec
  * @param options - Optional test overrides for settings sources.
  * @returns The normalized runtime settings for the extension.
  */
-export function resolveSettings(cwd: string, options: ResolveSettingsOptions = {}): AuthentikResolvedSettings {
+export async function resolveSettings(cwd: string, options: ResolveSettingsOptions = {}): Promise<AuthentikResolvedSettings> {
   const sources = options.globalSettings === undefined && options.projectSettings === undefined
-    ? readSettingsFromManager(cwd)
+    ? await readSettingsFromManager(cwd)
     : {
         globalSettings: options.globalSettings,
         projectSettings: options.projectSettings,

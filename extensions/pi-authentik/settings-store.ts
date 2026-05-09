@@ -72,8 +72,18 @@ export async function getGlobalSettingsPath(): Promise<string> {
   try {
     const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
     return path.join(getAgentDir(), "settings.json");
-  } catch {
-    return path.join(os.homedir(), ".pi", "agent", "settings.json");
+  } catch (error) {
+    // Only fall back to home directory if the module cannot be resolved
+    const isModuleNotFound =
+      (error as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
+      (error instanceof Error && error.message.includes("@earendil-works/pi-coding-agent"));
+
+    if (isModuleNotFound) {
+      return path.join(os.homedir(), ".pi", "agent", "settings.json");
+    }
+
+    // Re-throw genuine runtime or import errors
+    throw error;
   }
 }
 

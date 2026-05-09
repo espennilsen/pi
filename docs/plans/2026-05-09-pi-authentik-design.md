@@ -1,9 +1,11 @@
 # pi-authentik Design
 
 ## Goal
+
 Build a production-ready `pi-authentik` extension for Pi Coding Agent that authenticates desktop users against authentik with OIDC Authorization Code + PKCE, stores tokens securely via `pi-secret`, prompts for an OpenAI-compatible LLM base URL ending in `/v1`, validates connectivity, and registers a dynamic Pi model provider using the authentik bearer token against the protected LLM endpoint.
 
 ## Scope
+
 - Flat extension layout under `extensions/pi-authentik/` (no nested `src/` directory)
 - First-run interactive setup command only (`/authentik-setup`)
 - Commands for sign-in, sign-out, configure/retest endpoint, and session status
@@ -14,6 +16,7 @@ Build a production-ready `pi-authentik` extension for Pi Coding Agent that authe
 - Reusable OpenAI-compatible client with pluggable auth strategy
 
 ## Non-goals for v1
+
 - Embedded webview auth
 - Client secret support
 - Browser-based settings UI
@@ -21,12 +24,13 @@ Build a production-ready `pi-authentik` extension for Pi Coding Agent that authe
 - Trusting unverified JWT claims
 
 ## Architecture
-`pi-authentik` owns both authentication and provider registration. Startup loads settings and env overrides, restores any stored token session, attempts refresh if needed, validates the configured LLM base URL, fetches models from the protected endpoint, applies optional filters, and registers a Pi provider using `authHeader: true`.
+
+`pi-authentik` owns both authentication and provider registration. Startup loads settings, restores any stored token session, attempts refresh if needed, validates the configured LLM base URL, fetches models from the protected endpoint, applies optional filters, and registers a Pi provider using `authHeader: true`.
 
 Modules will live at the extension root:
 - `index.ts` — extension entry, lifecycle, commands, provider registration
 - `types.ts` — shared types for config, discovery, tokens, session, models
-- `settings.ts` — merge env vars + Pi settings, canonicalize values, expose defaults
+- `settings.ts` — merge Pi global + project settings, canonicalize values, expose defaults
 - `settings-store.ts` — persist non-secret config back to Pi global settings
 - `auth-config.ts` — derive discovery/logout URLs from host + provider slug
 - `pkce.ts` — verifier/challenge/state/nonce generation
@@ -43,19 +47,21 @@ Modules will live at the extension root:
 - `logger.ts` — redacted extension logging helpers
 
 ## Config Model
-Normal settings plus env overrides:
-- `AUTHENTIK_HOST`
-- `AUTHENTIK_PROVIDER_SLUG`
-- `AUTHENTIK_CLIENT_ID`
-- `AUTHENTIK_SCOPES`
-- `AUTHENTIK_DISCOVERY_URL`
-- `AUTHENTIK_LOGOUT_URL`
-- `LLM_BASE_URL`
-- `AUTH_STORAGE_BACKEND`
-- `PI_AUTHENTIK_MODELS` (optional glob filters array/string in settings)
+
+Configuration is stored in Pi's settings JSON under the `pi-authentik` key. Supported settings:
+- `authentikHost` — authentik server hostname
+- `providerSlug` — OIDC provider application slug
+- `clientId` — OIDC client identifier
+- `scopes` — requested OAuth scopes (default: `["openid", "profile", "email"]`)
+- `enableOfflineAccess` — whether to request refresh tokens via `offline_access` scope
+- `discoveryUrl` — explicit OIDC discovery URL (optional, auto-derived from host + slug by default)
+- `logoutUrl` — explicit logout URL (optional)
+- `llmBaseUrl` — OpenAI-compatible LLM endpoint base URL
+- `authStorageBackend` — storage backend preference (optional)
+- `modelFilters` — optional glob filters for discovered models (default: `["*"]`)
 
 Validation rules:
-- `LLM_BASE_URL` must be absolute `http:` or `https:`
+- `llmBaseUrl` must be absolute `http:` or `https:`
 - must end in `/v1` after normalization
 - canonical storage drops trailing slash after `/v1`
 - if missing `/v1`, setup offers auto-fix
@@ -63,6 +69,7 @@ Validation rules:
 - scopes default to `openid profile email`; `offline_access` appended only when explicitly enabled
 
 ## Auth Flow
+
 1. User runs `/authentik-setup` or `/authentik-login`.
 2. Extension loads config and discovery metadata.
 3. Loopback callback server binds to `127.0.0.1:0` and returns a callback URL.
@@ -75,7 +82,8 @@ Validation rules:
 10. Provider models are refreshed from the configured LLM endpoint using `Authorization: Bearer <access_token>`.
 
 ## Provider + Model Discovery
-The registered provider will point to the configured `LLM_BASE_URL` and declare `api: "openai-completions"`. Model discovery calls `GET {LLM_BASE_URL}/models` through `llm-client.ts`. Returned models are mapped into Pi provider model configs using reasonable defaults when an OpenAI-compatible endpoint omits cost/context metadata.
+
+The registered provider will point to the configured `llmBaseUrl` and declare `api: "openai-completions"`. Model discovery calls `GET {llmBaseUrl}/models` through `llm-client.ts`. Returned models are mapped into Pi provider model configs using reasonable defaults when an OpenAI-compatible endpoint omits cost/context metadata.
 
 Filtering behaves like `pi-openrouter`:
 - configurable glob patterns
@@ -83,6 +91,7 @@ Filtering behaves like `pi-openrouter`:
 - if patterns are configured but match nothing, fall back to all models instead of exposing zero models
 
 ## UX
+
 Commands:
 - `/authentik-setup`
 - `/authentik-login`
@@ -105,6 +114,7 @@ Setup flow prompts for:
 - LLM base URL including `/v1`
 
 ## Security
+
 - Native app public client only; no client secret ever stored or embedded
 - Browser auth only; no embedded webview
 - Tokens, auth codes, refresh tokens, and PKCE verifier redacted from logs
@@ -113,6 +123,7 @@ Setup flow prompts for:
 - Callback server listens only on `127.0.0.1` and shuts down immediately after handling the callback
 
 ## Testing Strategy
+
 Unit tests:
 - PKCE generation shape
 - callback parameter/state validation
@@ -130,6 +141,7 @@ Integration-ish tests with stub HTTP servers:
 - token-store behavior with mocked `pi-secret`
 
 ## Open Questions / implementation notes
+
 - Need to confirm the exact provider auth callback shape expected by Pi's `registerProvider(...oauth...)` API, since OIDC refresh must be driven through that interface or through a startup refresh path.
 - Settings writes must use Pi's official settings write API (SettingsManager) to avoid concurrent write conflicts. If Pi's settings API is unavailable, implement a single-owner settings service with atomic compare-and-swap or serialize all settings updates through a single-process settings-owner API. The `registerProvider(...oauth...)` integration must use the same settings API for provider refresh tokens/metadata to prevent concurrent clobbers of the global settings JSON.
 - Need to verify whether Pi provider model configs require costs/context for all models or accept conservative defaults.

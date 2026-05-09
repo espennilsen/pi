@@ -107,7 +107,7 @@ const defaultDeps: AuthentikExtensionDeps = {
 export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<AuthentikExtensionDeps> = {}): void {
   const api = pi as ExtensionApiLike;
   const runtime = { ...defaultDeps, ...deps };
-  const log = createLogger("pi-authentik");
+  const log = createLogger(pi, "pi-authentik");
 
   const state: {
     settings: AuthentikResolvedSettings;

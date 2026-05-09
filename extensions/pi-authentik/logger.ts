@@ -1,3 +1,5 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
 /** Minimal logger interface used by the extension runtime. */
 export interface AuthentikLogger {
   info(message: string, details?: unknown): void;
@@ -5,30 +7,42 @@ export interface AuthentikLogger {
   error(message: string, details?: unknown): void;
 }
 
+type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
+
 /**
- * Creates a scoped logger placeholder for the extension runtime.
- * @param scope - Logical logging scope name.
+ * Creates a scoped logger for the extension runtime that emits to pi-logger event bus.
+ * @param pi - ExtensionAPI instance for event bus access.
+ * @param scope - Logical logging scope name (channel).
  * @returns Logger methods compatible with the extension's internal usage.
  */
-export function createLogger(scope: string): AuthentikLogger {
-  const format = (message: string, details?: unknown): string => {
-    if (details === undefined) return `[${scope}] ${message}`;
-    if (details instanceof Error) {
-      const stack = details.stack ? `\n${details.stack}` : "";
-      return `[${scope}] ${message}: ${details.message}${stack}`;
+export function createLogger(pi: ExtensionAPI, scope: string): AuthentikLogger {
+  const emit = (level: LogLevel, message: string, details?: unknown): void => {
+    const data: Record<string, unknown> = { message };
+    if (details !== undefined) {
+      if (details instanceof Error) {
+        data.error = details.message;
+        if (details.stack) data.stack = details.stack;
+      } else {
+        data.details = details;
+      }
     }
-    return `[${scope}] ${message}: ${String(details)}`;
+
+    pi.events.emit("log", {
+      channel: scope,
+      level,
+      data,
+    });
   };
 
   return {
     info(message: string, details?: unknown) {
-      console.log(format(message, details));
+      emit("INFO", message, details);
     },
     warn(message: string, details?: unknown) {
-      console.warn(format(message, details));
+      emit("WARN", message, details);
     },
     error(message: string, details?: unknown) {
-      console.error(format(message, details));
+      emit("ERROR", message, details);
     },
   };
 }

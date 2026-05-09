@@ -1,0 +1,67 @@
+{
+  "name": "@e9n/pi-authentik",
+  "version": "0.1.0",
+  "description": "Authentik-based model provider for pi",
+  "type": "module",
+  "license": "MIT",
+  "author": "Espen Nilsen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/espennilsen/pi",
+    "directory": "extensions/pi-authentik"
+  },
+  "keywords": [
+    "pi",
+    "authentik",
+    "oidc",
+    "llm",
+    "provider"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "typebox": "^1.1.24"
+  },
+  "dependencies": {
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "README.md",
+    ".env.example",
+    "AUTHENTIK_SETUP.md",
+    "LLM_ENDPOINT_SETUP.md",
+    "package.json",
+    "package-lock.json",
+    "index.ts",
+    "auth-client.ts",
+    "auth-config.ts",
+    "callback-server.ts",
+    "discovery.ts",
+    "endpoint-validator.ts",
+    "first-run.ts",
+    "jwt.ts",
+    "llm-client.ts",
+    "logger.ts",
+    "logout.ts",
+    "models.ts",
+    "pkce.ts",
+    "settings-store.ts",
+    "settings.ts",
+    "token-store.ts",
+    "types.ts",
+    "pi-coding-agent.d.ts"
+  ]
+}

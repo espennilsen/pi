@@ -618,7 +618,6 @@ export default function (pi: ExtensionAPI) {
 		if (lastTurnStatus !== undefined) snapshot.lastTaskStatus = lastTurnStatus;
 		if (recentToolCalls.length > 0) {
 			snapshot.recentToolCalls = recentToolCalls;
-			recentToolCalls = [];
 		}
 		return snapshot;
 	}
@@ -627,7 +626,11 @@ export default function (pi: ExtensionAPI) {
 	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
 		if (!hubAgentId || !config.hub?.apiKey) return;
 		const snapshot = buildTelemetrySnapshot();
-		await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
+		const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
+		// Only clear buffered tool calls after hub confirms success
+		if (result && snapshot.recentToolCalls) {
+			recentToolCalls = [];
+		}
 	}
 
     const sseConnections = new Map<string, { abort: () => void }>();

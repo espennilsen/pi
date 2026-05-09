@@ -1,11 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
+
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import type { AuthentikStoredSettings } from "./types.ts";
-
-const require = createRequire(import.meta.url);
 
 /** Top-level Pi settings key used by this extension. */
 export const SETTINGS_KEY = "pi-authentik";
@@ -73,8 +72,7 @@ function readJsonFile(filePath: string): Record<string, unknown> {
  */
 export function getGlobalSettingsPath(): string {
   try {
-    const piModule = require("@earendil-works/pi-coding-agent") as { getAgentDir: () => string };
-    return path.join(piModule.getAgentDir(), "settings.json");
+    return path.join(getAgentDir(), "settings.json");
   } catch {
     return path.join(os.homedir(), ".pi", "agent", "settings.json");
   }

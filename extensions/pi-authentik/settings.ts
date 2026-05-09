@@ -1,9 +1,7 @@
-import { createRequire } from "node:module";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "./types.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
-
-const require = createRequire(import.meta.url);
 
 /** Default scopes requested when no scopes are configured explicitly. */
 export const DEFAULT_SCOPES = ["openid", "profile", "email"];
@@ -112,11 +110,7 @@ function mergeStoredSettings(globalSettings: unknown, projectSettings: unknown):
 
 function readSettingsFromManager(cwd: string): { globalSettings: unknown; projectSettings: unknown } {
   try {
-    const piModule = require("@earendil-works/pi-coding-agent") as {
-      getAgentDir: () => string;
-      SettingsManager: { create: (cwd: string, agentDir: string) => { getGlobalSettings(): unknown; getProjectSettings(): unknown } };
-    };
-    const sm = piModule.SettingsManager.create(cwd, piModule.getAgentDir());
+    const sm = SettingsManager.create(cwd, getAgentDir());
     const global = asRecord(sm.getGlobalSettings())["pi-authentik"];
     const project = asRecord(sm.getProjectSettings())["pi-authentik"];
     return {

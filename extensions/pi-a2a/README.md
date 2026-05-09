@@ -117,6 +117,9 @@ Server binds to `127.0.0.1:3100`, publicUrl auto-generates as `http://localhost:
 
 Server binds to all interfaces, publicUrl auto-detects primary IP (e.g., `http://192.168.1.100:3100`).
 
+If you configure an external bind together with `hub.url` and omit `local.apiKey`, pi-a2a auto-generates a local API key automatically.
+If you configure an external bind without a hub, set `local.requireApiKey: true` to auto-generate one and use `/a2a apikey` to view it later.
+
 **LAN access (specific interface):**
 
 ```json
@@ -179,6 +182,7 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 | `/a2a card` | Print the full Agent Card JSON |
 | `/a2a refresh` | Re-discover tools and update the Agent Card |
 | `/a2a register` | Manually register with the configured A2A Hub |
+| `/a2a apikey` | Show the current effective local API key |
 
 ## A2A Protocol Methods
 
@@ -218,6 +222,8 @@ When `apiKey` is configured:
 - Agent Card endpoints (`/.well-known/agent-card.json`) remain unauthenticated for discovery
 
 When binding to non-localhost (`bind: "0.0.0.0"`), an `apiKey` is strongly recommended.
+If `hub.url` is configured, pi-a2a auto-generates a local API key for external binds when one is not explicitly provided.
+If no hub is configured, set `pi-a2a.local.requireApiKey: true` to opt into auto-generation for external binds.
 
 ## License
 

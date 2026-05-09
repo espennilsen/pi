@@ -22,10 +22,12 @@ export interface LocalConfig {
 	bindInterface?: string;
 	/** Public-facing base URL. Defaults to http://localhost:{port}. */
 	publicUrl?: string;
-	/** Require an API key for inbound requests. When true and apiKey is unset, one is auto-generated. */
+	/** Require an API key for inbound requests. When true and apiKey is unset, one is auto-generated.
+	 *  Useful for external binds that are not using hub configuration. */
 	requireApiKey?: boolean;
 	/** API key for authenticating RPC requests. Required when bind is not localhost.
-	 *  Optional when requireApiKey is true, as loadConfig() will auto-generate one if not provided. */
+	 *  Optional when requireApiKey is true, or when hub.url is configured for an external bind,
+	 *  as loadConfig() will auto-generate one if not provided. */
 	apiKey?: string;
 }
 

@@ -2194,7 +2194,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Commands ──────────────────────────────────────────────
 
 	pi.registerCommand("a2a", {
-		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query] | /a2a agents [refresh|name]",
+		description: "Manage the A2A protocol server. Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a apikey | /a2a discover [query] | /a2a agents [refresh|name]",
 		handler: async (args, ctx) => {
 			const action = args.trim();
 			const { config } = loadConfig(cwd);
@@ -2306,6 +2306,15 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "apikey") {
+				if (!config.local?.apiKey) {
+					ctx.ui.notify("No effective pi-a2a local API key is configured", "warning");
+					return;
+				}
+				ctx.ui.notify(`pi-a2a local API key: ${config.local.apiKey}`, "info");
+				return;
+			}
+
 			if (action === "discover" || action.startsWith("discover ")) {
 				if (!config.hub?.apiKey) {
 					ctx.ui.notify("No hub config — set pi-a2a.hub.url and pi-a2a.hub.apiKey", "warning");
@@ -2390,7 +2399,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			ctx.ui.notify(
-				"Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a discover [query] | /a2a agents [refresh|name]",
+				"Usage: /a2a status | /a2a card | /a2a refresh | /a2a register | /a2a credential | /a2a apikey | /a2a discover [query] | /a2a agents [refresh|name]",
 				"info",
 			);
 		},

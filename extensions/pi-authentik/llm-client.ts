@@ -61,8 +61,8 @@ async function parseJson(response: Response): Promise<unknown> {
     return JSON.parse(text) as unknown;
   } catch {
     const trimmed = text.trimStart();
-    const looksLikeHtml =
-      trimmed.startsWith("<!DOCTYPE") || trimmed.toLowerCase().startsWith("<html");
+    const lower = trimmed.toLowerCase();
+    const looksLikeHtml = lower.startsWith("<!doctype") || lower.startsWith("<html");
     const hint = looksLikeHtml ? " — response was HTML, not JSON (often an SSO or login page)" : "";
     throw new Error(`Expected JSON response from ${response.url || "endpoint"}${hint}`);
   }

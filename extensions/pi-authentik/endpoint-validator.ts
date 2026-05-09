@@ -71,7 +71,8 @@ function responseLooksLikeHtml(response: Response, bodyText: string): boolean {
   }
 
   const start = bodyText.trimStart();
-  return start.startsWith("<!DOCTYPE") || start.toLowerCase().startsWith("<html");
+  const lower = start.toLowerCase();
+  return lower.startsWith("<!doctype") || lower.startsWith("<html");
 }
 
 async function probeModelsPayload(

@@ -17,6 +17,13 @@ const configuredSettings: AuthentikResolvedSettings = {
   modelFilters: ["gpt-*"],
 };
 
+const discoveryOnlySettings: AuthentikResolvedSettings = {
+  ...configuredSettings,
+  authentikHost: null,
+  providerSlug: null,
+  discoveryUrl: "https://auth.example/application/o/my-app/.well-known/openid-configuration",
+};
+
 test("session_start shows unauthenticated status when configured but no session exists", async () => {
   const harness = createHarness({
     settings: configuredSettings,
@@ -39,6 +46,20 @@ test("session_start shows missing endpoint guidance", async () => {
 
   assert.equal(harness.statuses.at(-1)?.value, "authentik: missing LLM endpoint");
   assert.match(harness.notifications.join("\n"), /authentik-endpoint|authentik-setup/);
+});
+
+test("session_start treats explicit discovery URL without host/slug as fully configured OIDC-wise", async () => {
+  const harness = createHarness({
+    settings: discoveryOnlySettings,
+    loadStoredSession: async () => null,
+  });
+
+  await harness.start();
+
+  assert.equal(harness.statuses.at(-1)?.value, "authentik: not signed in");
+  assert.match(harness.notifications.join("\n"), /authentik-login/);
+  await harness.run("authentik-status");
+  assert.match(harness.notifications.join("\n"), /Discovery:/);
 });
 
 test("session_start restores stored session, discovers models, filters them, and registers provider", async () => {
@@ -67,11 +88,19 @@ test("session_start refreshes an expired stored session when a refresh token exi
     now: () => 1_700_000_000_000,
     loadStoredSession: async () => ({
       ...exampleSession(),
-      tokens: { ...exampleSession().tokens, expiresAt: 1_699_999_900_000 },
+      tokens: {
+        ...exampleSession().tokens,
+        /** Expiry in epoch seconds — before `now` wall clock for refresh skew. */
+        expiresAt: 1_699_999_900,
+      },
     }),
     refreshSession: async () => ({
       ...exampleSession(),
-      tokens: { ...exampleSession().tokens, accessToken: "refreshed-token", expiresAt: 1_700_003_600_000 },
+      tokens: {
+        ...exampleSession().tokens,
+        accessToken: "refreshed-token",
+        expiresAt: 1_700_010_000,
+      },
     }),
     saveStoredSession: async (session) => {
       savedSessions.push(session);
@@ -310,7 +339,8 @@ function exampleSession(): AuthentikSessionRecord {
       accessToken: "access-token",
       idToken: "id-token",
       tokenType: "Bearer",
-      expiresAt: 1_700_003_600_000,
+      /** Stored in UNIX epoch seconds (`shouldRefresh`, token exchange). */
+      expiresAt: 1_700_005_500,
       refreshToken: "refresh-token",
       scope: "openid profile email",
     },
@@ -318,9 +348,9 @@ function exampleSession(): AuthentikSessionRecord {
       issuer: "https://auth.example/application/o/provider/",
       audience: ["pi-client"],
       subject: "user-123",
-      expiresAt: 1_700_003_600_000,
+      expiresAt: 1_700_005_500,
       nonce: "nonce",
-      issuedAt: 1_700_000_000_000,
+      issuedAt: 1_700_000_000,
       email: "user@example.com",
       name: "Example User",
       preferredUsername: "example",

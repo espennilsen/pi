@@ -90,10 +90,13 @@ test("runBrowserLogin orchestrates callback server wait and browser hook separat
 
   const exchangeCall = calls[2];
   if (!exchangeCall) throw new Error("expected exchangeCode call");
-  assert.ok(exchangeCall.startsWith("exchangeCode:"));
-  const exchangeParts = exchangeCall.split(":");
-  assert.equal(exchangeParts[1], "auth-code-123");
-  assert.equal(exchangeParts[2], "http://127.0.0.1:43123/callback");
+  const prefix = "exchangeCode:";
+  assert.ok(exchangeCall.startsWith(prefix));
+  const remainder = exchangeCall.slice(prefix.length);
+  const sep = remainder.indexOf(":");
+  assert.equal(sep >= 0, true);
+  assert.equal(remainder.slice(0, sep), "auth-code-123");
+  assert.equal(remainder.slice(sep + 1), "http://127.0.0.1:43123/callback");
 
   assert.equal(calls[3], "close");
 });

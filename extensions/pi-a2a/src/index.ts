@@ -59,6 +59,7 @@ import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
+import { buildRecentToolCallsSnapshot, drainRecentToolCalls, resetToolTelemetryState } from "./tool-telemetry.ts";
 
 const DEFAULT_PORT = 3100;
 const DEFAULT_DYNAMIC_RANGE_START = 27100;
@@ -616,9 +617,8 @@ export default function (pi: ExtensionAPI) {
 		};
 		if (lastTurnDurationMs !== undefined) snapshot.lastTaskDurationMs = lastTurnDurationMs;
 		if (lastTurnStatus !== undefined) snapshot.lastTaskStatus = lastTurnStatus;
-		if (recentToolCalls.length > 0) {
-			snapshot.recentToolCalls = recentToolCalls;
-		}
+		const toolCallSnapshot = buildRecentToolCallsSnapshot(recentToolCalls);
+		if (toolCallSnapshot !== undefined) snapshot.recentToolCalls = toolCallSnapshot;
 		return snapshot;
 	}
 
@@ -626,10 +626,10 @@ export default function (pi: ExtensionAPI) {
 	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
 		if (!hubAgentId || !config.hub?.apiKey) return;
 		const snapshot = buildTelemetrySnapshot();
+		const sentCount = snapshot.recentToolCalls?.length ?? 0;
 		const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
-		// Only clear buffered tool calls after hub confirms success
-		if (result && snapshot.recentToolCalls) {
-			recentToolCalls = [];
+		if (result && sentCount > 0) {
+			drainRecentToolCalls(recentToolCalls, sentCount);
 		}
 	}
 
@@ -652,6 +652,7 @@ export default function (pi: ExtensionAPI) {
 		credentialCache.clear();
 		conversationContexts.clear();
 		agentBusy = false;
+		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
 		// Abort any active SSE subscriptions from previous session
 		for (const [, conn] of sseConnections) {
 			conn.abort();
@@ -1052,10 +1053,7 @@ export default function (pi: ExtensionAPI) {
 			pending.resolve("");
 		}
 		pendingInputResolvers.clear();
-
-		// Reset tool telemetry
-		toolCallsInProgress.clear();
-		recentToolCalls = [];
+		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
 
 		// Stop poller interval
 		if (pollerInterval) {
@@ -1074,10 +1072,6 @@ export default function (pi: ExtensionAPI) {
 			clearInterval(expiryInterval);
 			expiryInterval = null;
 		}
-
-		// Reset tool telemetry
-		toolCallsInProgress.clear();
-		recentToolCalls = [];
 
 		// Stop long-running task poller interval
 		if (longRunningTaskPollerInterval) {

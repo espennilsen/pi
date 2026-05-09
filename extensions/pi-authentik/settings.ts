@@ -42,6 +42,17 @@ function sanitizeBoolean(value: unknown): boolean | null {
   return null;
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return true;
+  }
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    const inner = hostname.slice(1, -1);
+    if (inner === "::1") return true;
+  }
+  return false;
+}
+
 function normalizeAbsoluteUrl(name: string, value: string): string {
   let url: URL;
   try {
@@ -50,7 +61,11 @@ function normalizeAbsoluteUrl(name: string, value: string): string {
     throw new Error(`${name} must be an absolute http/https URL`);
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
+  if (url.protocol === "https:") {
+    // https is always allowed
+  } else if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) {
+    // http is allowed only for loopback hosts
+  } else {
     throw new Error(`${name} must be an absolute http/https URL`);
   }
 
@@ -108,11 +123,14 @@ function readSettingsFromManager(cwd: string): { globalSettings: unknown; projec
       globalSettings: global,
       projectSettings: project,
     };
-  } catch {
-    return {
-      globalSettings: {},
-      projectSettings: {},
-    };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Cannot find module")) {
+      return {
+        globalSettings: {},
+        projectSettings: {},
+      };
+    }
+    throw error;
   }
 }
 

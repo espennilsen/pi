@@ -11,20 +11,24 @@ export interface AuthentikLogger {
  * @returns Logger methods compatible with the extension's internal usage.
  */
 export function createLogger(scope: string): AuthentikLogger {
-  const format = (message: string, details?: unknown) => {
+  const format = (message: string, details?: unknown): string => {
     if (details === undefined) return `[${scope}] ${message}`;
-    return `[${scope}] ${message}: ${details instanceof Error ? details.message : String(details)}`;
+    if (details instanceof Error) {
+      const stack = details.stack ? `\n${details.stack}` : "";
+      return `[${scope}] ${message}: ${details.message}${stack}`;
+    }
+    return `[${scope}] ${message}: ${String(details)}`;
   };
 
   return {
-    info(_message: string, _details?: unknown) {
-      void format;
+    info(message: string, details?: unknown) {
+      console.log(format(message, details));
     },
-    warn(_message: string, _details?: unknown) {
-      void format;
+    warn(message: string, details?: unknown) {
+      console.warn(format(message, details));
     },
-    error(_message: string, _details?: unknown) {
-      void format;
+    error(message: string, details?: unknown) {
+      console.error(format(message, details));
     },
   };
 }

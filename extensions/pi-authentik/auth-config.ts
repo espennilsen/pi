@@ -1,3 +1,14 @@
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return true;
+  }
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    const inner = hostname.slice(1, -1);
+    if (inner === "::1") return true;
+  }
+  return false;
+}
+
 function normalizeHttpsOrHttpUrl(name: string, value: string): URL {
   let url: URL;
   try {
@@ -6,7 +17,11 @@ function normalizeHttpsOrHttpUrl(name: string, value: string): URL {
     throw new Error(`${name} must be an absolute http/https URL`);
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
+  if (url.protocol === "https:") {
+    // https is always allowed
+  } else if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) {
+    // http is allowed only for loopback hosts
+  } else {
     throw new Error(`${name} must be an absolute http/https URL`);
   }
 

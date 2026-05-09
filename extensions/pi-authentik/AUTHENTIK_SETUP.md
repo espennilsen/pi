@@ -76,10 +76,13 @@ After authentik is configured:
 ## Troubleshooting
 
 ### Redirect mismatch
+
 Make sure authentik accepts `http://127.0.0.1:<random-port>/callback` as a loopback redirect.
 
 ### Missing refresh token
+
 Enable `offline_access` in authentik and set `enableOfflineAccess: true` in Pi settings.
 
 ### Discovery fetch fails
+
 Check `authentikHost`, `providerSlug`, and any reverse-proxy path prefixes. If necessary, set `discoveryUrl` explicitly.

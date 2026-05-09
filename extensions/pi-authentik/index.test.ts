@@ -67,11 +67,11 @@ test("session_start refreshes an expired stored session when a refresh token exi
     now: () => 1_700_000_000_000,
     loadStoredSession: async () => ({
       ...exampleSession(),
-      tokens: { ...exampleSession().tokens, expiresAt: 1_699_999_900 },
+      tokens: { ...exampleSession().tokens, expiresAt: 1_699_999_900_000 },
     }),
     refreshSession: async () => ({
       ...exampleSession(),
-      tokens: { ...exampleSession().tokens, accessToken: "refreshed-token", expiresAt: 1_700_003_600 },
+      tokens: { ...exampleSession().tokens, accessToken: "refreshed-token", expiresAt: 1_700_003_600_000 },
     }),
     saveStoredSession: async (session) => {
       savedSessions.push(session);
@@ -310,7 +310,7 @@ function exampleSession(): AuthentikSessionRecord {
       accessToken: "access-token",
       idToken: "id-token",
       tokenType: "Bearer",
-      expiresAt: 1_700_003_600,
+      expiresAt: 1_700_003_600_000,
       refreshToken: "refresh-token",
       scope: "openid profile email",
     },
@@ -318,9 +318,9 @@ function exampleSession(): AuthentikSessionRecord {
       issuer: "https://auth.example/application/o/provider/",
       audience: ["pi-client"],
       subject: "user-123",
-      expiresAt: 1_700_003_600,
+      expiresAt: 1_700_003_600_000,
       nonce: "nonce",
-      issuedAt: 1_700_000_000,
+      issuedAt: 1_700_000_000_000,
       email: "user@example.com",
       name: "Example User",
       preferredUsername: "example",

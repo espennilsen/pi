@@ -17,6 +17,8 @@ export interface FetchOidcDiscoveryOptions {
   discoveryUrl: string;
   expectedIssuer?: string;
   fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -45,6 +47,17 @@ function requireStringArray(record: Record<string, unknown>, key: string): strin
   return items;
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return true;
+  }
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    const inner = hostname.slice(1, -1);
+    if (inner === "::1") return true;
+  }
+  return false;
+}
+
 function validateUrlField(name: string, value: string): string {
   let url: URL;
   try {
@@ -53,7 +66,11 @@ function validateUrlField(name: string, value: string): string {
     throw new Error(`OIDC discovery metadata field ${name} must be an absolute URL`);
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
+  if (url.protocol === "https:") {
+    // https is always allowed
+  } else if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) {
+    // http is allowed only for loopback hosts
+  } else {
     throw new Error(`OIDC discovery metadata field ${name} must use http or https`);
   }
 
@@ -106,21 +123,44 @@ export function validateOidcDiscoveryMetadata(input: unknown, expectedIssuer?: s
  */
 export async function fetchOidcDiscoveryMetadata(options: FetchOidcDiscoveryOptions): Promise<OidcDiscoveryMetadata> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const response = await fetchImpl(options.discoveryUrl, {
-    method: "GET",
-    headers: { accept: "application/json" },
-  });
 
-  if (!response.ok) {
-    throw new Error(`OIDC discovery request failed: ${response.status} ${response.statusText}`);
+  let signal = options.signal;
+  let controller: AbortController | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  if (!signal && options.timeoutMs !== undefined) {
+    controller = new AbortController();
+    signal = controller.signal;
+    timeoutId = setTimeout(() => controller!.abort(), options.timeoutMs);
   }
 
-  let payload: unknown;
   try {
-    payload = await response.json();
-  } catch {
-    throw new Error("OIDC discovery endpoint did not return valid JSON");
-  }
+    const response = await fetchImpl(options.discoveryUrl, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    });
 
-  return validateOidcDiscoveryMetadata(payload, options.expectedIssuer);
+    if (!response.ok) {
+      throw new Error(`OIDC discovery request failed: ${response.status} ${response.statusText}`);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("OIDC discovery endpoint did not return valid JSON");
+    }
+
+    return validateOidcDiscoveryMetadata(payload, options.expectedIssuer);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("OIDC discovery request timed out or was aborted");
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
 }

@@ -130,6 +130,6 @@ Integration-ish tests with stub HTTP servers:
 - token-store behavior with mocked `pi-secret`
 
 ## Open Questions / implementation notes
-- Need to confirm the exact provider auth callback shape expected by Pi’s `registerProvider(...oauth...)` API, since OIDC refresh must be driven through that interface or through a startup refresh path.
-- Need to inspect whether Pi exposes settings write helpers; if not, `settings-store.ts` will update the global settings JSON directly and atomically.
+- Need to confirm the exact provider auth callback shape expected by Pi's `registerProvider(...oauth...)` API, since OIDC refresh must be driven through that interface or through a startup refresh path.
+- Settings writes must use Pi's official settings write API (SettingsManager) to avoid concurrent write conflicts. If Pi's settings API is unavailable, implement a single-owner settings service with atomic compare-and-swap or serialize all settings updates through a single-process settings-owner API. The `registerProvider(...oauth...)` integration must use the same settings API for provider refresh tokens/metadata to prevent concurrent clobbers of the global settings JSON.
 - Need to verify whether Pi provider model configs require costs/context for all models or accept conservative defaults.

@@ -39,6 +39,9 @@ test("runBrowserLogin orchestrates callback server wait and browser hook separat
 
   const session = await runBrowserLogin({
     authorizationEndpoint: "https://auth.example/application/o/authorize/",
+    tokenEndpoint: "https://auth.example/application/o/token/",
+    issuer: "https://auth.example/application/o/provider/",
+    jwksUri: "https://auth.example/application/o/provider/jwks/",
     clientId: "pi-client",
     scopes: ["openid"],
     state: "state-123",
@@ -65,12 +68,34 @@ test("runBrowserLogin orchestrates callback server wait and browser hook separat
   });
 
   assert.equal(session.tokens.accessToken, "access-token");
-  assert.deepEqual(calls, [
-    "openBrowser:https://auth.example/application/o/authorize/?response_type=code&client_id=pi-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A43123%2Fcallback&scope=openid&state=state-123&nonce=nonce-456&code_challenge=challenge-abc&code_challenge_method=S256",
-    "waitForCallback",
-    "exchangeCode:auth-code-123:http://127.0.0.1:43123/callback",
-    "close",
-  ]);
+
+  assert.equal(calls.length, 4);
+
+  const openBrowserCall = calls[0];
+  if (!openBrowserCall) throw new Error("expected openBrowser call");
+  assert.ok(openBrowserCall.startsWith("openBrowser:"));
+  const authUrl = new URL(openBrowserCall.replace("openBrowser:", ""));
+  assert.equal(authUrl.origin, "https://auth.example");
+  assert.equal(authUrl.pathname, "/application/o/authorize/");
+  assert.equal(authUrl.searchParams.get("response_type"), "code");
+  assert.equal(authUrl.searchParams.get("client_id"), "pi-client");
+  assert.equal(decodeURIComponent(authUrl.searchParams.get("redirect_uri") ?? ""), "http://127.0.0.1:43123/callback");
+  assert.equal(authUrl.searchParams.get("scope"), "openid");
+  assert.equal(authUrl.searchParams.get("state"), "state-123");
+  assert.equal(authUrl.searchParams.get("nonce"), "nonce-456");
+  assert.equal(authUrl.searchParams.get("code_challenge"), "challenge-abc");
+  assert.equal(authUrl.searchParams.get("code_challenge_method"), "S256");
+
+  assert.equal(calls[1], "waitForCallback");
+
+  const exchangeCall = calls[2];
+  if (!exchangeCall) throw new Error("expected exchangeCode call");
+  assert.ok(exchangeCall.startsWith("exchangeCode:"));
+  const exchangeParts = exchangeCall.split(":");
+  assert.equal(exchangeParts[1], "auth-code-123");
+  assert.equal(exchangeParts[2], "http://127.0.0.1:43123/callback");
+
+  assert.equal(calls[3], "close");
 });
 
 test("exchangeAuthorizationCode posts expected token request shape and assembles a typed session", async () => {

@@ -92,16 +92,21 @@ A commented example is in [`.env.example`](./.env.example), but it exists only a
 ## Troubleshooting
 
 ### "Run /authentik-setup before logging in"
+
 Missing one or more of `authentikHost`, `providerSlug`, or `clientId` in Pi settings.
 
 ### "Configure the OpenAI-compatible endpoint before logging in"
+
 Set `llmBaseUrl` in settings or run `/authentik-endpoint <url>`. The value must end with `/v1`.
 
 ### Login succeeds but Pi does not restore the session later
+
 Enable `enableOfflineAccess: true` so `offline_access` is requested and a refresh token can be stored.
 
 ### Endpoint validation fails
+
 Use the API base URL, not the site root, and make sure it ends in `/v1`.
 
 ### No models appear
+
 Check that `GET <llmBaseUrl>/models` works with the same bearer token and that `modelFilters` is not filtering everything unexpectedly.

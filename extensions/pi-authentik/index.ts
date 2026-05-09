@@ -237,6 +237,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
     if (!result.saved) return;
     state.settings = runtime.resolveSettings(ctx.cwd);
+    state.discovery = null;
     updateStatus(ctx);
   }
 
@@ -248,6 +249,9 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     const nonce = runtime.generateNonce();
     const session = await runtime.runBrowserLogin({
       authorizationEndpoint: discovery.authorization_endpoint,
+      tokenEndpoint: discovery.token_endpoint,
+      issuer: discovery.issuer,
+      jwksUri: discovery.jwks_uri,
       clientId: state.settings.clientId!,
       scopes: state.settings.scopes,
       state: loginState,
@@ -303,6 +307,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       llmBaseUrl: result.normalizedUrl,
     };
     await runtime.saveSettings(toStoredSettings(state.settings));
+    state.discovery = null;
     if (state.session) {
       await registerProviderFromSession(ctx);
     } else {
@@ -322,7 +327,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
   }
 
   async function maybeRefreshSession(ctx: SessionContextLike, session: AuthentikSessionRecord): Promise<AuthentikSessionRecord | null> {
-    if (!session.tokens.refreshToken) return session;
+    if (!session.tokens.refreshToken) return null;
 
     try {
       const discovery = await loadDiscovery();

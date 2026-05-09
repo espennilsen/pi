@@ -23,6 +23,9 @@ export interface BrowserLoopbackServer {
 /** Dependencies and inputs required for browser-based login orchestration. */
 export interface RunBrowserLoginOptions {
   authorizationEndpoint: string;
+  tokenEndpoint: string;
+  issuer: string;
+  jwksUri: string;
   clientId: string;
   scopes: string[];
   state: string;
@@ -118,9 +121,9 @@ export async function runBrowserLogin(options: RunBrowserLoginOptions): Promise<
       codeVerifier: options.codeVerifier,
       clientId: options.clientId,
       nonce: options.nonce,
-      tokenEndpoint: "",
-      issuer: "",
-      jwksUri: "",
+      tokenEndpoint: options.tokenEndpoint,
+      issuer: options.issuer,
+      jwksUri: options.jwksUri,
     });
   } finally {
     await server.close();

@@ -17,11 +17,14 @@ Valid examples:
 - `https://llm.example/v1`
 - `https://llm.example/openai/v1`
 
+Accepted and normalized examples:
+
+- `https://llm.example/v1/` — normalized to `https://llm.example/v1`
+
 Invalid examples:
 
 - `https://llm.example` — missing `/v1`
 - `https://llm.example/openai` — missing `/v1`
-- `https://llm.example/v1/` — accepted and normalized to `https://llm.example/v1`
 - `https://llm.example/v1?foo=bar` — query strings are rejected
 
 ## What Pi calls
@@ -71,10 +74,13 @@ If filters match nothing, the current implementation falls back to returning all
 ## Troubleshooting
 
 ### "LLM base URL must end with /v1"
+
 Use the API base URL and include `/v1`, for example `https://llm.example/openai/v1`.
 
 ### Connectivity test fails
+
 Check that `GET <llmBaseUrl>/models` works from the Pi machine and that the API accepts the bearer token issued after authentik login.
 
 ### Models endpoint works outside Pi but not in Pi
+
 Verify that the API expects the same OpenAI-compatible authorization header and that any reverse-proxy path preserves the `/v1` prefix.

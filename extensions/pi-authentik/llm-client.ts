@@ -71,6 +71,7 @@ async function requestJson(
   init: RequestInit,
   authStrategy?: LlmAuthStrategy,
   userAgent?: string,
+  timeoutMs = 30_000,
 ): Promise<unknown> {
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");
@@ -80,18 +81,34 @@ async function requestJson(
   if (userAgent) headers.set("user-agent", userAgent);
   if (authStrategy) await authStrategy.apply(headers);
 
-  const response = await fetchImpl(`${baseUrl}${path}`, { ...init, headers });
-  const payload = await parseJson(response);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    const message =
-      typeof payload === "object" && payload !== null && "error" in payload
-        ? JSON.stringify((payload as { error: unknown }).error)
-        : `${response.status} ${response.statusText}`;
-    throw new Error(`Request to ${path} failed: ${message}`);
+  try {
+    const response = await fetchImpl(`${baseUrl}${path}`, {
+      ...init,
+      headers,
+      signal: init.signal ?? controller.signal,
+    });
+    const payload = await parseJson(response);
+
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? JSON.stringify((payload as { error: unknown }).error)
+          : `${response.status} ${response.statusText}`;
+      throw new Error(`Request to ${path} failed: ${message}`);
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request to ${path} timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return payload;
 }
 
 /**
@@ -106,10 +123,10 @@ export function createOpenAICompatibleClient(options: OpenAICompatibleClientOpti
   const client: OpenAICompatibleClient = {
     async listModels() {
       const payload = await requestJson(fetchImpl, baseUrl, "/models", { method: "GET" }, options.authStrategy, options.userAgent);
-      const data = typeof payload === "object" && payload !== null && Array.isArray((payload as ListModelsResponse).data)
-        ? (payload as ListModelsResponse).data
-        : [];
-      return data;
+      if (typeof payload !== "object" || payload === null || !Array.isArray((payload as ListModelsResponse).data)) {
+        throw new Error(`/models endpoint returned invalid response: expected object with data array, got ${JSON.stringify(payload)}`);
+      }
+      return (payload as ListModelsResponse).data;
     },
     async chatCompletion(request) {
       return requestJson(

@@ -59,7 +59,13 @@ import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
-import { buildRecentToolCallsSnapshot, drainRecentToolCalls, resetToolTelemetryState } from "./tool-telemetry.ts";
+import {
+	buildIdleTelemetrySnapshot,
+	buildRecentToolCallsSnapshot,
+	createSerializedAsyncRunner,
+	drainRecentToolCalls,
+	resetToolTelemetryState,
+} from "./tool-telemetry.ts";
 
 const DEFAULT_PORT = 3100;
 const DEFAULT_DYNAMIC_RANGE_START = 27100;
@@ -606,6 +612,7 @@ export default function (pi: ExtensionAPI) {
 	let toolCallsInProgress = new Map<string, ToolCallInProgress>();
 	/** Completed tool calls ready for the next telemetry snapshot. */
 	let recentToolCalls: ToolCallRecord[] = [];
+	const runSerializedTelemetrySend = createSerializedAsyncRunner();
 
 	/** Build a telemetry snapshot from pi's actual state + executor A2A queue. */
 	function buildTelemetrySnapshot(): TelemetrySnapshot {
@@ -625,12 +632,15 @@ export default function (pi: ExtensionAPI) {
 	/** Send a telemetry snapshot to the hub. Failures are logged but never thrown. */
 	async function sendTelemetry(config: ReturnType<typeof loadConfig>["config"]): Promise<void> {
 		if (!hubAgentId || !config.hub?.apiKey) return;
-		const snapshot = buildTelemetrySnapshot();
-		const sentCount = snapshot.recentToolCalls?.length ?? 0;
-		const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub, log);
-		if (result && sentCount > 0) {
-			drainRecentToolCalls(recentToolCalls, sentCount);
-		}
+		await runSerializedTelemetrySend(async () => {
+			if (!hubAgentId) return;
+			const snapshot = buildTelemetrySnapshot();
+			const sentCount = snapshot.recentToolCalls?.length ?? 0;
+			const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub!, log);
+			if (result && sentCount > 0) {
+				drainRecentToolCalls(recentToolCalls, sentCount);
+			}
+		});
 	}
 
     const sseConnections = new Map<string, { abort: () => void }>();
@@ -1053,7 +1063,6 @@ export default function (pi: ExtensionAPI) {
 			pending.resolve("");
 		}
 		pendingInputResolvers.clear();
-		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
 
 		// Stop poller interval
 		if (pollerInterval) {
@@ -1088,20 +1097,25 @@ export default function (pi: ExtensionAPI) {
 		// Send final "idle" telemetry report before shutting down
 		if (hubAgentId) {
 			const { config } = loadConfig(cwd);
-			if (config.hub?.apiKey) {
-				const idleSnap: TelemetrySnapshot = {
-					queueDepth: 0,
-					activeTasks: 0,
-					maxConcurrent: 1,
-				};
-				await reportTelemetryToHub(
-					hubAgentId,
-					idleSnap,
-					config.hub,
-					log,
-				).catch(() => {});
+			const hubConfig = config.hub;
+			if (hubConfig?.apiKey) {
+				await runSerializedTelemetrySend(async () => {
+					if (!hubAgentId) return;
+					const idleSnap = buildIdleTelemetrySnapshot(recentToolCalls);
+					const sentCount = idleSnap.recentToolCalls?.length ?? 0;
+					const result = await reportTelemetryToHub(
+						hubAgentId,
+						idleSnap,
+						hubConfig,
+						log,
+					).catch(() => false);
+					if (result && sentCount > 0) {
+						drainRecentToolCalls(recentToolCalls, sentCount);
+					}
+				});
 			}
 		}
+		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
 		// Deregister this instance from the hub
 		if (hubAgentId) {
 			const { config } = loadConfig(cwd);

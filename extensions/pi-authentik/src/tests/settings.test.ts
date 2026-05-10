@@ -4,9 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { DEFAULT_MODEL_FILTERS, resolveSettings } from "./settings.ts";
-import { loadGlobalSettings, saveGlobalSettings } from "./settings-store.ts";
-import type { AuthentikStoredSettings } from "./types.ts";
+import { DEFAULT_MODEL_FILTERS, resolveSettings } from "../config/settings.ts";
+import { loadGlobalSettings, saveGlobalSettings } from "../config/settings-store.ts";
+import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 test("resolveSettings uses default scopes and omits offline_access by default", async () => {
   const settings = await resolveSettings(process.cwd(), {

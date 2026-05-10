@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 
-import { createPkcePair, generateNonce, generateState } from "./pkce.ts";
+import { createPkcePair, generateNonce, generateState } from "../auth/pkce.ts";
 
 test("createPkcePair generates S256 verifier and challenge", () => {
   const pkce = createPkcePair();

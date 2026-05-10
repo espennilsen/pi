@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { AuthentikStoredSettings } from "./types.ts";
+import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** Top-level Pi settings key used by this extension. */
 export const SETTINGS_KEY = "pi-authentik";

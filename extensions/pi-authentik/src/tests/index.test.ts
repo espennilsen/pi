@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPiAuthentikExtension } from "./index.ts";
-import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./types.ts";
+import { createPiAuthentikExtension } from "../../index.ts";
+import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "../shared/types.ts";
 
 const configuredSettings: AuthentikResolvedSettings = {
   authentikHost: "https://auth.example",

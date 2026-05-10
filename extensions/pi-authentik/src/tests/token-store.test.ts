@@ -7,8 +7,8 @@ import {
   saveStoredSession,
   SESSION_SECRET_NAME,
   TOKEN_STORE_EXTENSION_ID,
-} from "./token-store.ts";
-import type { AuthentikSessionRecord } from "./types.ts";
+} from "../session/token-store.ts";
+import type { AuthentikSessionRecord } from "../shared/types.ts";
 
 test("token-store saves loads and clears session state through globalThis.__piSecret", async () => {
   const saved = new Map<string, string>();

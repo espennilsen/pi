@@ -1,10 +1,10 @@
-import { deriveDiscoveryUrl } from "./auth-config.ts";
-import type { OidcDiscoveryMetadata } from "./discovery.ts";
-import { fetchOidcDiscoveryMetadata } from "./discovery.ts";
-import { testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./endpoint-validator.ts";
+import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
+import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
+import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
+import { testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
-import type { AuthentikStoredSettings } from "./types.ts";
+import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
 export interface FirstRunUi {

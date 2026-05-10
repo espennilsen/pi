@@ -2,26 +2,26 @@ import { spawn } from "node:child_process";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { exchangeAuthorizationCode, refreshSession as refreshStoredSession, runBrowserLogin } from "./auth-client.ts";
-import { deriveDiscoveryUrl } from "./auth-config.ts";
-import { startCallbackServer } from "./callback-server.ts";
-import { fetchOidcDiscoveryMetadata, type OidcDiscoveryMetadata } from "./discovery.ts";
-import { validateOpenAIBaseUrl } from "./endpoint-validator.ts";
-import { runFirstRunSetup } from "./first-run.ts";
-import { createOpenAICompatibleClient } from "./llm-client.ts";
-import { createLogger } from "./logger.ts";
-import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./models.ts";
-import { generateNonce, createPkcePair, generateState } from "./pkce.ts";
-import { createEmptySettings, resolveSettings } from "./settings.ts";
-import { saveCurrentGlobalSettings } from "./settings-store.ts";
-import { clearStoredSession, loadStoredSession, saveStoredSession } from "./token-store.ts";
-import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./types.ts";
+import { exchangeAuthorizationCode, refreshSession as refreshStoredSession, runBrowserLogin } from "./src/auth/auth-client.ts";
+import { deriveDiscoveryUrl } from "./src/auth/auth-config.ts";
+import { startCallbackServer } from "./src/auth/callback-server.ts";
+import { fetchOidcDiscoveryMetadata, type OidcDiscoveryMetadata } from "./src/auth/discovery.ts";
+import { validateOpenAIBaseUrl } from "./src/llm/endpoint-validator.ts";
+import { runFirstRunSetup } from "./src/config/first-run.ts";
+import { createOpenAICompatibleClient } from "./src/llm/llm-client.ts";
+import { createLogger } from "./src/shared/logger.ts";
+import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./src/llm/models.ts";
+import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts";
+import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
+import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
+import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session/token-store.ts";
+import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
-export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./settings.ts";
-export { normalizeOpenAIBaseUrl, testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./endpoint-validator.ts";
-export { createOpenAICompatibleClient } from "./llm-client.ts";
-export { filterProviderModels, mapOpenAIModelToProviderModel, mapOpenAIModelsToProviderModels } from "./models.ts";
-export type { AuthentikResolvedSettings, AuthentikStoredSettings } from "./types.ts";
+export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
+export { normalizeOpenAIBaseUrl, testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./src/llm/endpoint-validator.ts";
+export { createOpenAICompatibleClient } from "./src/llm/llm-client.ts";
+export { filterProviderModels, mapOpenAIModelToProviderModel, mapOpenAIModelsToProviderModels } from "./src/llm/models.ts";
+export type { AuthentikResolvedSettings, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 const STATUS_KEY = "pi-authentik";
 const PROVIDER_NAME = "authentik";

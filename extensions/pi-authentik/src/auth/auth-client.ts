@@ -1,5 +1,5 @@
 import { verifyIdToken as defaultVerifyIdToken } from "./jwt.ts";
-import type { AuthentikSessionRecord, AuthentikUserSession, VerifyIdTokenFn } from "./types.ts";
+import type { AuthentikSessionRecord, AuthentikUserSession, VerifyIdTokenFn } from "../shared/types.ts";
 
 /** Inputs used to compose the browser authorization URL. */
 export interface BuildAuthorizationUrlOptions {

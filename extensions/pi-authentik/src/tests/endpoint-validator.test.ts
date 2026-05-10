@@ -8,7 +8,7 @@ import {
   normalizeOpenAIBaseUrl,
   testModelsEndpointConnectivity,
   validateOpenAIBaseUrl,
-} from "./endpoint-validator.ts";
+} from "../llm/endpoint-validator.ts";
 
 test("validateOpenAIBaseUrl enforces /v1 with auto-fix suggestion", () => {
   const result = validateOpenAIBaseUrl("https://llm.example/openai");

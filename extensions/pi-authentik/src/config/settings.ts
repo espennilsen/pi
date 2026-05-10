@@ -1,4 +1,4 @@
-import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "./types.ts";
+import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "../shared/types.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
 
 /** Default scopes requested when no scopes are configured explicitly. */

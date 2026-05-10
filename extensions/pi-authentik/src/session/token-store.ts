@@ -1,4 +1,4 @@
-import type { AuthentikSessionRecord, PiSecretApiLike } from "./types.ts";
+import type { AuthentikSessionRecord, PiSecretApiLike } from "../shared/types.ts";
 
 /** Extension identifier used when persisting secrets through `pi-secret`. */
 export const TOKEN_STORE_EXTENSION_ID = "pi-authentik";

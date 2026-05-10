@@ -239,6 +239,10 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.settings = await runtime.resolveSettings(ctx.cwd);
     state.discovery = null;
     updateStatus(ctx);
+
+    if (result.loginRequested) {
+      await handleLogin(ctx);
+    }
   }
 
   async function handleLogin(ctx: CommandContextLike): Promise<void> {

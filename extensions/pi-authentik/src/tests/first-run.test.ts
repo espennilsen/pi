@@ -219,6 +219,25 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
   assert.equal(result.saved, false);
   assert.equal(result.settings, null);
 });
+test("runFirstRunSetup returns loginRequested: true when auth redirect detected and user accepts prompt", async () => {
+  const ui = createUi({
+    inputs: ["", "https://auth.example", "provider", "client", "openid", "https://llm.example/v1"],
+    confirms: [true, false, true, true], // acknowledge loopback, skip offline, test connectivity, login now
+  });
+
+  const result = await runFirstRunSetup({
+    ui,
+    saveSettings: () => {},
+    testConnectivity: async () => ({
+      ok: false,
+      error: "Auth required",
+      authUrl: "https://auth.example/login",
+    }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(result.loginRequested, true);
+});
 
 function createUi(options: {
   inputs: string[];

@@ -6,17 +6,18 @@ This extension uses authentik through OIDC Authorization Code + PKCE with a loop
 
 Configure these values under the `pi-authentik` key in Pi settings:
 
-- `authentikHost` — for example `https://auth.example`
-- `providerSlug` — the provider/application slug Pi uses for discovery
 - `clientId` — the public client ID issued by authentik
+- **Either** `discoveryUrl` — full OpenID Provider Configuration URL (`…/.well-known/openid-configuration`), **or** both:
+  - `authentikHost` — for example `https://auth.example`
+  - `providerSlug` — the OAuth2 provider/application slug Pi uses when deriving discovery
 
-By default Pi derives discovery from:
+When `discoveryUrl` is omitted, Pi derives it as:
 
 ```text
 https://<authentik-host>/application/o/<provider-slug>/.well-known/openid-configuration
 ```
 
-If needed, you can override that with `discoveryUrl`.
+The `/authentik-setup` wizard asks for discovery first (recommended), with host + slug as a fallback when you leave discovery empty.
 
 ## Create or update the provider
 

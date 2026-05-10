@@ -1,3 +1,6 @@
+import { deriveDiscoveryUrl } from "./auth-config.ts";
+import type { OidcDiscoveryMetadata } from "./discovery.ts";
+import { fetchOidcDiscoveryMetadata } from "./discovery.ts";
 import { testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
@@ -22,6 +25,7 @@ export interface RunFirstRunSetupOptions {
   ui: FirstRunUi;
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
   testConnectivity?: (baseUrl: string) => Promise<FirstRunConnectivityResult>;
+  fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
 
 /** Outcome of the first-run setup flow. */
@@ -33,6 +37,19 @@ export interface FirstRunSetupResult {
 
 const LLM_URL_EXAMPLES = ["https://llm.example/v1", "https://llm.example/openai/v1"];
 
+const DISCOVERY_PLACEHOLDER = "https://id.example/application/o/my-provider/.well-known/openid-configuration";
+
+const LOOPBACK_REDIRECT_CONFIRM_TITLE = "Loopback OAuth redirect URIs configured?";
+
+const LOOPBACK_REDIRECT_CONFIRM_BODY = [
+  "Pi signs in with OIDC Authorization Code + PKCE and uses a temporary loopback URL:",
+  "  http://127.0.0.1:<random-port>/callback",
+  "",
+  'In Authentik, configure this OAuth2/OIDC provider to allow loopback redirects (exact rules depend on your Authentik version — see AUTHENTIK_SETUP.md in pi-authentik, section "Loopback redirect URI setup").',
+  "",
+  "This is not the reverse-proxy callback (for example URLs containing outpost.goauthentik.io on your API host). Use a dedicated public client here, not only the Embedded Outpost client used by your upstream proxy.",
+].join("\n");
+
 /**
  * Prompts for authentik and LLM endpoint settings, optionally tests connectivity,
  * and persists the resulting non-secret configuration.
@@ -43,10 +60,21 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const { ui } = options;
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
   const testConnectivity = options.testConnectivity ?? (async (baseUrl: string) => testModelsEndpointConnectivity({ baseUrl }));
+  const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
-  const authentikHost = await promptForAbsoluteUrl(ui, "Authentik host", "https://auth.example", "Authentik host");
-  const providerSlug = await promptForRequiredText(ui, "Provider slug", "default-provider");
-  const clientId = await promptForRequiredText(ui, "Client ID", "pi-client");
+  const resolved = await resolveOidcConfiguration(ui, fetchDiscovery);
+
+  const redirectOk = await ui.confirm(LOOPBACK_REDIRECT_CONFIRM_TITLE, LOOPBACK_REDIRECT_CONFIRM_BODY);
+  if (!redirectOk) {
+    ui.notify("Setup cancelled until loopback redirects are acknowledged.", "warning");
+    return {
+      saved: false,
+      settings: null,
+      connectivityTested: false,
+    };
+  }
+
+  const clientId = await promptForRequiredText(ui, "Client ID", "pi-desktop-client");
   const scopes = await promptForScopes(ui);
   const enableOfflineAccess = await ui.confirm(
     "Enable offline_access?",
@@ -64,8 +92,9 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   }
 
   const settings = sanitizeSetupSettings({
-    authentikHost,
-    providerSlug,
+    ...(resolved.discoveryUrl ? { discoveryUrl: resolved.discoveryUrl } : {}),
+    ...(resolved.authentikHost ? { authentikHost: resolved.authentikHost } : {}),
+    ...(resolved.providerSlug ? { providerSlug: resolved.providerSlug } : {}),
     clientId,
     scopes,
     enableOfflineAccess,
@@ -82,6 +111,55 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   };
 }
 
+interface ResolvedOidcConfiguration {
+  /** Stored only when supplied explicitly; omit when deriving from host + slug. */
+  discoveryUrl?: string;
+  authentikHost?: string;
+  providerSlug?: string;
+  metadata?: OidcDiscoveryMetadata;
+}
+
+async function resolveOidcConfiguration(
+  ui: FirstRunUi,
+  fetchDiscovery: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>,
+): Promise<ResolvedOidcConfiguration> {
+  for (;;) {
+    const pasted = await promptForOptionalDiscoveryUrl(ui);
+    if (pasted !== null) {
+      try {
+        const metadata = await fetchDiscovery(pasted);
+        ui.notify(`OIDC discovery OK. issuer: ${metadata.issuer}`, "info");
+        return { discoveryUrl: pasted, metadata };
+      } catch (error) {
+        ui.notify(
+          `Discovery failed (${error instanceof Error ? error.message : String(error)}). Check the URL and try again, or leave it empty to use Authentik host + provider slug.`,
+          "error",
+        );
+      }
+      continue;
+    }
+
+    const authentikHost = await promptForAbsoluteUrl(ui, "Authentik host", "https://auth.example", "Authentik host");
+    const providerSlug = await promptForRequiredText(ui, "Provider slug", "default-provider");
+    const discoveryUrlDerived = deriveDiscoveryUrl(authentikHost, providerSlug);
+
+    try {
+      const metadata = await fetchDiscovery(discoveryUrlDerived);
+      ui.notify(`OIDC discovery OK. issuer: ${metadata.issuer}`, "info");
+      return {
+        authentikHost,
+        providerSlug,
+        metadata,
+      };
+    } catch (error) {
+      ui.notify(
+        `Could not load discovery from ${discoveryUrlDerived} (${error instanceof Error ? error.message : String(error)}). Verify host and provider slug.`,
+        "error",
+      );
+    }
+  }
+}
+
 /**
  * Normalizes setup values before they are written to Pi settings storage.
  * @param settings - Raw settings gathered from the setup flow.
@@ -93,14 +171,60 @@ export function sanitizeSetupSettings(settings: AuthentikStoredSettings): Authen
     .filter(Boolean)
     .filter((scope) => scope !== "offline_access");
 
-  return {
-    authentikHost: settings.authentikHost?.trim(),
-    providerSlug: settings.providerSlug?.trim(),
+  const out: AuthentikStoredSettings = {
     clientId: settings.clientId?.trim(),
     scopes: filteredScopes.length > 0 ? Array.from(new Set(filteredScopes)) : [...DEFAULT_SCOPES],
     enableOfflineAccess: settings.enableOfflineAccess === true,
     llmBaseUrl: settings.llmBaseUrl?.trim(),
   };
+
+  const discoveryUrl = settings.discoveryUrl?.trim();
+  if (discoveryUrl) {
+    out.discoveryUrl = discoveryUrl;
+  }
+
+  const authentikHost = settings.authentikHost?.trim();
+  if (authentikHost) {
+    out.authentikHost = authentikHost;
+  }
+
+  const providerSlug = settings.providerSlug?.trim();
+  if (providerSlug) {
+    out.providerSlug = providerSlug;
+  }
+
+  return out;
+}
+
+async function promptForOptionalDiscoveryUrl(ui: FirstRunUi): Promise<string | null> {
+  for (;;) {
+    const raw = await ui.input(
+      "OIDC discovery URL (OpenID configuration)",
+      DISCOVERY_PLACEHOLDER,
+      "",
+    );
+    const trimmed = raw?.trim() ?? "";
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error("Discovery URL must use http or https.");
+      }
+      if (url.search || url.hash) {
+        throw new Error("Discovery URL must not include a query string or hash fragment.");
+      }
+      url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+      return url.toString().replace(/\/$/, "");
+    } catch (error) {
+      ui.notify(
+        `${error instanceof Error ? error.message : "Discovery URL must be a valid absolute URL."}\nExample: ${DISCOVERY_PLACEHOLDER}`,
+        "error",
+      );
+    }
+  }
 }
 
 async function promptForRequiredText(ui: FirstRunUi, prompt: string, placeholder?: string): Promise<string> {

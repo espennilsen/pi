@@ -3,6 +3,8 @@ import test from "node:test";
 import http from "node:http";
 
 import {
+  MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE,
+  MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE,
   normalizeOpenAIBaseUrl,
   testModelsEndpointConnectivity,
   validateOpenAIBaseUrl,
@@ -54,4 +56,69 @@ test("testModelsEndpointConnectivity calls GET /models with auth strategy", asyn
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
+});
+
+test("testModelsEndpointConnectivity without auth rejects Authentik-style login redirects", async () => {
+  const fetchImpl: typeof fetch = async (input) => {
+    const reqUrl = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
+    assert.match(reqUrl, /\/v1\/models$/);
+    return new Response(null, {
+      status: 302,
+      headers: { location: "https://idp.example/if/flow/default-authentication-flow/?next=/" },
+    });
+  };
+
+  await assert.rejects(
+    async () =>
+      testModelsEndpointConnectivity({
+        baseUrl: "https://proxy.example/services/llm/v1",
+        fetchImpl,
+      }),
+    (error: unknown) => error instanceof Error && error.message === MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE,
+  );
+});
+
+test("testModelsEndpointConnectivity without auth rejects HTML bodies", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response("<!DOCTYPE html><html><title>Login</title></html>", {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+
+  await assert.rejects(
+    async () =>
+      testModelsEndpointConnectivity({
+        baseUrl: "https://api.example/v1",
+        fetchImpl,
+      }),
+    (error: unknown) => error instanceof Error && error.message === MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE,
+  );
+});
+
+test("testModelsEndpointConnectivity without auth follows benign redirects then parses JSON", async () => {
+  let call = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    const reqUrl = typeof input === "string" ? input : input instanceof Request ? input.url : input.toString();
+    call += 1;
+    if (call === 1) {
+      assert.equal(reqUrl, "https://api.example/v1/models");
+      return new Response(null, {
+        status: 307,
+        headers: { location: "https://api.example/alt/v1/models" },
+      });
+    }
+    assert.equal(reqUrl, "https://api.example/alt/v1/models");
+    return new Response(JSON.stringify({ object: "list", data: [{ id: "m1" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const result = await testModelsEndpointConnectivity({
+    baseUrl: "https://api.example/v1",
+    fetchImpl,
+  });
+
+  assert.equal(result.modelCount, 1);
+  assert.equal(result.normalizedUrl, "https://api.example/v1");
 });

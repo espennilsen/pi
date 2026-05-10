@@ -307,7 +307,6 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       llmBaseUrl: result.normalizedUrl,
     };
     await runtime.saveSettings(toStoredSettings(state.settings));
-    state.discovery = null;
     if (state.session) {
       await registerProviderFromSession(ctx);
     } else {
@@ -417,8 +416,15 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
   }
 
   function renderStatusSummary(): string {
+    const oidcLine = state.settings.discoveryUrl
+      ? `Discovery: ${state.settings.discoveryUrl}`
+      : state.settings.authentikHost && state.settings.providerSlug
+        ? `Authentik: ${state.settings.authentikHost} (provider ${state.settings.providerSlug})`
+        : `OIDC: (incomplete — run /authentik-setup)`;
+
     return [
       `Configured: ${hasAuthConfig(state.settings) ? "yes" : "no"}`,
+      oidcLine,
       `Endpoint: ${state.settings.llmBaseUrl ?? "missing"}`,
       `Signed in: ${state.session ? "yes" : "no"}`,
       `Models: ${state.models.length}`,
@@ -464,7 +470,14 @@ export default function (pi: ExtensionAPI): void {
 }
 
 function hasAuthConfig(settings: AuthentikResolvedSettings): boolean {
-  return Boolean(settings.authentikHost && settings.providerSlug && settings.clientId);
+  if (!settings.clientId) {
+    return false;
+  }
+
+  const hasDerivedOidcEndpoints = Boolean(settings.authentikHost && settings.providerSlug);
+  const hasExplicitDiscovery = Boolean(settings.discoveryUrl);
+
+  return hasExplicitDiscovery || hasDerivedOidcEndpoints;
 }
 
 function shouldRefresh(session: AuthentikSessionRecord, nowMs: number): boolean {

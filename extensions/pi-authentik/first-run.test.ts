@@ -1,19 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { OidcDiscoveryMetadata } from "./discovery.ts";
 import { runFirstRunSetup, type FirstRunUi } from "./first-run.ts";
 import type { AuthentikStoredSettings } from "./types.ts";
 
-test("runFirstRunSetup prompts in order, tests endpoint, and saves only non-secret config", async () => {
+function exampleMetadata(): OidcDiscoveryMetadata {
+  return {
+    issuer: "https://auth.example/application/o/provider/",
+    authorization_endpoint: "https://auth.example/application/o/authorize/",
+    token_endpoint: "https://auth.example/application/o/token/",
+    jwks_uri: "https://auth.example/application/o/jwks/",
+    response_types_supported: ["code"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"],
+    code_challenge_methods_supported: ["S256"],
+    end_session_endpoint: "https://auth.example/application/o/logout/",
+  };
+}
+
+test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests endpoint, and saves discoveryUrl", async () => {
   const prompts: string[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
   const saved: AuthentikStoredSettings[] = [];
   const connectivityCalls: string[] = [];
 
+  const discoveryUrl = "https://auth.example/application/o/my-app/.well-known/openid-configuration";
+
   const ui = createUi({
     inputs: [
-      "https://auth.example/",
-      "main-provider",
+      discoveryUrl,
       "pi-client",
       "openid profile email",
       "https://llm.example/v1",
@@ -32,40 +48,73 @@ test("runFirstRunSetup prompts in order, tests endpoint, and saves only non-secr
       connectivityCalls.push(baseUrl);
       return { ok: true, normalizedUrl: baseUrl, modelCount: 3 };
     },
+    fetchDiscoveryMetadata: async (url) => {
+      assert.equal(url, discoveryUrl);
+      return exampleMetadata();
+    },
+  });
+
+  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "Client ID", "Scopes", "LLM base URL"]);
+  assert.equal(connectivityCalls[0], "https://llm.example/v1");
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0]?.discoveryUrl, discoveryUrl);
+  assert.equal(saved[0]?.authentikHost, undefined);
+  assert.equal(saved[0]?.providerSlug, undefined);
+  assert.equal(saved[0]?.clientId, "pi-client");
+  assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email"]);
+  assert.equal(saved[0]?.enableOfflineAccess, true);
+  assert.deepEqual(result.settings, saved[0]);
+  assert.equal("clientSecret" in saved[0]!, false);
+  assert.match(notifications.map(({ message }) => message).join("\n"), /3 models/i);
+  assert.match(notifications.map(({ message }) => message).join("\n"), /issuer:/i);
+});
+
+test("runFirstRunSetup falls back to Authentik host + slug when discovery URL blank", async () => {
+  const prompts: string[] = [];
+  const ui = createUi({
+    inputs: [
+      "",
+      "https://auth.example/",
+      "main-provider",
+      "pi-client",
+      "openid profile email",
+      "https://llm.example/v1",
+    ],
+    confirms: [true, true, true],
+    prompts,
+  });
+
+  const saved: AuthentikStoredSettings[] = [];
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings(settings) {
+      saved.push(settings);
+    },
+    testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 3 }),
+    fetchDiscoveryMetadata: async (url) => {
+      assert.match(url, /\/application\/o\/main-provider\/\.well-known\/openid-configuration$/);
+      return exampleMetadata();
+    },
   });
 
   assert.deepEqual(prompts, [
+    "OIDC discovery URL (OpenID configuration)",
     "Authentik host",
     "Provider slug",
     "Client ID",
     "Scopes",
     "LLM base URL",
   ]);
-  assert.equal(connectivityCalls[0], "https://llm.example/v1");
-  assert.equal(saved.length, 1);
-  assert.deepEqual(saved[0], {
-    authentikHost: "https://auth.example",
-    providerSlug: "main-provider",
-    clientId: "pi-client",
-    scopes: ["openid", "profile", "email"],
-    enableOfflineAccess: true,
-    llmBaseUrl: "https://llm.example/v1",
-  });
-  assert.deepEqual(result.settings, saved[0]);
-  assert.equal("clientSecret" in saved[0], false);
-  assert.match(notifications.map(({ message }) => message).join("\n"), /3 models/i);
+  assert.equal(saved[0]?.authentikHost, "https://auth.example");
+  assert.equal(saved[0]?.providerSlug, "main-provider");
+  assert.equal(saved[0]?.discoveryUrl, undefined);
 });
 
 test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () => {
   const ui = createUi({
-    inputs: [
-      "https://auth.example",
-      "main-provider",
-      "pi-client",
-      "",
-      "https://llm.example/openai",
-    ],
-    confirms: [false, true, true],
+    inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "https://llm.example/openai"],
+    confirms: [true, false, true, true],
   });
 
   const saved: AuthentikStoredSettings[] = [];
@@ -76,6 +125,7 @@ test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () =
       saved.push(settings);
     },
     testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(saved[0]?.llmBaseUrl, "https://llm.example/openai/v1");
@@ -87,6 +137,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
   const notifications: Array<{ message: string; level: string }> = [];
   const ui = createUi({
     inputs: [
+      "",
       "https://auth.example",
       "main-provider",
       "pi-client",
@@ -94,7 +145,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       "not-a-url",
       "https://llm.example/v1",
     ],
-    confirms: [false, false],
+    confirms: [true, false, false],
     notifications,
   });
 
@@ -106,6 +157,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       saved.push(settings);
     },
     testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(saved[0]?.llmBaseUrl, "https://llm.example/v1");
@@ -116,13 +168,14 @@ test("runFirstRunSetup offers endpoint test before final save and can skip it", 
   const notifications: Array<{ message: string; level: string }> = [];
   const ui = createUi({
     inputs: [
+      "",
       "https://auth.example",
       "main-provider",
       "pi-client",
       "openid profile email offline_access",
       "https://llm.example/v1",
     ],
-    confirms: [false, false],
+    confirms: [true, false, false],
     notifications,
   });
 
@@ -138,11 +191,33 @@ test("runFirstRunSetup offers endpoint test before final save and can skip it", 
       connectivityCalled = true;
       return { ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 };
     },
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(connectivityCalled, false);
   assert.equal(saveCount, 1);
   assert.match(notifications.map(({ message }) => message).join("\n"), /skip.*connectivity test/i);
+});
+
+test("runFirstRunSetup does not save when loopback redirect confirmation is declined", async () => {
+  const ui = createUi({
+    inputs: ["https://auth.example/application/o/x/.well-known/openid-configuration"],
+    confirms: [false],
+  });
+
+  let saveCount = 0;
+
+  const result = await runFirstRunSetup({
+    ui,
+    saveSettings() {
+      saveCount += 1;
+    },
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(saveCount, 0);
+  assert.equal(result.saved, false);
+  assert.equal(result.settings, null);
 });
 
 function createUi(options: {

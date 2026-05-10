@@ -257,6 +257,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       issuer: discovery.issuer,
       jwksUri: discovery.jwks_uri,
       clientId: state.settings.clientId!,
+      clientSecret: state.settings.clientSecret ?? undefined,
       scopes: state.settings.scopes,
       state: loginState,
       nonce,
@@ -268,6 +269,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       exchangeCode: (request) =>
         runtime.exchangeAuthorizationCode({
           ...request,
+          clientSecret: state.settings.clientSecret ?? undefined,
           tokenEndpoint: discovery.token_endpoint,
           issuer: discovery.issuer,
           jwksUri: discovery.jwks_uri,
@@ -337,6 +339,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       const refreshed = await runtime.refreshSession({
         tokenEndpoint: discovery.token_endpoint,
         clientId: state.settings.clientId!,
+        clientSecret: state.settings.clientSecret ?? undefined,
         session,
         issuer: discovery.issuer,
         jwksUri: discovery.jwks_uri,
@@ -493,6 +496,7 @@ function toStoredSettings(settings: AuthentikResolvedSettings): AuthentikStoredS
     authentikHost: settings.authentikHost ?? undefined,
     providerSlug: settings.providerSlug ?? undefined,
     clientId: settings.clientId ?? undefined,
+    clientSecret: settings.clientSecret ?? undefined,
     scopes: settings.scopes,
     enableOfflineAccess: settings.enableOfflineAccess,
     discoveryUrl: settings.discoveryUrl ?? undefined,

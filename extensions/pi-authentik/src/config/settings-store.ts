@@ -35,6 +35,7 @@ export function sanitizeStoredSettings(value: unknown): AuthentikStoredSettings 
   const authentikHost = sanitizeString(input.authentikHost);
   const providerSlug = sanitizeString(input.providerSlug);
   const clientId = sanitizeString(input.clientId);
+  const clientSecret = sanitizeString(input.clientSecret);
   const scopes = sanitizeStringArray(input.scopes);
   const discoveryUrl = sanitizeString(input.discoveryUrl);
   const logoutUrl = sanitizeString(input.logoutUrl);
@@ -45,6 +46,7 @@ export function sanitizeStoredSettings(value: unknown): AuthentikStoredSettings 
   if (authentikHost) sanitized.authentikHost = authentikHost;
   if (providerSlug) sanitized.providerSlug = providerSlug;
   if (clientId) sanitized.clientId = clientId;
+  if (clientSecret) sanitized.clientSecret = clientSecret;
   if (scopes) sanitized.scopes = scopes;
   if (typeof input.enableOfflineAccess === "boolean") sanitized.enableOfflineAccess = input.enableOfflineAccess;
   if (discoveryUrl) sanitized.discoveryUrl = discoveryUrl;

@@ -27,6 +27,7 @@ export interface RunBrowserLoginOptions {
   issuer: string;
   jwksUri: string;
   clientId: string;
+  clientSecret?: string;
   scopes: string[];
   state: string;
   nonce: string;
@@ -42,6 +43,7 @@ export interface RunBrowserLoginOptions {
 export interface ExchangeAuthorizationCodeRequest {
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   code: string;
   redirectUri: string;
   codeVerifier: string;
@@ -57,6 +59,7 @@ export interface ExchangeAuthorizationCodeRequest {
 export interface RefreshSessionOptions {
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   session: AuthentikSessionRecord;
   issuer?: string;
   jwksUri?: string;
@@ -120,6 +123,7 @@ export async function runBrowserLogin(options: RunBrowserLoginOptions): Promise<
       redirectUri: server.redirectUri,
       codeVerifier: options.codeVerifier,
       clientId: options.clientId,
+      clientSecret: options.clientSecret,
       nonce: options.nonce,
       tokenEndpoint: options.tokenEndpoint,
       issuer: options.issuer,
@@ -142,6 +146,7 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
     params: {
       grant_type: "authorization_code",
       client_id: options.clientId,
+      ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
       code: options.code,
       redirect_uri: options.redirectUri,
       code_verifier: options.codeVerifier,
@@ -174,6 +179,7 @@ export async function refreshSession(options: RefreshSessionOptions): Promise<Au
     params: {
       grant_type: "refresh_token",
       client_id: options.clientId,
+      ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
       refresh_token: refreshToken,
     },
   });
@@ -213,7 +219,16 @@ async function requestToken(options: {
   });
 
   if (!response.ok) {
-    throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
+    let errorDetail = "";
+    try {
+      const errorPayload = await response.json() as Record<string, unknown>;
+      if (errorPayload.error) {
+        errorDetail = `: ${errorPayload.error}${errorPayload.error_description ? ` (${errorPayload.error_description})` : ""}`;
+      }
+    } catch {
+      // Ignore parse failure for error body
+    }
+    throw new Error(`Token request failed: ${response.status} ${response.statusText}${errorDetail}`);
   }
 
   let payload: unknown;

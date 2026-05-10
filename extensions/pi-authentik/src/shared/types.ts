@@ -3,6 +3,7 @@ export interface AuthentikStoredSettings {
   authentikHost?: string;
   providerSlug?: string;
   clientId?: string;
+  clientSecret?: string;
   scopes?: string[];
   enableOfflineAccess?: boolean;
   discoveryUrl?: string;
@@ -17,6 +18,7 @@ export interface AuthentikResolvedSettings {
   authentikHost: string | null;
   providerSlug: string | null;
   clientId: string | null;
+  clientSecret: string | null;
   scopes: string[];
   enableOfflineAccess: boolean;
   discoveryUrl: string | null;

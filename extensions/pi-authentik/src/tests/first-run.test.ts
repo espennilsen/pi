@@ -31,6 +31,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
     inputs: [
       discoveryUrl,
       "pi-client",
+      "",
       "openid profile email",
       "https://llm.example/v1",
     ],
@@ -54,7 +55,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
     },
   });
 
-  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "Client ID", "Scopes", "LLM base URL"]);
+  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "Client ID", "Client secret (leave empty for public client)", "Scopes", "LLM base URL"]);
   assert.equal(connectivityCalls[0], "https://llm.example/v1");
   assert.equal(saved.length, 1);
   assert.equal(saved[0]?.discoveryUrl, discoveryUrl);
@@ -77,6 +78,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
       "https://auth.example/",
       "main-provider",
       "pi-client",
+      "",
       "openid profile email",
       "https://llm.example/v1",
     ],
@@ -103,6 +105,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
     "Authentik host",
     "Provider slug",
     "Client ID",
+    "Client secret (leave empty for public client)",
     "Scopes",
     "LLM base URL",
   ]);
@@ -113,7 +116,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
 
 test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () => {
   const ui = createUi({
-    inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "https://llm.example/openai"],
+    inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "", "https://llm.example/openai"],
     confirms: [true, false, true, true],
   });
 
@@ -141,6 +144,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       "https://auth.example",
       "main-provider",
       "pi-client",
+      "",
       "openid,email",
       "not-a-url",
       "https://llm.example/v1",
@@ -172,6 +176,7 @@ test("runFirstRunSetup offers endpoint test before final save and can skip it", 
       "https://auth.example",
       "main-provider",
       "pi-client",
+      "",
       "openid profile email offline_access",
       "https://llm.example/v1",
     ],
@@ -221,7 +226,7 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
 });
 test("runFirstRunSetup returns loginRequested: true when auth redirect detected and user accepts prompt", async () => {
   const ui = createUi({
-    inputs: ["", "https://auth.example", "provider", "client", "openid", "https://llm.example/v1"],
+    inputs: ["", "https://auth.example", "provider", "client", "", "openid", "https://llm.example/v1"],
     confirms: [true, false, true, true], // acknowledge loopback, skip offline, test connectivity, login now
   });
 

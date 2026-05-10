@@ -73,6 +73,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   }
 
   const clientId = await promptForRequiredText(ui, "Client ID", "pi-desktop-client");
+  const clientSecret = await promptForOptionalClientSecret(ui);
   const scopes = await promptForScopes(ui);
   const enableOfflineAccess = await ui.confirm(
     "Enable offline_access?",
@@ -105,6 +106,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     ...(resolved.authentikHost ? { authentikHost: resolved.authentikHost } : {}),
     ...(resolved.providerSlug ? { providerSlug: resolved.providerSlug } : {}),
     clientId,
+    ...(clientSecret ? { clientSecret } : {}),
     scopes,
     enableOfflineAccess,
     llmBaseUrl,
@@ -243,6 +245,14 @@ async function promptForRequiredText(ui: FirstRunUi, prompt: string, placeholder
     if (value) return value;
     ui.notify(`${prompt} is required.`, "warning");
   }
+}
+
+async function promptForOptionalClientSecret(ui: FirstRunUi): Promise<string | null> {
+  const raw = (await ui.input(
+    "Client secret (leave empty for public client)",
+    "",
+  ))?.trim();
+  return raw && raw.length > 0 ? raw : null;
 }
 
 async function promptForAbsoluteUrl(

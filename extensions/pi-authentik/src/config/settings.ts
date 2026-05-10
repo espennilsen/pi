@@ -15,6 +15,7 @@ export function createEmptySettings(): AuthentikResolvedSettings {
     authentikHost: null,
     providerSlug: null,
     clientId: null,
+    clientSecret: null,
     scopes: DEFAULT_SCOPES,
     enableOfflineAccess: false,
     discoveryUrl: null,
@@ -177,6 +178,7 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
     authentikHost: stored.authentikHost ?? null,
     providerSlug: stored.providerSlug ?? null,
     clientId: stored.clientId ?? null,
+    clientSecret: stored.clientSecret ?? null,
     scopes: filteredScopes,
     enableOfflineAccess,
     discoveryUrl: stored.discoveryUrl

@@ -6,9 +6,9 @@ import {
   exchangeAuthorizationCode,
   refreshSession,
   runBrowserLogin,
-} from "./auth-client.ts";
-import { buildLogoutUrl } from "./logout.ts";
-import type { AuthentikSessionRecord, AuthentikUserSession } from "./types.ts";
+} from "../auth/auth-client.ts";
+import { buildLogoutUrl } from "../auth/logout.ts";
+import type { AuthentikSessionRecord, AuthentikUserSession } from "../shared/types.ts";
 
 test("buildAuthorizationUrl composes authorization request with PKCE state nonce and loopback redirect", () => {
   const authorizationUrl = buildAuthorizationUrl({

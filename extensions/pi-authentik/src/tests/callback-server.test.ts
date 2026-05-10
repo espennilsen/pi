@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { startCallbackServer } from "./callback-server.ts";
+import { startCallbackServer } from "../auth/callback-server.ts";
 
 async function httpGet(url: string): Promise<{ status: number; body: string }> {
   const response = await fetch(url);

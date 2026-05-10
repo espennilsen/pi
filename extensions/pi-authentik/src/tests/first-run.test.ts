@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { OidcDiscoveryMetadata } from "./discovery.ts";
-import { runFirstRunSetup, type FirstRunUi } from "./first-run.ts";
-import type { AuthentikStoredSettings } from "./types.ts";
+import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
+import { runFirstRunSetup, type FirstRunUi } from "../config/first-run.ts";
+import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 function exampleMetadata(): OidcDiscoveryMetadata {
   return {

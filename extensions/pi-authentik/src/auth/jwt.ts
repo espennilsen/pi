@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 
-import type { AuthentikUserSession, VerifyIdTokenOptions } from "./types.ts";
+import type { AuthentikUserSession, VerifyIdTokenOptions } from "../shared/types.ts";
 
 /**
  * Verifies an authentik ID token against the provider JWKS and required claims.

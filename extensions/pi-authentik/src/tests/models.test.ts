@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterProviderModels, mapOpenAIModelsToProviderModels } from "./models.ts";
+import { filterProviderModels, mapOpenAIModelsToProviderModels } from "../llm/models.ts";
 
 test("mapOpenAIModelsToProviderModels maps OpenAI-compatible payload with defaults", () => {
   const mapped = mapOpenAIModelsToProviderModels([

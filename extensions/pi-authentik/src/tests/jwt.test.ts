@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-import { verifyIdToken } from "./jwt.ts";
+import { verifyIdToken } from "../auth/jwt.ts";
 
 test("verifyIdToken accepts a valid ID token with matching issuer audience and nonce", async () => {
   const issuer = "https://auth.example/application/o/provider/";

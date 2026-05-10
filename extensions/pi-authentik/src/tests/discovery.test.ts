@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 
-import { deriveDiscoveryUrl } from "./auth-config.ts";
-import { fetchOidcDiscoveryMetadata } from "./discovery.ts";
+import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
+import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
 
 test("deriveDiscoveryUrl builds authentik OIDC discovery URL from host and provider slug", () => {
   assert.equal(

@@ -123,6 +123,13 @@ async function probeModelsPayload(
 
         const next = new URL(location.trim(), response.url || currentUrl);
         if (locationSuggestsAuthenticationRedirect(next)) {
+          // Validate protocol to prevent injection of dangerous URL schemes
+          if (next.protocol !== "http:" && next.protocol !== "https:") {
+            return {
+              ok: false,
+              error: `GET /models redirected to ${next.protocol} URL (only http: and https: are allowed).`,
+            };
+          }
           return {
             ok: false,
             error: MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE,

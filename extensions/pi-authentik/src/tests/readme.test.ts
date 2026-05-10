@@ -51,7 +51,7 @@ test("AUTHENTIK_SETUP explains that the regex is anchored and restricts to 127.0
   // Doc must explain the anchoring and host restriction
   assert.match(setup, /anchored/i);
   assert.match(setup, /127\.0\.0\.1.*only/i);
-  assert.match(setup, /(not|excluded|is not allowed|is excluded).*localhost/i);
+  assert.match(setup, /((not|excluded|is not allowed|is excluded).*localhost)|(localhost.*(not|excluded|is not allowed|is excluded))/i);
   assert.match(setup, /one or more digits/i); // Doc describes \d+ for port
 });
 

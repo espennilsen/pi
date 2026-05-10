@@ -115,6 +115,61 @@ test("session_start refreshes an expired stored session when a refresh token exi
   assert.match(harness.notifications.join("\n"), /restored session from refresh token/i);
 });
 
+test("authentik-setup triggers handleLogin when runFirstRunSetup returns loginRequested: true", async () => {
+  let setupCalls = 0;
+  let loginCalls = 0;
+  const savedSessions: AuthentikSessionRecord[] = [];
+
+  const harness = createHarness({
+    settings: configuredSettings,
+    loadStoredSession: async () => null,
+    runFirstRunSetup: async () => {
+      setupCalls += 1;
+      return {
+        saved: true,
+        loginRequested: true,
+        settings: {
+          authentikHost: configuredSettings.authentikHost ?? undefined,
+          providerSlug: configuredSettings.providerSlug ?? undefined,
+          clientId: configuredSettings.clientId ?? undefined,
+          scopes: configuredSettings.scopes,
+          enableOfflineAccess: true,
+          llmBaseUrl: configuredSettings.llmBaseUrl ?? undefined,
+        },
+        connectivityTested: true,
+      };
+    },
+    runBrowserLogin: async () => {
+      loginCalls += 1;
+      return exampleSession();
+    },
+    saveStoredSession: async (session) => {
+      savedSessions.push(session);
+    },
+    fetchOidcDiscoveryMetadata: async () => ({
+      issuer: "https://auth.example/application/o/provider/",
+      authorization_endpoint: "https://auth.example/application/o/authorize/",
+      token_endpoint: "https://auth.example/application/o/token/",
+      jwks_uri: "https://auth.example/application/o/jwks/",
+      response_types_supported: ["code"],
+      subject_types_supported: ["public"],
+      id_token_signing_alg_values_supported: ["RS256"],
+      code_challenge_methods_supported: ["S256"],
+    }),
+    models: [{ id: "gpt-4.1" }],
+  });
+
+  await harness.start();
+  await harness.run("authentik-setup");
+
+  assert.equal(setupCalls, 1, "runFirstRunSetup should be called once");
+  assert.equal(loginCalls, 1, "handleLogin should be called once when loginRequested is true");
+  assert.equal(savedSessions.length, 1, "session should be saved after login");
+  assert.equal(savedSessions[0]?.tokens.accessToken, "access-token");
+  assert.equal(harness.providers.length, 1, "provider should be registered after login");
+  assert.match(harness.notifications.join("\n"), /Signed in successfully/);
+});
+
 test("commands handle setup, login, status, endpoint, refresh-models, and logout", async () => {
   const savedSettings: AuthentikStoredSettings[] = [];
   const savedSessions: AuthentikSessionRecord[] = [];

@@ -68,14 +68,14 @@ test("testModelsEndpointConnectivity without auth rejects Authentik-style login 
     });
   };
 
-  await assert.rejects(
-    async () =>
-      testModelsEndpointConnectivity({
-        baseUrl: "https://proxy.example/services/llm/v1",
-        fetchImpl,
-      }),
-    (error: unknown) => error instanceof Error && error.message === MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE,
-  );
+  const result = await testModelsEndpointConnectivity({
+    baseUrl: "https://proxy.example/services/llm/v1",
+    fetchImpl,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE);
+  assert.equal(result.authUrl, "https://idp.example/if/flow/default-authentication-flow/?next=/");
 });
 
 test("testModelsEndpointConnectivity without auth rejects HTML bodies", async () => {
@@ -85,14 +85,13 @@ test("testModelsEndpointConnectivity without auth rejects HTML bodies", async ()
       headers: { "content-type": "text/html; charset=utf-8" },
     });
 
-  await assert.rejects(
-    async () =>
-      testModelsEndpointConnectivity({
-        baseUrl: "https://api.example/v1",
-        fetchImpl,
-      }),
-    (error: unknown) => error instanceof Error && error.message === MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE,
-  );
+  const result = await testModelsEndpointConnectivity({
+    baseUrl: "https://api.example/v1",
+    fetchImpl,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE);
 });
 
 test("testModelsEndpointConnectivity without auth follows benign redirects then parses JSON", async () => {

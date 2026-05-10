@@ -1,7 +1,7 @@
 import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
 import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
-import { testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
+import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
@@ -14,11 +14,7 @@ export interface FirstRunUi {
 }
 
 /** Result returned after testing the configured models endpoint. */
-export interface FirstRunConnectivityResult {
-  ok: true;
-  normalizedUrl: string;
-  modelCount: number;
-}
+export type FirstRunConnectivityResult = ConnectivityTestResult;
 
 /** Dependencies used by the first-run wizard. */
 export interface RunFirstRunSetupOptions {
@@ -33,6 +29,7 @@ export interface FirstRunSetupResult {
   saved: boolean;
   settings: AuthentikStoredSettings | null;
   connectivityTested: boolean;
+  loginRequested: boolean;
 }
 
 const LLM_URL_EXAMPLES = ["https://llm.example/v1", "https://llm.example/openai/v1"];
@@ -71,6 +68,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
       saved: false,
       settings: null,
       connectivityTested: false,
+      loginRequested: false,
     };
   }
 
@@ -83,10 +81,21 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
 
   let connectivityTested = false;
+  let loginRequested = false;
   if (await ui.confirm("Test LLM endpoint connectivity?", `Try GET ${llmBaseUrl}/models before saving.`)) {
     connectivityTested = true;
     const result = await testConnectivity(llmBaseUrl);
-    ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
+    if (result.ok) {
+      ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
+    } else {
+      ui.notify(`LLM endpoint connectivity test failed: ${result.error}`, "error");
+      if (result.authUrl) {
+        loginRequested = await ui.confirm(
+          "Authenticate now?",
+          "The endpoint is behind authentication. Would you like to log in now to verify full connectivity?",
+        );
+      }
+    }
   } else {
     ui.notify("Skipping LLM endpoint connectivity test before save.", "warning");
   }
@@ -108,6 +117,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     saved: true,
     settings,
     connectivityTested,
+    loginRequested,
   };
 }
 

@@ -37,9 +37,17 @@ Allow loopback redirect URIs that match this shape:
 http://127.0.0.1:<random-port>/callback
 ```
 
+If Authentik’s provider UI lets you configure **one regular expression** instead of enumerating URIs, use this pattern (matches Pi’s callback exactly: `127.0.0.1`, any port, path `/callback`):
+
+```regexp
+^http://127\.0\.0\.1:\d+/callback$
+```
+
+That is anchored: scheme `http`, host `127.0.0.1` only (not `localhost` or `[::1]`), **one or more digits** for the port, path **`/callback`** with no trailing slash.
+
 Important notes:
 
-- The extension listens on `127.0.0.1`, not `0.0.0.0`
+
 - The port is chosen dynamically
 - The callback server shuts down immediately after the callback is handled
 
@@ -77,7 +85,7 @@ After authentik is configured:
 
 ### Redirect mismatch
 
-Make sure authentik accepts `http://127.0.0.1:<random-port>/callback` as a loopback redirect.
+Make sure Authentik accepts callbacks that match `http://127.0.0.1:<random-port>/callback` (see the anchored regex above if your provider only accepts patterns).
 
 ### Missing refresh token
 

@@ -91,48 +91,68 @@ async function probeModelsPayload(
       await authStrategy.apply(headers);
     }
 
-    const response = await fetchImpl(currentUrl, { method: "GET", headers, redirect: "manual" });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+    let response: Response;
+    try {
+      response = await fetchImpl(currentUrl, { method: "GET", headers, redirect: "manual", signal: controller.signal });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`GET /models timed out after 30000ms`);
+      }
+      throw error;
+    }
 
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (!location || !location.trim()) {
+        clearTimeout(timeoutId);
         throw new Error(`GET /models returned ${response.status} without a Location header.`);
       }
 
       const next = new URL(location.trim(), response.url || currentUrl);
       if (locationSuggestsAuthenticationRedirect(next)) {
+        clearTimeout(timeoutId);
         throw new Error(MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE);
       }
 
+      clearTimeout(timeoutId);
       currentUrl = next.toString();
       continue;
     }
 
     const text = await response.text();
 
-    if (!response.ok) {
-      throw new Error(`GET /models failed: ${response.status} ${response.statusText}`);
+    if (responseLooksLikeHtml(response, text)) {
+      clearTimeout(timeoutId);
+      throw new Error(MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE);
     }
 
-    if (responseLooksLikeHtml(response, text)) {
-      throw new Error(MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE);
+    if (!response.ok) {
+      clearTimeout(timeoutId);
+      throw new Error(`GET /models failed: ${response.status} ${response.statusText}`);
     }
 
     let payload: unknown;
     try {
       payload = JSON.parse(text) as unknown;
     } catch {
+      clearTimeout(timeoutId);
       throw new Error(
         `GET /models did not return JSON (final URL: ${response.url || currentUrl}). If the endpoint is behind SSO, skip the connectivity test.`,
       );
     }
 
     if (typeof payload !== "object" || payload === null || !Array.isArray((payload as { data?: unknown }).data)) {
+      clearTimeout(timeoutId);
       throw new Error(
         `/models returned an unexpected shape: expected an object with a data array, got ${JSON.stringify(payload)}`,
       );
     }
 
+    clearTimeout(timeoutId);
     const data = (payload as { data: unknown[] }).data;
     return { modelCount: data.length, finalUrl: response.url || currentUrl };
   }

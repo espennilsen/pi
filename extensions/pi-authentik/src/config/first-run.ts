@@ -1,7 +1,7 @@
 import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
 import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
-import { testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
+import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
@@ -11,14 +11,11 @@ export interface FirstRunUi {
   input(prompt: string, placeholder?: string, defaultValue?: string): Promise<string | null | undefined>;
   confirm(title: string, message?: string): Promise<boolean>;
   notify(message: string, level?: "info" | "warning" | "error"): void;
+  openUrl?(url: string): Promise<void>;
 }
 
 /** Result returned after testing the configured models endpoint. */
-export interface FirstRunConnectivityResult {
-  ok: true;
-  normalizedUrl: string;
-  modelCount: number;
-}
+export type FirstRunConnectivityResult = ConnectivityTestResult;
 
 /** Dependencies used by the first-run wizard. */
 export interface RunFirstRunSetupOptions {
@@ -86,7 +83,26 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   if (await ui.confirm("Test LLM endpoint connectivity?", `Try GET ${llmBaseUrl}/models before saving.`)) {
     connectivityTested = true;
     const result = await testConnectivity(llmBaseUrl);
-    ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
+    if (result.ok) {
+      ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
+    } else {
+      ui.notify(`LLM endpoint connectivity test failed: ${result.error}`, "error");
+      if (result.authUrl) {
+        if (ui.openUrl) {
+          const open = await ui.confirm(
+            "Open login page?",
+            `The endpoint is behind authentication and redirected to:\n${result.authUrl}\n\nOpen this URL in your browser?`,
+          );
+          if (open) {
+            await ui.openUrl(result.authUrl).catch((error) => {
+              ui.notify(`Could not open login URL (${error instanceof Error ? error.message : String(error)})`, "warning");
+            });
+          }
+        } else {
+          ui.notify(`Login URL: ${result.authUrl}`, "info");
+        }
+      }
+    }
   } else {
     ui.notify("Skipping LLM endpoint connectivity test before save.", "warning");
   }

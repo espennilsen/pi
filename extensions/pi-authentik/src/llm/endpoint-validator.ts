@@ -22,12 +22,22 @@ export interface ConnectivityTestOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** Result returned after probing the configured `/models` endpoint. */
-export interface ConnectivityTestResult {
+/** Successful probe of a models endpoint. */
+export interface ConnectivityTestSuccess {
   ok: true;
   normalizedUrl: string;
   modelCount: number;
 }
+
+/** Failed probe of a models endpoint, possibly due to required authentication. */
+export interface ConnectivityTestFailure {
+  ok: false;
+  error: string;
+  authUrl?: string;
+}
+
+/** Result returned after probing the configured `/models` endpoint. */
+export type ConnectivityTestResult = ConnectivityTestSuccess | ConnectivityTestFailure;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -79,7 +89,7 @@ async function probeModelsPayload(
   normalizedBaseUrl: string,
   fetchImpl: typeof fetch,
   authStrategy?: LlmAuthStrategy,
-): Promise<{ modelCount: number; finalUrl: string }> {
+): Promise<ConnectivityTestResult> {
   const modelsUrl = `${normalizedBaseUrl.replace(/\/+$/, "")}/models`;
 
   let currentUrl = modelsUrl;
@@ -100,20 +110,24 @@ async function probeModelsPayload(
         response = await fetchImpl(currentUrl, { method: "GET", headers, redirect: "manual", signal: controller.signal });
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          throw new Error(`GET /models timed out after 30000ms`);
+          return { ok: false, error: `GET /models timed out after 30000ms` };
         }
-        throw error;
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
 
       if (REDIRECT_STATUSES.has(response.status)) {
         const location = response.headers.get("location");
         if (!location || !location.trim()) {
-          throw new Error(`GET /models returned ${response.status} without a Location header.`);
+          return { ok: false, error: `GET /models returned ${response.status} without a Location header.` };
         }
 
         const next = new URL(location.trim(), response.url || currentUrl);
         if (locationSuggestsAuthenticationRedirect(next)) {
-          throw new Error(MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE);
+          return {
+            ok: false,
+            error: MODELS_ENDPOINT_AUTH_REDIRECT_MESSAGE,
+            authUrl: next.toString(),
+          };
         }
 
         currentUrl = next.toString();
@@ -123,36 +137,38 @@ async function probeModelsPayload(
       const text = await response.text();
 
       if (responseLooksLikeHtml(response, text)) {
-        throw new Error(MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE);
+        return { ok: false, error: MODELS_ENDPOINT_HTML_RESPONSE_MESSAGE };
       }
 
       if (!response.ok) {
-        throw new Error(`GET /models failed: ${response.status} ${response.statusText}`);
+        return { ok: false, error: `GET /models failed: ${response.status} ${response.statusText}` };
       }
 
       let payload: unknown;
       try {
         payload = JSON.parse(text) as unknown;
       } catch {
-        throw new Error(
-          `GET /models did not return JSON (final URL: ${response.url || currentUrl}). If the endpoint is behind SSO, skip the connectivity test.`,
-        );
+        return {
+          ok: false,
+          error: `GET /models did not return JSON (final URL: ${response.url || currentUrl}). If the endpoint is behind SSO, skip the connectivity test.`,
+        };
       }
 
       if (typeof payload !== "object" || payload === null || !Array.isArray((payload as { data?: unknown }).data)) {
-        throw new Error(
-          `/models returned an unexpected shape: expected an object with a data array, got ${JSON.stringify(payload)}`,
-        );
+        return {
+          ok: false,
+          error: `/models returned an unexpected shape: expected an object with a data array, got ${JSON.stringify(payload)}`,
+        };
       }
 
       const data = (payload as { data: unknown[] }).data;
-      return { modelCount: data.length, finalUrl: response.url || currentUrl };
+      return { ok: true, normalizedUrl: normalizedBaseUrl, modelCount: data.length };
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  throw new Error(`GET /models followed more than ${MAX_PROBE_REDIRECTS} redirects; aborting probe.`);
+  return { ok: false, error: `GET /models followed more than ${MAX_PROBE_REDIRECTS} redirects; aborting probe.` };
 }
 
 /**
@@ -237,24 +253,26 @@ export async function testModelsEndpointConnectivity(options: ConnectivityTestOp
 
   /** When Bearer auth already applies, reuse the structured client path (fewer probes). */
   if (options.authStrategy) {
-    const client = createOpenAICompatibleClient({
-      baseUrl: normalizedUrl,
-      authStrategy: options.authStrategy,
-      fetchImpl: options.fetchImpl,
-    });
-    const models = await client.listModels();
+    try {
+      const client = createOpenAICompatibleClient({
+        baseUrl: normalizedUrl,
+        authStrategy: options.authStrategy,
+        fetchImpl: options.fetchImpl,
+      });
+      const models = await client.listModels();
 
-    return {
-      ok: true,
-      normalizedUrl,
-      modelCount: models.length,
-    };
+      return {
+        ok: true,
+        normalizedUrl,
+        modelCount: models.length,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
-  const probe = await probeModelsPayload(normalizedUrl, fetchImpl);
-  return {
-    ok: true,
-    normalizedUrl,
-    modelCount: probe.modelCount,
-  };
+  return probeModelsPayload(normalizedUrl, fetchImpl);
 }

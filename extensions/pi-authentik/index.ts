@@ -231,6 +231,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
         input: ctx.ui.input.bind(ctx.ui),
         confirm: ctx.ui.confirm.bind(ctx.ui),
         notify: ctx.ui.notify.bind(ctx.ui),
+        openUrl: (url) => runtime.openUrl(url),
       },
       saveSettings: runtime.saveSettings,
     });

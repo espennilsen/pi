@@ -220,11 +220,48 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
   assert.equal(result.settings, null);
 });
 
+test("runFirstRunSetup offers to open login page when connectivity test fails with an auth redirect", async () => {
+  const notifications: Array<{ message: string; level: string }> = [];
+  const openUrls: string[] = [];
+
+  const ui = createUi({
+    inputs: [
+      "",
+      "https://auth.example",
+      "main-provider",
+      "pi-client",
+      "openid",
+      "https://llm.example/v1",
+    ],
+    confirms: [true, false, true, true], // loopback, offline, test connectivity, open login page
+    notifications,
+    openUrl: async (url) => {
+      openUrls.push(url);
+    },
+  });
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings: () => {},
+    testConnectivity: async () => ({
+      ok: false,
+      error: "Auth redirect",
+      authUrl: "https://auth.example/login",
+    }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(openUrls.length, 1);
+  assert.equal(openUrls[0], "https://auth.example/login");
+  assert.match(notifications.map(({ message }) => message).join("\n"), /Open login page?/i);
+});
+
 function createUi(options: {
   inputs: string[];
   confirms: boolean[];
   prompts?: string[];
   notifications?: Array<{ message: string; level: string }>;
+  openUrl?: (url: string) => Promise<void>;
 }): FirstRunUi {
   const inputs = [...options.inputs];
   const confirms = [...options.confirms];
@@ -247,5 +284,6 @@ function createUi(options: {
     notify(message, level = "info") {
       notifications.push({ message, level });
     },
+    openUrl: options.openUrl,
   };
 }

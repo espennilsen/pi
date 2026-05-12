@@ -244,6 +244,31 @@ test("runFirstRunSetup returns loginRequested: true when auth redirect detected 
   assert.equal(result.loginRequested, true);
 });
 
+test("runFirstRunSetup persists non-empty clientSecret when provided", async () => {
+  const prompts: string[] = [];
+  const saved: AuthentikStoredSettings[] = [];
+  const secret = "super-secret-confidential-key";
+
+  const ui = createUi({
+    inputs: ["", "https://auth.example", "provider", "client", secret, "openid", "https://llm.example/v1"],
+    confirms: [true, false, false], // acknowledge loopback, skip offline, skip connectivity
+    prompts,
+  });
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings(settings) {
+      saved.push(settings);
+    },
+    testConnectivity: async () => ({ ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0]!.clientSecret, secret);
+  assert.equal(saved[0]!.clientId, "client");
+});
+
 function createUi(options: {
   inputs: string[];
   confirms: boolean[];

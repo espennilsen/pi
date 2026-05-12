@@ -205,6 +205,11 @@ export function sanitizeSetupSettings(settings: AuthentikStoredSettings): Authen
     out.providerSlug = providerSlug;
   }
 
+  const clientSecret = settings.clientSecret?.trim();
+  if (clientSecret) {
+    out.clientSecret = clientSecret;
+  }
+
   return out;
 }
 

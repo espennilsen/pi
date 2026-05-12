@@ -496,7 +496,6 @@ function toStoredSettings(settings: AuthentikResolvedSettings): AuthentikStoredS
     authentikHost: settings.authentikHost ?? undefined,
     providerSlug: settings.providerSlug ?? undefined,
     clientId: settings.clientId ?? undefined,
-    clientSecret: settings.clientSecret ?? undefined,
     scopes: settings.scopes,
     enableOfflineAccess: settings.enableOfflineAccess,
     discoveryUrl: settings.discoveryUrl ?? undefined,

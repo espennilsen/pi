@@ -4,6 +4,8 @@ import type { AuthentikSessionRecord, PiSecretApiLike } from "../shared/types.ts
 export const TOKEN_STORE_EXTENSION_ID = "pi-authentik";
 /** Secret name used for the serialized authentik session payload. */
 export const SESSION_SECRET_NAME = "session";
+/** Secret name used for the OAuth client secret. */
+export const CLIENT_SECRET_NAME = "clientSecret";
 
 /**
  * Persists an authenticated session through `pi-secret`.
@@ -43,6 +45,35 @@ export async function clearStoredSession(): Promise<void> {
   const secretApi = globalThis.__piSecret;
   if (!secretApi) return;
   await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, SESSION_SECRET_NAME);
+}
+
+/**
+ * Persists an OAuth client secret through `pi-secret`.
+ * @param value - Raw client secret to store securely.
+ */
+export async function saveClientSecret(value: string): Promise<void> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) return;
+  await secretApi.setSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME, value);
+}
+
+/**
+ * Loads the previously stored OAuth client secret from `pi-secret`.
+ * @returns The stored client secret, or null when not present.
+ */
+export async function loadClientSecret(): Promise<string | null> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) return null;
+  return secretApi.getSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME, TOKEN_STORE_EXTENSION_ID);
+}
+
+/**
+ * Deletes the stored OAuth client secret from `pi-secret`.
+ */
+export async function clearClientSecret(): Promise<void> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) return;
+  await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME);
 }
 
 function requireSecretApi(): PiSecretApiLike {

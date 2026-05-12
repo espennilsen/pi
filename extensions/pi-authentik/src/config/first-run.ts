@@ -4,6 +4,7 @@ import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
+import { saveClientSecret, clearClientSecret } from "../session/token-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
@@ -20,6 +21,8 @@ export type FirstRunConnectivityResult = ConnectivityTestResult;
 export interface RunFirstRunSetupOptions {
   ui: FirstRunUi;
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
+  saveClientSecret?: (value: string) => void | Promise<void>;
+  clearClientSecret?: () => void | Promise<void>;
   testConnectivity?: (baseUrl: string) => Promise<FirstRunConnectivityResult>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
@@ -56,6 +59,8 @@ const LOOPBACK_REDIRECT_CONFIRM_BODY = [
 export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promise<FirstRunSetupResult> {
   const { ui } = options;
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
+  const storeClientSecret = options.saveClientSecret ?? saveClientSecret;
+  const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
   const testConnectivity = options.testConnectivity ?? (async (baseUrl: string) => testModelsEndpointConnectivity({ baseUrl }));
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
@@ -106,13 +111,19 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     ...(resolved.authentikHost ? { authentikHost: resolved.authentikHost } : {}),
     ...(resolved.providerSlug ? { providerSlug: resolved.providerSlug } : {}),
     clientId,
-    ...(clientSecret ? { clientSecret } : {}),
     scopes,
     enableOfflineAccess,
     llmBaseUrl,
   });
 
   await saveSettings(settings);
+
+  if (clientSecret) {
+    await storeClientSecret(clientSecret);
+  } else {
+    await removeClientSecret();
+  }
+
   ui.notify("Saved pi-authentik setup.", "info");
 
   return {
@@ -203,11 +214,6 @@ export function sanitizeSetupSettings(settings: AuthentikStoredSettings): Authen
   const providerSlug = settings.providerSlug?.trim();
   if (providerSlug) {
     out.providerSlug = providerSlug;
-  }
-
-  const clientSecret = settings.clientSecret?.trim();
-  if (clientSecret) {
-    out.clientSecret = clientSecret;
   }
 
   return out;

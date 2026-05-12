@@ -248,6 +248,7 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
   const prompts: string[] = [];
   const saved: AuthentikStoredSettings[] = [];
   const secret = "super-secret-confidential-key";
+  let savedSecret: string | null = null;
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", secret, "openid", "https://llm.example/v1"],
@@ -260,13 +261,43 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
     saveSettings(settings) {
       saved.push(settings);
     },
+    saveClientSecret(value) {
+      savedSecret = value;
+    },
     testConnectivity: async () => ({ ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(saved.length, 1);
-  assert.equal(saved[0]!.clientSecret, secret);
+  assert.equal(savedSecret, secret);
+  assert.equal("clientSecret" in saved[0]!, false);
   assert.equal(saved[0]!.clientId, "client");
+});
+
+test("runFirstRunSetup does not persist whitespace-only clientSecret", async () => {
+  const saved: AuthentikStoredSettings[] = [];
+  let savedSecret: string | null = null;
+
+  const ui = createUi({
+    inputs: ["", "https://auth.example", "provider", "client", "   ", "openid", "https://llm.example/v1"],
+    confirms: [true, false, false],
+  });
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings(settings) {
+      saved.push(settings);
+    },
+    saveClientSecret(value) {
+      savedSecret = value;
+    },
+    testConnectivity: async () => ({ ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 }),
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(saved.length, 1);
+  assert.equal(savedSecret, null);
+  assert.equal("clientSecret" in saved[0]!, false);
 });
 
 function createUi(options: {

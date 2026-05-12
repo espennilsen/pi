@@ -1,4 +1,5 @@
-import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "../shared/types.ts";
+import type { AuthentikResolvedSettings, ResolveSettingsOptions } from "../shared/types.ts";
+import { loadClientSecret } from "../session/token-store.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
 
 /** Default scopes requested when no scopes are configured explicitly. */
@@ -174,11 +175,18 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
 
   const llmBaseUrlValue = stored.llmBaseUrl ?? null;
 
+  let clientSecret: string | null = null;
+  try {
+    clientSecret = await loadClientSecret();
+  } catch {
+    // pi-secret not available or failed
+  }
+
   return {
     authentikHost: stored.authentikHost ?? null,
     providerSlug: stored.providerSlug ?? null,
     clientId: stored.clientId ?? null,
-    clientSecret: stored.clientSecret ?? null,
+    clientSecret,
     scopes: filteredScopes,
     enableOfflineAccess,
     discoveryUrl: stored.discoveryUrl

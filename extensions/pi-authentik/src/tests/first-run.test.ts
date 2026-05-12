@@ -224,7 +224,9 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
 
   const result = await runFirstRunSetup({
     ui,
-    saveSettings: () => {},
+    saveSettings() {
+      saveCount += 1;
+    },
     saveClientSecret: () => {},
     clearClientSecret: () => {},
     fetchDiscoveryMetadata: async () => exampleMetadata(),

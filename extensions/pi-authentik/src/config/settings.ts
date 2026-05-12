@@ -175,12 +175,7 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
 
   const llmBaseUrlValue = stored.llmBaseUrl ?? null;
 
-  let clientSecret: string | null = null;
-  try {
-    clientSecret = await loadClientSecret();
-  } catch {
-    // pi-secret not available or failed
-  }
+  const clientSecret = await loadClientSecret();
 
   return {
     authentikHost: stored.authentikHost ?? null,

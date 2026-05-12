@@ -53,7 +53,9 @@ export async function clearStoredSession(): Promise<void> {
  */
 export async function saveClientSecret(value: string): Promise<void> {
   const secretApi = globalThis.__piSecret;
-  if (!secretApi) return;
+  if (!secretApi) {
+    throw new Error(`pi-secret backend is not available; cannot store ${TOKEN_STORE_EXTENSION_ID}:${CLIENT_SECRET_NAME}`);
+  }
   await secretApi.setSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME, value);
 }
 

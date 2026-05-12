@@ -45,6 +45,8 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
     saveSettings(settings) {
       saved.push(settings);
     },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async (baseUrl) => {
       connectivityCalls.push(baseUrl);
       return { ok: true, normalizedUrl: baseUrl, modelCount: 3 };
@@ -93,6 +95,8 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
     saveSettings(settings) {
       saved.push(settings);
     },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 3 }),
     fetchDiscoveryMetadata: async (url) => {
       assert.match(url, /\/application\/o\/main-provider\/\.well-known\/openid-configuration$/);
@@ -127,6 +131,8 @@ test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () =
     saveSettings(settings) {
       saved.push(settings);
     },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
@@ -160,6 +166,8 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
     saveSettings(settings) {
       saved.push(settings);
     },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
@@ -192,6 +200,8 @@ test("runFirstRunSetup offers endpoint test before final save and can skip it", 
     saveSettings() {
       saveCount += 1;
     },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async () => {
       connectivityCalled = true;
       return { ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 };
@@ -214,9 +224,9 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
 
   const result = await runFirstRunSetup({
     ui,
-    saveSettings() {
-      saveCount += 1;
-    },
+    saveSettings: () => {},
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
@@ -233,6 +243,8 @@ test("runFirstRunSetup returns loginRequested: true when auth redirect detected 
   const result = await runFirstRunSetup({
     ui,
     saveSettings: () => {},
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
     testConnectivity: async () => ({
       ok: false,
       error: "Auth required",

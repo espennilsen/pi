@@ -59,6 +59,19 @@ Default scopes requested by Pi:
 - `openid`
 - `profile`
 - `email`
+- `ak_proxy` — **required when using an authentik outpost proxy**
+
+### Proxy outpost scope (`ak_proxy`)
+
+If your LLM endpoint is behind an authentik outpost in proxy mode (e.g. `https://llm.example.com` proxied through an outpost), the `ak_proxy` scope **must** be added to the OAuth2 provider. This scope injects outpost user attributes (`username`, `password`, `is_superuser`) into the token, which the outpost uses to authenticate proxied requests.
+
+Without `ak_proxy`, the outpost will reject API requests with `401 Unauthorized` even though the token itself is valid.
+
+To enable it:
+
+1. In authentik admin, go to **Providers** → your OAuth2 provider
+2. Under **Scopes**, ensure `ak_proxy` is selected (or add a scope mapping for it)
+3. Alternatively, add the `ak_proxy` scope mapping to the provider's scope mappings
 
 Optional scope:
 

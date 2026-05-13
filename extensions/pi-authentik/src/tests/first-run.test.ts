@@ -60,7 +60,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
     },
   });
 
-  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "Client ID", "Client secret (leave empty for public client)", "Scopes", "Exchange client ID (for JWT bearer token exchange, leave empty to skip)", "LLM base URL"]);
+  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "OAuth2 Client ID", "Client secret (leave empty for public client)", "Scopes", "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)", "LLM base URL"]);
   assert.equal(connectivityCalls[0], "https://llm.example/v1");
   assert.equal(saved.length, 1);
   assert.equal(saved[0]?.discoveryUrl, discoveryUrl);
@@ -114,10 +114,10 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
     "OIDC discovery URL (OpenID configuration)",
     "Authentik host",
     "Provider slug",
-    "Client ID",
+    "OAuth2 Client ID",
     "Client secret (leave empty for public client)",
     "Scopes",
-    "Exchange client ID (for JWT bearer token exchange, leave empty to skip)",
+    "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)",
     "LLM base URL",
   ]);
   assert.equal(saved[0]?.authentikHost, "https://auth.example");

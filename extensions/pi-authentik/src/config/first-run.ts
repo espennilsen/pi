@@ -81,7 +81,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     };
   }
 
-  const clientId = await promptForRequiredText(ui, "Client ID", "pi-desktop-client");
+  const clientId = await promptForRequiredText(ui, "OAuth2 Client ID", "pi-desktop-client");
   const clientSecret = await promptForOptionalClientSecret(ui);
   const scopes = await promptForScopes(ui);
   const enableOfflineAccess = await ui.confirm(
@@ -327,7 +327,7 @@ async function promptForScopes(ui: FirstRunUi): Promise<string[]> {
 
 async function promptForExchangeClientId(ui: FirstRunUi): Promise<string | null> {
   const raw = (await ui.input(
-    "Exchange client ID (for JWT bearer token exchange, leave empty to skip)",
+    "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)",
     "",
   ))?.trim();
   return raw && raw.length > 0 ? raw : null;

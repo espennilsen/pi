@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { exchangeAuthorizationCode, refreshSession as refreshStoredSession, runBrowserLogin } from "./src/auth/auth-client.ts";
+import { exchangeAuthorizationCode, exchangeJwtBearer, refreshSession as refreshStoredSession, runBrowserLogin } from "./src/auth/auth-client.ts";
 import { deriveDiscoveryUrl } from "./src/auth/auth-config.ts";
 import { startCallbackServer } from "./src/auth/callback-server.ts";
 import { fetchOidcDiscoveryMetadata, type OidcDiscoveryMetadata } from "./src/auth/discovery.ts";
@@ -14,7 +14,7 @@ import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderMod
 import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts";
 import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
-import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session/token-store.ts";
+import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
@@ -63,6 +63,7 @@ export interface AuthentikExtensionDeps {
   fetchOidcDiscoveryMetadata: typeof fetchOidcDiscoveryMetadata;
   runBrowserLogin: typeof runBrowserLogin;
   exchangeAuthorizationCode: typeof exchangeAuthorizationCode;
+  exchangeJwtBearer: typeof exchangeJwtBearer;
   refreshSession: typeof refreshStoredSession;
   startCallbackServer: typeof startCallbackServer;
   createOpenAICompatibleClient: typeof createOpenAICompatibleClient;
@@ -86,6 +87,7 @@ const defaultDeps: AuthentikExtensionDeps = {
   fetchOidcDiscoveryMetadata,
   runBrowserLogin,
   exchangeAuthorizationCode,
+  exchangeJwtBearer,
   refreshSession: refreshStoredSession,
   startCallbackServer,
   createOpenAICompatibleClient,
@@ -211,6 +213,10 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       state.session = await maybeRefreshSession(ctx, state.session);
     }
 
+    if (state.session && state.settings.exchangeClientId) {
+      state.session = await maybeExchangeToken(ctx, state.session);
+    }
+
     if (state.session) {
       await registerProviderFromSession(ctx);
       return;
@@ -278,6 +284,13 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
     state.session = session;
     await runtime.saveStoredSession(session);
+
+    // If an exchange client ID is configured, swap the access token for one
+    // issued by the target provider (e.g. an outpost provider).
+    if (state.settings.exchangeClientId) {
+      state.session = await maybeExchangeToken(ctx, session);
+    }
+
     await registerProviderFromSession(ctx);
     ctx.ui.notify("pi-authentik: Signed in successfully.", "info");
   }
@@ -348,6 +361,12 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       if (!refreshed) return session;
       await runtime.saveStoredSession(refreshed);
       ctx.ui.notify("pi-authentik: Restored session from refresh token.", "info");
+
+      // Exchange the refreshed token for a target-provider token if configured.
+      if (state.settings.exchangeClientId) {
+        return maybeExchangeToken(ctx, refreshed);
+      }
+
       return refreshed;
     } catch (error) {
       await runtime.clearStoredSession();
@@ -465,6 +484,46 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     const url = new URL(endpoint);
     url.searchParams.set("id_token_hint", state.session.tokens.idToken);
     return url.toString();
+  }
+
+  async function maybeExchangeToken(ctx: SessionContextLike | CommandContextLike, session: AuthentikSessionRecord): Promise<AuthentikSessionRecord> {
+    const exchangeClientId = state.settings.exchangeClientId;
+    if (!exchangeClientId) return session;
+
+    try {
+      const discovery = await loadDiscovery();
+      const exchanged = await runtime.exchangeJwtBearer({
+        tokenEndpoint: discovery.token_endpoint,
+        exchangeClientId,
+        inputToken: session.tokens.accessToken,
+        scopes: state.settings.scopes,
+      });
+
+      // Build a new session record with the exchanged token.
+      const exchangedSession: AuthentikSessionRecord = {
+        tokens: {
+          ...session.tokens,
+          accessToken: exchanged.accessToken,
+          idToken: exchanged.idToken,
+          tokenType: exchanged.tokenType,
+          expiresAt: normalizeEpochSeconds((runtime.now)() / 1000) + exchanged.expiresIn,
+          refreshToken: exchanged.refreshToken ?? session.tokens.refreshToken,
+          scope: exchanged.scope ?? session.tokens.scope,
+        },
+        user: session.user,
+      };
+
+      await runtime.saveStoredSession(exchangedSession);
+      ctx.ui.notify("pi-authentik: Exchanged token for target provider.", "info");
+      return exchangedSession;
+    } catch (error) {
+      ctx.ui.notify(`pi-authentik: Token exchange failed (${formatError(error)}). Using original token.`, "warning");
+      return session;
+    }
+  }
+
+  function normalizeEpochSeconds(value: number): number {
+    return value > 10_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
   }
 }
 

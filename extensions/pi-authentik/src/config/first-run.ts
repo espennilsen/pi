@@ -4,7 +4,7 @@ import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
-import { saveClientSecret, clearClientSecret } from "../session/token-store.ts";
+import { saveClientSecret, clearClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret } from "../session/token-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
@@ -23,6 +23,8 @@ export interface RunFirstRunSetupOptions {
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
   saveClientSecret?: (value: string) => void | Promise<void>;
   clearClientSecret?: () => void | Promise<void>;
+  saveExchangeClientId?: (value: string) => void | Promise<void>;
+  clearExchangeClientId?: () => void | Promise<void>;
   testConnectivity?: (baseUrl: string) => Promise<FirstRunConnectivityResult>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
@@ -61,6 +63,8 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
   const storeClientSecret = options.saveClientSecret ?? saveClientSecret;
   const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
+  const storeExchangeClientId = options.saveExchangeClientId ?? saveExchangeClientIdSecret;
+  const removeExchangeClientId = options.clearExchangeClientId ?? clearExchangeClientIdSecret;
   const testConnectivity = options.testConnectivity ?? (async (baseUrl: string) => testModelsEndpointConnectivity({ baseUrl }));
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
@@ -84,6 +88,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     "Enable offline_access?",
     "Allow refresh tokens so Pi can restore the session without logging in every time.",
   );
+  const exchangeClientId = await promptForExchangeClientId(ui);
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
 
   let connectivityTested = false;
@@ -122,6 +127,12 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     await storeClientSecret(clientSecret);
   } else {
     await removeClientSecret();
+  }
+
+  if (exchangeClientId) {
+    await storeExchangeClientId(exchangeClientId);
+  } else {
+    await removeExchangeClientId();
   }
 
   ui.notify("Saved pi-authentik setup.", "info");
@@ -312,6 +323,14 @@ async function promptForScopes(ui: FirstRunUi): Promise<string[]> {
 
     ui.notify("Enter at least one scope.", "warning");
   }
+}
+
+async function promptForExchangeClientId(ui: FirstRunUi): Promise<string | null> {
+  const raw = (await ui.input(
+    "Exchange client ID (for JWT bearer token exchange, leave empty to skip)",
+    "",
+  ))?.trim();
+  return raw && raw.length > 0 ? raw : null;
 }
 
 async function promptForLlmBaseUrl(ui: FirstRunUi): Promise<string> {

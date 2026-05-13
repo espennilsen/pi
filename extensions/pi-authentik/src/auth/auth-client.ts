@@ -55,6 +55,15 @@ export interface ExchangeAuthorizationCodeRequest {
   now?: () => number;
 }
 
+/** Inputs required to exchange an existing access token for a new one via JWT bearer grant. */
+export interface ExchangeJwtBearerRequest {
+  tokenEndpoint: string;
+  exchangeClientId: string;
+  inputToken: string;
+  scopes?: string[];
+  fetchImpl?: typeof fetch;
+}
+
 /** Inputs required to refresh an existing authenticated session. */
 export interface RefreshSessionOptions {
   tokenEndpoint: string;
@@ -162,6 +171,27 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
   });
 
   return createSessionRecord(tokenResponse, user, options.now);
+}
+
+/**
+ * Exchanges an existing access token for a new token from a different provider using JWT bearer grant.
+ * This is used to obtain a token issued by a target provider (e.g. an outpost provider) using a
+ * token from the login provider (e.g. a browser OAuth client).
+ * @param options - Token endpoint, target client ID, input JWT, and optional scopes.
+ * @returns Raw token response from the target provider.
+ */
+export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<TokenResponse> {
+  return requestToken({
+    tokenEndpoint: options.tokenEndpoint,
+    fetchImpl: options.fetchImpl,
+    params: {
+      grant_type: "client_credentials",
+      client_id: options.exchangeClientId,
+      client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: options.inputToken,
+      ...(options.scopes ? { scope: options.scopes.join(" ") } : {}),
+    },
+  });
 }
 
 /**

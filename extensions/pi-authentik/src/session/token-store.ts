@@ -6,6 +6,8 @@ export const TOKEN_STORE_EXTENSION_ID = "pi-authentik";
 export const SESSION_SECRET_NAME = "session";
 /** Secret name used for the OAuth client secret. */
 export const CLIENT_SECRET_NAME = "clientSecret";
+/** Secret name used for the JWT bearer exchange client ID. */
+export const EXCHANGE_CLIENT_ID_NAME = "exchangeClientId";
 
 /**
  * Persists an authenticated session through `pi-secret`.
@@ -76,6 +78,37 @@ export async function clearClientSecret(): Promise<void> {
   const secretApi = globalThis.__piSecret;
   if (!secretApi) return;
   await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME);
+}
+
+/**
+ * Persists the JWT bearer exchange client ID through `pi-secret`.
+ * @param value - Client ID of the target OAuth2 provider to exchange tokens with.
+ */
+export async function saveExchangeClientId(value: string): Promise<void> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) {
+    throw new Error(`pi-secret backend is not available; cannot store ${TOKEN_STORE_EXTENSION_ID}:${EXCHANGE_CLIENT_ID_NAME}`);
+  }
+  await secretApi.setSecret(TOKEN_STORE_EXTENSION_ID, EXCHANGE_CLIENT_ID_NAME, value);
+}
+
+/**
+ * Loads the previously stored JWT bearer exchange client ID from `pi-secret`.
+ * @returns The stored exchange client ID, or null when not present.
+ */
+export async function loadExchangeClientId(): Promise<string | null> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) return null;
+  return secretApi.getSecret(TOKEN_STORE_EXTENSION_ID, EXCHANGE_CLIENT_ID_NAME, TOKEN_STORE_EXTENSION_ID);
+}
+
+/**
+ * Deletes the stored JWT bearer exchange client ID from `pi-secret`.
+ */
+export async function clearExchangeClientId(): Promise<void> {
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) return;
+  await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, EXCHANGE_CLIENT_ID_NAME);
 }
 
 function requireSecretApi(): PiSecretApiLike {

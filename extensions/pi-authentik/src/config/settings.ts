@@ -1,5 +1,5 @@
-import type { AuthentikResolvedSettings, ResolveSettingsOptions } from "../shared/types.ts";
-import { loadClientSecret } from "../session/token-store.ts";
+import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "../shared/types.ts";
+import { loadClientSecret, loadExchangeClientId } from "../session/token-store.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
 
 /** Default scopes requested when no scopes are configured explicitly. */
@@ -24,6 +24,7 @@ export function createEmptySettings(): AuthentikResolvedSettings {
     llmBaseUrl: null,
     authStorageBackend: null,
     modelFilters: DEFAULT_MODEL_FILTERS,
+    exchangeClientId: null,
   };
 }
 
@@ -171,11 +172,12 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
   const filteredScopes = normalizedScopes.filter((scope) => scope !== "offline_access");
   if (enableOfflineAccess) filteredScopes.push("offline_access");
 
-  const modelFilters = stored.modelFilters ?? DEFAULT_MODEL_FILTERS;
+  const modelFilters = (stored.modelFilters ?? DEFAULT_MODEL_FILTERS) as string[];
 
   const llmBaseUrlValue = stored.llmBaseUrl ?? null;
 
   const clientSecret = await loadClientSecret();
+  const exchangeClientId = await loadExchangeClientId();
 
   return {
     authentikHost: stored.authentikHost ?? null,
@@ -193,5 +195,6 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
     llmBaseUrl: llmBaseUrlValue ? canonicalizeLlmBaseUrl(llmBaseUrlValue) : null,
     authStorageBackend: stored.authStorageBackend ?? null,
     modelFilters,
+    exchangeClientId,
   };
 }

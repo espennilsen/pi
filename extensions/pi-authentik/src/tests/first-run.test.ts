@@ -60,7 +60,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms loopback, and saves d
   assert.equal(saved[0]?.authentikHost, undefined);
   assert.equal(saved[0]?.providerSlug, undefined);
   assert.equal(saved[0]?.clientId, "pi-client");
-  assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email"]);
+  assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email", "ak_proxy"]);
   assert.equal(saved[0]?.enableOfflineAccess, true);
   assert.deepEqual(result.settings, saved[0]);
   assert.equal("clientSecret" in saved[0]!, false);
@@ -135,7 +135,7 @@ test("runFirstRunSetup auto-appends /v1 to LLM base URL", async () => {
   });
 
   assert.equal(saved[0]?.llmBaseUrl, "https://llm.example/openai/v1");
-  assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email"]);
+  assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email", "ak_proxy"]);
   assert.equal(saved[0]?.enableOfflineAccess, true);
 });
 

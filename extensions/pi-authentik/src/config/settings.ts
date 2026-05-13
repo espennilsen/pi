@@ -3,7 +3,7 @@ import { loadClientSecret, loadExchangeClientId } from "../session/token-store.t
 import { sanitizeStoredSettings } from "./settings-store.ts";
 
 /** Default scopes requested when no scopes are configured explicitly. */
-export const DEFAULT_SCOPES = ["openid", "profile", "email"];
+export const DEFAULT_SCOPES = ["openid", "profile", "email", "ak_proxy"];
 /** Default model filter that exposes every discovered model. */
 export const DEFAULT_MODEL_FILTERS = ["*"];
 

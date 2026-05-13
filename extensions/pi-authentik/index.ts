@@ -15,6 +15,7 @@ import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts
 import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
 import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
+import { clearModelCache, loadModelCache, saveModelCache } from "./src/session/model-cache.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
@@ -201,6 +202,13 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       return;
     }
 
+    // Register provider with cached models immediately so models appear in /models.
+    const cached = loadModelCache();
+    if (cached.length > 0) {
+      state.models = cached;
+      registerProvider(ctx);
+    }
+
     try {
       state.session = await runtime.loadStoredSession();
     } catch (error) {
@@ -222,8 +230,9 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       return;
     }
 
-    state.models = [];
-    updateStatus(ctx);
+    if (!cached.length) {
+      updateStatus(ctx);
+    }
     ctx.ui.notify("pi-authentik: Ready to sign in. Run /authentik-login.", "info");
   }
 
@@ -296,6 +305,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.session = null;
     state.models = [];
     await runtime.clearStoredSession();
+    clearModelCache();
     updateStatus(ctx);
     if (logoutUrl) {
       await runtime.openUrl(logoutUrl).catch((error) => {
@@ -377,12 +387,16 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
     const models = await discoverProviderModels(state.settings.llmBaseUrl, state.session.tokens.accessToken);
     state.models = models;
+    saveModelCache(models);
+    registerProvider(ctx);
+  }
 
+  function registerProvider(ctx: SessionContextLike | CommandContextLike): void {
     api.registerProvider(PROVIDER_NAME, {
-      baseUrl: state.settings.llmBaseUrl,
+      baseUrl: state.settings.llmBaseUrl!,
       api: "openai-completions",
       authHeader: true,
-      models,
+      models: state.models,
       oauth: {
         name: "Authentik",
         login: async () => credentialsFromSession(await ensureSessionViaOAuth()),

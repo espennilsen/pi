@@ -16,6 +16,7 @@ import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
 import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
 import { clearModelCache, loadModelCache, saveModelCache } from "./src/session/model-cache.ts";
+import { clearAuthCredentials, writeAuthCredentials } from "./src/session/auth-bridge.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
@@ -207,6 +208,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     if (cached.length > 0) {
       state.models = cached;
       registerProvider(ctx);
+      ctx.ui.notify(`pi-authentik: Loaded ${cached.length} cached models. Sign in to activate.`, "info");
     }
 
     try {
@@ -296,6 +298,9 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       state.session = await maybeExchangeToken(ctx, session);
     }
 
+    // Bridge credentials to auth.json so pi's model picker sees the provider.
+    writeAuthCredentials(state.session);
+
     await registerProviderFromSession(ctx);
     ctx.ui.notify("pi-authentik: Signed in successfully.", "info");
   }
@@ -306,6 +311,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.models = [];
     await runtime.clearStoredSession();
     clearModelCache();
+    clearAuthCredentials();
     updateStatus(ctx);
     if (logoutUrl) {
       await runtime.openUrl(logoutUrl).catch((error) => {
@@ -388,6 +394,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     const models = await discoverProviderModels(state.settings.llmBaseUrl, state.session.tokens.accessToken);
     state.models = models;
     saveModelCache(models);
+    writeAuthCredentials(state.session);
     registerProvider(ctx);
   }
 

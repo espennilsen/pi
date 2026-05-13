@@ -48,10 +48,11 @@ const LOOPBACK_REDIRECT_CONFIRM_BODY = [
 ].join("\n");
 
 /**
- * Prompts for authentik and LLM endpoint settings, optionally tests connectivity,
- * and persists the resulting non-secret configuration.
+ * Prompts for authentik and LLM endpoint settings, tests connectivity
+ * automatically, and triggers login when the endpoint is behind authentication.
+ * Uses a public client (PKCE) — no client secret required.
  * @param options - UI and persistence dependencies for the setup flow.
- * @returns The saved settings and whether the connectivity test was run.
+ * @returns The saved settings and whether login was requested.
  */
 export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promise<FirstRunSetupResult> {
   const { ui } = options;
@@ -80,24 +81,21 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   );
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
 
-  let connectivityTested = false;
+  // Test connectivity automatically — no prompt. The LLM endpoint is
+  // almost always behind Authentik, so the probe will detect the auth
+  // redirect and set loginRequested = true.
+  const result = await testConnectivity(llmBaseUrl);
   let loginRequested = false;
-  if (await ui.confirm("Test LLM endpoint connectivity?", `Try GET ${llmBaseUrl}/models before saving.`)) {
-    connectivityTested = true;
-    const result = await testConnectivity(llmBaseUrl);
-    if (result.ok) {
-      ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
-    } else {
-      ui.notify(`LLM endpoint connectivity test failed: ${result.error}`, "error");
-      if (result.authUrl) {
-        loginRequested = await ui.confirm(
-          "Authenticate now?",
-          "The endpoint is behind authentication. Would you like to log in now to verify full connectivity?",
-        );
-      }
-    }
+  if (result.ok) {
+    ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
+  } else if (result.authUrl) {
+    // Auth redirect — endpoint is behind Authentik. Trigger login.
+    ui.notify("LLM endpoint requires authentication. Opening browser to sign in.", "info");
+    loginRequested = true;
   } else {
-    ui.notify("Skipping LLM endpoint connectivity test before save.", "warning");
+    // Other failure (timeout, network error, HTML response) — save settings
+    // anyway; the user can run /authentik-login later.
+    ui.notify(`LLM endpoint probe failed: ${result.error}`, "warning");
   }
 
   const settings = sanitizeSetupSettings({
@@ -116,7 +114,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   return {
     saved: true,
     settings,
-    connectivityTested,
+    connectivityTested: true,
     loginRequested,
   };
 }

@@ -8,6 +8,18 @@ import type { AuthentikUserSession, VerifyIdTokenOptions } from "../shared/types
  * @returns Verified user session claims extracted from the ID token.
  */
 export async function verifyIdToken(options: VerifyIdTokenOptions): Promise<AuthentikUserSession> {
+  // Reject JWE tokens early with a helpful message. A JWE has 5 dot-separated
+  // parts (header.encrypted_key.iv.ciphertext.auth_tag) whereas a signed JWT
+  // (JWS) has 3 (header.payload.signature).
+  if (options.idToken.split(".").length !== 3) {
+    throw new Error(
+      "ID token is encrypted (JWE) instead of signed (JWS). " +
+      "In Authentik, open the provider settings and make sure 'Encryption Key' " +
+      "is empty so that ID tokens are signed only, not encrypted. " +
+      "See AUTHENTIK_SETUP.md for details.",
+    );
+  }
+
   const jwks = createRemoteJWKSet(new URL(options.jwksUri));
 
   let payload;

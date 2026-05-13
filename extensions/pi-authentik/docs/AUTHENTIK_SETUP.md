@@ -28,6 +28,27 @@ Configure the authentik provider/application as a standard OIDC public client:
 - Client type: public
 - Redirect URIs: allow loopback redirect URLs
 
+## Disable ID token encryption
+
+Pi expects **signed** (JWS) ID tokens, not **encrypted** (JWE) tokens. If the
+provider has an encryption key configured, Authentik returns JWE tokens that
+Pi cannot decrypt.
+
+**In the provider settings, make sure `Encryption Key` is empty (no key selected).**
+When left empty, Authentik issues standard RS256-signed JWTs.
+
+### How to verify
+
+After logging in, if you see an error like:
+
+```
+ID token verification failed: Invalid Compact JWS
+```
+
+Your provider is encrypting tokens. Go back to the provider settings in
+Authentik and clear the `Encryption Key` field, then run `/authentik-login`
+again.
+
 ## Loopback redirect URI setup
 
 Pi starts a temporary local callback server bound to `127.0.0.1` on a random port and uses `/callback` as the path.

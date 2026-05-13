@@ -19,11 +19,10 @@ function exampleMetadata(): OidcDiscoveryMetadata {
   };
 }
 
-test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests endpoint, and saves discoveryUrl", async () => {
+test("runFirstRunSetup uses pasted discovery URL, confirms loopback, and saves discoveryUrl", async () => {
   const prompts: string[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
   const saved: AuthentikStoredSettings[] = [];
-  const connectivityCalls: string[] = [];
 
   const discoveryUrl = "https://auth.example/application/o/my-app/.well-known/openid-configuration";
 
@@ -32,11 +31,10 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
       discoveryUrl,
       "pi-client",
       "",
-      "openid profile email",
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true, true, true],
+    confirms: [true],
     prompts,
     notifications,
   });
@@ -50,18 +48,13 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
     clearClientSecret: () => {},
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async (baseUrl) => {
-      connectivityCalls.push(baseUrl);
-      return { ok: true, normalizedUrl: baseUrl, modelCount: 3 };
-    },
     fetchDiscoveryMetadata: async (url) => {
       assert.equal(url, discoveryUrl);
       return exampleMetadata();
     },
   });
 
-  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "OAuth2 Client ID", "Client secret (leave empty for public client)", "Scopes", "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)", "LLM base URL"]);
-  assert.equal(connectivityCalls[0], "https://llm.example/v1");
+  assert.deepEqual(prompts, ["OIDC discovery URL (OpenID configuration)", "OAuth2 Client ID", "Client secret (leave empty for public client)", "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)", "LLM base URL"]);
   assert.equal(saved.length, 1);
   assert.equal(saved[0]?.discoveryUrl, discoveryUrl);
   assert.equal(saved[0]?.authentikHost, undefined);
@@ -71,7 +64,6 @@ test("runFirstRunSetup uses pasted discovery URL, confirms redirect URIs, tests 
   assert.equal(saved[0]?.enableOfflineAccess, true);
   assert.deepEqual(result.settings, saved[0]);
   assert.equal("clientSecret" in saved[0]!, false);
-  assert.match(notifications.map(({ message }) => message).join("\n"), /3 models/i);
   assert.match(notifications.map(({ message }) => message).join("\n"), /issuer:/i);
 });
 
@@ -84,11 +76,10 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
       "main-provider",
       "pi-client",
       "",
-      "openid profile email",
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true, true, true],
+    confirms: [true],
     prompts,
   });
 
@@ -103,7 +94,6 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
     clearClientSecret: () => {},
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 3 }),
     fetchDiscoveryMetadata: async (url) => {
       assert.match(url, /\/application\/o\/main-provider\/\.well-known\/openid-configuration$/);
       return exampleMetadata();
@@ -116,7 +106,6 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
     "Provider slug",
     "OAuth2 Client ID",
     "Client secret (leave empty for public client)",
-    "Scopes",
     "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)",
     "LLM base URL",
   ]);
@@ -125,10 +114,10 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
   assert.equal(saved[0]?.discoveryUrl, undefined);
 });
 
-test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () => {
+test("runFirstRunSetup auto-appends /v1 to LLM base URL", async () => {
   const ui = createUi({
-    inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "", "", "https://llm.example/openai"],
-    confirms: [true, false, true, true],
+    inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "", "https://llm.example/openai"],
+    confirms: [true],
   });
 
   const saved: AuthentikStoredSettings[] = [];
@@ -142,13 +131,12 @@ test("runFirstRunSetup offers to auto-append /v1 after confirmation", async () =
     clearClientSecret: () => {},
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(saved[0]?.llmBaseUrl, "https://llm.example/openai/v1");
   assert.deepEqual(saved[0]?.scopes, ["openid", "profile", "email"]);
-  assert.equal(saved[0]?.enableOfflineAccess, false);
+  assert.equal(saved[0]?.enableOfflineAccess, true);
 });
 
 test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retries", async () => {
@@ -160,12 +148,11 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       "main-provider",
       "pi-client",
       "",
-      "openid,email",
       "",
       "not-a-url",
       "https://llm.example/v1",
     ],
-    confirms: [true, false, false],
+    confirms: [true],
     notifications,
   });
 
@@ -180,53 +167,11 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
     clearClientSecret: () => {},
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async (baseUrl) => ({ ok: true, normalizedUrl: baseUrl, modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
   assert.equal(saved[0]?.llmBaseUrl, "https://llm.example/v1");
   assert.match(notifications.map(({ message }) => message).join("\n"), /examples?:.*https:\/\/llm\.example\/v1.*https:\/\/llm\.example\/openai\/v1/i);
-});
-
-test("runFirstRunSetup offers endpoint test before final save and can skip it", async () => {
-  const notifications: Array<{ message: string; level: string }> = [];
-  const ui = createUi({
-    inputs: [
-      "",
-      "https://auth.example",
-      "main-provider",
-      "pi-client",
-      "",
-      "openid profile email offline_access",
-      "",
-      "https://llm.example/v1",
-    ],
-    confirms: [true, false, false],
-    notifications,
-  });
-
-  let connectivityCalled = false;
-  let saveCount = 0;
-
-  await runFirstRunSetup({
-    ui,
-    saveSettings() {
-      saveCount += 1;
-    },
-    saveClientSecret: () => {},
-    clearClientSecret: () => {},
-    saveExchangeClientId: () => {},
-    clearExchangeClientId: () => {},
-    testConnectivity: async () => {
-      connectivityCalled = true;
-      return { ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 };
-    },
-    fetchDiscoveryMetadata: async () => exampleMetadata(),
-  });
-
-  assert.equal(connectivityCalled, false);
-  assert.equal(saveCount, 1);
-  assert.match(notifications.map(({ message }) => message).join("\n"), /skip.*connectivity test/i);
 });
 
 test("runFirstRunSetup does not save when loopback redirect confirmation is declined", async () => {
@@ -251,29 +196,6 @@ test("runFirstRunSetup does not save when loopback redirect confirmation is decl
   assert.equal(result.saved, false);
   assert.equal(result.settings, null);
 });
-test("runFirstRunSetup returns loginRequested: true when auth redirect detected and user accepts prompt", async () => {
-  const ui = createUi({
-    inputs: ["", "https://auth.example", "provider", "client", "", "openid", "", "https://llm.example/v1"],
-    confirms: [true, false, true, true], // acknowledge loopback, skip offline, test connectivity, login now
-  });
-
-  const result = await runFirstRunSetup({
-    ui,
-    saveSettings: () => {},
-    saveClientSecret: () => {},
-    clearClientSecret: () => {},
-    saveExchangeClientId: () => {},
-    clearExchangeClientId: () => {},
-    testConnectivity: async () => ({
-      ok: false,
-      error: "Auth required",
-      authUrl: "https://auth.example/login",
-    }),
-    fetchDiscoveryMetadata: async () => exampleMetadata(),
-  });
-
-  assert.equal(result.loginRequested, true);
-});
 
 test("runFirstRunSetup persists non-empty clientSecret when provided", async () => {
   const prompts: string[] = [];
@@ -283,8 +205,8 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
   let clearCalled = false;
 
   const ui = createUi({
-    inputs: ["", "https://auth.example", "provider", "client", secret, "openid", "", "https://llm.example/v1"],
-    confirms: [true, false, false], // acknowledge loopback, skip offline, skip connectivity
+    inputs: ["", "https://auth.example", "provider", "client", secret, "", "https://llm.example/v1"],
+    confirms: [true],
     prompts,
   });
 
@@ -301,7 +223,6 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
     },
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async () => ({ ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 
@@ -318,8 +239,8 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
   let clearCalled = false;
 
   const ui = createUi({
-    inputs: ["", "https://auth.example", "provider", "client", "   ", "openid", "", "https://llm.example/v1"],
-    confirms: [true, false, false],
+    inputs: ["", "https://auth.example", "provider", "client", "   ", "", "https://llm.example/v1"],
+    confirms: [true],
   });
 
   await runFirstRunSetup({
@@ -335,7 +256,6 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
     },
     saveExchangeClientId: () => {},
     clearExchangeClientId: () => {},
-    testConnectivity: async () => ({ ok: true, normalizedUrl: "https://llm.example/v1", modelCount: 1 }),
     fetchDiscoveryMetadata: async () => exampleMetadata(),
   });
 

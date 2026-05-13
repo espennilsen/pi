@@ -1,7 +1,7 @@
 import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
 import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
-import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
+import { validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
 import { saveClientSecret, clearClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret } from "../session/token-store.ts";
@@ -25,7 +25,6 @@ export interface RunFirstRunSetupOptions {
   clearClientSecret?: () => void | Promise<void>;
   saveExchangeClientId?: (value: string) => void | Promise<void>;
   clearExchangeClientId?: () => void | Promise<void>;
-  testConnectivity?: (baseUrl: string) => Promise<FirstRunConnectivityResult>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
 
@@ -33,8 +32,6 @@ export interface RunFirstRunSetupOptions {
 export interface FirstRunSetupResult {
   saved: boolean;
   settings: AuthentikStoredSettings | null;
-  connectivityTested: boolean;
-  loginRequested: boolean;
 }
 
 const LLM_URL_EXAMPLES = ["https://llm.example/v1", "https://llm.example/openai/v1"];
@@ -65,7 +62,6 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
   const storeExchangeClientId = options.saveExchangeClientId ?? saveExchangeClientIdSecret;
   const removeExchangeClientId = options.clearExchangeClientId ?? clearExchangeClientIdSecret;
-  const testConnectivity = options.testConnectivity ?? (async (baseUrl: string) => testModelsEndpointConnectivity({ baseUrl }));
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
   const resolved = await resolveOidcConfiguration(ui, fetchDiscovery);
@@ -83,40 +79,16 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
 
   const clientId = await promptForRequiredText(ui, "OAuth2 Client ID", "pi-desktop-client");
   const clientSecret = await promptForOptionalClientSecret(ui);
-  const scopes = await promptForScopes(ui);
-  const enableOfflineAccess = await ui.confirm(
-    "Enable offline_access?",
-    "Allow refresh tokens so Pi can restore the session without logging in every time.",
-  );
+  const enableOfflineAccess = true;
   const exchangeClientId = await promptForExchangeClientId(ui);
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
-
-  let connectivityTested = false;
-  let loginRequested = false;
-  if (await ui.confirm("Test LLM endpoint connectivity?", `Try GET ${llmBaseUrl}/models before saving.`)) {
-    connectivityTested = true;
-    const result = await testConnectivity(llmBaseUrl);
-    if (result.ok) {
-      ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
-    } else {
-      ui.notify(`LLM endpoint connectivity test failed: ${result.error}`, "error");
-      if (result.authUrl) {
-        loginRequested = await ui.confirm(
-          "Authenticate now?",
-          "The endpoint is behind authentication. Would you like to log in now to verify full connectivity?",
-        );
-      }
-    }
-  } else {
-    ui.notify("Skipping LLM endpoint connectivity test before save.", "warning");
-  }
 
   const settings = sanitizeSetupSettings({
     ...(resolved.discoveryUrl ? { discoveryUrl: resolved.discoveryUrl } : {}),
     ...(resolved.authentikHost ? { authentikHost: resolved.authentikHost } : {}),
     ...(resolved.providerSlug ? { providerSlug: resolved.providerSlug } : {}),
     clientId,
-    scopes,
+    scopes: DEFAULT_SCOPES,
     enableOfflineAccess,
     llmBaseUrl,
   });
@@ -140,8 +112,6 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   return {
     saved: true,
     settings,
-    connectivityTested,
-    loginRequested,
   };
 }
 
@@ -346,14 +316,10 @@ async function promptForLlmBaseUrl(ui: FirstRunUi): Promise<string> {
       return result.normalizedUrl;
     }
 
-    if (result.suggestion && /must end with \/v1/i.test(result.error)) {
-      const useSuggestion = await ui.confirm(
-        "Append /v1 automatically?",
-        `Use ${result.suggestion} instead of ${raw}?`,
-      );
-      if (useSuggestion) {
-        return result.suggestion;
-      }
+    // Auto-append /v1 if missing instead of asking for confirmation.
+    if (result.suggestion) {
+      ui.notify(`LLM base URL normalized to ${result.suggestion}`, "info");
+      return result.suggestion;
     }
 
     ui.notify(

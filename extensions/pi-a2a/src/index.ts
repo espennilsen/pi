@@ -1009,8 +1009,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Optional: register with A2A Hub
-		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
+		// Optional: register with A2A Hub — requires an explicit name
+		if (config.name && config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(agentPublicUrl, config.hub, log);
 			if (result) {
 				hubAgentId = result.agentId;

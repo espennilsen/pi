@@ -16,7 +16,6 @@ import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
 import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
 import { clearModelCache, loadModelCache, saveModelCache } from "./src/session/model-cache.ts";
-import { clearAuthCredentials, writeAuthCredentials } from "./src/session/auth-bridge.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
@@ -298,9 +297,6 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       state.session = await maybeExchangeToken(ctx, session);
     }
 
-    // Bridge credentials to auth.json so pi's model picker sees the provider.
-    writeAuthCredentials(state.session);
-
     await registerProviderFromSession(ctx);
     ctx.ui.notify("pi-authentik: Signed in successfully.", "info");
   }
@@ -311,7 +307,6 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.models = [];
     await runtime.clearStoredSession();
     clearModelCache();
-    clearAuthCredentials();
     updateStatus(ctx);
     if (logoutUrl) {
       await runtime.openUrl(logoutUrl).catch((error) => {
@@ -394,7 +389,6 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     const models = await discoverProviderModels(state.settings.llmBaseUrl, state.session.tokens.accessToken);
     state.models = models;
     saveModelCache(models);
-    writeAuthCredentials(state.session);
     registerProvider(ctx);
   }
 
@@ -406,9 +400,14 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
       models: state.models,
       oauth: {
         name: "Authentik",
-        login: async () => credentialsFromSession(await ensureSessionViaOAuth()),
-        refreshToken: async () => credentialsFromSession(await refreshSessionViaOAuth()),
-        getApiKey: () => state.session?.tokens.accessToken ?? "",
+        login: async (): Promise<ProviderOAuthCredentialsLike> => {
+          const session = await ensureSessionViaOAuth();
+          return credentialsFromSession(session);
+        },
+        refreshToken: async (credentials: ProviderOAuthCredentialsLike): Promise<ProviderOAuthCredentialsLike> => {
+          return doRefreshToken(credentials);
+        },
+        getApiKey: (credentials: ProviderOAuthCredentialsLike): string => credentials.access,
       },
     });
 
@@ -456,6 +455,78 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.session = refreshed;
     await registerProviderFromSession(state.lastCtx);
     return refreshed;
+  }
+
+  async function doRefreshToken(credentials: ProviderOAuthCredentialsLike): Promise<ProviderOAuthCredentialsLike> {
+    const discovery = await loadDiscovery();
+
+    // Build a minimal session from the stored credentials for the refresh call.
+    const session: AuthentikSessionRecord = {
+      tokens: {
+        accessToken: credentials.access,
+        refreshToken: credentials.refresh,
+        expiresAt: Math.floor(credentials.expires / 1000),
+        scope: "openid profile email ak_proxy",
+      },
+      user: {
+        issuer: discovery.issuer,
+        audience: state.settings.clientId ? [state.settings.clientId] : [],
+        subject: "",
+        expiresAt: Math.floor(credentials.expires / 1000),
+        nonce: "",
+        issuedAt: 0,
+        email: "",
+        name: "",
+        preferredUsername: "",
+      },
+    };
+
+    // Refresh the RS256 access token.
+    const refreshed = await runtime.refreshSession({
+      tokenEndpoint: discovery.token_endpoint,
+      clientId: state.settings.clientId!,
+      clientSecret: state.settings.clientSecret ?? undefined,
+      session,
+      issuer: discovery.issuer,
+      jwksUri: discovery.jwks_uri,
+    });
+
+    if (!refreshed) {
+      throw new Error("Token refresh returned no session");
+    }
+
+    // Exchange the refreshed RS256 token for an HS256 target-provider token.
+    let exchangedToken = refreshed.tokens.accessToken;
+    if (state.settings.exchangeClientId) {
+      const exchanged = await runtime.exchangeJwtBearer({
+        tokenEndpoint: discovery.token_endpoint,
+        exchangeClientId: state.settings.exchangeClientId,
+        inputToken: refreshed.tokens.accessToken,
+        scopes: state.settings.scopes,
+      });
+      exchangedToken = exchanged.accessToken;
+    }
+
+    // Build the updated session and save to pi-secret.
+    const exchangedSession: AuthentikSessionRecord = {
+      ...refreshed,
+      tokens: {
+        ...refreshed.tokens,
+        accessToken: exchangedToken,
+      },
+    };
+    state.session = exchangedSession;
+    await runtime.saveStoredSession(exchangedSession);
+
+    // Re-discover models and re-register the provider.
+    if (state.lastCtx && state.settings.llmBaseUrl) {
+      const models = await discoverProviderModels(state.settings.llmBaseUrl, exchangedToken);
+      state.models = models;
+      saveModelCache(models);
+      registerProvider(state.lastCtx);
+    }
+
+    return credentialsFromSession(exchangedSession);
   }
 
   function renderStatusSummary(): string {
@@ -586,7 +657,7 @@ function credentialsFromSession(session: AuthentikSessionRecord): ProviderOAuthC
   return {
     access: session.tokens.accessToken,
     refresh: session.tokens.refreshToken ?? "",
-    expires: session.tokens.expiresAt,
+    expires: session.tokens.expiresAt * 1000,
   };
 }
 

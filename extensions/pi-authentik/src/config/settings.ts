@@ -177,7 +177,7 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
   const llmBaseUrlValue = stored.llmBaseUrl ?? null;
 
   const clientSecret = await loadClientSecret();
-  const exchangeClientId = await loadExchangeClientId();
+  const exchangeClientId = await loadExchangeClientId() ?? stored.exchangeClientId ?? null;
 
   return {
     authentikHost: stored.authentikHost ?? null,

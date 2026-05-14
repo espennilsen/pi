@@ -40,8 +40,11 @@ export function saveModelCache(models: ProviderModelConfig[]): void {
  * Clears the cached provider models.
  */
 export function clearModelCache(): void {
-  const cachePath = getCachePath();
-  if (fs.existsSync(cachePath)) {
-    fs.unlinkSync(cachePath);
+  try {
+    fs.unlinkSync(getCachePath());
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw err;
+    }
   }
 }

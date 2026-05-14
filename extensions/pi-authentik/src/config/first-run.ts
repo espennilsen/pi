@@ -15,6 +15,12 @@ export interface FirstRunUi {
 }
 
 /** Result returned after testing the configured models endpoint. */
+export interface ConnectivityTestResult {
+  ok: boolean;
+  modelsCount: number;
+  error?: string;
+}
+
 export type FirstRunConnectivityResult = ConnectivityTestResult;
 
 /** Dependencies used by the first-run wizard. */
@@ -72,8 +78,6 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     return {
       saved: false,
       settings: null,
-      connectivityTested: false,
-      loginRequested: false,
     };
   }
 

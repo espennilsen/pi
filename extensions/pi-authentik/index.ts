@@ -467,6 +467,8 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
         refreshToken: credentials.refresh,
         expiresAt: Math.floor(credentials.expires / 1000),
         scope: "openid profile email ak_proxy",
+        idToken: "",
+        tokenType: "Bearer",
       },
       user: {
         issuer: discovery.issuer,

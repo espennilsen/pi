@@ -12,6 +12,7 @@
  *   - Parameterized queries only — no string interpolation
  *   - Sync operations (better-sqlite3 is sync) wrapped in async interface
  *   - Extended columns beyond SDK interface for loop control (td-02cbd2)
+ *   - Distributed tracing columns: trace_id, parent_task_id (td-131872)
  */
 
 import { mkdirSync } from "node:fs";
@@ -25,7 +26,7 @@ import { randomUUID } from "node:crypto";
 
 // ── Schema version ──────────────────────────────────────────────
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 const MIGRATIONS: Record<number, string[]> = {
 	1: [
@@ -55,6 +56,12 @@ const MIGRATIONS: Record<number, string[]> = {
 			PRIMARY KEY (task_id, config_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_a2a_push_configs_task_id ON a2a_push_configs(task_id)`,
+	],
+	3: [
+		`ALTER TABLE a2a_tasks ADD COLUMN trace_id TEXT`,
+		`ALTER TABLE a2a_tasks ADD COLUMN parent_task_id TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_trace_id ON a2a_tasks(trace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_parent_task_id ON a2a_tasks(parent_task_id)`,
 	],
 };
 
@@ -91,7 +98,7 @@ export class SQLiteTaskStore implements TaskStore {
 		const data = JSON.stringify(task);
 		const status = task.status?.state ?? "submitted";
 
-		// Extract loop-control metadata for indexed querying (td-02cbd2)
+		// Extract loop-control metadata for indexed querying (td-02cbd2, td-131872)
 		const metadata = task.metadata as Record<string, unknown> | undefined;
 		const hopCount = typeof metadata?.["pi:hopCount"] === "number"
 			? metadata["pi:hopCount"] as number
@@ -99,11 +106,17 @@ export class SQLiteTaskStore implements TaskStore {
 		const visitedAgents = Array.isArray(metadata?.["pi:visitedAgents"])
 			? JSON.stringify(metadata["pi:visitedAgents"])
 			: null;
+		const traceId = typeof metadata?.["pi:traceId"] === "string"
+			? metadata["pi:traceId"] as string
+			: null;
+		const parentTaskId = typeof metadata?.["pi:parentTaskId"] === "string"
+			? metadata["pi:parentTaskId"] as string
+			: null;
 
 		const now = new Date().toISOString();
 
 		// Atomic UPSERT — single statement, no race window
-		this.stmtUpsert.run(task.id, task.contextId, status, data, hopCount, visitedAgents, now, now);
+		this.stmtUpsert.run(task.id, task.contextId, status, data, hopCount, visitedAgents, traceId, parentTaskId, now, now);
 
 		this.log("task_store_save", { taskId: task.id, status });
 	}
@@ -244,14 +257,16 @@ export class SQLiteTaskStore implements TaskStore {
 
 	private prepareStatements(): void {
 		this.stmtUpsert = this.db.prepare(
-			`INSERT INTO a2a_tasks (id, context_id, status, data, hop_count, visited_agents, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO a2a_tasks (id, context_id, status, data, hop_count, visited_agents, trace_id, parent_task_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(id) DO UPDATE SET
 			   context_id = excluded.context_id,
 			   status = excluded.status,
 			   data = excluded.data,
 			   hop_count = excluded.hop_count,
 			   visited_agents = excluded.visited_agents,
+			   trace_id = excluded.trace_id,
+			   parent_task_id = excluded.parent_task_id,
 			   updated_at = excluded.updated_at`,
 		);
 

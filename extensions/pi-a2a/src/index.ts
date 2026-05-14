@@ -57,7 +57,7 @@ import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
-import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
+import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, TaskCostInfo, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
 import { LongRunningTaskStore, type LongRunningTask, type ResumeRequest } from "./long-running-task-store.ts";
 import {
 	buildIdleTelemetrySnapshot,
@@ -199,7 +199,7 @@ export default function (pi: ExtensionAPI) {
 	 * because agent_end clears pendingResolve/pendingNonce before the executor's
 	 * onTaskResultSaved callback fires.
 	 */
-	let activeA2aTask: { nonce: string; startTime: number; taskId?: string } | null = null;
+	let activeA2aTask: { nonce: string; startTime: number; taskId?: string; toolCallCountStart: number; contextTokensStart: number } | null = null;
 
 	// ── Powerbar segment ──────────────────────────────────────
 
@@ -358,7 +358,10 @@ export default function (pi: ExtensionAPI) {
 			pendingNonce = nonce;
 
 			// Capture active A2A task context for onTaskResultSaved callback
-			activeA2aTask = { nonce, startTime: start };
+			const toolCallCountStart = recentToolCalls.length;
+			const usageAtStart = sessionCtx?.getContextUsage();
+			const contextTokensStart = usageAtStart?.tokens ?? 0;
+			activeA2aTask = { nonce, startTime: start, toolCallCountStart, contextTokensStart };
 
 			// Inject into the main conversation — triggers a full agent turn.
 			// The nonce in details lets agent_end correlate this turn's response.
@@ -418,13 +421,31 @@ export default function (pi: ExtensionAPI) {
 
 			if (hasMatchingRequest) {
 				const response = extractAssistantText(event.messages);
-				const durationMs = Date.now() - pendingStartTime;
+				const now = Date.now();
+				const durationMs = now - pendingStartTime;
 				const resolve = pendingResolve;
 				pendingResolve = null;
 				pendingReject = null;
 				pendingNonce = null;
 				// Note: activeA2aTask is NOT cleared here — it's cleared by
 				// onTaskResultSaved after the task result is saved to the store.
+
+				// Compute cost attribution for this A2A task
+				if (activeA2aTask) {
+					const toolCallsDuringTask = Math.max(0, recentToolCalls.length - activeA2aTask.toolCallCountStart);
+					const usageNow = sessionCtx?.getContextUsage();
+					const contextTokensNow = usageNow?.tokens ?? 0;
+					const tokensDuringTask = Math.max(0, contextTokensNow - activeA2aTask.contextTokensStart);
+					const costDurationMs = Math.max(0, now - activeA2aTask.startTime);
+					lastTaskCostInfo = computeTaskCost(toolCallsDuringTask, tokensDuringTask, costDurationMs);
+					log("a2a_task_cost_computed", {
+						nonce: activeA2aTask.nonce.slice(0, 8),
+						toolCalls: toolCallsDuringTask,
+						tokens: tokensDuringTask,
+						cost: lastTaskCostInfo?.estimatedCostUsd,
+						durationMs: costDurationMs,
+					});
+				}
 
 				if (response) {
 					resolve({ ok: true, response, durationMs });
@@ -434,6 +455,12 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				updateStatusLine();
+			} else if (activeA2aTask?.nonce === pendingNonce) {
+				const usageNow = sessionCtx?.getContextUsage();
+				activeA2aTask.toolCallCountStart = recentToolCalls.length;
+				activeA2aTask.contextTokensStart = usageNow?.tokens ?? 0;
+				activeA2aTask.startTime = Date.now();
+				log("a2a_task_cost_rebased", { nonce: activeA2aTask.nonce.slice(0, 8) });
 			}
 		}
 
@@ -612,6 +639,59 @@ export default function (pi: ExtensionAPI) {
 	let toolCallsInProgress = new Map<string, ToolCallInProgress>();
 	/** Completed tool calls ready for the next telemetry snapshot. */
 	let recentToolCalls: ToolCallRecord[] = [];
+
+	// ── Cost attribution ——————————————————————
+	/** Cost info from the last completed/failed A2A task. */
+	let lastTaskCostInfo: TaskCostInfo | null = null;
+
+	/**
+	 * Compute cost attribution for a completed A2A task.
+	 * Uses session context usage, tool call count, and model metadata.
+	 * Returns null if sessionCtx is not available.
+	 */
+	function computeTaskCost(toolCallCount: number, tokensDuringTask: number, durationMs: number): TaskCostInfo | null {
+		if (!sessionCtx) return null;
+		const contextWindow = sessionCtx.model?.contextWindow ?? 0;
+		const inputTokens = Math.max(0, contextWindow > 0 ? Math.min(tokensDuringTask, contextWindow) : tokensDuringTask);
+		// Approximate output tokens from the observed context delta. The context API
+		// does not expose separate input/output counts, so keep this conservative.
+		const outputTokens = Math.round(inputTokens * 0.25);
+
+		const pricing = readModelPricingPerMillionTokens(sessionCtx.model as unknown as Record<string, unknown> | undefined);
+		const estimatedCostUsd = pricing
+			? (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output
+			: 0;
+
+		return {
+			inputTokens,
+			outputTokens,
+			estimatedCostUsd: Math.round(estimatedCostUsd * 10_000) / 10_000,
+			toolCallCount,
+			durationMs,
+		};
+	}
+
+	function readModelPricingPerMillionTokens(model: Record<string, unknown> | undefined): { input: number; output: number } | null {
+		if (!model) return null;
+		const pricing = (model.pricing ?? model.cost ?? model.costs) as Record<string, unknown> | undefined;
+		if (!pricing || typeof pricing !== "object") return null;
+
+		const input = readNumber(pricing, ["inputPerMillion", "input_per_million", "promptPerMillion", "prompt_per_million"])
+			?? readNumber(pricing, ["inputPerToken", "input_per_token", "promptPerToken", "prompt_per_token"], 1_000_000);
+		const output = readNumber(pricing, ["outputPerMillion", "output_per_million", "completionPerMillion", "completion_per_million"])
+			?? readNumber(pricing, ["outputPerToken", "output_per_token", "completionPerToken", "completion_per_token"], 1_000_000);
+
+		return input !== undefined && output !== undefined ? { input, output } : null;
+	}
+
+	function readNumber(record: Record<string, unknown>, keys: string[], multiplier = 1): number | undefined {
+		for (const key of keys) {
+			const value = record[key];
+			if (typeof value === "number" && Number.isFinite(value)) return value * multiplier;
+		}
+		return undefined;
+	}
+
 	const runSerializedTelemetrySend = createSerializedAsyncRunner();
 
 	/** Build a telemetry snapshot from pi's actual state + executor A2A queue. */
@@ -626,6 +706,7 @@ export default function (pi: ExtensionAPI) {
 		if (lastTurnStatus !== undefined) snapshot.lastTaskStatus = lastTurnStatus;
 		const toolCallSnapshot = buildRecentToolCallsSnapshot(recentToolCalls);
 		if (toolCallSnapshot !== undefined) snapshot.recentToolCalls = toolCallSnapshot;
+		if (lastTaskCostInfo) snapshot.costInfo = lastTaskCostInfo;
 		return snapshot;
 	}
 
@@ -666,6 +747,7 @@ export default function (pi: ExtensionAPI) {
 		conversationContexts.clear();
 		agentBusy = false;
 		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
+		lastTaskCostInfo = null;
 		// Abort any active SSE subscriptions from previous session
 		for (const [, conn] of sseConnections) {
 			conn.abort();
@@ -1125,6 +1207,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
+		lastTaskCostInfo = null;
 		// Deregister this instance from the hub
 		if (hubAgentId) {
 			const { config } = loadConfig(cwd);

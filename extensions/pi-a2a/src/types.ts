@@ -217,6 +217,20 @@ export interface ToolCallRecord {
 	timestamp: number;
 }
 
+/** Cost attribution data for a completed A2A task. */
+export interface TaskCostInfo {
+	/** Input tokens consumed. */
+	inputTokens: number;
+	/** Output tokens consumed. */
+	outputTokens: number;
+	/** Estimated cost in USD, derived from model pricing metadata. */
+	estimatedCostUsd: number;
+	/** Number of tool calls made during the task. */
+	toolCallCount: number;
+	/** Total task duration in milliseconds. */
+	durationMs: number;
+}
+
 export interface TelemetrySnapshot {
 	queueDepth: number;
 	activeTasks: number;
@@ -225,6 +239,8 @@ export interface TelemetrySnapshot {
 	lastTaskStatus?: "completed" | "failed";
 	/** Recent tool calls since the last telemetry report. */
 	recentToolCalls?: ToolCallRecord[];
+	/** Cost attribution for the last completed/failed task. */
+	costInfo?: TaskCostInfo;
 }
 
 // ── Orchestrator Types ──────────────────────────────────────────

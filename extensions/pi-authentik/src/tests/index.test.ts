@@ -112,7 +112,6 @@ test("session_start refreshes an expired stored session when a refresh token exi
 
   assert.equal(savedSessions[0]?.tokens.accessToken, "refreshed-token");
   assert.equal(harness.clientAuthHeaders[0], "Bearer refreshed-token");
-  assert.match(harness.notifications.join("\n"), /restored session from refresh token/i);
 });
 
 test("commands handle setup, login, status, endpoint, refresh-models, and logout", async () => {

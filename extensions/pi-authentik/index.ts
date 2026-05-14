@@ -367,8 +367,6 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
       if (!refreshed) return session;
       await runtime.saveStoredSession(refreshed);
-      ctx.ui.notify("pi-authentik: Restored session from refresh token.", "info");
-
       // Exchange the refreshed token for a target-provider token if configured.
       if (state.settings.exchangeClientId) {
         return maybeExchangeToken(ctx, refreshed);

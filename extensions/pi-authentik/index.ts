@@ -15,7 +15,7 @@ import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts
 import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
 import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
-import { clearModelCache, loadModelCache, saveModelCache } from "./src/session/model-cache.ts";
+import { clearModelCache, loadModelCache, saveModelCache, type ModelCacheConfig } from "./src/session/model-cache.ts";
 import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
 
 export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
@@ -203,11 +203,15 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     }
 
     // Register provider with cached models immediately so models appear in /models.
-    const cached = loadModelCache();
-    if (cached.length > 0) {
-      state.models = cached;
-      registerProvider(ctx);
-      ctx.ui.notify(`pi-authentik: Loaded ${cached.length} cached models. Sign in to activate.`, "info");
+    const cacheConfig = buildCacheConfig(state.settings);
+    let cached: ProviderModelConfig[] = [];
+    if (cacheConfig) {
+      cached = loadModelCache(cacheConfig);
+      if (cached.length > 0) {
+        state.models = cached;
+        registerProvider(ctx);
+        ctx.ui.notify(`pi-authentik: Loaded ${cached.length} cached models. Sign in to activate.`, "info");
+      }
     }
 
     try {
@@ -306,7 +310,10 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     state.session = null;
     state.models = [];
     await runtime.clearStoredSession();
-    clearModelCache();
+    const cacheConfig = buildCacheConfig(state.settings);
+    if (cacheConfig) {
+      clearModelCache(cacheConfig);
+    }
     updateStatus(ctx);
     if (logoutUrl) {
       await runtime.openUrl(logoutUrl).catch((error) => {
@@ -386,7 +393,10 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
 
     const models = await discoverProviderModels(state.settings.llmBaseUrl, state.session.tokens.accessToken);
     state.models = models;
-    saveModelCache(models);
+    const cacheConfig = buildCacheConfig(state.settings);
+    if (cacheConfig) {
+      saveModelCache(models, cacheConfig);
+    }
     registerProvider(ctx);
   }
 
@@ -522,7 +532,10 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     if (state.lastCtx && state.settings.llmBaseUrl) {
       const models = await discoverProviderModels(state.settings.llmBaseUrl, exchangedToken);
       state.models = models;
-      saveModelCache(models);
+      const cacheConfig = buildCacheConfig(state.settings);
+      if (cacheConfig) {
+        saveModelCache(models, cacheConfig);
+      }
       registerProvider(state.lastCtx);
     }
 
@@ -630,6 +643,14 @@ function hasAuthConfig(settings: AuthentikResolvedSettings): boolean {
   const hasExplicitDiscovery = Boolean(settings.discoveryUrl);
 
   return hasExplicitDiscovery || hasDerivedOidcEndpoints;
+}
+
+function buildCacheConfig(settings: AuthentikResolvedSettings): ModelCacheConfig | null {
+  if (!settings.llmBaseUrl) return null;
+  return {
+    llmBaseUrl: settings.llmBaseUrl,
+    modelFilters: settings.modelFilters,
+  };
 }
 
 function shouldRefresh(session: AuthentikSessionRecord, nowMs: number): boolean {

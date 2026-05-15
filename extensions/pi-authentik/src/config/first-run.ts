@@ -83,7 +83,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
 
   const clientId = await promptForRequiredText(ui, "OAuth2 Client ID", "pi-desktop-client");
   const clientSecret = await promptForOptionalClientSecret(ui);
-  const enableOfflineAccess = true;
+  const enableOfflineAccess = await promptForOfflineAccess(ui);
   const exchangeClientId = await promptForExchangeClientId(ui);
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
 
@@ -249,6 +249,13 @@ async function promptForOptionalClientSecret(ui: FirstRunUi): Promise<string | n
     "",
   ))?.trim();
   return raw && raw.length > 0 ? raw : null;
+}
+
+async function promptForOfflineAccess(ui: FirstRunUi): Promise<boolean> {
+  return await ui.confirm(
+    "Request offline_access scope?",
+    "Enable this to request a refresh token. Required if you want Pi to maintain sessions across restarts without re-authentication. Not all OIDC providers support offline_access.",
+  );
 }
 
 async function promptForAbsoluteUrl(

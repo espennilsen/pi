@@ -4,7 +4,7 @@ import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
-import { saveClientSecret, clearClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret } from "../session/token-store.ts";
+import { saveClientSecret, clearClientSecret, loadClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret, loadExchangeClientId } from "../session/token-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
@@ -29,8 +29,10 @@ export interface RunFirstRunSetupOptions {
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
   saveClientSecret?: (value: string) => void | Promise<void>;
   clearClientSecret?: () => void | Promise<void>;
+  loadClientSecret?: () => string | null | Promise<string | null>;
   saveExchangeClientId?: (value: string) => void | Promise<void>;
   clearExchangeClientId?: () => void | Promise<void>;
+  loadExchangeClientId?: () => string | null | Promise<string | null>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
 
@@ -66,8 +68,10 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
   const storeClientSecret = options.saveClientSecret ?? saveClientSecret;
   const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
+  const getClientSecret = options.loadClientSecret ?? loadClientSecret;
   const storeExchangeClientId = options.saveExchangeClientId ?? saveExchangeClientIdSecret;
   const removeExchangeClientId = options.clearExchangeClientId ?? clearExchangeClientIdSecret;
+  const getExchangeClientId = options.loadExchangeClientId ?? loadExchangeClientId;
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
   const resolved = await resolveOidcConfiguration(ui, fetchDiscovery);
@@ -97,18 +101,39 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     llmBaseUrl,
   });
 
-  await saveSettings(settings);
+  const previousClientSecret = await getClientSecret();
+  const previousExchangeClientId = await getExchangeClientId();
 
-  if (clientSecret) {
-    await storeClientSecret(clientSecret);
-  } else {
-    await removeClientSecret();
-  }
+  try {
+    if (clientSecret) {
+      await storeClientSecret(clientSecret);
+    } else {
+      await removeClientSecret();
+    }
 
-  if (exchangeClientId) {
-    await storeExchangeClientId(exchangeClientId);
-  } else {
-    await removeExchangeClientId();
+    if (exchangeClientId) {
+      await storeExchangeClientId(exchangeClientId);
+    } else {
+      await removeExchangeClientId();
+    }
+
+    await saveSettings(settings);
+  } catch (error) {
+    try {
+      if (previousClientSecret) {
+        await storeClientSecret(previousClientSecret);
+      } else {
+        await removeClientSecret();
+      }
+      if (previousExchangeClientId) {
+        await storeExchangeClientId(previousExchangeClientId);
+      } else {
+        await removeExchangeClientId();
+      }
+    } catch (rollbackError) {
+      ui.notify(`Setup failed and secret rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, "warning");
+    }
+    throw error;
   }
 
   ui.notify("Saved pi-authentik setup.", "info");

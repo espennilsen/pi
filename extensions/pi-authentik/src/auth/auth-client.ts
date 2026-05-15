@@ -77,13 +77,16 @@ export interface RefreshSessionOptions {
   now?: () => number;
 }
 
-interface TokenResponse {
+interface AccessTokenResponse {
   accessToken: string;
-  idToken: string;
   tokenType: string;
   expiresIn: number;
   refreshToken?: string;
   scope?: string;
+}
+
+interface TokenResponse extends AccessTokenResponse {
+  idToken: string;
 }
 
 /**
@@ -180,8 +183,8 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
  * @param options - Token endpoint, target client ID, input JWT, and optional scopes.
  * @returns Raw token response from the target provider.
  */
-export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<TokenResponse> {
-  return requestToken({
+export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<AccessTokenResponse> {
+  const payload = await requestTokenPayload({
     tokenEndpoint: options.tokenEndpoint,
     fetchImpl: options.fetchImpl,
     params: {
@@ -192,6 +195,8 @@ export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Prom
       ...(options.scopes ? { scope: options.scopes.join(" ") } : {}),
     },
   });
+
+  return normalizeAccessTokenResponse(payload);
 }
 
 /**
@@ -237,6 +242,14 @@ async function requestToken(options: {
   params: Record<string, string>;
   fetchImpl?: typeof fetch;
 }): Promise<TokenResponse> {
+  return normalizeTokenResponse(await requestTokenPayload(options));
+}
+
+async function requestTokenPayload(options: {
+  tokenEndpoint: string;
+  params: Record<string, string>;
+  fetchImpl?: typeof fetch;
+}): Promise<unknown> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const body = new URLSearchParams(options.params);
   const response = await fetchImpl(options.tokenEndpoint, {
@@ -261,30 +274,36 @@ async function requestToken(options: {
     throw new Error(`Token request failed: ${response.status} ${response.statusText}${errorDetail}`);
   }
 
-  let payload: unknown;
   try {
-    payload = await response.json();
+    return await response.json();
   } catch {
     throw new Error("Token endpoint did not return valid JSON");
   }
-
-  return normalizeTokenResponse(payload);
 }
 
-function normalizeTokenResponse(payload: unknown): TokenResponse {
+function normalizeAccessTokenResponse(payload: unknown): AccessTokenResponse {
   const record = asRecord(payload);
   const accessToken = requireString(record.access_token, "access_token");
-  const idToken = requireString(record.id_token, "id_token");
   const tokenType = requireString(record.token_type, "token_type");
   const expiresIn = requireNumber(record.expires_in, "expires_in");
 
   return {
     accessToken,
-    idToken,
     tokenType,
     expiresIn,
     refreshToken: optionalString(record.refresh_token),
     scope: optionalString(record.scope),
+  };
+}
+
+function normalizeTokenResponse(payload: unknown): TokenResponse {
+  const record = asRecord(payload);
+  const accessTokenResponse = normalizeAccessTokenResponse(record);
+  const idToken = requireString(record.id_token, "id_token");
+
+  return {
+    ...accessTokenResponse,
+    idToken,
   };
 }
 

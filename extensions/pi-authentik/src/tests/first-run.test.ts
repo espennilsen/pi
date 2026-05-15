@@ -34,7 +34,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms loopback, and saves d
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true],
+    confirms: [true, true],
     prompts,
     notifications,
   });
@@ -79,7 +79,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true],
+    confirms: [true, true],
     prompts,
   });
 
@@ -117,7 +117,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
 test("runFirstRunSetup auto-appends /v1 to LLM base URL", async () => {
   const ui = createUi({
     inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "", "https://llm.example/openai"],
-    confirms: [true],
+    confirms: [true, true],
   });
 
   const saved: AuthentikStoredSettings[] = [];
@@ -152,7 +152,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       "not-a-url",
       "https://llm.example/v1",
     ],
-    confirms: [true],
+    confirms: [true, true],
     notifications,
   });
 
@@ -206,7 +206,7 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", secret, "", "https://llm.example/v1"],
-    confirms: [true],
+    confirms: [true, true],
     prompts,
   });
 
@@ -240,7 +240,7 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", "   ", "", "https://llm.example/v1"],
-    confirms: [true],
+    confirms: [true, true],
   });
 
   await runFirstRunSetup({
@@ -263,6 +263,70 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
   assert.equal(savedSecret, null);
   assert.equal(clearCalled, true);
   assert.equal("clientSecret" in saved[0]!, false);
+});
+
+test("runFirstRunSetup persists non-empty exchangeClientId when provided", async () => {
+  const saved: AuthentikStoredSettings[] = [];
+  let savedExchangeClientId: string | null = null;
+  let clearExchangeCalled = false;
+
+  const ui = createUi({
+    inputs: ["", "https://auth.example", "provider", "client", "", "  exchange-provider  ", "https://llm.example/v1"],
+    confirms: [true, true],
+  });
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings(settings) {
+      saved.push(settings);
+    },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
+    saveExchangeClientId(value) {
+      savedExchangeClientId = value;
+    },
+    clearExchangeClientId() {
+      clearExchangeCalled = true;
+    },
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(saved.length, 1);
+  assert.equal(savedExchangeClientId, "exchange-provider");
+  assert.equal(clearExchangeCalled, false);
+  assert.equal("exchangeClientId" in saved[0]!, false);
+});
+
+test("runFirstRunSetup does not persist whitespace-only exchangeClientId", async () => {
+  const saved: AuthentikStoredSettings[] = [];
+  let savedExchangeClientId: string | null = null;
+  let clearExchangeCalled = false;
+
+  const ui = createUi({
+    inputs: ["", "https://auth.example", "provider", "client", "", "   ", "https://llm.example/v1"],
+    confirms: [true, true],
+  });
+
+  await runFirstRunSetup({
+    ui,
+    saveSettings(settings) {
+      saved.push(settings);
+    },
+    saveClientSecret: () => {},
+    clearClientSecret: () => {},
+    saveExchangeClientId(value) {
+      savedExchangeClientId = value;
+    },
+    clearExchangeClientId() {
+      clearExchangeCalled = true;
+    },
+    fetchDiscoveryMetadata: async () => exampleMetadata(),
+  });
+
+  assert.equal(saved.length, 1);
+  assert.equal(savedExchangeClientId, null);
+  assert.equal(clearExchangeCalled, true);
+  assert.equal("exchangeClientId" in saved[0]!, false);
 });
 
 function createUi(options: {

@@ -12,7 +12,7 @@ import { createOpenAICompatibleClient } from "./src/llm/llm-client.ts";
 import { createLogger } from "./src/shared/logger.ts";
 import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./src/llm/models.ts";
 import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts";
-import { createEmptySettings, resolveSettings } from "./src/config/settings.ts";
+import { DEFAULT_SCOPES, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
 import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
 import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
 import { clearModelCache, loadModelCache, saveModelCache, type ModelCacheConfig } from "./src/session/model-cache.ts";
@@ -474,7 +474,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
         accessToken: credentials.access,
         refreshToken: credentials.refresh,
         expiresAt: Math.floor(credentials.expires / 1000),
-        scope: state.settings.scopes?.join(" ") ?? "openid profile email ak_proxy",
+        scope: state.settings.scopes?.join(" ") ?? DEFAULT_SCOPES.join(" "),
         idToken: "",
         tokenType: "Bearer",
       },

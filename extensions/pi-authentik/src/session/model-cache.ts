@@ -17,9 +17,34 @@ export interface ModelCacheConfig {
  * @returns A unique cache file path for this configuration.
  */
 function getCachePath(config: ModelCacheConfig): string {
-  const configKey = `${config.llmBaseUrl}|${config.modelFilters.join(",")}`;
+  const configKey = `${config.llmBaseUrl}|${JSON.stringify(config.modelFilters)}`;
   const hash = crypto.createHash("sha256").update(configKey).digest("hex").slice(0, 16);
   return path.join(getAgentDir(), "cache", `pi-authentik-models-${hash}.json`);
+}
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isProviderModelConfig(value: unknown): value is ProviderModelConfig {
+  if (!value || typeof value !== "object") return false;
+
+  const model = value as ProviderModelConfig;
+  return (
+    typeof model.id === "string"
+    && typeof model.name === "string"
+    && typeof model.reasoning === "boolean"
+    && Array.isArray(model.input)
+    && model.input.every((item) => item === "text" || item === "image")
+    && typeof model.cost === "object"
+    && model.cost !== null
+    && typeof model.cost.input === "number"
+    && typeof model.cost.output === "number"
+    && typeof model.cost.cacheRead === "number"
+    && typeof model.cost.cacheWrite === "number"
+    && typeof model.contextWindow === "number"
+    && Number.isFinite(model.contextWindow)
+    && typeof model.maxTokens === "number"
+    && Number.isFinite(model.maxTokens)
+  );
 }
 
 /**
@@ -30,8 +55,12 @@ function getCachePath(config: ModelCacheConfig): string {
 export function loadModelCache(config: ModelCacheConfig): ProviderModelConfig[] {
   try {
     const data = fs.readFileSync(getCachePath(config), "utf-8");
-    const parsed = JSON.parse(data) as { models: ProviderModelConfig[]; timestamp: number };
-    return Array.isArray(parsed.models) ? parsed.models : [];
+    const parsed = JSON.parse(data) as { models?: unknown; timestamp?: unknown };
+    if (typeof parsed.timestamp !== "number" || Date.now() - parsed.timestamp > CACHE_TTL_MS) {
+      return [];
+    }
+
+    return Array.isArray(parsed.models) ? parsed.models.filter(isProviderModelConfig) : [];
   } catch {
     return [];
   }
@@ -56,8 +85,8 @@ export function saveModelCache(models: ProviderModelConfig[], config: ModelCache
 export function clearModelCache(config: ModelCacheConfig): void {
   try {
     fs.unlinkSync(getCachePath(config));
-  } catch (err: unknown) {
-    if (err instanceof Error && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") {
       throw err;
     }
   }

@@ -200,6 +200,8 @@ export default function (pi: ExtensionAPI) {
 	 * onTaskResultSaved callback fires.
 	 */
 	let activeA2aTask: { nonce: string; startTime: number; taskId?: string; toolCallCountStart: number; contextTokensStart: number } | null = null;
+	/** Monotonic count of completed tool calls in the current session. */
+	let totalCompletedToolCalls = 0;
 
 	// ── Powerbar segment ──────────────────────────────────────
 
@@ -432,7 +434,7 @@ export default function (pi: ExtensionAPI) {
 
 				// Compute cost attribution for this A2A task
 				if (activeA2aTask) {
-					const toolCallsDuringTask = Math.max(0, recentToolCalls.length - activeA2aTask.toolCallCountStart);
+					const toolCallsDuringTask = Math.max(0, totalCompletedToolCalls - activeA2aTask.toolCallCountStart);
 					const usageNow = sessionCtx?.getContextUsage();
 					const contextTokensNow = usageNow?.tokens ?? 0;
 					const tokensDuringTask = Math.max(0, contextTokensNow - activeA2aTask.contextTokensStart);
@@ -457,7 +459,7 @@ export default function (pi: ExtensionAPI) {
 				updateStatusLine();
 			} else if (activeA2aTask?.nonce === pendingNonce) {
 				const usageNow = sessionCtx?.getContextUsage();
-				activeA2aTask.toolCallCountStart = recentToolCalls.length;
+				activeA2aTask.toolCallCountStart = totalCompletedToolCalls;
 				activeA2aTask.contextTokensStart = usageNow?.tokens ?? 0;
 				activeA2aTask.startTime = Date.now();
 				log("a2a_task_cost_rebased", { nonce: activeA2aTask.nonce.slice(0, 8) });
@@ -528,6 +530,7 @@ export default function (pi: ExtensionAPI) {
 		};
 
 		recentToolCalls.push(record);
+		totalCompletedToolCalls += 1;
 		if (recentToolCalls.length > MAX_RECENT_TOOL_CALLS) {
 			recentToolCalls.shift();
 		}
@@ -747,6 +750,7 @@ export default function (pi: ExtensionAPI) {
 		conversationContexts.clear();
 		agentBusy = false;
 		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
+		totalCompletedToolCalls = 0;
 		lastTaskCostInfo = null;
 		// Abort any active SSE subscriptions from previous session
 		for (const [, conn] of sseConnections) {
@@ -1207,6 +1211,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
+		totalCompletedToolCalls = 0;
 		lastTaskCostInfo = null;
 		// Deregister this instance from the hub
 		if (hubAgentId) {

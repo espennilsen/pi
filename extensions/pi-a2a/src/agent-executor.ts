@@ -584,6 +584,7 @@ export class PiAgentExecutor implements AgentExecutor {
 		this.cancelCallbacks.set(taskId, () => { canceled = true; });
 		this.taskContexts.set(taskId, contextId);
 		const queuedParentTaskId = this.activeTaskId;
+		const queuedParentTraceId = this.activeLoopMetadata?.traceId;
 
 		// Wait for preceding tasks to finish
 		await myTurn;
@@ -652,7 +653,12 @@ export class PiAgentExecutor implements AgentExecutor {
 			supervisorResult.metadata.traceId = generateTraceId();
 		}
 		// Set parentTaskId from the active task context if this is a queued sub-call
-		if (!supervisorResult.metadata.parentTaskId && queuedParentTaskId != null) {
+		if (
+			!supervisorResult.metadata.parentTaskId &&
+			queuedParentTaskId != null &&
+			queuedParentTraceId != null &&
+			supervisorResult.metadata.traceId === queuedParentTraceId
+		) {
 			supervisorResult.metadata.parentTaskId = queuedParentTaskId;
 		}
 		this.activeLoopMetadata = supervisorResult.metadata;

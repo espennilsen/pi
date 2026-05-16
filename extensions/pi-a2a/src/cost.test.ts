@@ -39,7 +39,12 @@ describe("TaskCostInfo", () => {
 
 describe("TelemetrySnapshot with costInfo", () => {
 	it("can include costInfo optionally", () => {
-		const snapshot = {
+		const snapshot: {
+			queueDepth: number;
+			activeTasks: number;
+			maxConcurrent: number;
+			costInfo?: TaskCostInfo;
+		} = {
 			queueDepth: 0,
 			activeTasks: 0,
 			maxConcurrent: 1,
@@ -49,18 +54,23 @@ describe("TelemetrySnapshot with costInfo", () => {
 				estimatedCostUsd: 0.021,
 				toolCallCount: 5,
 				durationMs: 8000,
-			} as TaskCostInfo,
+			},
 		};
 		assert.ok(snapshot.costInfo !== undefined);
 		assert.ok(snapshot.costInfo.estimatedCostUsd > 0);
 	});
 
 	it("works without costInfo (backward compatible)", () => {
-		const snapshot = {
+		const snapshot: {
+			queueDepth: number;
+			activeTasks: number;
+			maxConcurrent: number;
+			costInfo?: TaskCostInfo;
+		} = {
 			queueDepth: 1,
 			activeTasks: 1,
 			maxConcurrent: 1,
 		};
-		assert.strictEqual((snapshot as any).costInfo, undefined);
+		assert.strictEqual(snapshot.costInfo, undefined);
 	});
 });

@@ -506,7 +506,7 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
     }
 
     // Exchange the refreshed RS256 token for an HS256 target-provider token.
-    let exchangedToken = refreshed.tokens.accessToken;
+    let exchangedSession: AuthentikSessionRecord = refreshed;
     if (state.settings.exchangeClientId) {
       const exchanged = await runtime.exchangeJwtBearer({
         tokenEndpoint: discovery.token_endpoint,
@@ -514,23 +514,24 @@ export function createPiAuthentikExtension(pi: ExtensionAPI, deps: Partial<Authe
         inputToken: refreshed.tokens.accessToken,
         scopes: state.settings.scopes,
       });
-      exchangedToken = exchanged.accessToken;
+      exchangedSession = {
+        ...refreshed,
+        tokens: {
+          ...refreshed.tokens,
+          accessToken: exchanged.accessToken,
+          tokenType: exchanged.tokenType,
+          expiresAt: normalizeEpochSeconds((runtime.now)() / 1000) + exchanged.expiresIn,
+          scope: exchanged.scope ?? refreshed.tokens.scope,
+        },
+      };
     }
 
-    // Build the updated session and save to pi-secret.
-    const exchangedSession: AuthentikSessionRecord = {
-      ...refreshed,
-      tokens: {
-        ...refreshed.tokens,
-        accessToken: exchangedToken,
-      },
-    };
     state.session = exchangedSession;
     await runtime.saveStoredSession(exchangedSession);
 
     // Re-discover models and re-register the provider.
     if (state.lastCtx && state.settings.llmBaseUrl) {
-      const models = await discoverProviderModels(state.settings.llmBaseUrl, exchangedToken);
+      const models = await discoverProviderModels(state.settings.llmBaseUrl, exchangedSession.tokens.accessToken);
       state.models = models;
       const cacheConfig = buildCacheConfig(state.settings);
       if (cacheConfig) {

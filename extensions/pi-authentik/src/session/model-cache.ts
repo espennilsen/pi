@@ -45,9 +45,7 @@ export function loadModelCache(config: ModelCacheConfig): ProviderModelConfig[] 
 export function saveModelCache(models: ProviderModelConfig[], config: ModelCacheConfig): void {
   const cachePath = getCachePath(config);
   const dir = path.dirname(cachePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(cachePath, JSON.stringify({ models, timestamp: Date.now() }, null, 2));
 }
 

@@ -20,7 +20,7 @@ source but always rewrite content — never copy-paste.
 
 Node data is split into per-node JSON files organized by section and category:
 
-```
+```text
 src/data/nodes/
   _metadata.json                              — metadata + schema_version
   comfy_nodes/<category>/<NodeName>.json      — core ComfyUI nodes (511)
@@ -184,11 +184,11 @@ this workflow end-to-end. The process has three phases: **ask**, **extract**,
 
 Ask the user: *"Is ComfyUI running and updated? Or do you need to update it first?"*
 
-If the user needs to update, give these copy-paste commands for their
-ComfyUI directory (`~/AI/comfyui_clean`):
+If the user needs to update, first ask them for the ComfyUI repository path
+(or tell them to set `COMFYUI_DIR`). Then give these copy-paste commands:
 
-```
-cd ~/AI/comfyui_clean
+```bash
+cd <COMFYUI_DIR>
 git pull
 pip install -r requirements.txt
 ./start.sh

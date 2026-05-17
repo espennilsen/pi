@@ -4,7 +4,7 @@ import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
-import { saveClientSecret, clearClientSecret, loadClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret, loadExchangeClientId } from "../session/token-store.ts";
+import { saveClientSecret, clearClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret } from "../session/token-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
@@ -21,7 +21,7 @@ export interface ConnectivityTestResult {
   error?: string;
 }
 
-export type FirstRunConnectivityResult = ConnectivityTestResult;
+
 
 /** Dependencies used by the first-run wizard. */
 export interface RunFirstRunSetupOptions {
@@ -29,10 +29,8 @@ export interface RunFirstRunSetupOptions {
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
   saveClientSecret?: (value: string) => void | Promise<void>;
   clearClientSecret?: () => void | Promise<void>;
-  loadClientSecret?: () => string | null | Promise<string | null>;
   saveExchangeClientId?: (value: string) => void | Promise<void>;
   clearExchangeClientId?: () => void | Promise<void>;
-  loadExchangeClientId?: () => string | null | Promise<string | null>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
 
@@ -68,10 +66,8 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
   const storeClientSecret = options.saveClientSecret ?? saveClientSecret;
   const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
-  const getClientSecret = options.loadClientSecret ?? loadClientSecret;
   const storeExchangeClientId = options.saveExchangeClientId ?? saveExchangeClientIdSecret;
   const removeExchangeClientId = options.clearExchangeClientId ?? clearExchangeClientIdSecret;
-  const getExchangeClientId = options.loadExchangeClientId ?? loadExchangeClientId;
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
   const resolved = await resolveOidcConfiguration(ui, fetchDiscovery);
@@ -87,7 +83,7 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
 
   const clientId = await promptForRequiredText(ui, "OAuth2 Client ID", "pi-desktop-client");
   const clientSecret = await promptForOptionalClientSecret(ui);
-  const enableOfflineAccess = await promptForOfflineAccess(ui);
+  const enableOfflineAccess = true;
   const exchangeClientId = await promptForExchangeClientId(ui);
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
 
@@ -101,40 +97,21 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     llmBaseUrl,
   });
 
-  const previousClientSecret = await getClientSecret();
-  const previousExchangeClientId = await getExchangeClientId();
-
-  try {
-    if (clientSecret) {
-      await storeClientSecret(clientSecret);
-    } else {
-      await removeClientSecret();
-    }
-
-    if (exchangeClientId) {
-      await storeExchangeClientId(exchangeClientId);
-    } else {
-      await removeExchangeClientId();
-    }
-
-    await saveSettings(settings);
-  } catch (error) {
-    try {
-      if (previousClientSecret) {
-        await storeClientSecret(previousClientSecret);
-      } else {
-        await removeClientSecret();
-      }
-      if (previousExchangeClientId) {
-        await storeExchangeClientId(previousExchangeClientId);
-      } else {
-        await removeExchangeClientId();
-      }
-    } catch (rollbackError) {
-      ui.notify(`Setup failed and secret rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, "warning");
-    }
-    throw error;
+  // Persist secrets first so settings are never committed without their
+  // corresponding secret-backed values.
+  if (clientSecret) {
+    await storeClientSecret(clientSecret);
+  } else {
+    await removeClientSecret();
   }
+
+  if (exchangeClientId) {
+    await storeExchangeClientId(exchangeClientId);
+  } else {
+    await removeExchangeClientId();
+  }
+
+  await saveSettings(settings);
 
   ui.notify("Saved pi-authentik setup.", "info");
 
@@ -274,13 +251,6 @@ async function promptForOptionalClientSecret(ui: FirstRunUi): Promise<string | n
     "",
   ))?.trim();
   return raw && raw.length > 0 ? raw : null;
-}
-
-async function promptForOfflineAccess(ui: FirstRunUi): Promise<boolean> {
-  return await ui.confirm(
-    "Request offline_access scope?",
-    "Enable this to request a refresh token. Required if you want Pi to maintain sessions across restarts without re-authentication. Not all OIDC providers support offline_access.",
-  );
 }
 
 async function promptForAbsoluteUrl(

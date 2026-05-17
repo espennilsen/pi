@@ -587,6 +587,9 @@ export async function reportTelemetryToHub(
 	if (telemetry.recentToolCalls !== undefined && telemetry.recentToolCalls.length > 0) {
 		params.recentToolCalls = telemetry.recentToolCalls;
 	}
+	if (telemetry.costInfo !== undefined) {
+		params.costInfo = telemetry.costInfo;
+	}
 
 	const result = await hubRpc(rpcUrl, "agents.reportTelemetry", params, hubConfig.apiKey, log, "hub_telemetry");
 	if (result) {

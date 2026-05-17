@@ -52,6 +52,7 @@ import type { TelemetrySnapshot, HubConfig } from "./types.ts";
 import { sendTaskStateChanged } from "./hub.ts";
 import {
 	extractLoopMetadata,
+	generateTraceId,
 	injectLoopMetadata,
 	supervise,
 	type LoopMetadata,
@@ -582,6 +583,8 @@ export class PiAgentExecutor implements AgentExecutor {
 		this._queueDepth++;
 		this.cancelCallbacks.set(taskId, () => { canceled = true; });
 		this.taskContexts.set(taskId, contextId);
+		const queuedParentTaskId = this.activeTaskId;
+		const queuedParentTraceId = this.activeLoopMetadata?.traceId;
 
 		// Wait for preceding tasks to finish
 		await myTurn;
@@ -645,6 +648,19 @@ export class PiAgentExecutor implements AgentExecutor {
 
 		// Supervisor approved — store the updated metadata for this task.
 		// This is used by a2a_send for outbound metadata propagation.
+		// Ensure traceId is set (generate one if this is the root of a chain)
+		if (!supervisorResult.metadata.traceId) {
+			supervisorResult.metadata.traceId = generateTraceId();
+		}
+		// Set parentTaskId from the active task context if this is a queued sub-call
+		if (
+			!supervisorResult.metadata.parentTaskId &&
+			queuedParentTaskId != null &&
+			queuedParentTraceId != null &&
+			supervisorResult.metadata.traceId === queuedParentTraceId
+		) {
+			supervisorResult.metadata.parentTaskId = queuedParentTaskId;
+		}
 		this.activeLoopMetadata = supervisorResult.metadata;
 		this.log("supervisor_approved", {
 			taskId,

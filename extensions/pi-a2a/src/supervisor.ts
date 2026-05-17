@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 /**
  * pi-a2a — Loop control supervisor.
  *
@@ -13,6 +15,8 @@
  *   - `pi:hopCount` (number)  — incremented at each hop
  *   - `pi:visitedAgents` (string[]) — agent identities (URLs) visited so far
  *   - `pi:budgets` ({ maxHops?, maxCalls?, maxTokens? }) — configurable limits
+ *   - `pi:traceId` (string) — distributed trace ID shared across agent chain
+ *   - `pi:parentTaskId` (string?) — caller's task ID for parent-child linking
  *
  * The supervisor is called in two places:
  *   - Inbound: before AgentExecutor.execute() processes a task
@@ -39,6 +43,10 @@ export interface LoopMetadata {
 	visitedAgents: string[];
 	/** Budget constraints. */
 	budgets?: LoopBudgets;
+	/** Distributed trace ID — shared across all agents in a chain. */
+	traceId?: string;
+	/** Caller's task ID — links parent → child tasks. */
+	parentTaskId?: string;
 }
 
 /** Supervisor configuration. */
@@ -65,6 +73,14 @@ export const DEFAULT_MAX_HOPS = 10;
 /** Cap on visitedAgents array length to bound memory from untrusted input. */
 const MAX_VISITED_AGENTS = 64;
 
+/**
+ * Generate a new distributed trace ID.
+ * Format: `a2a-trace-<uuid>` — unique per root agent invocation.
+ */
+export function generateTraceId(): string {
+	return `a2a-trace-${randomUUID()}`;
+}
+
 // ── Extract / Inject ────────────────────────────────────────────
 
 /**
@@ -74,7 +90,7 @@ const MAX_VISITED_AGENTS = 64;
 export function extractLoopMetadata(
 	metadata?: Record<string, unknown> | null,
 ): LoopMetadata {
-	if (!metadata) return { hopCount: 0, visitedAgents: [] };
+	if (!metadata) return { hopCount: 0, visitedAgents: [], budgets: undefined, traceId: undefined, parentTaskId: undefined };
 
 	const hopCount =
 		typeof metadata["pi:hopCount"] === "number"
@@ -99,7 +115,15 @@ export function extractLoopMetadata(
 		}
 	}
 
-	return { hopCount, visitedAgents, budgets };
+	const traceId = typeof metadata["pi:traceId"] === "string"
+		? metadata["pi:traceId"] as string
+		: undefined;
+
+	const parentTaskId = typeof metadata["pi:parentTaskId"] === "string"
+		? metadata["pi:parentTaskId"] as string
+		: undefined;
+
+	return { hopCount, visitedAgents, budgets, traceId, parentTaskId };
 }
 
 /**
@@ -115,6 +139,12 @@ export function injectLoopMetadata(
 	result["pi:visitedAgents"] = loop.visitedAgents;
 	if (loop.budgets) {
 		result["pi:budgets"] = loop.budgets;
+	}
+	if (loop.traceId) {
+		result["pi:traceId"] = loop.traceId;
+	}
+	if (loop.parentTaskId) {
+		result["pi:parentTaskId"] = loop.parentTaskId;
 	}
 	return result;
 }
@@ -149,6 +179,8 @@ export function supervise(
 				hopCount: incoming.hopCount + 1,
 				visitedAgents: [...incoming.visitedAgents, config.agentId],
 				budgets: incoming.budgets,
+				traceId: incoming.traceId,
+				parentTaskId: incoming.parentTaskId,
 			},
 		};
 	}
@@ -163,6 +195,8 @@ export function supervise(
 				hopCount: newHopCount,
 				visitedAgents: [...incoming.visitedAgents, config.agentId],
 				budgets: incoming.budgets,
+				traceId: incoming.traceId,
+				parentTaskId: incoming.parentTaskId,
 			},
 		};
 	}
@@ -174,6 +208,8 @@ export function supervise(
 			hopCount: newHopCount,
 			visitedAgents: [...incoming.visitedAgents, config.agentId],
 			budgets: incoming.budgets,
+			traceId: incoming.traceId,
+			parentTaskId: incoming.parentTaskId,
 		},
 	};
 }
@@ -181,6 +217,8 @@ export function supervise(
 /**
  * Create seed metadata for an outbound message initiated by this agent
  * (not a response to an inbound task — fresh chain).
+ *
+ * Generates a new traceId for the root of a distributed trace.
  */
 export function seedLoopMetadata(
 	agentId: string,
@@ -190,5 +228,6 @@ export function seedLoopMetadata(
 		hopCount: 0,
 		visitedAgents: [agentId],
 		budgets: maxHops !== undefined ? { maxHops } : undefined,
+		traceId: generateTraceId(),
 	};
 }

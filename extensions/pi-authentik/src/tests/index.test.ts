@@ -27,10 +27,16 @@ const discoveryOnlySettings: AuthentikResolvedSettings = {
   discoveryUrl: "https://auth.example/application/o/my-app/.well-known/openid-configuration",
 };
 
+const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 const agentDir = mkdtempSync(join(tmpdir(), "pi-authentik-index-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 test.after(() => {
   rmSync(agentDir, { recursive: true, force: true });
+  if (previousAgentDir === undefined) {
+    delete process.env.PI_CODING_AGENT_DIR;
+  } else {
+    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  }
 });
 
 test("session_start shows unauthenticated status when configured but no session exists", async () => {

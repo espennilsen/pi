@@ -77,16 +77,22 @@ export interface RefreshSessionOptions {
   now?: () => number;
 }
 
-interface AccessTokenResponse {
+/** Raw token response from a standard OIDC authorization code or refresh exchange. */
+interface TokenResponse {
   accessToken: string;
+  idToken: string;
   tokenType: string;
   expiresIn: number;
   refreshToken?: string;
   scope?: string;
 }
 
-interface TokenResponse extends AccessTokenResponse {
-  idToken: string;
+/** Raw token response from a client-credentials JWT-bearer exchange (no id_token). */
+export interface ClientCredentialsTokenResponse {
+  accessToken: string;
+  tokenType: string;
+  expiresIn: number;
+  scope?: string;
 }
 
 /**
@@ -181,10 +187,10 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
  * This is used to obtain a token issued by a target provider (e.g. an outpost provider) using a
  * token from the login provider (e.g. a browser OAuth client).
  * @param options - Token endpoint, target client ID, input JWT, and optional scopes.
- * @returns Raw token response from the target provider.
+ * @returns Raw token response from the target provider (no id_token — client_credentials grant).
  */
-export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<AccessTokenResponse> {
-  const payload = await requestTokenPayload({
+export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<ClientCredentialsTokenResponse> {
+  const response = await requestTokenRaw({
     tokenEndpoint: options.tokenEndpoint,
     fetchImpl: options.fetchImpl,
     params: {
@@ -195,8 +201,7 @@ export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Prom
       ...(options.scopes ? { scope: options.scopes.join(" ") } : {}),
     },
   });
-
-  return normalizeAccessTokenResponse(payload);
+  return normalizeClientCredentialsTokenResponse(response);
 }
 
 /**
@@ -237,15 +242,11 @@ async function verifyRefreshUser(options: RefreshSessionOptions, idToken: string
   return options.session.user;
 }
 
-async function requestToken(options: {
-  tokenEndpoint: string;
-  params: Record<string, string>;
-  fetchImpl?: typeof fetch;
-}): Promise<TokenResponse> {
-  return normalizeTokenResponse(await requestTokenPayload(options));
-}
-
-async function requestTokenPayload(options: {
+/**
+ * Makes a raw token request and returns the unparsed JSON payload.
+ * Used by grant types that need custom normalization (e.g. client_credentials).
+ */
+async function requestTokenRaw(options: {
   tokenEndpoint: string;
   params: Record<string, string>;
   fetchImpl?: typeof fetch;
@@ -274,14 +275,37 @@ async function requestTokenPayload(options: {
     throw new Error(`Token request failed: ${response.status} ${response.statusText}${errorDetail}`);
   }
 
-  try {
-    return await response.json();
-  } catch {
-    throw new Error("Token endpoint did not return valid JSON");
-  }
+  return response.json();
 }
 
-function normalizeAccessTokenResponse(payload: unknown): AccessTokenResponse {
+async function requestToken(options: {
+  tokenEndpoint: string;
+  params: Record<string, string>;
+  fetchImpl?: typeof fetch;
+}): Promise<TokenResponse> {
+  const payload = await requestTokenRaw(options);
+  return normalizeTokenResponse(payload);
+}
+
+function normalizeTokenResponse(payload: unknown): TokenResponse {
+  const record = asRecord(payload);
+  const accessToken = requireString(record.access_token, "access_token");
+  const idToken = requireString(record.id_token, "id_token");
+  const tokenType = requireString(record.token_type, "token_type");
+  const expiresIn = requireNumber(record.expires_in, "expires_in");
+
+  return {
+    accessToken,
+    idToken,
+    tokenType,
+    expiresIn,
+    refreshToken: optionalString(record.refresh_token),
+    scope: optionalString(record.scope),
+  };
+}
+
+/** Normalizes a client-credentials token response (no id_token required). */
+function normalizeClientCredentialsTokenResponse(payload: unknown): ClientCredentialsTokenResponse {
   const record = asRecord(payload);
   const accessToken = requireString(record.access_token, "access_token");
   const tokenType = requireString(record.token_type, "token_type");
@@ -291,19 +315,7 @@ function normalizeAccessTokenResponse(payload: unknown): AccessTokenResponse {
     accessToken,
     tokenType,
     expiresIn,
-    refreshToken: optionalString(record.refresh_token),
     scope: optionalString(record.scope),
-  };
-}
-
-function normalizeTokenResponse(payload: unknown): TokenResponse {
-  const record = asRecord(payload);
-  const accessTokenResponse = normalizeAccessTokenResponse(record);
-  const idToken = requireString(record.id_token, "id_token");
-
-  return {
-    ...accessTokenResponse,
-    idToken,
   };
 }
 

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { createPiAuthentikExtension } from "../../index.ts";
@@ -23,6 +26,12 @@ const discoveryOnlySettings: AuthentikResolvedSettings = {
   providerSlug: null,
   discoveryUrl: "https://auth.example/application/o/my-app/.well-known/openid-configuration",
 };
+
+const agentDir = mkdtempSync(join(tmpdir(), "pi-authentik-index-"));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+test.after(() => {
+  rmSync(agentDir, { recursive: true, force: true });
+});
 
 test("session_start shows unauthenticated status when configured but no session exists", async () => {
   const harness = createHarness({

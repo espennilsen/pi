@@ -34,7 +34,7 @@ test("runFirstRunSetup uses pasted discovery URL, confirms loopback, and saves d
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true, true],
+    confirms: [true],
     prompts,
     notifications,
   });
@@ -79,7 +79,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
       "",
       "https://llm.example/v1",
     ],
-    confirms: [true, true],
+    confirms: [true],
     prompts,
   });
 
@@ -117,7 +117,7 @@ test("runFirstRunSetup falls back to Authentik host + slug when discovery URL bl
 test("runFirstRunSetup auto-appends /v1 to LLM base URL", async () => {
   const ui = createUi({
     inputs: ["", "https://auth.example", "main-provider", "pi-client", "", "", "https://llm.example/openai"],
-    confirms: [true, true],
+    confirms: [true],
   });
 
   const saved: AuthentikStoredSettings[] = [];
@@ -152,7 +152,7 @@ test("runFirstRunSetup rejects invalid LLM URLs with helpful examples and retrie
       "not-a-url",
       "https://llm.example/v1",
     ],
-    confirms: [true, true],
+    confirms: [true],
     notifications,
   });
 
@@ -206,7 +206,7 @@ test("runFirstRunSetup persists non-empty clientSecret when provided", async () 
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", secret, "", "https://llm.example/v1"],
-    confirms: [true, true],
+    confirms: [true],
     prompts,
   });
 
@@ -240,7 +240,7 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", "   ", "", "https://llm.example/v1"],
-    confirms: [true, true],
+    confirms: [true],
   });
 
   await runFirstRunSetup({
@@ -267,12 +267,13 @@ test("runFirstRunSetup does not persist whitespace-only clientSecret", async () 
 
 test("runFirstRunSetup persists non-empty exchangeClientId when provided", async () => {
   const saved: AuthentikStoredSettings[] = [];
-  let savedExchangeClientId: string | null = null;
+  const exchangeId = "exchange-client-123";
+  let savedExchangeId: string | null = null;
   let clearExchangeCalled = false;
 
   const ui = createUi({
-    inputs: ["", "https://auth.example", "provider", "client", "", "  exchange-provider  ", "https://llm.example/v1"],
-    confirms: [true, true],
+    inputs: ["", "https://auth.example", "provider", "client", "", exchangeId, "https://llm.example/v1"],
+    confirms: [true],
   });
 
   await runFirstRunSetup({
@@ -283,7 +284,7 @@ test("runFirstRunSetup persists non-empty exchangeClientId when provided", async
     saveClientSecret: () => {},
     clearClientSecret: () => {},
     saveExchangeClientId(value) {
-      savedExchangeClientId = value;
+      savedExchangeId = value;
     },
     clearExchangeClientId() {
       clearExchangeCalled = true;
@@ -292,19 +293,20 @@ test("runFirstRunSetup persists non-empty exchangeClientId when provided", async
   });
 
   assert.equal(saved.length, 1);
-  assert.equal(savedExchangeClientId, "exchange-provider");
+  assert.equal(savedExchangeId, exchangeId);
   assert.equal(clearExchangeCalled, false);
   assert.equal("exchangeClientId" in saved[0]!, false);
+  assert.equal(saved[0]!.clientId, "client");
 });
 
 test("runFirstRunSetup does not persist whitespace-only exchangeClientId", async () => {
   const saved: AuthentikStoredSettings[] = [];
-  let savedExchangeClientId: string | null = null;
+  let savedExchangeId: string | null = null;
   let clearExchangeCalled = false;
 
   const ui = createUi({
     inputs: ["", "https://auth.example", "provider", "client", "", "   ", "https://llm.example/v1"],
-    confirms: [true, true],
+    confirms: [true],
   });
 
   await runFirstRunSetup({
@@ -315,7 +317,7 @@ test("runFirstRunSetup does not persist whitespace-only exchangeClientId", async
     saveClientSecret: () => {},
     clearClientSecret: () => {},
     saveExchangeClientId(value) {
-      savedExchangeClientId = value;
+      savedExchangeId = value;
     },
     clearExchangeClientId() {
       clearExchangeCalled = true;
@@ -324,7 +326,7 @@ test("runFirstRunSetup does not persist whitespace-only exchangeClientId", async
   });
 
   assert.equal(saved.length, 1);
-  assert.equal(savedExchangeClientId, null);
+  assert.equal(savedExchangeId, null);
   assert.equal(clearExchangeCalled, true);
   assert.equal("exchangeClientId" in saved[0]!, false);
 });

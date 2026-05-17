@@ -75,7 +75,10 @@ export async function loadClientSecret(): Promise<string | null> {
  * Deletes the stored OAuth client secret from `pi-secret`.
  */
 export async function clearClientSecret(): Promise<void> {
-  const secretApi = requireSecretApi();
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) {
+    throw new Error(`pi-secret backend is not available; cannot clear ${TOKEN_STORE_EXTENSION_ID}:${CLIENT_SECRET_NAME}`);
+  }
   await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, CLIENT_SECRET_NAME);
 }
 
@@ -105,7 +108,10 @@ export async function loadExchangeClientId(): Promise<string | null> {
  * Deletes the stored JWT bearer exchange client ID from `pi-secret`.
  */
 export async function clearExchangeClientId(): Promise<void> {
-  const secretApi = requireSecretApi();
+  const secretApi = globalThis.__piSecret;
+  if (!secretApi) {
+    throw new Error(`pi-secret backend is not available; cannot clear ${TOKEN_STORE_EXTENSION_ID}:${EXCHANGE_CLIENT_ID_NAME}`);
+  }
   await secretApi.deleteSecret(TOKEN_STORE_EXTENSION_ID, EXCHANGE_CLIENT_ID_NAME);
 }
 

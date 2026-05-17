@@ -41,6 +41,7 @@ export function sanitizeStoredSettings(value: unknown): AuthentikStoredSettings 
   const llmBaseUrl = sanitizeString(input.llmBaseUrl);
   const authStorageBackend = sanitizeString(input.authStorageBackend);
   const modelFilters = sanitizeStringArray(input.modelFilters);
+  const exchangeClientId = sanitizeString(input.exchangeClientId);
 
   if (authentikHost) sanitized.authentikHost = authentikHost;
   if (providerSlug) sanitized.providerSlug = providerSlug;
@@ -52,6 +53,7 @@ export function sanitizeStoredSettings(value: unknown): AuthentikStoredSettings 
   if (llmBaseUrl) sanitized.llmBaseUrl = llmBaseUrl;
   if (authStorageBackend) sanitized.authStorageBackend = authStorageBackend;
   if (modelFilters) sanitized.modelFilters = modelFilters;
+  if (exchangeClientId) sanitized.exchangeClientId = exchangeClientId;
 
   return sanitized;
 }

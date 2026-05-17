@@ -1,8 +1,9 @@
 import type { AuthentikResolvedSettings, AuthentikStoredSettings, ResolveSettingsOptions } from "../shared/types.ts";
+import { loadClientSecret, loadExchangeClientId } from "../session/token-store.ts";
 import { sanitizeStoredSettings } from "./settings-store.ts";
 
 /** Default scopes requested when no scopes are configured explicitly. */
-export const DEFAULT_SCOPES = ["openid", "profile", "email"];
+export const DEFAULT_SCOPES = ["openid", "profile", "email", "ak_proxy"];
 /** Default model filter that exposes every discovered model. */
 export const DEFAULT_MODEL_FILTERS = ["*"];
 
@@ -15,6 +16,7 @@ export function createEmptySettings(): AuthentikResolvedSettings {
     authentikHost: null,
     providerSlug: null,
     clientId: null,
+    clientSecret: null,
     scopes: DEFAULT_SCOPES,
     enableOfflineAccess: false,
     discoveryUrl: null,
@@ -22,6 +24,7 @@ export function createEmptySettings(): AuthentikResolvedSettings {
     llmBaseUrl: null,
     authStorageBackend: null,
     modelFilters: DEFAULT_MODEL_FILTERS,
+    exchangeClientId: null,
   };
 }
 
@@ -169,14 +172,18 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
   const filteredScopes = normalizedScopes.filter((scope) => scope !== "offline_access");
   if (enableOfflineAccess) filteredScopes.push("offline_access");
 
-  const modelFilters = stored.modelFilters ?? DEFAULT_MODEL_FILTERS;
+  const modelFilters = (stored.modelFilters ?? DEFAULT_MODEL_FILTERS) as string[];
 
   const llmBaseUrlValue = stored.llmBaseUrl ?? null;
+
+  const clientSecret = await loadClientSecret();
+  const exchangeClientId = await loadExchangeClientId() ?? stored.exchangeClientId ?? null;
 
   return {
     authentikHost: stored.authentikHost ?? null,
     providerSlug: stored.providerSlug ?? null,
     clientId: stored.clientId ?? null,
+    clientSecret,
     scopes: filteredScopes,
     enableOfflineAccess,
     discoveryUrl: stored.discoveryUrl
@@ -188,5 +195,6 @@ export async function resolveSettings(cwd: string, options: ResolveSettingsOptio
     llmBaseUrl: llmBaseUrlValue ? canonicalizeLlmBaseUrl(llmBaseUrlValue) : null,
     authStorageBackend: stored.authStorageBackend ?? null,
     modelFilters,
+    exchangeClientId,
   };
 }

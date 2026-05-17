@@ -10,6 +10,8 @@ export interface AuthentikStoredSettings {
   llmBaseUrl?: string;
   authStorageBackend?: string;
   modelFilters?: string[];
+  /** Client ID of the target OAuth2 provider used for JWT bearer token exchange. Stored via pi-secret. */
+  exchangeClientId?: string;
 }
 
 /** Runtime settings after Pi global and project settings have been merged and normalized. */
@@ -17,6 +19,7 @@ export interface AuthentikResolvedSettings {
   authentikHost: string | null;
   providerSlug: string | null;
   clientId: string | null;
+  clientSecret: string | null;
   scopes: string[];
   enableOfflineAccess: boolean;
   discoveryUrl: string | null;
@@ -24,6 +27,8 @@ export interface AuthentikResolvedSettings {
   llmBaseUrl: string | null;
   authStorageBackend: string | null;
   modelFilters: string[];
+  /** Client ID of the target OAuth2 provider for JWT bearer token exchange. */
+  exchangeClientId: string | null;
 }
 
 /** Optional settings source overrides used by tests. */

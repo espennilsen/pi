@@ -14,7 +14,7 @@ test("resolveSettings uses default scopes and omits offline_access by default", 
     projectSettings: {},
   });
 
-  assert.deepEqual(settings.scopes, ["openid", "profile", "email"]);
+  assert.deepEqual(settings.scopes, ["openid", "profile", "email", "ak_proxy"]);
   assert.equal(settings.enableOfflineAccess, false);
 });
 
@@ -37,7 +37,7 @@ test("resolveSettings merges project settings over global settings", async () =>
       authentikHost: "https://global.example",
       providerSlug: "global-provider",
       clientId: "global-client",
-      scopes: ["openid", "profile", "email"],
+      scopes: ["openid", "profile", "email", "ak_proxy"],
       llmBaseUrl: "https://global.example/v1",
       modelFilters: ["gpt-*"],
     },
@@ -52,7 +52,7 @@ test("resolveSettings merges project settings over global settings", async () =>
   assert.equal(settings.authentikHost, "https://global.example");
   assert.equal(settings.providerSlug, "project-provider");
   assert.equal(settings.clientId, "project-client");
-  assert.deepEqual(settings.scopes, ["openid", "profile", "email"]);
+  assert.deepEqual(settings.scopes, ["openid", "profile", "email", "ak_proxy"]);
   assert.equal(settings.llmBaseUrl, "https://project.example/openai/v1");
   assert.deepEqual(settings.modelFilters, ["o3-*"]);
 });

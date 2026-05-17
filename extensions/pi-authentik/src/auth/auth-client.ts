@@ -27,6 +27,7 @@ export interface RunBrowserLoginOptions {
   issuer: string;
   jwksUri: string;
   clientId: string;
+  clientSecret?: string;
   scopes: string[];
   state: string;
   nonce: string;
@@ -42,6 +43,7 @@ export interface RunBrowserLoginOptions {
 export interface ExchangeAuthorizationCodeRequest {
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   code: string;
   redirectUri: string;
   codeVerifier: string;
@@ -53,10 +55,20 @@ export interface ExchangeAuthorizationCodeRequest {
   now?: () => number;
 }
 
+/** Inputs required to exchange an existing access token for a new one via JWT bearer grant. */
+export interface ExchangeJwtBearerRequest {
+  tokenEndpoint: string;
+  exchangeClientId: string;
+  inputToken: string;
+  scopes?: string[];
+  fetchImpl?: typeof fetch;
+}
+
 /** Inputs required to refresh an existing authenticated session. */
 export interface RefreshSessionOptions {
   tokenEndpoint: string;
   clientId: string;
+  clientSecret?: string;
   session: AuthentikSessionRecord;
   issuer?: string;
   jwksUri?: string;
@@ -65,13 +77,16 @@ export interface RefreshSessionOptions {
   now?: () => number;
 }
 
-interface TokenResponse {
+interface AccessTokenResponse {
   accessToken: string;
-  idToken: string;
   tokenType: string;
   expiresIn: number;
   refreshToken?: string;
   scope?: string;
+}
+
+interface TokenResponse extends AccessTokenResponse {
+  idToken: string;
 }
 
 /**
@@ -120,6 +135,7 @@ export async function runBrowserLogin(options: RunBrowserLoginOptions): Promise<
       redirectUri: server.redirectUri,
       codeVerifier: options.codeVerifier,
       clientId: options.clientId,
+      clientSecret: options.clientSecret,
       nonce: options.nonce,
       tokenEndpoint: options.tokenEndpoint,
       issuer: options.issuer,
@@ -142,6 +158,7 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
     params: {
       grant_type: "authorization_code",
       client_id: options.clientId,
+      ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
       code: options.code,
       redirect_uri: options.redirectUri,
       code_verifier: options.codeVerifier,
@@ -160,6 +177,29 @@ export async function exchangeAuthorizationCode(options: ExchangeAuthorizationCo
 }
 
 /**
+ * Exchanges an existing access token for a new token from a different provider using JWT bearer grant.
+ * This is used to obtain a token issued by a target provider (e.g. an outpost provider) using a
+ * token from the login provider (e.g. a browser OAuth client).
+ * @param options - Token endpoint, target client ID, input JWT, and optional scopes.
+ * @returns Raw token response from the target provider.
+ */
+export async function exchangeJwtBearer(options: ExchangeJwtBearerRequest): Promise<AccessTokenResponse> {
+  const payload = await requestTokenPayload({
+    tokenEndpoint: options.tokenEndpoint,
+    fetchImpl: options.fetchImpl,
+    params: {
+      grant_type: "client_credentials",
+      client_id: options.exchangeClientId,
+      client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: options.inputToken,
+      ...(options.scopes ? { scope: options.scopes.join(" ") } : {}),
+    },
+  });
+
+  return normalizeAccessTokenResponse(payload);
+}
+
+/**
  * Refreshes a stored session when a refresh token is available.
  * @param options - Existing session and token endpoint details.
  * @returns A refreshed session record, or null when refresh is not possible.
@@ -174,6 +214,7 @@ export async function refreshSession(options: RefreshSessionOptions): Promise<Au
     params: {
       grant_type: "refresh_token",
       client_id: options.clientId,
+      ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
       refresh_token: refreshToken,
     },
   });
@@ -201,6 +242,14 @@ async function requestToken(options: {
   params: Record<string, string>;
   fetchImpl?: typeof fetch;
 }): Promise<TokenResponse> {
+  return normalizeTokenResponse(await requestTokenPayload(options));
+}
+
+async function requestTokenPayload(options: {
+  tokenEndpoint: string;
+  params: Record<string, string>;
+  fetchImpl?: typeof fetch;
+}): Promise<unknown> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const body = new URLSearchParams(options.params);
   const response = await fetchImpl(options.tokenEndpoint, {
@@ -213,33 +262,48 @@ async function requestToken(options: {
   });
 
   if (!response.ok) {
-    throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
+    let errorDetail = "";
+    try {
+      const errorPayload = await response.json() as Record<string, unknown>;
+      if (errorPayload.error) {
+        errorDetail = `: ${errorPayload.error}${errorPayload.error_description ? ` (${errorPayload.error_description})` : ""}`;
+      }
+    } catch {
+      // Ignore parse failure for error body
+    }
+    throw new Error(`Token request failed: ${response.status} ${response.statusText}${errorDetail}`);
   }
 
-  let payload: unknown;
   try {
-    payload = await response.json();
+    return await response.json();
   } catch {
     throw new Error("Token endpoint did not return valid JSON");
   }
-
-  return normalizeTokenResponse(payload);
 }
 
-function normalizeTokenResponse(payload: unknown): TokenResponse {
+function normalizeAccessTokenResponse(payload: unknown): AccessTokenResponse {
   const record = asRecord(payload);
   const accessToken = requireString(record.access_token, "access_token");
-  const idToken = requireString(record.id_token, "id_token");
   const tokenType = requireString(record.token_type, "token_type");
   const expiresIn = requireNumber(record.expires_in, "expires_in");
 
   return {
     accessToken,
-    idToken,
     tokenType,
     expiresIn,
     refreshToken: optionalString(record.refresh_token),
     scope: optionalString(record.scope),
+  };
+}
+
+function normalizeTokenResponse(payload: unknown): TokenResponse {
+  const record = asRecord(payload);
+  const accessTokenResponse = normalizeAccessTokenResponse(record);
+  const idToken = requireString(record.id_token, "id_token");
+
+  return {
+    ...accessTokenResponse,
+    idToken,
   };
 }
 

@@ -1,9 +1,10 @@
 import { deriveDiscoveryUrl } from "../auth/auth-config.ts";
 import type { OidcDiscoveryMetadata } from "../auth/discovery.ts";
 import { fetchOidcDiscoveryMetadata } from "../auth/discovery.ts";
-import { testModelsEndpointConnectivity, validateOpenAIBaseUrl, type ConnectivityTestResult } from "../llm/endpoint-validator.ts";
+import { validateOpenAIBaseUrl } from "../llm/endpoint-validator.ts";
 import { DEFAULT_SCOPES } from "./settings.ts";
 import { saveCurrentGlobalSettings } from "./settings-store.ts";
+import { saveClientSecret, clearClientSecret, loadClientSecret, saveExchangeClientId as saveExchangeClientIdSecret, clearExchangeClientId as clearExchangeClientIdSecret, loadExchangeClientId } from "../session/token-store.ts";
 import type { AuthentikStoredSettings } from "../shared/types.ts";
 
 /** UI contract for the interactive first-run setup flow. */
@@ -14,13 +15,24 @@ export interface FirstRunUi {
 }
 
 /** Result returned after testing the configured models endpoint. */
+export interface ConnectivityTestResult {
+  ok: boolean;
+  modelsCount: number;
+  error?: string;
+}
+
 export type FirstRunConnectivityResult = ConnectivityTestResult;
 
 /** Dependencies used by the first-run wizard. */
 export interface RunFirstRunSetupOptions {
   ui: FirstRunUi;
   saveSettings?: (settings: AuthentikStoredSettings) => void | Promise<void>;
-  testConnectivity?: (baseUrl: string) => Promise<FirstRunConnectivityResult>;
+  saveClientSecret?: (value: string) => void | Promise<void>;
+  clearClientSecret?: () => void | Promise<void>;
+  loadClientSecret?: () => string | null | Promise<string | null>;
+  saveExchangeClientId?: (value: string) => void | Promise<void>;
+  clearExchangeClientId?: () => void | Promise<void>;
+  loadExchangeClientId?: () => string | null | Promise<string | null>;
   fetchDiscoveryMetadata?: (discoveryUrl: string) => Promise<OidcDiscoveryMetadata>;
 }
 
@@ -28,8 +40,6 @@ export interface RunFirstRunSetupOptions {
 export interface FirstRunSetupResult {
   saved: boolean;
   settings: AuthentikStoredSettings | null;
-  connectivityTested: boolean;
-  loginRequested: boolean;
 }
 
 const LLM_URL_EXAMPLES = ["https://llm.example/v1", "https://llm.example/openai/v1"];
@@ -56,7 +66,12 @@ const LOOPBACK_REDIRECT_CONFIRM_BODY = [
 export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promise<FirstRunSetupResult> {
   const { ui } = options;
   const saveSettings = options.saveSettings ?? saveCurrentGlobalSettings;
-  const testConnectivity = options.testConnectivity ?? (async (baseUrl: string) => testModelsEndpointConnectivity({ baseUrl }));
+  const storeClientSecret = options.saveClientSecret ?? saveClientSecret;
+  const removeClientSecret = options.clearClientSecret ?? clearClientSecret;
+  const getClientSecret = options.loadClientSecret ?? loadClientSecret;
+  const storeExchangeClientId = options.saveExchangeClientId ?? saveExchangeClientIdSecret;
+  const removeExchangeClientId = options.clearExchangeClientId ?? clearExchangeClientIdSecret;
+  const getExchangeClientId = options.loadExchangeClientId ?? loadExchangeClientId;
   const fetchDiscovery = options.fetchDiscoveryMetadata ?? ((discoveryUrl: string) => fetchOidcDiscoveryMetadata({ discoveryUrl }));
 
   const resolved = await resolveOidcConfiguration(ui, fetchDiscovery);
@@ -67,57 +82,65 @@ export async function runFirstRunSetup(options: RunFirstRunSetupOptions): Promis
     return {
       saved: false,
       settings: null,
-      connectivityTested: false,
-      loginRequested: false,
     };
   }
 
-  const clientId = await promptForRequiredText(ui, "Client ID", "pi-desktop-client");
-  const scopes = await promptForScopes(ui);
-  const enableOfflineAccess = await ui.confirm(
-    "Enable offline_access?",
-    "Allow refresh tokens so Pi can restore the session without logging in every time.",
-  );
+  const clientId = await promptForRequiredText(ui, "OAuth2 Client ID", "pi-desktop-client");
+  const clientSecret = await promptForOptionalClientSecret(ui);
+  const enableOfflineAccess = await promptForOfflineAccess(ui);
+  const exchangeClientId = await promptForExchangeClientId(ui);
   const llmBaseUrl = await promptForLlmBaseUrl(ui);
-
-  let connectivityTested = false;
-  let loginRequested = false;
-  if (await ui.confirm("Test LLM endpoint connectivity?", `Try GET ${llmBaseUrl}/models before saving.`)) {
-    connectivityTested = true;
-    const result = await testConnectivity(llmBaseUrl);
-    if (result.ok) {
-      ui.notify(`LLM endpoint responded successfully. Found ${result.modelCount} models.`, "info");
-    } else {
-      ui.notify(`LLM endpoint connectivity test failed: ${result.error}`, "error");
-      if (result.authUrl) {
-        loginRequested = await ui.confirm(
-          "Authenticate now?",
-          "The endpoint is behind authentication. Would you like to log in now to verify full connectivity?",
-        );
-      }
-    }
-  } else {
-    ui.notify("Skipping LLM endpoint connectivity test before save.", "warning");
-  }
 
   const settings = sanitizeSetupSettings({
     ...(resolved.discoveryUrl ? { discoveryUrl: resolved.discoveryUrl } : {}),
     ...(resolved.authentikHost ? { authentikHost: resolved.authentikHost } : {}),
     ...(resolved.providerSlug ? { providerSlug: resolved.providerSlug } : {}),
     clientId,
-    scopes,
+    scopes: DEFAULT_SCOPES,
     enableOfflineAccess,
     llmBaseUrl,
   });
 
-  await saveSettings(settings);
+  const previousClientSecret = await getClientSecret();
+  const previousExchangeClientId = await getExchangeClientId();
+
+  try {
+    if (clientSecret) {
+      await storeClientSecret(clientSecret);
+    } else {
+      await removeClientSecret();
+    }
+
+    if (exchangeClientId) {
+      await storeExchangeClientId(exchangeClientId);
+    } else {
+      await removeExchangeClientId();
+    }
+
+    await saveSettings(settings);
+  } catch (error) {
+    try {
+      if (previousClientSecret) {
+        await storeClientSecret(previousClientSecret);
+      } else {
+        await removeClientSecret();
+      }
+      if (previousExchangeClientId) {
+        await storeExchangeClientId(previousExchangeClientId);
+      } else {
+        await removeExchangeClientId();
+      }
+    } catch (rollbackError) {
+      ui.notify(`Setup failed and secret rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, "warning");
+    }
+    throw error;
+  }
+
   ui.notify("Saved pi-authentik setup.", "info");
 
   return {
     saved: true,
     settings,
-    connectivityTested,
-    loginRequested,
   };
 }
 
@@ -245,6 +268,21 @@ async function promptForRequiredText(ui: FirstRunUi, prompt: string, placeholder
   }
 }
 
+async function promptForOptionalClientSecret(ui: FirstRunUi): Promise<string | null> {
+  const raw = (await ui.input(
+    "Client secret (leave empty for public client)",
+    "",
+  ))?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
+async function promptForOfflineAccess(ui: FirstRunUi): Promise<boolean> {
+  return await ui.confirm(
+    "Request offline_access scope?",
+    "Enable this to request a refresh token. Required if you want Pi to maintain sessions across restarts without re-authentication. Not all OIDC providers support offline_access.",
+  );
+}
+
 async function promptForAbsoluteUrl(
   ui: FirstRunUi,
   prompt: string,
@@ -293,6 +331,14 @@ async function promptForScopes(ui: FirstRunUi): Promise<string[]> {
   }
 }
 
+async function promptForExchangeClientId(ui: FirstRunUi): Promise<string | null> {
+  const raw = (await ui.input(
+    "Outpost exchange client ID (provider used for JWT bearer token exchange, leave empty to skip)",
+    "",
+  ))?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
 async function promptForLlmBaseUrl(ui: FirstRunUi): Promise<string> {
   for (;;) {
     const raw = (await ui.input("LLM base URL", "https://llm.example/v1"))?.trim();
@@ -306,14 +352,10 @@ async function promptForLlmBaseUrl(ui: FirstRunUi): Promise<string> {
       return result.normalizedUrl;
     }
 
-    if (result.suggestion && /must end with \/v1/i.test(result.error)) {
-      const useSuggestion = await ui.confirm(
-        "Append /v1 automatically?",
-        `Use ${result.suggestion} instead of ${raw}?`,
-      );
-      if (useSuggestion) {
-        return result.suggestion;
-      }
+    // Auto-append /v1 if missing instead of asking for confirmation.
+    if (result.suggestion) {
+      ui.notify(`LLM base URL normalized to ${result.suggestion}`, "info");
+      return result.suggestion;
     }
 
     ui.notify(

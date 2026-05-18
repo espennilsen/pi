@@ -2,6 +2,13 @@
 
 Secure-by-default [Gondolin](https://github.com/earendil-works/gondolin) micro-VM sandbox for Pi. When loaded, the extension overrides Pi's `read`, `write`, `edit`, and `bash` tools so file and shell operations run inside a VM instead of directly on the host.
 
+## Benefits
+
+- Sandboxes the risky parts without running the whole Pi app inside the VM
+- Keeps the normal Pi UI, settings, memory, and extensions on the host
+- Lets you narrow access with explicit mounts instead of exposing the full filesystem
+- Makes it easy to opt out per session with `--no-gondolin`
+
 ## Features
 
 - Enabled by default when the extension is loaded

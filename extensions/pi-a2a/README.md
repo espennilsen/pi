@@ -174,6 +174,19 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 | `hub.visibility` | string | `"public"` | `public`, `unlisted`, or `private` |
 | `hub.autoRegister` | boolean | `true` | Auto-register on session start |
 
+### Lease-aware Hub RPCs
+
+pi-a2a now understands the lease-oriented hub contracts from PR 35:
+
+- `tasks.claim` — atomically claim a specific task or the next eligible task
+- `tasks.heartbeat` — renew an active lease for the same `agentId` + `instanceId`
+- `agents.reportTelemetry` — accepts optional `instanceId` to help the hub track lease ownership
+
+Task payloads include:
+- `leaseOwnerAgentId`
+- `leaseOwnerInstanceId`
+- `leaseExpiresAt`
+
 ## Commands
 
 | Command | Description |

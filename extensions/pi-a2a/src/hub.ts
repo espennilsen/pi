@@ -19,7 +19,9 @@ export interface HubTask {
 	id: string;
 	title: string;
 	description: string | null;
-	project: string;
+	projectId: string | null;
+	/** Legacy alias kept for existing UI rendering paths. */
+	project: string | null;
 	repo: string | null;
 	state: PipelineState;
 	priority: TaskPriority;
@@ -29,6 +31,7 @@ export interface HubTask {
 	branch: string | null;
 	prUrl: string | null;
 	prNumber: number | null;
+	reportPath: string | null;
 	blockedReason: string | null;
 	reviewRound: number;
 	maxReviewRounds: number;
@@ -37,6 +40,38 @@ export interface HubTask {
 	updatedAt: string;
 	startedAt: string | null;
 	completedAt: string | null;
+	leaseOwnerAgentId: string | null;
+	leaseOwnerInstanceId: string | null;
+	leaseExpiresAt: string | null;
+}
+
+export type PipelineTask = HubTask;
+
+export interface ClaimTaskParams {
+	agentId: string;
+	instanceId: string;
+	taskId?: string;
+	projectId?: string;
+	/** Defaults to 900 seconds, max 86400 seconds. */
+	leaseDurationSeconds?: number;
+}
+
+export interface ClaimTaskResult {
+	task: PipelineTask | null;
+	claimed: boolean;
+}
+
+export interface TaskHeartbeatParams {
+	agentId: string;
+	instanceId: string;
+	taskId: string;
+	/** Defaults to 900 seconds, max 86400 seconds. */
+	leaseDurationSeconds?: number;
+}
+
+export interface TaskHeartbeatResult {
+	task: PipelineTask;
+	renewed: boolean;
 }
 
 export interface HubTaskTransition {
@@ -59,20 +94,32 @@ interface HubRpcResponse {
 	id: number;
 }
 
+export class HubRpcError extends Error {
+	code: number;
+	data?: unknown;
+
+	constructor(code: number, message: string, data?: unknown) {
+		super(message);
+		this.name = "HubRpcError";
+		this.code = code;
+		this.data = data;
+	}
+}
+
 // ── Helpers ─────────────────────────────────────────────────────
 
 function hubRpcUrl(hubConfig: HubConfig): string {
 	return `${hubConfig.url.replace(/\/$/, "")}/rpc`;
 }
 
-async function hubRpc(
+async function hubRpcResponse(
 	rpcUrl: string,
 	method: string,
 	params: Record<string, unknown>,
 	hubApiKey: string,
 	log: LogFn,
 	logPrefix: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<HubRpcResponse | null> {
 	const payload = { jsonrpc: "2.0" as const, method, params, id: 1 };
 
 	try {
@@ -92,24 +139,36 @@ async function hubRpc(
 			return null;
 		}
 
-		const data = (await res.json()) as HubRpcResponse;
-
-		if (data.error) {
-			log(`${logPrefix}_rpc_error`, { code: data.error.code, message: data.error.message, data: data.error.data }, "ERROR");
-			return null;
-		}
-
-		if (data.result) {
-			return data.result;
-		}
-
-		log(`${logPrefix}_unexpected`, { response: JSON.stringify(data).slice(0, 500) }, "WARN");
-		return null;
+		return (await res.json()) as HubRpcResponse;
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
 		log(`${logPrefix}_error`, { error: msg }, "ERROR");
 		return null;
 	}
+}
+
+async function hubRpc(
+	rpcUrl: string,
+	method: string,
+	params: Record<string, unknown>,
+	hubApiKey: string,
+	log: LogFn,
+	logPrefix: string,
+): Promise<Record<string, unknown> | null> {
+	const data = await hubRpcResponse(rpcUrl, method, params, hubApiKey, log, logPrefix);
+	if (!data) return null;
+
+	if (data.error) {
+		log(`${logPrefix}_rpc_error`, { code: data.error.code, message: data.error.message, data: data.error.data }, "ERROR");
+		return null;
+	}
+
+	if (data.result) {
+		return data.result;
+	}
+
+	log(`${logPrefix}_unexpected`, { response: JSON.stringify(data).slice(0, 500) }, "WARN");
+	return null;
 }
 
 // ── Public API ──────────────────────────────────────────────────
@@ -569,6 +628,7 @@ export async function reportTelemetryToHub(
 	telemetry: TelemetrySnapshot,
 	hubConfig: HubConfig,
 	log: LogFn,
+	instanceId?: string,
 ): Promise<{ telemetryUpdatedAt: string } | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 
@@ -578,6 +638,9 @@ export async function reportTelemetryToHub(
 		activeTasks: telemetry.activeTasks,
 		maxConcurrent: telemetry.maxConcurrent,
 	};
+	if (instanceId !== undefined) {
+		params.instanceId = instanceId;
+	}
 	if (telemetry.lastTaskDurationMs !== undefined) {
 		params.lastTaskDurationMs = telemetry.lastTaskDurationMs;
 	}
@@ -601,12 +664,41 @@ export async function reportTelemetryToHub(
 // ── Pipeline Tasks ───────────────────────────────────────────
 
 function asTask(r: Record<string, unknown>): HubTask {
-	return r as unknown as HubTask;
+	const projectId = (r.projectId as string | null | undefined) ?? (r.project as string | null | undefined) ?? null;
+	const project = (r.project as string | null | undefined) ?? projectId;
+	return {
+		id: r.id as string,
+		title: r.title as string,
+		description: (r.description as string | null | undefined) ?? null,
+		projectId,
+		project: project ?? null,
+		repo: (r.repo as string | null | undefined) ?? null,
+		state: r.state as PipelineState,
+		priority: r.priority as TaskPriority,
+		assignedAgentId: (r.assignedAgentId as string | null | undefined) ?? null,
+		createdBy: r.createdBy as string,
+		externalTaskId: (r.externalTaskId as string | null | undefined) ?? null,
+		branch: (r.branch as string | null | undefined) ?? null,
+		prUrl: (r.prUrl as string | null | undefined) ?? null,
+		prNumber: (r.prNumber as number | null | undefined) ?? null,
+		reportPath: (r.reportPath as string | null | undefined) ?? null,
+		blockedReason: (r.blockedReason as string | null | undefined) ?? null,
+		reviewRound: (r.reviewRound as number | undefined) ?? 0,
+		maxReviewRounds: (r.maxReviewRounds as number | undefined) ?? 0,
+		metadata: (r.metadata as Record<string, unknown> | undefined) ?? {},
+		createdAt: r.createdAt as string,
+		updatedAt: r.updatedAt as string,
+		startedAt: (r.startedAt as string | null | undefined) ?? null,
+		completedAt: (r.completedAt as string | null | undefined) ?? null,
+		leaseOwnerAgentId: (r.leaseOwnerAgentId as string | null | undefined) ?? null,
+		leaseOwnerInstanceId: (r.leaseOwnerInstanceId as string | null | undefined) ?? null,
+		leaseExpiresAt: (r.leaseExpiresAt as string | null | undefined) ?? null,
+	};
 }
 
 function asTaskList(r: Record<string, unknown>): { tasks: HubTask[]; total: number; page: number; limit: number } {
 	return {
-		tasks: ((r.tasks as unknown[]) ?? []).map((t) => t as HubTask),
+		tasks: ((r.tasks as unknown[]) ?? []).map((t) => asTask(t as Record<string, unknown>)),
 		total: (r.total as number) ?? 0,
 		page: (r.page as number) ?? 1,
 		limit: (r.limit as number) ?? 0,
@@ -755,6 +847,102 @@ export async function reportHubTaskStatus(
 	const rpcUrl = hubRpcUrl(hubConfig);
 	const result = await hubRpc(rpcUrl, "tasks.reportStatus", params as Record<string, unknown>, hubConfig.apiKey, log, "tasks_report_status");
 	return result ? asTask(result) : null;
+}
+
+function normalizeLeaseDurationSeconds(leaseDurationSeconds?: number): number {
+	const defaultLeaseDurationSeconds = 900;
+	const maxLeaseDurationSeconds = 86_400;
+	if (leaseDurationSeconds === undefined || Number.isNaN(leaseDurationSeconds)) {
+		return defaultLeaseDurationSeconds;
+	}
+	return Math.min(Math.max(Math.floor(leaseDurationSeconds), 1), maxLeaseDurationSeconds);
+}
+
+function asClaimResult(r: Record<string, unknown>): ClaimTaskResult {
+	return {
+		task: (r.task as Record<string, unknown> | null | undefined) ? asTask(r.task as Record<string, unknown>) : null,
+		claimed: (r.claimed as boolean) ?? false,
+	};
+}
+
+function asHeartbeatResult(r: Record<string, unknown>): TaskHeartbeatResult {
+	return {
+		task: asTask(r.task as Record<string, unknown>),
+		renewed: (r.renewed as boolean) ?? false,
+	};
+}
+
+export async function claimHubTask(
+	params: ClaimTaskParams,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<ClaimTaskResult> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpcResponse(
+		rpcUrl,
+		"tasks.claim",
+		{
+			agentId: params.agentId,
+			instanceId: params.instanceId,
+			...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
+			...(params.projectId !== undefined ? { projectId: params.projectId } : {}),
+			leaseDurationSeconds: normalizeLeaseDurationSeconds(params.leaseDurationSeconds),
+		},
+		hubConfig.apiKey,
+		log,
+		"tasks_claim",
+	);
+
+	if (!result) {
+		return { task: null, claimed: false };
+	}
+
+	if (result.error) {
+		log("tasks_claim_rpc_error", { code: result.error.code, message: result.error.message, data: result.error.data }, "ERROR");
+		throw new HubRpcError(result.error.code, result.error.message, result.error.data);
+	}
+
+	if (!result.result) {
+		return { task: null, claimed: false };
+	}
+
+	return asClaimResult(result.result);
+}
+
+export async function heartbeatHubTask(
+	params: TaskHeartbeatParams,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<TaskHeartbeatResult> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const result = await hubRpcResponse(
+		rpcUrl,
+		"tasks.heartbeat",
+		{
+			agentId: params.agentId,
+			instanceId: params.instanceId,
+			taskId: params.taskId,
+			leaseDurationSeconds: normalizeLeaseDurationSeconds(params.leaseDurationSeconds),
+		},
+		hubConfig.apiKey,
+		log,
+		"tasks_heartbeat",
+	);
+
+	if (!result) {
+		throw new HubRpcError(-1, "No response from hub");
+	}
+
+	if (result.error) {
+		log("tasks_heartbeat_rpc_error", { code: result.error.code, message: result.error.message, data: result.error.data }, "ERROR");
+		throw new HubRpcError(result.error.code, result.error.message, result.error.data);
+	}
+
+	if (!result.result) {
+		throw new HubRpcError(-1, "Malformed heartbeat response from hub");
+	}
+
+	return asHeartbeatResult(result.result);
 }
 
 // ── Push Notifications (Agent → Hub) ───────────────────────────────────────────

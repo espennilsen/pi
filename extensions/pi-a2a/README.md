@@ -176,7 +176,7 @@ Server binds to localhost, but advertises external URL for reverse proxy setups.
 
 ### Lease-aware Hub RPCs
 
-pi-a2a now understands the lease-oriented hub contracts from PR 35:
+pi-a2a now understands the lease-oriented hub contracts:
 
 - `tasks.claim` — atomically claim a specific task or the next eligible task
 - `tasks.heartbeat` — renew an active lease for the same `agentId` + `instanceId`

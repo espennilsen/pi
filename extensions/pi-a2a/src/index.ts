@@ -2597,8 +2597,8 @@ export default function (pi: ExtensionAPI) {
 			"  create     — Create a task (title + project required; optional: description, repo, priority, assignedAgentId)\n" +
 			"  update     — Update task fields (taskId required; any of: title, description, priority, assignedAgentId, externalTaskId, branch, prUrl, prNumber, blockedReason)\n" +
 			"  transition — Move through pipeline (taskId + toState; optional note). States: queued→planning→building→reviewing→pr_ready→approved | blocked | cancelled\n" +
-			"  claim      — Atomically claim a task (taskId optional; project optional; uses the current agent instance)\n" +
-			"  heartbeat  — Renew a claimed lease (taskId required; uses the current agent instance)\n" +
+			"  claim      — Atomically claim a task (taskId optional; projectId optional; leaseDurationSeconds optional; uses the current agent instance)\n" +
+			"  heartbeat  — Renew a claimed lease (taskId required; leaseDurationSeconds optional; uses the current agent instance)\n" +
 			"  delete     — Delete a task (taskId required)\n" +
 			"  history    — State transition log for a task (taskId required)\n" +
 			"  report     — Agent self-reports pipeline status (hubTaskId + toState; optional: externalTaskId, branch, prUrl, prNumber, blockedReason)",
@@ -2617,15 +2617,15 @@ export default function (pi: ExtensionAPI) {
 				Type.Literal("report"),
 			], { description: "Action to perform" }),
 			// Task identity
-			taskId: Type.Optional(Type.String({ description: "Hub task ID (required for get/update/transition/delete/history)" })),
+			taskId: Type.Optional(Type.String({ description: "Hub task ID (required for get/update/transition/heartbeat/delete/history)" })),
 			hubTaskId: Type.Optional(Type.String({ description: "Hub task ID (for report action)" })),
 			// Create / update fields
 			title: Type.Optional(Type.String({ description: "Task title" })),
 			description: Type.Optional(Type.String({ description: "Task description" })),
 			project: Type.Optional(Type.String({ description: "Project name e.g. 'aivena', 'e9n.dev'" })),
-			projectId: Type.Optional(Type.String({ description: "Project identifier for claim/heartbeat operations" })),
+			projectId: Type.Optional(Type.String({ description: "Project identifier for claim operations" })),
 			repo: Type.Optional(Type.String({ description: "Git repo URL" })),
-			leaseDurationSeconds: Type.Optional(Type.Number({ description: "Lease duration in seconds (default 900, max 86400)" })),
+			leaseDurationSeconds: Type.Optional(Type.Number({ description: "Lease duration in seconds for claim/heartbeat (default 900, max 86400)" })),
 			priority: Type.Optional(Type.Union([
 				Type.Literal("low"), Type.Literal("normal"), Type.Literal("high"), Type.Literal("critical"),
 			], { description: "Task priority (default: normal)" })),
@@ -2870,7 +2870,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				default:
-					return txt("Unknown action. Use: board, list, get, create, update, transition, delete, history, report");
+					return txt("Unknown action. Use: board, list, get, create, update, transition, claim, heartbeat, delete, history, report");
 			}
 		},
 	});

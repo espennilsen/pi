@@ -859,15 +859,27 @@ function normalizeLeaseDurationSeconds(leaseDurationSeconds?: number): number {
 }
 
 function asClaimResult(r: Record<string, unknown>): ClaimTaskResult {
+	const claimed = (r.claimed as boolean) ?? false;
+	const rawTask = r.task;
+	if (rawTask !== null && rawTask !== undefined && typeof rawTask !== "object") {
+		throw new HubRpcError(-1, "Malformed claim response from hub");
+	}
+	if (claimed && (!rawTask || typeof rawTask !== "object")) {
+		throw new HubRpcError(-1, "Malformed claim response from hub");
+	}
 	return {
-		task: (r.task as Record<string, unknown> | null | undefined) ? asTask(r.task as Record<string, unknown>) : null,
-		claimed: (r.claimed as boolean) ?? false,
+		task: rawTask && typeof rawTask === "object" ? asTask(rawTask as Record<string, unknown>) : null,
+		claimed,
 	};
 }
 
 function asHeartbeatResult(r: Record<string, unknown>): TaskHeartbeatResult {
+	const rawTask = r.task;
+	if (!rawTask || typeof rawTask !== "object") {
+		throw new HubRpcError(-1, "Malformed heartbeat response from hub");
+	}
 	return {
-		task: asTask(r.task as Record<string, unknown>),
+		task: asTask(rawTask as Record<string, unknown>),
 		renewed: (r.renewed as boolean) ?? false,
 	};
 }
@@ -894,7 +906,7 @@ export async function claimHubTask(
 	);
 
 	if (!result) {
-		return { task: null, claimed: false };
+		throw new HubRpcError(-1, "No response from hub");
 	}
 
 	if (result.error) {
@@ -902,8 +914,8 @@ export async function claimHubTask(
 		throw new HubRpcError(result.error.code, result.error.message, result.error.data);
 	}
 
-	if (!result.result) {
-		return { task: null, claimed: false };
+	if (!result.result || typeof result.result !== "object") {
+		throw new HubRpcError(-1, "Malformed claim response from hub");
 	}
 
 	return asClaimResult(result.result);

@@ -65,6 +65,15 @@ describe("claimHubTask", () => {
 			(err: unknown) => err instanceof HubRpcError && err.code === -32003,
 		);
 	});
+
+	it("throws when the hub is unavailable", async () => {
+		mockFetch(() => new Response("", { status: 500 }));
+
+		await assert.rejects(
+			() => claimHubTask({ agentId: "agent-1", instanceId: "instance-1" }, hubConfig, log),
+			(err: unknown) => err instanceof HubRpcError && err.message === "No response from hub",
+		);
+	});
 });
 
 describe("heartbeatHubTask", () => {
@@ -120,6 +129,15 @@ describe("heartbeatHubTask", () => {
 		await assert.rejects(
 			() => heartbeatHubTask({ agentId: "agent-1", instanceId: "instance-1", taskId: "task-1" }, hubConfig, log),
 			(err: unknown) => err instanceof HubRpcError && err.code === -32003,
+		);
+	});
+
+	it("throws when the hub returns an invalid heartbeat payload", async () => {
+		mockFetch(() => rpcResponse({ task: null, renewed: true }));
+
+		await assert.rejects(
+			() => heartbeatHubTask({ agentId: "agent-1", instanceId: "instance-1", taskId: "task-1" }, hubConfig, log),
+			(err: unknown) => err instanceof HubRpcError && err.message === "Malformed heartbeat response from hub",
 		);
 	});
 });

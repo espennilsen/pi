@@ -74,6 +74,15 @@ describe("claimHubTask", () => {
 			(err: unknown) => err instanceof HubRpcError && err.message === "No response from hub",
 		);
 	});
+
+	it("throws when the hub claims a task without returning a task object", async () => {
+		mockFetch(() => rpcResponse({ task: null, claimed: true }));
+
+		await assert.rejects(
+			() => claimHubTask({ agentId: "agent-1", instanceId: "instance-1" }, hubConfig, log),
+			(err: unknown) => err instanceof HubRpcError && err.message === "Malformed claim response from hub",
+		);
+	});
 });
 
 describe("heartbeatHubTask", () => {

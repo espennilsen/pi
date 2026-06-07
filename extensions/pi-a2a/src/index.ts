@@ -732,7 +732,17 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-    const sseConnections = new Map<string, { abort: () => void }>();
+	/** Persist hub registration state for lease tools, deregistration, and telemetry. */
+	function activateHubRegistration(agentId: string, config: ReturnType<typeof loadConfig>["config"]): void {
+		hubAgentId = agentId;
+		executor?.setHubAgentId(agentId);
+		if (!telemetryInterval) {
+			telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
+		}
+		sendTelemetry(config).catch(() => {});
+	}
+
+	const sseConnections = new Map<string, { abort: () => void }>();
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
@@ -1101,8 +1111,7 @@ export default function (pi: ExtensionAPI) {
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(agentPublicUrl, config.hub, log);
 			if (result) {
-				hubAgentId = result.agentId;
-				executor?.setHubAgentId(result.agentId);
+				activateHubRegistration(result.agentId, config);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may
@@ -1111,14 +1120,6 @@ export default function (pi: ExtensionAPI) {
 				if (config.local?.apiKey) {
 					await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 				}
-
-				// Periodic heartbeat (30s) — keeps hub from resetting
-				// telemetry to unknown. Real-time updates come from
-				// agent_start/agent_end hooks.
-				telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
-
-				// Send initial telemetry report
-				sendTelemetry(config).catch(() => {});
 			}
 		}
 
@@ -2442,7 +2443,8 @@ export default function (pi: ExtensionAPI) {
 
 				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
-					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
+					activateHubRegistration(result.agentId, config);
+					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, instanceId=${hubInstanceId}, status=${result.status}`, "info");
 					if (config.local?.apiKey) {
 						await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");
@@ -2471,6 +2473,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
+				activateHubRegistration(reg.agentId, config);
 				const result = await setCredentialOnHub(reg.agentId, config.local.apiKey, config.hub, log);
 				if (result) {
 					ctx.ui.notify(
@@ -2597,8 +2600,8 @@ export default function (pi: ExtensionAPI) {
 			"  create     — Create a task (title + project required; optional: description, repo, priority, assignedAgentId)\n" +
 			"  update     — Update task fields (taskId required; any of: title, description, priority, assignedAgentId, externalTaskId, branch, prUrl, prNumber, blockedReason)\n" +
 			"  transition — Move through pipeline (taskId + toState; optional note). States: queued→planning→building→reviewing→pr_ready→approved | blocked | cancelled\n" +
-			"  claim      — Atomically claim a task (taskId optional; projectId optional; leaseDurationSeconds optional; uses the current agent instance)\n" +
-			"  heartbeat  — Renew a claimed lease (taskId required; leaseDurationSeconds optional; uses the current agent instance)\n" +
+			"  claim      — Atomically claim a task (taskId optional; project/projectId optional; leaseDurationSeconds optional, default 900, range 1-86400; uses the current agent instance)\n" +
+			"  heartbeat  — Renew a claimed lease (taskId required; leaseDurationSeconds optional, default 900, range 1-86400; uses the current agent instance)\n" +
 			"  delete     — Delete a task (taskId required)\n" +
 			"  history    — State transition log for a task (taskId required)\n" +
 			"  report     — Agent self-reports pipeline status (hubTaskId + toState; optional: externalTaskId, branch, prUrl, prNumber, blockedReason)",
@@ -2625,7 +2628,7 @@ export default function (pi: ExtensionAPI) {
 			project: Type.Optional(Type.String({ description: "Project name e.g. 'aivena', 'e9n.dev'" })),
 			projectId: Type.Optional(Type.String({ description: "Project identifier for claim operations" })),
 			repo: Type.Optional(Type.String({ description: "Git repo URL" })),
-			leaseDurationSeconds: Type.Optional(Type.Number({ description: "Lease duration in seconds for claim/heartbeat (default 900, max 86400)" })),
+			leaseDurationSeconds: Type.Optional(Type.Number({ description: "Lease duration in seconds for claim/heartbeat (default 900, min 1, max 86400)" })),
 			priority: Type.Optional(Type.Union([
 				Type.Literal("low"), Type.Literal("normal"), Type.Literal("high"), Type.Literal("critical"),
 			], { description: "Task priority (default: normal)" })),

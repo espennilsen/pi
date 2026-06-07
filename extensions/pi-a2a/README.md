@@ -182,6 +182,8 @@ pi-a2a now understands the lease-oriented hub contracts:
 - `tasks.heartbeat` — renew an active lease for the same `agentId` + `instanceId`
 - `agents.reportTelemetry` — accepts optional `instanceId` to help the hub track lease ownership
 
+Both `tasks.claim` and `tasks.heartbeat` accept optional `leaseDurationSeconds` (default 900 seconds; clamped to the 1-86400 second range). `agents.reportTelemetry` may include `instanceId`, but it does not change lease duration limits.
+
 Task payloads include:
 - `leaseOwnerAgentId`
 - `leaseOwnerInstanceId`

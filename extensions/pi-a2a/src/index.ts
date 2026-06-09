@@ -2628,7 +2628,12 @@ export default function (pi: ExtensionAPI) {
 			project: Type.Optional(Type.String({ description: "Project name e.g. 'aivena', 'e9n.dev'" })),
 			projectId: Type.Optional(Type.String({ description: "Project identifier for claim operations" })),
 			repo: Type.Optional(Type.String({ description: "Git repo URL" })),
-			leaseDurationSeconds: Type.Optional(Type.Number({ description: "Lease duration in seconds for claim/heartbeat (default 900, min 1, max 86400)" })),
+			leaseDurationSeconds: Type.Optional(Type.Number({
+				description: "Lease duration in seconds for claim/heartbeat (default 900, min 1, max 86400)",
+				minimum: 1,
+				maximum: 86_400,
+				default: 900,
+			})),
 			priority: Type.Optional(Type.Union([
 				Type.Literal("low"), Type.Literal("normal"), Type.Literal("high"), Type.Literal("critical"),
 			], { description: "Task priority (default: normal)" })),

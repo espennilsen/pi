@@ -2,7 +2,8 @@
  * Shared utilities for pi-gmail.
  */
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
 
 // ── HTML escaping ───────────────────────────────────────────────
 
@@ -23,21 +24,64 @@ export function escapeHtml(str: string): string {
 
 // ── Cross-platform URL opener ───────────────────────────────────
 
-/**
- * Open a URL in the default browser, cross-platform.
- * Uses execFile with argument array to prevent shell injection.
- */
-export function openUrl(url: string): void {
-	switch (process.platform) {
+export interface BrowserCommand {
+	command: string;
+	args: string[];
+}
+
+interface SpawnedBrowser {
+	once(event: "error", listener: (error: Error) => void): unknown;
+	unref(): unknown;
+}
+
+type SpawnBrowser = (
+	command: string,
+	args: string[],
+	options: SpawnOptions,
+) => SpawnedBrowser;
+
+/** Select the platform browser launcher without invoking a shell. */
+export function getBrowserCommand(
+	url: string,
+	platform: NodeJS.Platform = process.platform,
+): BrowserCommand {
+	switch (platform) {
 		case "darwin":
-			execFile("open", [url]);
-			break;
+			return { command: "open", args: [url] };
 		case "win32":
-			execFile("cmd", ["/c", "start", "", url]);
-			break;
+			return {
+				command: "rundll32",
+				args: ["url.dll,FileProtocolHandler", url],
+			};
 		default:
-			// Linux and other Unix-like
-			execFile("xdg-open", [url]);
-			break;
+			return { command: "xdg-open", args: [url] };
+	}
+}
+
+/** Format a terminal link while keeping the URL visible without OSC 8 support. */
+export function terminalLink(url: string): string {
+	return `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
+}
+
+/**
+ * Best-effort browser launch. Launcher failures are deliberately ignored because
+ * callers always provide a visible URL fallback.
+ */
+export function openUrl(
+	url: string,
+	platform: NodeJS.Platform = process.platform,
+	spawnBrowser: SpawnBrowser = spawn,
+): void {
+	const { command, args } = getBrowserCommand(url, platform);
+	try {
+		const child = spawnBrowser(command, args, {
+			detached: true,
+			stdio: "ignore",
+			shell: false,
+		});
+		child.once("error", () => {});
+		child.unref();
+	} catch {
+		// A missing or unavailable launcher must not crash Pi.
 	}
 }

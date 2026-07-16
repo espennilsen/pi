@@ -49,12 +49,29 @@ interface EventBus {
 	on(event: string, handler: (...args: any[]) => void): void;
 }
 
-// ── Detect server port from webserver ───────────────────────────
+// ── Detect server origin from webserver ─────────────────────────
 
-let serverPort = 3100; // default
+export interface GmailWebInfo {
+	port: number;
+	url: string;
+}
+
+let serverOrigin = "http://localhost:3100"; // fallback until pi-webserver replies
+
+/** Keep OAuth redirects aligned with the currently listening pi-webserver. */
+export function updateGmailWebInfo(info: GmailWebInfo): boolean {
+	try {
+		const url = new URL(info.url);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+		serverOrigin = url.origin;
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 function getRedirectUri(): string {
-	return `http://localhost:${serverPort}/gmail/callback`;
+	return new URL("/gmail/callback", `${serverOrigin}/`).toString();
 }
 
 // ── CSRF token for logout form ──────────────────────────────────
@@ -188,7 +205,9 @@ export function mountGmailRoutes(
 	// Try to detect the webserver port
 	bus.emit("web:info", {
 		reply: (info: any) => {
-			if (info?.port) serverPort = info.port;
+			if (typeof info?.port === "number" && typeof info.url === "string") {
+				updateGmailWebInfo(info);
+			}
 		},
 	});
 
@@ -223,7 +242,7 @@ export function mountGmailRoutes(
 
 			// OAuth callback
 			if (req.method === "GET" && p === "/callback") {
-				const url = new URL(req.url ?? "/", `http://localhost:${serverPort}`);
+				const url = new URL(req.url ?? "/", `${serverOrigin}/`);
 				const code = url.searchParams.get("code");
 				const error = url.searchParams.get("error");
 				const state = url.searchParams.get("state");

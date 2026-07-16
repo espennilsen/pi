@@ -27,17 +27,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.ts";
 import { registerGmailTool } from "./tool.ts";
-import { mountGmailRoutes, unmountGmailRoutes } from "./web.ts";
+import { mountGmailRoutes, unmountGmailRoutes, updateGmailWebInfo } from "./web.ts";
 import {
 	isAuthenticated,
 	getAuthenticatedEmail,
-	getConsentUrl,
 	clearTokens,
 } from "./auth.ts";
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
-import { openUrl } from "./utils.ts";
+import { openUrl, terminalLink } from "./utils.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -232,45 +231,46 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("gmail-auth", {
 		description: "Connect your Gmail account via OAuth",
 		handler: async (_args: string | undefined, ctx: any) => {
-			const agentDir = getAgentDir();
 			const settings = getSettings(ctx.cwd);
 			const clientId = settings.clientId ?? "";
 
 			if (!clientId) {
 				ctx.ui.notify(
-					"Gmail not configured. Set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET env vars, " +
-					'or add "pi-gmail" section to settings.json.',
+					'Gmail not configured. Add clientId and clientSecret to the "pi-gmail" section of settings.json.',
 					"error",
 				);
 				return;
 			}
 
-			// Check if webserver is running
-			let webPort: number | null = null;
+			// Discovery replies synchronously only while pi-webserver is listening.
+			const discovery: { info: { port: number; url: string } | null } = { info: null };
 			pi.events.emit("web:info", {
-				reply: (info: any) => {
-					if (info?.port) webPort = info.port;
+				reply: (info: unknown) => {
+					const candidate = info as { port?: unknown; url?: unknown };
+					if (typeof candidate?.port === "number" && typeof candidate.url === "string") {
+						discovery.info = { port: candidate.port, url: candidate.url };
+					}
 				},
 			});
 
-			if (webPort) {
-				// Open browser to auth page
-				const url = `http://localhost:${webPort}/gmail/auth`;
-				ctx.ui.notify(`Opening browser: ${url}`, "info");
+			if (discovery.info !== null && updateGmailWebInfo(discovery.info)) {
+				// Routes may have mounted before a manually started webserver. The updater
+				// refreshes the OAuth redirect origin before the browser requests this URL.
+				const url = new URL("/gmail/auth", discovery.info.url).toString();
+				pi.sendMessage({
+					customType: "gmail_auth",
+					content: `Opening Gmail authentication in your browser. If it does not appear, open this link:\n${terminalLink(url)}`,
+					display: true,
+					details: { type: "info" },
+				});
 				openUrl(url);
-			} else {
-				// No webserver — show the URL for manual copy
-				try {
-					const redirectUri = "http://localhost:3100/gmail/callback";
-					const url = getConsentUrl(settings, redirectUri);
-					ctx.ui.notify(
-						`Open this URL in your browser:\n${url}\n\nNote: pi-webserver must be running to handle the callback.`,
-						"info",
-					);
-				} catch (err: any) {
-					ctx.ui.notify(`Auth error: ${err.message}`, "error");
-				}
+				return;
 			}
+
+			ctx.ui.notify(
+				"Gmail OAuth requires pi-webserver to handle the callback. Start it with /web, then run /gmail-auth again.",
+				"info",
+			);
 		},
 	});
 

@@ -36,7 +36,7 @@ import {
 import type { GmailSettings } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
-import { openUrl, terminalLink } from "./utils.ts";
+import { openUrl } from "./utils.ts";
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -259,7 +259,7 @@ export default function (pi: ExtensionAPI) {
 				const url = new URL("/gmail/auth", discovery.info.url).toString();
 				pi.sendMessage({
 					customType: "gmail_auth",
-					content: `Opening Gmail authentication in your browser. If it does not appear, open this link:\n${terminalLink(url)}`,
+					content: `Opening Gmail authentication in your browser. If it does not appear, open this link:\n${url}`,
 					display: true,
 					details: { type: "info" },
 				});

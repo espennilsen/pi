@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SpawnOptions } from "node:child_process";
-import { getBrowserCommand, openUrl, terminalLink } from "./utils.ts";
+import { getBrowserCommand, openUrl } from "./utils.ts";
 
 describe("getBrowserCommand", () => {
 	const url = "https://accounts.google.com/o/oauth2/auth?x=1&y=2";
@@ -58,12 +58,5 @@ describe("openUrl", () => {
 				throw new Error("ENOENT");
 			});
 		});
-	});
-});
-
-describe("terminalLink", () => {
-	it("uses BEL-terminated OSC 8 and retains visible URL text", () => {
-		const url = "http://localhost:3100/gmail/auth";
-		assert.equal(terminalLink(url), `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`);
 	});
 });

@@ -58,11 +58,6 @@ export function getBrowserCommand(
 	}
 }
 
-/** Format a terminal link while keeping the URL visible without OSC 8 support. */
-export function terminalLink(url: string): string {
-	return `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
-}
-
 /**
  * Best-effort browser launch. Launcher failures are deliberately ignored because
  * callers always provide a visible URL fallback.

@@ -14,7 +14,7 @@ Personal Pi agent home directory, symlinked to `~/.pi/agent`. Contains local ext
 ├── extensions/      # Local extensions (each has own package.json + AGENTS.md)
 ├── skills/          # Shared skills (changelog-generator, git-project-status, etc.)
 ├── .pi/
-│   ├── skills/      # Project-specific skills (code-review, github, td, blog-post, etc.)
+│   ├── skills/      # Project-specific skills (code-review, github, blog-post, etc.)
 │   └── prompts/     # Prompt templates (implement, scout-and-plan, implement-and-review)
 ├── themes/          # Custom TUI themes
 ├── db/              # Runtime SQLite databases (gitignored)
@@ -71,7 +71,7 @@ Key extensions:
 
 **STOP. Read this before writing any code.**
 
-**Every single change MUST have a `td` task AND its own git worktree.** This is non-negotiable. No commits to `main`. No skipping tasks "because it's small". No bundling unrelated work. One task = one worktree = one piece of work.
+**Every single change MUST have a Hub task AND its own git worktree.** This is non-negotiable. No commits to `main`. No skipping tasks "because it's small". No bundling unrelated work. One task = one worktree = one piece of work.
 
 ### ⛔ NEVER use `git checkout` or `git switch` in the main working directory
 
@@ -80,27 +80,25 @@ Key extensions:
 **Always use git worktrees instead.** Each task gets its own isolated directory with its own branch. The main directory stays on `main` at all times.
 
 ### Required workflow — follow every time:
-1. **Check for existing task:** `td status` or `td ready`
-2. **Create a task if none exists:** `td create "description" --type task|bug|feature|chore` (use `--minor` for small/trivial changes)
-3. **Start the task:** `td start <id>`
+1. **Check for an existing Hub task:** query `hub_tasks` for the relevant project and work.
+2. **Create a Hub task if none exists:** use `hub_tasks create` with a clear title, project, and priority.
+3. **Start work through the pipeline:** transition the task to `planning`, then `building`.
 4. **Create a worktree for the task:**
    ```bash
-   git worktree add ../pi-worktrees/<task-id>/<short-description> -b <task-id>/<short-description>
+   git worktree add ../pi-worktrees/<short-description> -b <branch-name>
    ```
-   Example: `git worktree add ../pi-worktrees/td-e29be6/delete-button-icon -b td-e29be6/delete-button-icon`
-5. **Work in the worktree directory:** `cd ../pi-worktrees/<task-id>/<short-description>`
+5. **Work in the worktree directory:** `cd ../pi-worktrees/<short-description>`
 6. **Install deps if needed:** `npm install` (worktrees share `.git` but not `node_modules`)
-7. **Log progress as you go:** `td log "what you did"`
-8. **Commit to the worktree branch**, then handoff: `td handoff <id> --done "..."`
-9. **Push and create PR:** `git push origin <branch>` then `gh pr create --fill`
-10. **Submit for review:** `td review <id>`
-11. **Clean up after merge:** `git worktree remove ../pi-worktrees/<task-id>/<short-description>`
+7. **Report progress in Hub:** update the task’s pipeline state and transition note.
+8. **Commit to the worktree branch**, then push and create a PR: `git push origin <branch>` then `gh pr create --fill`.
+9. **Submit for review:** transition the Hub task to `reviewing` when implementation is ready.
+10. **Clean up after merge:** `git worktree remove ../pi-worktrees/<short-description>`
 
 ### Working on existing PR branches:
 ```bash
 # For a PR branch that already exists remotely:
-git worktree add ../pi-worktrees/<task-id>/<short-description> <task-id>/<short-description>
-cd ../pi-worktrees/<task-id>/<short-description>
+git worktree add ../pi-worktrees/<short-description> <branch-name>
+cd ../pi-worktrees/<short-description>
 ```
 
 ### Rules:

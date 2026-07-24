@@ -51,7 +51,7 @@ import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
@@ -214,6 +214,8 @@ export default function (pi: ExtensionAPI) {
 	let expiryInterval: ReturnType<typeof setInterval> | null = null;
 	let longRunningTaskPollerInterval: ReturnType<typeof setInterval> | null = null;
 	let hubAgentId: string | null = null;
+	/** Stable instance ID for this extension process, used by hub lease telemetry. */
+	const hubInstanceId = randomUUID();
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
@@ -723,14 +725,24 @@ export default function (pi: ExtensionAPI) {
 			if (!hubAgentId) return;
 			const snapshot = buildTelemetrySnapshot();
 			const sentCount = snapshot.recentToolCalls?.length ?? 0;
-			const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub!, log);
+			const result = await reportTelemetryToHub(hubAgentId, snapshot, config.hub!, log, hubInstanceId);
 			if (result && sentCount > 0) {
 				drainRecentToolCalls(recentToolCalls, sentCount);
 			}
 		});
 	}
 
-    const sseConnections = new Map<string, { abort: () => void }>();
+	/** Persist hub registration state for lease tools, deregistration, and telemetry. */
+	function activateHubRegistration(agentId: string, config: ReturnType<typeof loadConfig>["config"]): void {
+		hubAgentId = agentId;
+		executor?.setHubAgentId(agentId);
+		if (!telemetryInterval) {
+			telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
+		}
+		sendTelemetry(config).catch(() => {});
+	}
+
+	const sseConnections = new Map<string, { abort: () => void }>();
 
 	// ── Lifecycle ─────────────────────────────────────────────
 
@@ -1099,8 +1111,7 @@ export default function (pi: ExtensionAPI) {
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
 			const result = await registerWithHub(agentPublicUrl, config.hub, log);
 			if (result) {
-				hubAgentId = result.agentId;
-				executor?.setHubAgentId(result.agentId);
+				activateHubRegistration(result.agentId, config);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may
@@ -1109,14 +1120,6 @@ export default function (pi: ExtensionAPI) {
 				if (config.local?.apiKey) {
 					await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 				}
-
-				// Periodic heartbeat (30s) — keeps hub from resetting
-				// telemetry to unknown. Real-time updates come from
-				// agent_start/agent_end hooks.
-				telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
-
-				// Send initial telemetry report
-				sendTelemetry(config).catch(() => {});
 			}
 		}
 
@@ -1203,6 +1206,7 @@ export default function (pi: ExtensionAPI) {
 						idleSnap,
 						hubConfig,
 						log,
+						hubInstanceId,
 					).catch(() => false);
 					if (result && sentCount > 0) {
 						drainRecentToolCalls(recentToolCalls, sentCount);
@@ -2439,7 +2443,8 @@ export default function (pi: ExtensionAPI) {
 
 				const result = await registerWithHub(agentPublicUrl, config.hub, log);
 				if (result) {
-					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, status=${result.status}`, "info");
+					activateHubRegistration(result.agentId, config);
+					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, instanceId=${hubInstanceId}, status=${result.status}`, "info");
 					if (config.local?.apiKey) {
 						await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
 						ctx.ui.notify("Credential pushed to hub", "info");
@@ -2468,6 +2473,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
+				activateHubRegistration(reg.agentId, config);
 				const result = await setCredentialOnHub(reg.agentId, config.local.apiKey, config.hub, log);
 				if (result) {
 					ctx.ui.notify(
@@ -2594,6 +2600,8 @@ export default function (pi: ExtensionAPI) {
 			"  create     — Create a task (title + project required; optional: description, repo, priority, assignedAgentId)\n" +
 			"  update     — Update task fields (taskId required; any of: title, description, priority, assignedAgentId, externalTaskId, branch, prUrl, prNumber, blockedReason)\n" +
 			"  transition — Move through pipeline (taskId + toState; optional note). States: queued→planning→building→reviewing→pr_ready→approved | blocked | cancelled\n" +
+			"  claim      — Atomically claim a task (taskId optional; project/projectId optional; leaseDurationSeconds optional, default 900, range 1-86400; uses the current agent instance)\n" +
+			"  heartbeat  — Renew a claimed lease (taskId required; leaseDurationSeconds optional, default 900, range 1-86400; uses the current agent instance)\n" +
 			"  delete     — Delete a task (taskId required)\n" +
 			"  history    — State transition log for a task (taskId required)\n" +
 			"  report     — Agent self-reports pipeline status (hubTaskId + toState; optional: externalTaskId, branch, prUrl, prNumber, blockedReason)",
@@ -2605,18 +2613,27 @@ export default function (pi: ExtensionAPI) {
 				Type.Literal("create"),
 				Type.Literal("update"),
 				Type.Literal("transition"),
+				Type.Literal("claim"),
+				Type.Literal("heartbeat"),
 				Type.Literal("delete"),
 				Type.Literal("history"),
 				Type.Literal("report"),
 			], { description: "Action to perform" }),
 			// Task identity
-			taskId: Type.Optional(Type.String({ description: "Hub task ID (required for get/update/transition/delete/history)" })),
+			taskId: Type.Optional(Type.String({ description: "Hub task ID (required for get/update/transition/heartbeat/delete/history)" })),
 			hubTaskId: Type.Optional(Type.String({ description: "Hub task ID (for report action)" })),
 			// Create / update fields
 			title: Type.Optional(Type.String({ description: "Task title" })),
 			description: Type.Optional(Type.String({ description: "Task description" })),
 			project: Type.Optional(Type.String({ description: "Project name e.g. 'aivena', 'e9n.dev'" })),
+			projectId: Type.Optional(Type.String({ description: "Project identifier for claim operations" })),
 			repo: Type.Optional(Type.String({ description: "Git repo URL" })),
+			leaseDurationSeconds: Type.Optional(Type.Number({
+				description: "Lease duration in seconds for claim/heartbeat (default 900, min 1, max 86400)",
+				minimum: 1,
+				maximum: 86_400,
+				default: 900,
+			})),
 			priority: Type.Optional(Type.Union([
 				Type.Literal("low"), Type.Literal("normal"), Type.Literal("high"), Type.Literal("critical"),
 			], { description: "Task priority (default: normal)" })),
@@ -2653,6 +2670,49 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			switch (params.action) {
+
+				case "claim": {
+					if (!hubAgentId) return txt("❌ No hub agent ID yet. Register with the hub first.");
+					try {
+						const result = await claimHubTask({
+							agentId: hubAgentId,
+							instanceId: hubInstanceId,
+							taskId: params.taskId,
+							projectId: params.projectId ?? params.project,
+							leaseDurationSeconds: params.leaseDurationSeconds,
+						}, hubConfig, log);
+						if (!result.claimed || !result.task) {
+							return txt("No eligible task could be claimed.");
+						}
+						const lease = result.task.leaseExpiresAt ? `\n**Lease:** ${result.task.leaseExpiresAt}` : "";
+						return txt(`✅ Claimed\n**ID:** ${result.task.id}\n**Title:** ${result.task.title}\n**Project:** ${result.task.project ?? result.task.projectId ?? "—"}${lease}`);
+					} catch (err) {
+						if (err instanceof HubRpcError) {
+							return txt(`❌ Claim failed (${err.code}): ${err.message}`);
+						}
+						throw err;
+					}
+				}
+
+				case "heartbeat": {
+					if (!hubAgentId) return txt("❌ No hub agent ID yet. Register with the hub first.");
+					if (!params.taskId) return txt("❌ taskId required.");
+					try {
+						const result = await heartbeatHubTask({
+							agentId: hubAgentId,
+							instanceId: hubInstanceId,
+							taskId: params.taskId,
+							leaseDurationSeconds: params.leaseDurationSeconds,
+						}, hubConfig, log);
+						const lease = result.task.leaseExpiresAt ? `\n**Lease:** ${result.task.leaseExpiresAt}` : "";
+						return txt(`✅ Lease renewed\n**ID:** ${result.task.id}\n**Title:** ${result.task.title}${lease}`);
+					} catch (err) {
+						if (err instanceof HubRpcError) {
+							return txt(`❌ Heartbeat failed (${err.code}): ${err.message}`);
+						}
+						throw err;
+					}
+				}
 
 				case "board": {
 					const board = await getHubTaskBoard(
@@ -2818,7 +2878,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				default:
-					return txt("Unknown action. Use: board, list, get, create, update, transition, delete, history, report");
+					return txt("Unknown action. Use: board, list, get, create, update, transition, claim, heartbeat, delete, history, report");
 			}
 		},
 	});

@@ -53,8 +53,12 @@ import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
-import { StaticAgentRegistry, extractSkills } from "./static-agents.ts";
+import { StaticAgentRegistry, extractSkills, type CachedStaticAgent } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
+import { resolvePeerMetadata } from "./peer-metadata.ts";
+import { selectPeerAuth } from "./auth-selector.ts";
+import { buildOutboundAuthContext, type OutboundAuthContext } from "./outbound-auth.ts";
+import { LegacyApiKeyProvider, OAuthClientCredentialsProvider, type TokenProvider } from "./token-provider.ts";
 import { seedLoopMetadata, DEFAULT_MAX_HOPS } from "./supervisor.ts";
 import { findFreePort } from "./port-finder.ts";
 import type { HubConfig, PollerConfig, RemoteAgentSummary, TelemetrySnapshot, ToolCallRecord, TaskCostInfo, PushEventType, PipelineStreamEvent, LongRunningTasksConfig } from "./types.ts";
@@ -1883,6 +1887,8 @@ export default function (pi: ExtensionAPI) {
 			let agentName: string = params.agent;
 			let credential: string | null = null;
 			let fromStatic = false;
+			let staticEntry: CachedStaticAgent | undefined;
+			let hubPeerDetail: Awaited<ReturnType<typeof getAgentFromHub>> | null = null;
 
 			// 1. Direct URL
 			if (params.agent.startsWith("http://") || params.agent.startsWith("https://")) {
@@ -1891,6 +1897,7 @@ export default function (pi: ExtensionAPI) {
 				if (staticRegistry) {
 					const match = staticRegistry.findByUrl(params.agent);
 					if (match) {
+						staticEntry = match;
 						credential = match.config.apiKey ?? null;
 						agentName = match.config.name;
 						fromStatic = true;
@@ -1901,6 +1908,7 @@ export default function (pi: ExtensionAPI) {
 				if (staticRegistry) {
 					const match = staticRegistry.findByName(params.agent);
 					if (match) {
+						staticEntry = match;
 						agentUrl = match.config.url;
 						credential = match.config.apiKey ?? null;
 						agentName = match.config.name;
@@ -1923,6 +1931,7 @@ export default function (pi: ExtensionAPI) {
 							// Not cached — try as agentId via hub lookup
 							const detail = await getAgentFromHub(params.agent, config.hub, log);
 							if (detail) {
+								hubPeerDetail = detail;
 								agentUrl = (detail.agentCard as { url?: string }).url ?? null;
 								agentId = detail.id;
 								agentName = (detail.agentCard as { name?: string }).name ?? params.agent;
@@ -1942,6 +1951,71 @@ export default function (pi: ExtensionAPI) {
 			// Get credential from hub for hub agents (static agents already have their credential)
 			if (!fromStatic && agentId && config.hub?.apiKey) {
 				credential = await getCachedCredential(agentId, config.hub);
+			}
+
+			// Resolve peer capabilities and all secret-bearing outbound auth before
+			// starting the background request. This deliberately fails closed: no
+			// request is sent when the peer and local policy have no usable mode.
+			const localAuth = config.local?.auth;
+			let peer = await resolvePeerMetadata({
+				agentId: agentId ?? agentUrl,
+				endpoint: agentUrl,
+				hubAgentId: !fromStatic ? agentId ?? undefined : undefined,
+				staticAgent: staticEntry?.config,
+				cachedCard: staticEntry?.card,
+			}, {
+				getHubAgent: async (id) => {
+					const detail = hubPeerDetail ?? await getAgentFromHub(id, config.hub!, log);
+					return detail ? { id: detail.id, auth: detail.auth } : null;
+				},
+				fetchAgentCard: async (endpoint) => {
+					const base = endpoint.replace(/\/+$/, "");
+					for (const path of ["/.well-known/agent-card.json", "/.well-known/agent.json"]) {
+						try {
+							const response = await fetch(`${base}${path}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+							if (response.ok) return await response.json() as Record<string, unknown>;
+						} catch { /* Discovery is uncredentialed and failure is handled by selection. */ }
+					}
+					return null;
+				},
+			});
+			// Older static/Hub peers did not publish Agent Card auth metadata. A
+			// configured legacy credential is the existing explicit signal for those
+			// peers; retain that behavior without guessing a modern mechanism.
+			if (peer.supportedAuthModes.length === 0 && credential) {
+				peer = { ...peer, supportedAuthModes: ["legacy-api-key"] };
+				log("a2a_auth_legacy_metadata_fallback", { agent: agentName, source: peer.source });
+			}
+			const selection = selectPeerAuth({ peer, local: localAuth });
+			if (!selection.selectedAuthMode) {
+				log("a2a_auth_selection_denied", { agent: agentName, source: peer.source, reason: selection.denial?.reason }, "WARN");
+				return txt(`Error: No supported outbound authentication mode for ${agentName} (${selection.denial?.reason ?? "selection denied"}). No request was sent.`);
+			}
+
+			let provider: TokenProvider;
+			if (selection.selectedAuthMode === "legacy-api-key") {
+				provider = new LegacyApiKeyProvider(credential ?? undefined);
+			} else {
+				const oauth2 = localAuth?.oauth2;
+				if (!oauth2?.clientId || !oauth2.clientSecret) {
+					return txt(`Error: ${agentName} requires OAuth 2.0, but local.auth.oauth2 clientId/clientSecret are not configured. No request was sent.`);
+				}
+				provider = new OAuthClientCredentialsProvider({ clientId: oauth2.clientId, clientSecret: oauth2.clientSecret });
+			}
+
+			let authContext: OutboundAuthContext;
+			try {
+				authContext = await buildOutboundAuthContext({ peer, selection, provider, localAuth });
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				log("a2a_auth_context_failed", { agent: agentName, mode: selection.selectedAuthMode, error: message }, "WARN");
+				return txt(`Error: Could not authenticate to ${agentName}: ${message}. No request was sent.`);
+			}
+			// The SDK client currently accepts HTTP fetch only; do not advertise or
+			// silently downgrade mTLS until its cert/key transport is installed.
+			if (authContext.transport.kind === "mtls") {
+				log("a2a_auth_transport_unsupported", { agent: agentName, mode: selection.selectedAuthMode }, "WARN");
+				return txt(`Error: ${agentName} requires OAuth 2.0 + mTLS, but outbound mTLS transport is not available. No request was sent.`);
 			}
 
 			// Fire off the request in the background — don't block the agent
@@ -2017,23 +2091,37 @@ export default function (pi: ExtensionAPI) {
 			updateStatusLine();
 
 			const resolvedFromStatic = fromStatic;
+			const refreshAuthContext = async (): Promise<string | null> => {
+				if (selection.selectedAuthMode === "legacy-api-key") {
+					// Retain the Hub credential refresh behavior for legacy peers.
+					if (resolvedFromStatic || !resolvedAgentId || !hubConfig) return null;
+					log("credential_retry", { agentId: resolvedAgentId });
+					credentialCache.delete(resolvedAgentId);
+					credential = await getCachedCredential(resolvedAgentId, hubConfig);
+					provider = new LegacyApiKeyProvider(credential ?? undefined);
+					authContext = await buildOutboundAuthContext({ peer, selection, provider, localAuth });
+					return authContext.headers.Authorization.slice("Bearer ".length);
+				}
+				// A 401 may mean a revoked OAuth token. Evict the provider cache before
+				// rebuilding the context, so the SDK retry uses a newly fetched token.
+				provider.invalidate?.(peer, selection);
+				authContext = await buildOutboundAuthContext({ peer, selection, provider, localAuth });
+				return authContext.headers.Authorization.slice("Bearer ".length);
+			};
+			const usesNegotiatedAuthContext = selection.selectedAuthMode !== "legacy-api-key";
 			const sendOpts = {
 				url: resolvedUrl,
 				message: params.message,
-				credential,
+				// Preserve the legacy client path (including Hub key refresh); modern
+				// OAuth modes always use the negotiated auth context.
+				authContext: usesNegotiatedAuthContext ? authContext : undefined,
+				credential: usesNegotiatedAuthContext ? undefined : credential,
 				timeoutMs: config.sendTimeoutMs,
 				sender: { name: config.name ?? "Pi Agent", description: config.description } as SenderIdentity,
 				loopMetadata: outboundLoop,
 				contextId: resolvedContextId,
 				taskId: resolvedTaskId,
-				// SDK auth handler retries on 401 — provide a callback to refresh the credential
-				onRefreshCredential: (!resolvedFromStatic && resolvedAgentId && hubConfig)
-					? async () => {
-						log("credential_retry", { agentId: resolvedAgentId });
-						credentialCache.delete(resolvedAgentId);
-						return getCachedCredential(resolvedAgentId, hubConfig);
-					}
-					: undefined,
+				onRefreshCredential: refreshAuthContext,
 			};
 
 			// Was this a2a_send initiated during an active inbound task processing?
@@ -2065,7 +2153,12 @@ export default function (pi: ExtensionAPI) {
 						// Clear the stale taskId from the context store immediately
 						conversationContexts.set(agentKey, { contextId: resolvedContextId! });
 						// Retry as a new task (keep contextId for conversation continuity)
-						result = await sendA2AMessage({ ...sendOpts, taskId: undefined }, log);
+						result = await sendA2AMessage({
+							...sendOpts,
+							authContext: usesNegotiatedAuthContext ? authContext : undefined,
+							credential: usesNegotiatedAuthContext ? undefined : credential,
+							taskId: undefined,
+						}, log);
 						if (sessionToken !== myToken) return;
 					}
 
@@ -2110,8 +2203,9 @@ export default function (pi: ExtensionAPI) {
 					const pollOpts = {
 						url: resolvedUrl,
 						taskId,
-						credential,
-						onRefreshCredential: sendOpts.onRefreshCredential,
+						authContext: usesNegotiatedAuthContext ? authContext : undefined,
+						credential: usesNegotiatedAuthContext ? undefined : credential,
+						onRefreshCredential: refreshAuthContext,
 					};
 					const maxOutboundInputRounds = config.maxInputRounds ?? 5;
 					let outboundInputRounds = 0;
@@ -2123,6 +2217,10 @@ export default function (pi: ExtensionAPI) {
 
 						try {
 							const poll = await getRemoteTask(pollOpts, log);
+							// The retry callback may have rebuilt OAuth/Hub auth. Carry its
+							// refreshed credential/context into the next poll.
+							if (usesNegotiatedAuthContext) pollOpts.authContext = authContext;
+							else pollOpts.credential = credential;
 
 							if (poll.state === "completed") {
 								const dur = fmtDuration(Date.now() - sendStart);
@@ -2171,6 +2269,8 @@ export default function (pi: ExtensionAPI) {
 									// Send the follow-up with the same taskId
 									const followUpResult = await sendA2AMessage({
 										...sendOpts,
+										authContext: usesNegotiatedAuthContext ? authContext : undefined,
+										credential: usesNegotiatedAuthContext ? undefined : credential,
 										message: answer,
 										taskId,
 									}, log);

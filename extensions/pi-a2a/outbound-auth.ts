@@ -24,20 +24,13 @@ export async function buildOutboundAuthContext(input: BuildOutboundAuthInput): P
 	const mode = input.selection.selectedAuthMode;
 	if (!mode || input.selection.denial) throw new Error("No mutually supported authentication mode");
 
-	let transport: OutboundAuthContext["transport"] = { kind: "default" };
 	if (mode === "oauth2+mtls") {
-		const flags = input.localAuth?.transport;
-		const mtls = input.localAuth?.mtls;
-		if (!flags?.mtls || !flags.clientCertificate) {
-			throw new Error("mTLS requires local transport.mtls and transport.clientCertificate");
-		}
-		if (!mtls?.certPath || !mtls.keyPath) {
-			throw new Error("mTLS requires certPath and keyPath");
-		}
-		transport = { kind: "mtls", certPath: mtls.certPath, keyPath: mtls.keyPath, ...(mtls.caPath ? { caPath: mtls.caPath } : {}) };
+		// The SDK client cannot install a certificate-bearing HTTPS transport. Reject
+		// before consulting the provider, so client credentials are never acquired.
+		throw new Error("OAuth 2.0 + mTLS is unavailable until outbound mTLS transport is installed");
 	}
 
 	const token = await input.provider.getAccessToken(input.peer, input.selection);
 	if (token.mode !== mode) throw new Error("Token provider returned a token for the wrong authentication mode");
-	return { headers: { Authorization: `Bearer ${token.value}` }, mode, transport };
+	return { headers: { Authorization: `Bearer ${token.value}` }, mode, transport: { kind: "default" } };
 }

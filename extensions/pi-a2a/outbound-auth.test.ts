@@ -14,14 +14,13 @@ describe("buildOutboundAuthContext", () => {
 		assert.deepEqual(context.transport, { kind: "default" });
 	});
 
-	it("fails closed for oauth2+mtls without certificate material and transport flags", async () => {
+	it("rejects oauth2+mtls before consulting a token provider", async () => {
+		let acquired = false;
+		const provider = { getAccessToken: async () => { acquired = true; return { value: "secret", tokenType: "Bearer" as const, mode: "oauth2+mtls" as const }; } };
 		await assert.rejects(
-			() => buildOutboundAuthContext({ peer, selection: { ...selection, selectedAuthMode: "oauth2+mtls" }, provider: new LegacyApiKeyProvider("legacy-secret"), localAuth: { transport: { mtls: true, clientCertificate: true } } }),
-			/mTLS.*certPath.*keyPath/,
+			() => buildOutboundAuthContext({ peer, selection: { ...selection, selectedAuthMode: "oauth2+mtls" }, provider, localAuth: { mtls: { certPath: "cert.pem", keyPath: "key.pem" } } }),
+			/unavailable until outbound mTLS transport is installed/,
 		);
-		await assert.rejects(
-			() => buildOutboundAuthContext({ peer, selection: { ...selection, selectedAuthMode: "oauth2+mtls" }, provider: new LegacyApiKeyProvider("legacy-secret"), localAuth: { mtls: { certPath: "cert.pem", keyPath: "key.pem" } } }),
-			/mTLS.*transport/,
-		);
+		assert.equal(acquired, false);
 	});
 });

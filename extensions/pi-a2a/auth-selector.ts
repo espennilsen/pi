@@ -20,10 +20,9 @@ export function selectPeerAuth(input: AuthSelectionInput): AuthSelection {
 			VALID_MODES.has(mode) &&
 			localModes.includes(mode) &&
 			peerModes.includes(mode) &&
-			(mode !== "oauth2+mtls" ||
-				(local.transport?.mtls === true &&
-					local.transport.clientCertificate === true &&
-					peer.transport?.mtls === true)),
+			// mTLS is intentionally unavailable until the SDK client can install a
+			// certificate-bearing HTTPS transport for the actual request.
+			mode !== "oauth2+mtls",
 	);
 	const permittedModes = peer.selectedAuthMode
 		? mutuallySupported.filter((mode) => mode === peer.selectedAuthMode)

@@ -1036,6 +1036,27 @@ export default function (pi: ExtensionAPI) {
 
 		const rpcHandler = new JsonRpcTransportHandler(requestHandler);
 
+		// A2A does not require callers to provide a skill identifier. Therefore a
+		// skill-scoped inbound legacy prohibition cannot be enforced for every
+		// request; refuse startup rather than silently exposing the skill to legacy.
+		const startupAuthRejection = config.local?.auth?.supportedAuthModes?.includes("oauth2+mtls")
+			? "Refusing to start A2A server: OAuth 2.0 + mTLS requires certificate-bound transport, which this runtime cannot enforce."
+			: config.local?.auth?.modernOnlySkills?.length
+				? "Refusing to start A2A server: local.auth.modernOnlySkills requires mandatory inbound skill identity, which this transport cannot enforce."
+				: undefined;
+		if (startupAuthRejection) {
+			const msg = startupAuthRejection;
+			ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
+			log("server_start_rejected", { reason: config.local?.auth?.supportedAuthModes?.includes("oauth2+mtls") ? "mtls_transport_unavailable" : "modern_only_skill_identity_unenforceable" }, "ERROR");
+			if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
+			if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
+			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }
+			executor = null;
+			pushNotificationStore = null;
+			taskStore.close(); taskStore = null;
+			return;
+		}
+
 		// Start the A2A server
 		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
@@ -1880,6 +1901,9 @@ export default function (pi: ExtensionAPI) {
 			newConversation: Type.Optional(Type.Boolean({
 				description: "Start a new conversation — ignore any stored contextId/taskId for this agent. Defaults to false.",
 			})),
+			skillId: Type.Optional(Type.String({
+				description: "Requested remote skill ID. Required when the skill is governed by modernOnlySkills.",
+			})),
 		}),
 		async execute(_toolCallId, params) {
 			const { config } = loadConfig(cwd);
@@ -1990,7 +2014,7 @@ export default function (pi: ExtensionAPI) {
 				peer = { ...peer, supportedAuthModes: ["legacy-api-key"] };
 				log("a2a_auth_legacy_metadata_fallback", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: "legacy-api-key" }, "WARN");
 			}
-			const selection = selectPeerAuth({ peer, local: localAuth });
+			const selection = selectPeerAuth({ peer, local: localAuth, skillId: params.skillId });
 			if (!selection.selectedAuthMode) {
 				log("a2a_auth_selection_denied", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: null, reason: selection.denial?.reason }, "WARN");
 				return txt(`Error: No supported outbound authentication mode for ${agentName} (${selection.denial?.reason ?? "selection denied"}). No request was sent.`);
@@ -2008,7 +2032,11 @@ export default function (pi: ExtensionAPI) {
 				if (!oauth2?.clientId || !oauth2.clientSecret) {
 					return txt(`Error: ${agentName} requires OAuth 2.0, but local.auth.oauth2 clientId/clientSecret are not configured. No request was sent.`);
 				}
-				provider = new OAuthClientCredentialsProvider({ clientId: oauth2.clientId, clientSecret: oauth2.clientSecret });
+				provider = new OAuthClientCredentialsProvider({
+					clientId: oauth2.clientId,
+					clientSecret: oauth2.clientSecret,
+					trustedTokenEndpointOrigins: oauth2.trustedTokenEndpointOrigins,
+				});
 			}
 
 			let authContext: OutboundAuthContext;
@@ -2019,13 +2047,6 @@ export default function (pi: ExtensionAPI) {
 				log("a2a_auth_context_failed", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode, error: message }, "WARN");
 				return txt(`Error: Could not authenticate to ${agentName}: ${message}. No request was sent.`);
 			}
-			// The SDK client currently accepts HTTP fetch only; do not advertise or
-			// silently downgrade mTLS until its cert/key transport is installed.
-			if (authContext.transport.kind === "mtls") {
-				log("a2a_auth_transport_unsupported", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode }, "WARN");
-				return txt(`Error: ${agentName} requires OAuth 2.0 + mTLS, but outbound mTLS transport is not available. No request was sent.`);
-			}
-
 			// Fire off the request in the background — don't block the agent
 			const sendStart = Date.now();
 			const resolvedName = agentName;

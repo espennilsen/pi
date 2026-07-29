@@ -19,7 +19,7 @@ test("Hub OAuth metadata selects a resource-scoped bearer token and produces saf
 	assert.equal(selection.selectedAuthMode, "oauth2");
 	assert.equal(selection.source, "hub");
 	let requestBody = "";
-	const provider = new OAuthClientCredentialsProvider({ clientId: "client", clientSecret: "secret", fetch: async (_url, init) => {
+	const provider = new OAuthClientCredentialsProvider({ clientId: "client", clientSecret: "secret", trustedTokenEndpointOrigins: ["https://issuer.example"], fetch: async (_url, init) => {
 		requestBody = String(init?.body);
 		return new Response(JSON.stringify({ access_token: "issued-token", expires_in: 3600 }), { status: 200 });
 	} });
@@ -41,10 +41,10 @@ test("static legacy peer retains the existing Bearer API-key header", async () =
 	assert.equal(selection.source, "static-directory");
 });
 
-test("mixed peers rank mTLS, then OAuth, and use legacy only when explicitly preferred", () => {
+test("mixed peers rank enforceable OAuth and use legacy only when explicitly preferred", () => {
 	const modes: AuthMode[] = ["legacy-api-key", "oauth2", "oauth2+mtls"];
 	const peer = { agentId: "mixed", endpoint: "https://mixed.example", source: "hub" as const, supportedAuthModes: modes, transport: { mtls: true } };
-	assert.equal(selectPeerAuth({ peer, local: { supportedAuthModes: peer.supportedAuthModes, transport: { mtls: true, clientCertificate: true } } }).selectedAuthMode, "oauth2+mtls");
+	assert.equal(selectPeerAuth({ peer, local: { supportedAuthModes: peer.supportedAuthModes, transport: { mtls: true, clientCertificate: true } } }).selectedAuthMode, "oauth2");
 	assert.equal(selectPeerAuth({ peer, local: { supportedAuthModes: peer.supportedAuthModes } }).selectedAuthMode, "oauth2");
 	assert.equal(selectPeerAuth({ peer, local: { supportedAuthModes: peer.supportedAuthModes, preferModern: false } }).selectedAuthMode, "legacy-api-key");
 });

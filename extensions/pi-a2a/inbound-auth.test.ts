@@ -13,7 +13,7 @@ test("legacy authentication is constant-time policy gated", async () => {
 
 test("OAuth is verified and mTLS bindings are required when mTLS is the only enabled mode", async () => {
 	const local: LocalConfig = { auth: { supportedAuthModes: ["oauth2+mtls"] } };
-	const verifier = async () => ({ subject: "agent", issuer: "https://issuer", audience: "api", expiresAt: Date.now() + 1, scopes: ["a2a"], cnfThumbprint: "bound" });
+	const verifier = async () => ({ subject: "agent", issuer: "https://issuer", audience: "api", expiresAt: Date.now() + 60_000, scopes: ["a2a"], cnfThumbprint: "bound" });
 	assert.equal((await authenticateInboundRequest({ authorization: "Bearer jwt", local, supportedModes: ["oauth2+mtls"], verifyOAuth: verifier, mtlsEvidence: { verified: true, thumbprint: "bound" } })).principal?.mode, "oauth2+mtls");
 	assert.equal((await authenticateInboundRequest({ authorization: "Bearer jwt", local, supportedModes: ["oauth2+mtls"], verifyOAuth: verifier, mtlsEvidence: { verified: true, thumbprint: "other" } })).status, 403);
 	assert.equal((await authenticateInboundRequest({ authorization: "Bearer jwt", local: { auth: { supportedAuthModes: ["oauth2"], oauth2: { issuer: "https://other" } } }, supportedModes: ["oauth2"], verifyOAuth: verifier })).status, 401);

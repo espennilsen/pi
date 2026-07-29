@@ -52,6 +52,8 @@ export interface OAuthClientCredentialsConfig {
 	audience?: string;
 	/** Required access-token scope for inbound requests, when configured. */
 	requiredScope?: string;
+	/** Pinned HTTPS origins permitted to receive client credentials for token acquisition. */
+	trustedTokenEndpointOrigins?: string[];
 }
 
 export interface LocalAuthOverride {

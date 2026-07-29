@@ -39,6 +39,7 @@ describe("normalizeConfig auth settings", () => {
 			futureOption: "keep",
 			mtls: { certPath: "cert.pem", keyPath: "key.pem" },
 		});
+		assert.match(result.warnings.join("\n"), /mTLS support will be rejected at startup/);
 	});
 
 	it("removes only invalid auth additions and does not advertise mTLS without certificate material", () => {
@@ -61,6 +62,11 @@ describe("normalizeConfig auth settings", () => {
 		});
 		assert.match(result.warnings.join("\n"), /Invalid local.auth supportedAuthModes/);
 		assert.match(result.warnings.join("\n"), /mTLS/);
+	});
+
+	it("preserves modern-only skills for outbound skill policy", () => {
+		const result = normalizeConfig({ local: { auth: { supportedAuthModes: ["oauth2"], modernOnlySkills: ["deploy"] } } }, {});
+		assert.deepEqual(result.config.local?.auth, { supportedAuthModes: ["oauth2"], modernOnlySkills: ["deploy"] });
 	});
 
 	it("removes malformed auth fields without retaining invalid shapes", () => {

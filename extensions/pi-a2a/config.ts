@@ -65,7 +65,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 		: {};
 }
 
-function normalizeAuth(auth: Record<string, unknown>, warnings: string[], requireMtlsMaterial: boolean): Record<string, unknown> {
+function normalizeAuth(auth: Record<string, unknown>, warnings: string[]): Record<string, unknown> {
 	const normalized = { ...auth };
 	if (auth.supportedAuthModes !== undefined && !Array.isArray(auth.supportedAuthModes)) {
 		delete normalized.supportedAuthModes;
@@ -76,7 +76,7 @@ function normalizeAuth(auth: Record<string, unknown>, warnings: string[], requir
 		if (modes.length !== auth.supportedAuthModes.length) {
 			warnings.push("Invalid local.auth supportedAuthModes entries were ignored");
 		}
-		if (requireMtlsMaterial && modes.includes("oauth2+mtls")) {
+		if (modes.includes("oauth2+mtls")) {
 			const mtls = asRecord(auth.mtls);
 			const transport = asRecord(auth.transport);
 			if (typeof mtls.certPath !== "string" || typeof mtls.keyPath !== "string" ||
@@ -86,6 +86,9 @@ function normalizeAuth(auth: Record<string, unknown>, warnings: string[], requir
 				warnings.push("mTLS support was ignored because certificate material is incomplete");
 				return normalized;
 			}
+			// Preserve usable material so startup can reject it rather than silently
+			// changing an authenticated deployment into an unauthenticated one.
+			warnings.push("mTLS support will be rejected at startup because certificate-bound transport is unavailable");
 		}
 		normalized.supportedAuthModes = modes;
 	}
@@ -138,7 +141,7 @@ export function normalizeConfig(globalSettings: Record<string, unknown>, project
 	}
 	const local = { ...globalLocal, ...projectLocal };
 	if (globalLocal.auth !== undefined || projectLocal.auth !== undefined) {
-		local.auth = normalizeAuth(auth, warnings, true);
+		local.auth = normalizeAuth(auth, warnings);
 	}
 
 	const merged: Record<string, unknown> = { ...globalConf, ...projectConf };
@@ -153,7 +156,7 @@ export function normalizeConfig(globalSettings: Record<string, unknown>, project
 				return agent;
 			}
 			const peer = { ...(agent as Record<string, unknown>) };
-			if (peer.auth !== undefined) peer.auth = normalizeAuth(asRecord(peer.auth), warnings, false);
+			if (peer.auth !== undefined) peer.auth = normalizeAuth(asRecord(peer.auth), warnings);
 			return peer;
 		});
 	}

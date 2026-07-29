@@ -49,6 +49,8 @@ export interface OAuthClientCredentials {
 	fetch?: typeof fetch;
 	/** Optional injectable clock for expiry tests. */
 	now?: () => number;
+	/** Exact HTTPS origins allowed to receive client credentials. */
+	trustedTokenEndpointOrigins?: string[];
 }
 
 type CachedToken = AccessToken & { expiresAt: number };
@@ -75,9 +77,8 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 		if (mode !== "oauth2" && mode !== "oauth2+mtls") {
 			throw new TokenProviderError("OAuth provider cannot satisfy the selected auth mode");
 		}
-		const tokenEndpoint = peer.authorizationServer;
-		if (!tokenEndpoint) throw new TokenProviderError("Peer does not advertise an OAuth token endpoint");
-		const resource = peer.resource ?? peer.endpoint;
+		const tokenEndpoint = validateTokenEndpoint(peer, this.credentials.trustedTokenEndpointOrigins);
+		const resource = validateResource(peer.resource ?? peer.endpoint);
 		const key = cacheKey(peer.agentId, resource, mode);
 		const cached = this.cache.get(key);
 		if (cached && cached.expiresAt > this.now()) return cached;
@@ -94,7 +95,8 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 
 		let response: Response;
 		try {
-			response = await this.fetchFn(tokenEndpoint, { method: "POST", headers, body });
+			// Never follow a redirect after constructing a request containing client secrets.
+			response = await this.fetchFn(tokenEndpoint, { method: "POST", headers, body, redirect: "error" });
 		} catch {
 			throw new TokenProviderError("OAuth token request failed");
 		}
@@ -113,6 +115,31 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 		const mode = selection.selectedAuthMode;
 		if (mode === "oauth2" || mode === "oauth2+mtls") this.cache.delete(cacheKey(peer.agentId, peer.resource ?? peer.endpoint, mode));
 	}
+}
+
+/** Validate untrusted peer metadata before a request body can contain credentials. */
+function validateTokenEndpoint(peer: PeerAuthMetadata, trustedOrigins: readonly string[] | undefined): string {
+	if (!peer.authorizationServer) throw new TokenProviderError("Peer does not advertise an OAuth token endpoint");
+	let endpoint: URL;
+	try { endpoint = new URL(peer.authorizationServer); } catch { throw new TokenProviderError("OAuth token endpoint metadata was invalid"); }
+	if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password) {
+		throw new TokenProviderError("OAuth token endpoint must be HTTPS without embedded credentials");
+	}
+	const trusted = new Set((trustedOrigins ?? []).map((origin) => {
+		try { return new URL(origin).origin; } catch { return ""; }
+	}));
+	if (!trusted.has(endpoint.origin)) {
+		throw new TokenProviderError("OAuth token endpoint origin is not pinned as trusted");
+	}
+	return endpoint.toString();
+}
+
+function validateResource(resource: string): string {
+	try {
+		const url = new URL(resource);
+		if (url.protocol !== "https:" || url.username || url.password) throw new Error();
+		return url.toString();
+	} catch { throw new TokenProviderError("OAuth resource metadata must be HTTPS"); }
 }
 
 function cacheKey(agentId: string, resource: string, mode: AuthMode): string {

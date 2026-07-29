@@ -27,30 +27,18 @@ function select(overrides: Partial<AuthSelectionInput> & { peer?: PeerAuthMetada
 }
 
 describe("selectPeerAuth", () => {
-	it("chooses the strongest mutually supported mode", () => {
+	it("chooses the strongest runtime-enforceable mutually supported mode", () => {
 		assert.deepEqual(select(), {
-			selectedAuthMode: "oauth2+mtls",
+			selectedAuthMode: "oauth2",
 			source: "hub",
 			denial: null,
 		});
 	});
 
-	it("requires both local mTLS capabilities and peer mTLS before selecting oauth2+mtls", () => {
-		for (const transport of [
-			{ mtls: false, clientCertificate: true },
-			{ mtls: true, clientCertificate: false },
-		]) {
-			assert.deepEqual(
-				select({ local: { supportedAuthModes: ["oauth2", "oauth2+mtls"], transport } }),
-				{ selectedAuthMode: "oauth2", source: "hub", denial: null },
-			);
-		}
+	it("does not select oauth2+mtls until a certificate-bound transport exists", () => {
 		assert.deepEqual(
-			select({
-				peer: { ...peer(["oauth2", "oauth2+mtls"]), transport: { mtls: false } },
-				local: { supportedAuthModes: ["oauth2", "oauth2+mtls"], transport: { mtls: true, clientCertificate: true } },
-			}),
-			{ selectedAuthMode: "oauth2", source: "hub", denial: null },
+			select({ peer: peer(["oauth2+mtls"]), local: { supportedAuthModes: ["oauth2+mtls"], transport: { mtls: true, clientCertificate: true } } }),
+			{ selectedAuthMode: null, source: "hub", denial: { reason: "no-mutual-auth-mode" } },
 		);
 	});
 

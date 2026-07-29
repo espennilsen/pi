@@ -36,6 +36,12 @@ export interface PeerAuthMetadata {
 }
 
 /** Local policy/capability overrides, intended for `local.auth` settings. */
+export interface MtlsConfig {
+	certPath?: string;
+	keyPath?: string;
+	caPath?: string;
+}
+
 export interface LocalAuthOverride {
 	/** Modes this agent is configured to use. Omit to retain legacy API-key-only behavior. */
 	supportedAuthModes?: AuthMode[];
@@ -45,6 +51,8 @@ export interface LocalAuthOverride {
 	modernOnlySkills?: string[];
 	/** Locally available transport capabilities. */
 	transport?: TransportCapabilities;
+	/** Certificate paths for mTLS transport; actual TLS setup occurs at the client/server boundary. */
+	mtls?: MtlsConfig;
 }
 
 /** Per-peer overrides, intended for a static directory entry's `auth` settings. */

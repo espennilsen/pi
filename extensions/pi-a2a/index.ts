@@ -1997,7 +1997,7 @@ export default function (pi: ExtensionAPI) {
 			// starting the background request. This deliberately fails closed: no
 			// request is sent when the peer and local policy have no usable mode.
 			const localAuth = config.local?.auth;
-			let peer = await resolvePeerMetadata({
+			const peer = await resolvePeerMetadata({
 				agentId: agentId ?? agentUrl,
 				endpoint: agentUrl,
 				hubAgentId: !fromStatic ? agentId ?? undefined : undefined,
@@ -2019,13 +2019,6 @@ export default function (pi: ExtensionAPI) {
 					return null;
 				},
 			});
-			// Older static/Hub peers did not publish Agent Card auth metadata. A
-			// configured legacy credential is the existing explicit signal for those
-			// peers; retain that behavior without guessing a modern mechanism.
-			if (peer.supportedAuthModes.length === 0 && credential) {
-				peer = { ...peer, supportedAuthModes: ["legacy-api-key"] };
-				log("a2a_auth_legacy_metadata_fallback", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: "legacy-api-key" }, "WARN");
-			}
 			const selection = selectPeerAuth({ peer, local: localAuth, skillId: params.skillId });
 			if (!selection.selectedAuthMode) {
 				log("a2a_auth_selection_denied", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: null, reason: selection.denial?.reason }, "WARN");

@@ -112,4 +112,18 @@ describe("selectPeerAuth", () => {
 			},
 		);
 	});
+
+	it("does not select legacy auth based on Agent Card metadata", () => {
+		assert.deepEqual(
+			select({
+				peer: { ...peer(["legacy-api-key"]), source: "agent-card" },
+				local: { supportedAuthModes: ["legacy-api-key"] },
+			}),
+			{
+				selectedAuthMode: null,
+				source: "agent-card",
+				denial: { reason: "no-mutual-auth-mode" },
+			},
+		);
+	});
 });

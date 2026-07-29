@@ -57,8 +57,9 @@ type CachedToken = AccessToken & { expiresAt: number };
 const EARLY_EXPIRY_MS = 30_000;
 
 /**
- * Fetches OAuth client-credentials tokens from the token endpoint explicitly
- * advertised by the peer. It intentionally has no legacy-provider fallback.
+ * Fetches OAuth client-credentials tokens from token endpoint metadata supplied
+ * by the trusted Hub or explicit static directory. It intentionally has no
+ * legacy-provider fallback.
  */
 export class OAuthClientCredentialsProvider implements TokenProvider {
 	private readonly cache = new Map<string, CachedToken>();
@@ -144,6 +145,9 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 
 /** Validate untrusted peer metadata before a request body can contain credentials. */
 function validateTokenEndpoint(peer: PeerAuthMetadata, trustedOrigins: readonly string[] | undefined): string {
+	if (peer.source !== "hub" && peer.source !== "static-directory") {
+		throw new TokenProviderError("OAuth token endpoint must come from trusted Hub or static directory metadata");
+	}
 	if (!peer.authorizationServer) throw new TokenProviderError("Peer does not advertise an OAuth token endpoint");
 	let endpoint: URL;
 	try { endpoint = new URL(peer.authorizationServer); } catch { throw new TokenProviderError("OAuth token endpoint metadata was invalid"); }

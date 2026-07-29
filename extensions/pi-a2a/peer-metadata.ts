@@ -99,7 +99,7 @@ export function parseAgentCardAuthMetadata(
 	return {
 		agentId,
 		endpoint,
-		supportedAuthModes: (['legacy-api-key', 'oauth2', 'oauth2+mtls'] as AuthMode[]).filter((mode) => modes.has(mode)), 
+		supportedAuthModes: (['legacy-api-key', 'oauth2', 'oauth2+mtls'] as AuthMode[]).filter((mode) => modes.has(mode)),
 		source: "agent-card",
 		...(authorizationServer ? { authorizationServer } : {}),
 		...(typeof card.resource === "string" ? { resource: card.resource } : {}),

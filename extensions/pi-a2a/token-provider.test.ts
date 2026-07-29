@@ -4,10 +4,10 @@ import type { AuthSelection, PeerAuthMetadata } from "./auth-types.ts";
 import { LegacyApiKeyProvider, OAuthClientCredentialsProvider } from "./token-provider.ts";
 
 const peer: PeerAuthMetadata = {
-	agentId: "peer-1", endpoint: "https://peer.example", source: "agent-card",
+	agentId: "peer-1", endpoint: "https://peer.example", source: "hub",
 	supportedAuthModes: ["oauth2"], authorizationServer: "https://issuer.example/token", resource: "https://peer.example/a2a",
 };
-const oauthSelection: AuthSelection = { selectedAuthMode: "oauth2", source: "agent-card", denial: null };
+const oauthSelection: AuthSelection = { selectedAuthMode: "oauth2", source: "hub", denial: null };
 
 describe("token providers", () => {
 	it("returns the configured key from the legacy provider", async () => {
@@ -74,6 +74,19 @@ describe("token providers", () => {
 		});
 		await assert.rejects(() => provider.getAccessToken({ ...peer, authorizationServer: "http://issuer.example/token" }, oauthSelection), /must be HTTPS/);
 		await assert.rejects(() => provider.getAccessToken({ ...peer, authorizationServer: "https://attacker.example/token" }, oauthSelection), /not pinned/);
+		assert.equal(called, false);
+	});
+
+	it("never sends client credentials to an authorization server from an Agent Card", async () => {
+		let called = false;
+		const provider = new OAuthClientCredentialsProvider({ clientId: "id", clientSecret: "secret", trustedTokenEndpointOrigins: ["https://issuer.example"] }, async () => {
+			called = true;
+			return new Response();
+		});
+		await assert.rejects(
+			() => provider.getAccessToken({ ...peer, source: "agent-card" }, oauthSelection),
+			/trusted Hub or static directory metadata/,
+		);
 		assert.equal(called, false);
 	});
 

@@ -22,6 +22,9 @@ export function selectPeerAuth(input: AuthSelectionInput): AuthSelection {
 			localModes.includes(mode) &&
 			peerModes.includes(mode) &&
 			(mode !== "oauth2" || oauthTransportUsable) &&
+			// Legacy credentials are allowed only when a trusted Hub or explicit
+			// static-directory configuration declares that capability.
+			(mode !== "legacy-api-key" || peer.source !== "agent-card") &&
 			// mTLS is intentionally unavailable until the SDK client can install a
 			// certificate-bearing HTTPS transport for the actual request.
 			mode !== "oauth2+mtls",

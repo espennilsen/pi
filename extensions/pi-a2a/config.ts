@@ -54,62 +54,67 @@ export interface ConfigResult {
 	warnings: string[];
 }
 
-export function loadConfig(cwd: string): ConfigResult {
-	const agentDir = getAgentDir();
-	const sm = SettingsManager.create(cwd, agentDir);
-	const global = sm.getGlobalSettings() as Record<string, unknown>;
-	const project = sm.getProjectSettings() as Record<string, unknown>;
-	const globalConf = (global[SETTINGS_KEY] as Record<string, unknown>) ?? {};
-	const projectConf = (project[SETTINGS_KEY] as Record<string, unknown>) ?? {};
-	const merged = { ...globalConf, ...projectConf };
+const LEGACY_LOCAL_FIELDS = [
+	"port", "portRange", "bind", "bindInterface", "publicUrl", "requireApiKey", "apiKey",
+] as const;
+const AUTH_MODES = new Set(["legacy-api-key", "oauth2", "oauth2+mtls"]);
 
-	// Deep merge `hub` — project hub settings extend global hub settings
-	const globalHub = globalConf.hub as Record<string, unknown> | undefined;
-	const projectHub = projectConf.hub as Record<string, unknown> | undefined;
-	if (globalHub || projectHub) {
-		merged.hub = { ...(globalHub ?? {}), ...(projectHub ?? {}) };
+function asRecord(value: unknown): Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+}
+
+function normalizeAuth(auth: Record<string, unknown>, warnings: string[], requireMtlsMaterial: boolean): Record<string, unknown> {
+	const normalized = { ...auth };
+	if (auth.supportedAuthModes !== undefined && !Array.isArray(auth.supportedAuthModes)) {
+		delete normalized.supportedAuthModes;
+		warnings.push("Invalid local.auth supportedAuthModes was ignored");
 	}
+	if (Array.isArray(auth.supportedAuthModes)) {
+		const modes = [...new Set(auth.supportedAuthModes.filter((mode): mode is string => typeof mode === "string" && AUTH_MODES.has(mode)))];
+		if (modes.length !== auth.supportedAuthModes.length) {
+			warnings.push("Invalid local.auth supportedAuthModes entries were ignored");
+		}
+		if (requireMtlsMaterial && modes.includes("oauth2+mtls")) {
+			const mtls = asRecord(auth.mtls);
+			const transport = asRecord(auth.transport);
+			if (typeof mtls.certPath !== "string" || typeof mtls.keyPath !== "string" ||
+				transport.mtls !== true || transport.clientCertificate !== true) {
+				normalized.supportedAuthModes = modes.filter((mode) => mode !== "oauth2+mtls");
+				delete normalized.mtls;
+				warnings.push("mTLS support was ignored because certificate material is incomplete");
+				return normalized;
+			}
+		}
+		normalized.supportedAuthModes = modes;
+	}
+	if (auth.selectedAuthMode !== undefined &&
+		(typeof auth.selectedAuthMode !== "string" || !AUTH_MODES.has(auth.selectedAuthMode))) {
+		delete normalized.selectedAuthMode;
+		warnings.push("Invalid local.auth selectedAuthMode was ignored");
+	}
+	return normalized;
+}
 
+/** Merge global and project settings without runtime-dependent validation or key generation. */
+export function normalizeConfig(globalSettings: Record<string, unknown>, projectSettings: Record<string, unknown>): ConfigResult {
 	const warnings: string[] = [];
+	const globalConf = { ...asRecord(globalSettings) };
+	const projectConf = { ...asRecord(projectSettings) };
+	let migratedAny = false;
 
-	// ── Backward compat: normalize legacy flat fields into `local` before merge ──
-	const migratedFields = [
-		"port",
-		"portRange",
-		"bind",
-		"bindInterface",
-		"publicUrl",
-		"requireApiKey",
-		"apiKey",
-	] as const;
-
-	// Normalize globalConf: move legacy flat fields into globalConf.local
-	if (!globalConf.local) {
-		globalConf.local = {};
-	}
-	const globalLocal = globalConf.local as Record<string, unknown>;
-	let globalMigratedAny = false;
-	for (const field of migratedFields) {
-		if (globalConf[field] !== undefined && globalLocal[field] === undefined) {
-			globalLocal[field] = globalConf[field];
-			globalMigratedAny = true;
+	for (const conf of [globalConf, projectConf]) {
+		const local = { ...asRecord(conf.local) };
+		for (const field of LEGACY_LOCAL_FIELDS) {
+			if (conf[field] !== undefined && local[field] === undefined) {
+				local[field] = conf[field];
+				migratedAny = true;
+			}
 		}
+		conf.local = local;
 	}
-
-	// Normalize projectConf: move legacy flat fields into projectConf.local
-	if (!projectConf.local) {
-		projectConf.local = {};
-	}
-	const projectLocal = projectConf.local as Record<string, unknown>;
-	let projectMigratedAny = false;
-	for (const field of migratedFields) {
-		if (projectConf[field] !== undefined && projectLocal[field] === undefined) {
-			projectLocal[field] = projectConf[field];
-			projectMigratedAny = true;
-		}
-	}
-
-	if (globalMigratedAny || projectMigratedAny) {
+	if (migratedAny) {
 		warnings.push(
 			"Deprecation warning: pi-a2a settings using flat fields (port, bind, apiKey, etc.) " +
 			"should be nested under \"local\". Move them to pi-a2a.local in settings.json. " +
@@ -117,12 +122,49 @@ export function loadConfig(cwd: string): ConfigResult {
 		);
 	}
 
-	// Deep merge `local` after normalization — project local settings override global local settings
-	merged.local = { ...(globalLocal ?? {}), ...(projectLocal ?? {}) };
-
-	if (!merged.local) {
-		merged.local = {};
+	const globalLocal = asRecord(globalConf.local);
+	const projectLocal = asRecord(projectConf.local);
+	const globalAuth = asRecord(globalLocal.auth);
+	const projectAuth = asRecord(projectLocal.auth);
+	const auth = { ...globalAuth, ...projectAuth };
+	if (globalAuth.transport !== undefined || projectAuth.transport !== undefined) {
+		auth.transport = { ...asRecord(globalAuth.transport), ...asRecord(projectAuth.transport) };
 	}
+	if (globalAuth.mtls !== undefined || projectAuth.mtls !== undefined) {
+		auth.mtls = { ...asRecord(globalAuth.mtls), ...asRecord(projectAuth.mtls) };
+	}
+	const local = { ...globalLocal, ...projectLocal };
+	if (globalLocal.auth !== undefined || projectLocal.auth !== undefined) {
+		local.auth = normalizeAuth(auth, warnings, true);
+	}
+
+	const merged: Record<string, unknown> = { ...globalConf, ...projectConf };
+	if (globalConf.hub !== undefined || projectConf.hub !== undefined) {
+		merged.hub = { ...asRecord(globalConf.hub), ...asRecord(projectConf.hub) };
+	}
+	merged.local = local;
+	if (Array.isArray(merged.staticAgents)) {
+		merged.staticAgents = merged.staticAgents.map((agent) => {
+			if (agent === null || typeof agent !== "object" || Array.isArray(agent)) {
+				warnings.push("Invalid static agent entry was preserved unchanged");
+				return agent;
+			}
+			const peer = { ...(agent as Record<string, unknown>) };
+			if (peer.auth !== undefined) peer.auth = normalizeAuth(asRecord(peer.auth), warnings, false);
+			return peer;
+		});
+	}
+	return { config: merged as A2AConfig, warnings };
+}
+
+export function loadConfig(cwd: string): ConfigResult {
+	const agentDir = getAgentDir();
+	const sm = SettingsManager.create(cwd, agentDir);
+	const global = sm.getGlobalSettings() as Record<string, unknown>;
+	const project = sm.getProjectSettings() as Record<string, unknown>;
+	const normalized = normalizeConfig(global[SETTINGS_KEY] as Record<string, unknown>, project[SETTINGS_KEY] as Record<string, unknown>);
+	const merged = normalized.config as Record<string, unknown>;
+	const warnings = normalized.warnings;
 	const local = merged.local as Record<string, unknown>;
 
 	// ── Runtime validation for `local` fields ──

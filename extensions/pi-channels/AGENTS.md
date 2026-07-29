@@ -10,7 +10,7 @@ Two-way channel extension for pi — routes messages between agents and external
 ## Directory Layout
 
 ```
-src/
+
 ├── index.ts              # Extension entry — lifecycle, flags, /chat-bridge command
 ├── types.ts              # All shared types (messages, adapters, config, bridge, file upload)
 ├── config.ts             # Settings loader (reads "pi-channels" from settings.json)

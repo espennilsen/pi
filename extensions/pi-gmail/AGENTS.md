@@ -11,14 +11,14 @@ Self-contained pi extension providing full Gmail integration via Google's REST A
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point. Registers tool, commands, mounts web routes, starts notifications.
-- `src/types.ts` — All shared types: OAuthTokens, GmailMessage, GmailThread, GmailLabel, ParsedEmail, etc.
-- `src/auth.ts` — OAuth 2.0 flow: consent URL generation, code exchange, token storage (JSON file), auto-refresh.
-- `src/client.ts` — Thin REST client over Gmail API v1. Direct fetch calls, no SDK dependency.
-- `src/tool.ts` — LLM tool with 18 actions: search, read, read_thread, list_inbox, list_unread, list_labels, compose, reply, send, send_draft, list_drafts, delete_draft, archive, trash, label, mark_read, mark_unread, download_attachment.
-- `src/formatter.ts` — Converts raw Gmail API responses to clean markdown for LLM. HTML stripping, body truncation, thread formatting, RFC 2822 message builder.
-- `src/web.ts` — Mounts `/gmail` status page, `/gmail/auth` OAuth start, `/gmail/callback` OAuth callback, `/api/gmail/status` via pi-webserver event bus.
-- `src/logger.ts` — Extension logger (emits to pi-logger).
+- `index.ts` — Extension entry point. Registers tool, commands, mounts web routes, starts notifications.
+- `types.ts` — All shared types: OAuthTokens, GmailMessage, GmailThread, GmailLabel, ParsedEmail, etc.
+- `auth.ts` — OAuth 2.0 flow: consent URL generation, code exchange, token storage (JSON file), auto-refresh.
+- `client.ts` — Thin REST client over Gmail API v1. Direct fetch calls, no SDK dependency.
+- `tool.ts` — LLM tool with 18 actions: search, read, read_thread, list_inbox, list_unread, list_labels, compose, reply, send, send_draft, list_drafts, delete_draft, archive, trash, label, mark_read, mark_unread, download_attachment.
+- `formatter.ts` — Converts raw Gmail API responses to clean markdown for LLM. HTML stripping, body truncation, thread formatting, RFC 2822 message builder.
+- `web.ts` — Mounts `/gmail` status page, `/gmail/auth` OAuth start, `/gmail/callback` OAuth callback, `/api/gmail/status` via pi-webserver event bus.
+- `logger.ts` — Extension logger (emits to pi-logger).
 
 ## Key Patterns
 

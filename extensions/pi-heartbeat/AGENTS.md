@@ -11,14 +11,14 @@ Self-contained pi extension that runs a health-check prompt on a configurable in
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers `--heartbeat` flag, `/heartbeat` command, manages `HeartbeatRunner` lifecycle, mounts web UI.
-- `src/heartbeat.ts` — `HeartbeatRunner` class. Drives the `setInterval` timer, spawns `pi --mode rpc` subprocesses, parses JSON-line RPC events, tracks in-memory stats (runCount, okCount, alertCount).
-- `src/prompt.ts` — Builds the health-check prompt. Reads `HEARTBEAT.md` from `cwd`; falls back to generic check if file is missing or empty.
-- `src/settings.ts` — Loads `"pi-heartbeat"` from global + project `settings.json` (project overrides global).
-- `src/store.ts` — Store abstraction with two backends: `createMemoryStore()` (in-memory ring buffer, default) and `createKyselyStore()` (pi-kysely event bus). Exports `getStore()`, `setStore()`, `isStoreReady()`, `resetStore()`.
-- `src/db-kysely.ts` — Kysely backend: `initDb()`, `insertRun()`, `getHistory()`, `getStats()`.
-- `src/web.ts` — Mounts `/heartbeat` status page and API routes via pi-webserver event bus.
-- `src/logger.ts` — Extension logger (emits to pi-logger via `log` event).
+- `index.ts` — Entry point. Registers `--heartbeat` flag, `/heartbeat` command, manages `HeartbeatRunner` lifecycle, mounts web UI.
+- `heartbeat.ts` — `HeartbeatRunner` class. Drives the `setInterval` timer, spawns `pi --mode rpc` subprocesses, parses JSON-line RPC events, tracks in-memory stats (runCount, okCount, alertCount).
+- `prompt.ts` — Builds the health-check prompt. Reads `HEARTBEAT.md` from `cwd`; falls back to generic check if file is missing or empty.
+- `settings.ts` — Loads `"pi-heartbeat"` from global + project `settings.json` (project overrides global).
+- `store.ts` — Store abstraction with two backends: `createMemoryStore()` (in-memory ring buffer, default) and `createKyselyStore()` (pi-kysely event bus). Exports `getStore()`, `setStore()`, `isStoreReady()`, `resetStore()`.
+- `db-kysely.ts` — Kysely backend: `initDb()`, `insertRun()`, `getHistory()`, `getStats()`.
+- `web.ts` — Mounts `/heartbeat` status page and API routes via pi-webserver event bus.
+- `logger.ts` — Extension logger (emits to pi-logger via `log` event).
 - `skills/` — Bundled pi skills directory (declared in `package.json` pi.skills).
 
 ## Key Patterns

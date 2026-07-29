@@ -11,11 +11,11 @@ File-based persistent memory system. Plain Markdown, no database.
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers tools, context injection, resolves settings.
-- `src/files.ts` — File I/O, path resolution, date helpers. All fs operations live here.
-- `src/tools.ts` — Three LLM tools: memory_read, memory_write, memory_search.
-- `src/context.ts` — `before_agent_start` hook that injects MEMORY.md + recent daily logs into system prompt.
-- `src/settings.ts` — Reads `"pi-memory"` key from global/project settings.json.
+- `index.ts` — Entry point. Registers tools, context injection, resolves settings.
+- `files.ts` — File I/O, path resolution, date helpers. All fs operations live here.
+- `tools.ts` — Three LLM tools: memory_read, memory_write, memory_search.
+- `context.ts` — `before_agent_start` hook that injects MEMORY.md + recent daily logs into system prompt.
+- `settings.ts` — Reads `"pi-memory"` key from global/project settings.json.
 - `skills/pi-memory/SKILL.md` — Agent-facing instructions for when/how to use memory.
 
 ## Key Patterns

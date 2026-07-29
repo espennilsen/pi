@@ -14,7 +14,7 @@ Uses pi's built-in model registry for auth, endpoint resolution, and model disco
 ## Architecture
 
 ```
-src/
+
 ├── index.ts        # Entry — hooks before_agent_start, orchestrates routing
 ├── classifier.ts   # LLM classifier — calls a model via pi's registry to determine tier
 ├── cache.ts        # In-memory classification cache with TTL and LRU eviction

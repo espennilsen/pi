@@ -18,7 +18,7 @@ npm test
 ## Directory Layout
 
 ```
-src/
+
 ├── index.ts         # Extension entry point
 ├── types.ts         # TypeScript types — all entities, FinanceStore interface
 ├── db.ts            # SQLite backend: connection, migrations (v1–v5), seed data

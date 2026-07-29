@@ -11,15 +11,15 @@ Single-responsibility extension that wires the Brave Search API into pi. The LLM
 
 ## Architecture
 
-Flat `src/` layout with one file per concern. Settings are loaded fresh on each `session_start` from the global/project settings.json hierarchy.
+Flat extension layout with one file per concern. Settings are loaded fresh on each `session_start` from the global/project settings.json hierarchy.
 
 ## Key Files
 
-- `src/index.ts` — Extension entry point. Wires settings, registers the tool and `/search` command.
-- `src/settings.ts` — Reads `"pi-brave-search"` block from settings.json (global + project merge).
-- `src/tool.ts` — Registers the `search` LLM tool with TypeBox schema; formats results as markdown.
-- `src/search.ts` — Brave Web Search API client (`fetch`-based, no SDK). Handles params, error parsing, and result mapping.
-- `src/logger.ts` — Extension logger (delegates to pi-logger via event bus).
+- `index.ts` — Extension entry point. Wires settings, registers the tool and `/search` command.
+- `settings.ts` — Reads `"pi-brave-search"` block from settings.json (global + project merge).
+- `tool.ts` — Registers the `search` LLM tool with TypeBox schema; formats results as markdown.
+- `search.ts` — Brave Web Search API client (`fetch`-based, no SDK). Handles params, error parsing, and result mapping.
+- `logger.ts` — Extension logger (delegates to pi-logger via event bus).
 
 ## Tools
 

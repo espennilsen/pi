@@ -39,7 +39,7 @@ async function main() {
   const sessionId = "00000000-0000-0000-0000-000000000042";
 
   // Import the transit module from the extension
-  const { encodeUpdateFile, buildTransitShape } = await import("./src/transit.ts");
+  const { encodeUpdateFile, buildTransitShape } = await import("./transit.ts");
 
   // ── Test 1: Create a rect with border radius via add-obj ──
   console.log("\n1. Create rect with r1-r4...");

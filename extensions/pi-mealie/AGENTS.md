@@ -29,13 +29,13 @@ Both `baseUrl` and `apiToken` are required. Get an API token from Mealie → Set
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point; initializes client on session_start
-- `src/settings.ts` — Reads baseUrl/apiToken from global/project settings
-- `src/client.ts` — HTTP client wrapper; handles auth, pagination, error reporting
-- `src/tools/recipes.ts` — Recipe CRUD + URL scraping. Supports ingredients, instructions, notes, tags, categories, servings (`recipeServings`). Auto-creates missing foods/units.
-- `src/tools/mealplans.ts` — Meal plan viewing and management
-- `src/tools/shopping.ts` — Shopping list management
-- `src/tools/organizer.ts` — Full CRUD for tags, categories, tools, foods, units + search
+- `index.ts` — Extension entry point; initializes client on session_start
+- `settings.ts` — Reads baseUrl/apiToken from global/project settings
+- `client.ts` — HTTP client wrapper; handles auth, pagination, error reporting
+- `tools/recipes.ts` — Recipe CRUD + URL scraping. Supports ingredients, instructions, notes, tags, categories, servings (`recipeServings`). Auto-creates missing foods/units.
+- `tools/mealplans.ts` — Meal plan viewing and management
+- `tools/shopping.ts` — Shopping list management
+- `tools/organizer.ts` — Full CRUD for tags, categories, tools, foods, units + search
 
 ## API Conventions
 

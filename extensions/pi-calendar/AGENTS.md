@@ -11,14 +11,14 @@ Self-contained pi extension providing a calendar with recurring events and remin
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point. Registers tool, mounts web routes, starts reminders.
-- `src/types.ts` — CalendarEvent, RecurrenceRule, CreateEventInput, UpdateEventInput interfaces.
-- `src/recurrence.ts` — Recurrence expansion engine. Generates concrete occurrence dates from recurrence patterns within a time window. Used by reminders and tool.
-- `src/db.ts` — SQLite database at `~/.pi/agent/db/calendar.db`. Migration system with prepared statements.
-- `src/tool.ts` — LLM tool with actions: list, create, update, delete, today, upcoming. Expands recurring events for display.
-- `src/web.ts` — Mounts `/calendar` page and `/api/calendar` REST endpoints via pi-webserver event bus.
-- `src/reminders.ts` — 60s interval that checks for events with reminders, expands recurring occurrences, sends via pi-channels `channel:send`.
-- `src/ui/` — Split frontend: `calendar.html` (template), `calendar.css` (styles), `calendar.js` (client logic). Composed at load time.
+- `index.ts` — Extension entry point. Registers tool, mounts web routes, starts reminders.
+- `types.ts` — CalendarEvent, RecurrenceRule, CreateEventInput, UpdateEventInput interfaces.
+- `recurrence.ts` — Recurrence expansion engine. Generates concrete occurrence dates from recurrence patterns within a time window. Used by reminders and tool.
+- `db.ts` — SQLite database at `~/.pi/agent/db/calendar.db`. Migration system with prepared statements.
+- `tool.ts` — LLM tool with actions: list, create, update, delete, today, upcoming. Expands recurring events for display.
+- `web.ts` — Mounts `/calendar` page and `/api/calendar` REST endpoints via pi-webserver event bus.
+- `reminders.ts` — 60s interval that checks for events with reminders, expands recurring occurrences, sends via pi-channels `channel:send`.
+- `ui/` — Split frontend: `calendar.html` (template), `calendar.css` (styles), `calendar.js` (client logic). Composed at load time.
 
 ## Key Patterns
 

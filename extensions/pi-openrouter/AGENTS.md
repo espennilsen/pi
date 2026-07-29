@@ -10,7 +10,7 @@ Registers OpenRouter as a provider in pi with OAuth PKCE authentication (shows i
 ## Architecture
 
 ```
-src/
+
 ├── index.ts      # Entry point: provider registration, session lifecycle, /openrouter command
 ├── oauth.ts      # PKCE generation and OAuth login flow
 ├── models.ts     # Model fetching, caching, filtering, and mapping to pi format

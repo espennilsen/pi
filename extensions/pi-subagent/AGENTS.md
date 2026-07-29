@@ -11,18 +11,18 @@ Extension that delegates tasks to isolated pi subprocesses. Each subagent gets a
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers tool (sync, before session_start). Injects available agents into system prompt via `before_agent_start`. Cleans up pool on shutdown.
-- `src/tool.ts` — `subagent` LLM tool. All 5 modes, TUI `renderCall`/`renderResult`, concurrency limiter.
-- `src/runner.ts` — `runIsolatedAgent()` — spawns a `pi` subprocess and streams `Message[]` back.
-- `src/agents.ts` — Agent discovery from `~/.pi/agent/agents/*.md` (user) and `.pi/agents/*.md` (project). Parses YAML frontmatter.
-- `src/pool.ts` — `AgentPool` — manages long-lived RPC agents. Handles spawn/send/kill with tree tracking and usage aggregation.
-- `src/pool-server.ts` — Unix socket RPC server injected into orchestrator/pool subagents so they can spawn children.
-- `src/rpc-agent.ts` — `RpcAgent` — single long-lived agent subprocess connected to pool server via IPC.
-- `src/router.ts` — Routes IPC messages from subagents to pool actions.
-- `src/tracker.ts` — `oneShotTracker` — in-memory log of all one-shot runs (status, usage, timing).
-- `src/settings.ts` — Reads `pi-subagent` block; merges global + project. Default blocked extensions hardcoded.
-- `src/types.ts` — All shared types: `AgentConfig`, `SingleResult`, `SubagentDetails`, `PoolDetails`, `SubagentSettings`, etc.
-- `src/logger.ts` — Extension logger.
+- `index.ts` — Entry point. Registers tool (sync, before session_start). Injects available agents into system prompt via `before_agent_start`. Cleans up pool on shutdown.
+- `tool.ts` — `subagent` LLM tool. All 5 modes, TUI `renderCall`/`renderResult`, concurrency limiter.
+- `runner.ts` — `runIsolatedAgent()` — spawns a `pi` subprocess and streams `Message[]` back.
+- `agents.ts` — Agent discovery from `~/.pi/agent/agents/*.md` (user) and `.pi/agents/*.md` (project). Parses YAML frontmatter.
+- `pool.ts` — `AgentPool` — manages long-lived RPC agents. Handles spawn/send/kill with tree tracking and usage aggregation.
+- `pool-server.ts` — Unix socket RPC server injected into orchestrator/pool subagents so they can spawn children.
+- `rpc-agent.ts` — `RpcAgent` — single long-lived agent subprocess connected to pool server via IPC.
+- `router.ts` — Routes IPC messages from subagents to pool actions.
+- `tracker.ts` — `oneShotTracker` — in-memory log of all one-shot runs (status, usage, timing).
+- `settings.ts` — Reads `pi-subagent` block; merges global + project. Default blocked extensions hardcoded.
+- `types.ts` — All shared types: `AgentConfig`, `SingleResult`, `SubagentDetails`, `PoolDetails`, `SubagentSettings`, etc.
+- `logger.ts` — Extension logger.
 
 ## Tool: `subagent`
 

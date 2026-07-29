@@ -2,27 +2,27 @@ import { spawn } from "node:child_process";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { exchangeAuthorizationCode, exchangeJwtBearer, refreshSession as refreshStoredSession, runBrowserLogin } from "./src/auth/auth-client.ts";
-import { deriveDiscoveryUrl } from "./src/auth/auth-config.ts";
-import { startCallbackServer } from "./src/auth/callback-server.ts";
-import { fetchOidcDiscoveryMetadata, type OidcDiscoveryMetadata } from "./src/auth/discovery.ts";
-import { validateOpenAIBaseUrl } from "./src/llm/endpoint-validator.ts";
-import { runFirstRunSetup } from "./src/config/first-run.ts";
-import { createOpenAICompatibleClient } from "./src/llm/llm-client.ts";
-import { createLogger } from "./src/shared/logger.ts";
-import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./src/llm/models.ts";
-import { generateNonce, createPkcePair, generateState } from "./src/auth/pkce.ts";
-import { DEFAULT_SCOPES, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
-import { saveCurrentGlobalSettings } from "./src/config/settings-store.ts";
-import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./src/session/token-store.ts";
-import { clearModelCache, loadModelCache, saveModelCache, type ModelCacheConfig } from "./src/session/model-cache.ts";
-import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./src/shared/types.ts";
+import { exchangeAuthorizationCode, exchangeJwtBearer, refreshSession as refreshStoredSession, runBrowserLogin } from "./auth/auth-client.ts";
+import { deriveDiscoveryUrl } from "./auth/auth-config.ts";
+import { startCallbackServer } from "./auth/callback-server.ts";
+import { fetchOidcDiscoveryMetadata, type OidcDiscoveryMetadata } from "./auth/discovery.ts";
+import { validateOpenAIBaseUrl } from "./llm/endpoint-validator.ts";
+import { runFirstRunSetup } from "./config/first-run.ts";
+import { createOpenAICompatibleClient } from "./llm/llm-client.ts";
+import { createLogger } from "./shared/logger.ts";
+import { filterProviderModels, mapOpenAIModelsToProviderModels, type ProviderModelConfig } from "./llm/models.ts";
+import { generateNonce, createPkcePair, generateState } from "./auth/pkce.ts";
+import { DEFAULT_SCOPES, createEmptySettings, resolveSettings } from "./config/settings.ts";
+import { saveCurrentGlobalSettings } from "./config/settings-store.ts";
+import { clearExchangeClientId, clearStoredSession, loadExchangeClientId, loadStoredSession, saveExchangeClientId, saveStoredSession } from "./session/token-store.ts";
+import { clearModelCache, loadModelCache, saveModelCache, type ModelCacheConfig } from "./session/model-cache.ts";
+import type { AuthentikResolvedSettings, AuthentikSessionRecord, AuthentikStoredSettings } from "./shared/types.ts";
 
-export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./src/config/settings.ts";
-export { normalizeOpenAIBaseUrl, testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./src/llm/endpoint-validator.ts";
-export { createOpenAICompatibleClient } from "./src/llm/llm-client.ts";
-export { filterProviderModels, mapOpenAIModelToProviderModel, mapOpenAIModelsToProviderModels } from "./src/llm/models.ts";
-export type { AuthentikResolvedSettings, AuthentikStoredSettings } from "./src/shared/types.ts";
+export { DEFAULT_MODEL_FILTERS, DEFAULT_SCOPES, canonicalizeLlmBaseUrl, createEmptySettings, resolveSettings } from "./config/settings.ts";
+export { normalizeOpenAIBaseUrl, testModelsEndpointConnectivity, validateOpenAIBaseUrl } from "./llm/endpoint-validator.ts";
+export { createOpenAICompatibleClient } from "./llm/llm-client.ts";
+export { filterProviderModels, mapOpenAIModelToProviderModel, mapOpenAIModelsToProviderModels } from "./llm/models.ts";
+export type { AuthentikResolvedSettings, AuthentikStoredSettings } from "./shared/types.ts";
 
 const STATUS_KEY = "pi-authentik";
 const PROVIDER_NAME = "authentik";

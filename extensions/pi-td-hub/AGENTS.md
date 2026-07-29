@@ -9,7 +9,7 @@ Read-only pi extension that discovers all td databases (`.todos/issues.db`) acro
 
 ## Architecture
 
-Single-file extension (`src/index.ts`) with no persistent state. Opens each SQLite database read-only for every query — no connection pooling, no caching, no writes.
+Single-file extension (`index.ts`) with no persistent state. Opens each SQLite database read-only for every query — no connection pooling, no caching, no writes.
 
 ### Key Design Decisions
 

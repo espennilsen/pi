@@ -12,12 +12,12 @@ No database of its own — queries other extensions' tables via pi-kysely event 
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point. Registers `/prism` command, `Ctrl+Shift+P` shortcut, auto-opens on session start.
-- `src/settings.ts` — Loads `pi-prism` settings from `.pi/settings.json` (widget list, autoOpen).
-- `src/helpers.ts` — Shared utilities: DB query helper (via kysely event bus), CLI exec, format helpers (money, date, time, progress bars).
-- `src/sidebar.ts` — `WidgetSidebar` class — the main TUI overlay component. Handles rendering, scrolling, refresh, keyboard input.
-- `src/widgets/index.ts` — Widget interface, registry, and default widget list.
-- `src/widgets/*.ts` — Individual widget implementations (one file per widget).
+- `index.ts` — Extension entry point. Registers `/prism` command, `Ctrl+Shift+P` shortcut, auto-opens on session start.
+- `settings.ts` — Loads `pi-prism` settings from `.pi/settings.json` (widget list, autoOpen).
+- `helpers.ts` — Shared utilities: DB query helper (via kysely event bus), CLI exec, format helpers (money, date, time, progress bars).
+- `sidebar.ts` — `WidgetSidebar` class — the main TUI overlay component. Handles rendering, scrolling, refresh, keyboard input.
+- `widgets/index.ts` — Widget interface, registry, and default widget list.
+- `widgets/*.ts` — Individual widget implementations (one file per widget).
 
 ## Key Patterns
 

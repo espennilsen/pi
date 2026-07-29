@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ],
     "prompts": [
       "./prompts"
@@ -34,7 +34,14 @@
     "README.md",
     "package.json",
     "prompts",
-    "src"
+    "commands.ts",
+    "gh.ts",
+    "index.ts",
+    "logger.ts",
+    "pr-fix-tools.ts",
+    "pr-fix.ts",
+    "pr-merge.ts",
+    "repo-ref.ts"
   ],
   "repository": {
     "type": "git",

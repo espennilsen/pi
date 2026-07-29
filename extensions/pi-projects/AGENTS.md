@@ -11,16 +11,16 @@ Self-contained pi extension that scans a root directory (default `~/Dev`) for gi
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers tool, command, mounts web routes, handles lifecycle.
-- `src/tool.ts` — `projects` LLM tool with 5 actions: list, scan, hide, unhide, sources.
-- `src/scanner.ts` — Live git repo discovery. Shells out to `git` for branch, status, ahead/behind, remote URL.
-- `src/store.ts` — Unified async store interface; wraps SQLite or Kysely backend.
-- `src/db.ts` — SQLite backend via better-sqlite3 (sync). Tables: `project_sources`, `hidden_projects`.
-- `src/db-kysely.ts` — Kysely backend via `kysely:*` event bus (for shared DB with other extensions).
-- `src/settings.ts` — Reads `pi-projects` block from global + project settings. Expands `~/` paths.
-- `src/web.ts` — Mounts `/projects` UI and `/api/projects/*` REST endpoints via pi-webserver event bus.
-- `src/logger.ts` — Extension logger (emits to pi-logger).
-- `src/ui/` — Single-file vanilla JS dashboard (projects.html, projects.js, projects.css).
+- `index.ts` — Entry point. Registers tool, command, mounts web routes, handles lifecycle.
+- `tool.ts` — `projects` LLM tool with 5 actions: list, scan, hide, unhide, sources.
+- `scanner.ts` — Live git repo discovery. Shells out to `git` for branch, status, ahead/behind, remote URL.
+- `store.ts` — Unified async store interface; wraps SQLite or Kysely backend.
+- `db.ts` — SQLite backend via better-sqlite3 (sync). Tables: `project_sources`, `hidden_projects`.
+- `db-kysely.ts` — Kysely backend via `kysely:*` event bus (for shared DB with other extensions).
+- `settings.ts` — Reads `pi-projects` block from global + project settings. Expands `~/` paths.
+- `web.ts` — Mounts `/projects` UI and `/api/projects/*` REST endpoints via pi-webserver event bus.
+- `logger.ts` — Extension logger (emits to pi-logger).
+- `ui/` — Single-file vanilla JS dashboard (projects.html, projects.js, projects.css).
 
 ## Tool: `projects`
 

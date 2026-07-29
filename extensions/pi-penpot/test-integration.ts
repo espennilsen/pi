@@ -5,11 +5,11 @@
  * Usage: npx tsx test-integration.ts
  */
 
-import { initClient, apiPost, apiPostTransit } from "./src/client.ts";
-import { encodeUpdateFile } from "./src/transit.ts";
+import { initClient, apiPost, apiPostTransit } from "./client.ts";
+import { encodeUpdateFile } from "./transit.ts";
 import { randomUUID } from "node:crypto";
-import { apiDownload } from "./src/client.ts";
-import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapshot } from "./src/types.ts";
+import { apiDownload } from "./client.ts";
+import type { File, PageData, CommentThread, Comment, Webhook, ShareLink, Snapshot } from "./types.ts";
 
 const TOKEN = process.env.PENPOT_TOKEN;
 if (!TOKEN) throw new Error("PENPOT_TOKEN env var required — set it before running integration tests");

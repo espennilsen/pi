@@ -20,7 +20,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -39,6 +39,9 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "index.ts",
+    "models.ts",
+    "oauth.ts",
+    "settings.ts"
   ]
 }

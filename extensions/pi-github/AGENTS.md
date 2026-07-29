@@ -18,7 +18,7 @@ thread resolution) · `@sinclair/typebox` (tool parameter schemas)
 ## Architecture
 
 ```
-src/
+
 ├── index.ts          # Entry — registers commands + tools, handles lifecycle
 ├── commands.ts       # Standard /gh-* commands (prs, issues, status, notifications, pr-create, pr-review, actions)
 ├── pr-fix.ts         # /gh-pr-fix — fetches unresolved threads, sends prompt to agent
@@ -32,12 +32,12 @@ prompts/
 
 ## Key Files
 
-- `src/index.ts` — Calls `registerCommands`, `registerPrFixCommand`, `registerPrMergeCommand`, `registerPrFixTools`; tracks `cwd` across `session_start`, `session_switch`, `session_fork`.
-- `src/commands.ts` — `registerDualCommand` helper; registers: `gh-prs`, `gh-issues`, `gh-status`, `gh-notifications`, `gh-pr-create`, `gh-pr-review`, `gh-actions`.
-- `src/pr-fix.ts` — GraphQL query for unresolved review threads; presents threads to agent; agent reads, fixes, commits, pushes, resolves.
-- `src/pr-fix-tools.ts` — **New** — Registers three LLM tools for reliable thread resolution: `github_review_thread_reply` (addPullRequestReviewThreadReply GraphQL), `github_resolve_review_thread` (resolveReviewThread GraphQL, idempotent), `github_post_pr_comment` (gh pr comment wrapper).
-- `src/pr-merge.ts` — Fetches PR metadata, squash-merges (configurable), posts summary comment, deletes remote + local branch, pulls base.
-- `src/gh.ts` — All `gh`/`git` subprocess calls. 30s timeout, 5 MB buffer.
+- `index.ts` — Calls `registerCommands`, `registerPrFixCommand`, `registerPrMergeCommand`, `registerPrFixTools`; tracks `cwd` across `session_start`, `session_switch`, `session_fork`.
+- `commands.ts` — `registerDualCommand` helper; registers: `gh-prs`, `gh-issues`, `gh-status`, `gh-notifications`, `gh-pr-create`, `gh-pr-review`, `gh-actions`.
+- `pr-fix.ts` — GraphQL query for unresolved review threads; presents threads to agent; agent reads, fixes, commits, pushes, resolves.
+- `pr-fix-tools.ts` — **New** — Registers three LLM tools for reliable thread resolution: `github_review_thread_reply` (addPullRequestReviewThreadReply GraphQL), `github_resolve_review_thread` (resolveReviewThread GraphQL, idempotent), `github_post_pr_comment` (gh pr comment wrapper).
+- `pr-merge.ts` — Fetches PR metadata, squash-merges (configurable), posts summary comment, deletes remote + local branch, pulls base.
+- `gh.ts` — All `gh`/`git` subprocess calls. 30s timeout, 5 MB buffer.
 - `prompts/gh-pr-fix.md` — Registered as a prompt template; injected into the PR-fix agentic flow with thread context.
 
 ## Tools

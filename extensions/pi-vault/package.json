@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "repository": {
@@ -34,6 +34,12 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "api-client.ts",
+    "health.ts",
+    "index.ts",
+    "logger.ts",
+    "tool.ts",
+    "vault.html",
+    "web.ts"
   ]
 }

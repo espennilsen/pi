@@ -31,7 +31,7 @@ Get your access token from Penpot: **Profile Settings → Access Tokens → Gene
 The extension auto-discovers if placed in `~/Dev/pi/extensions/pi-penpot/`. Or load explicitly:
 
 ```bash
-pi -e ~/Dev/pi/extensions/pi-penpot/src/index.ts
+pi -e ~/Dev/pi/extensions/pi-penpot/index.ts
 ```
 
 ## Tools
@@ -115,7 +115,7 @@ This extension covers the full Penpot REST API (`/api/rpc/command/*`):
 ## Architecture
 
 ```
-src/
+
 ├── index.ts              # Extension entry point
 ├── settings.ts           # SettingsManager integration
 ├── client.ts             # HTTP client (fetch with auth)

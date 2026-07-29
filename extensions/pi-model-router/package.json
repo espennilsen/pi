@@ -9,7 +9,7 @@
   "author": "Espen Nilsen <hi@e9n.dev>",
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -28,7 +28,13 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "cache.ts",
+    "classifier.ts",
+    "index.ts",
+    "match.ts",
+    "resolver.ts",
+    "rules.ts",
+    "settings.ts"
   ],
   "repository": {
     "type": "git",

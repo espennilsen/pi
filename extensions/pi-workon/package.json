@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ],
     "skills": [
       "./skills"
@@ -33,7 +33,13 @@
     "README.md",
     "package.json",
     "skills",
-    "src"
+    "detector.ts",
+    "index.ts",
+    "logger.ts",
+    "resolver.ts",
+    "scaffold.ts",
+    "settings.ts",
+    "tool.ts"
   ],
   "repository": {
     "type": "git",

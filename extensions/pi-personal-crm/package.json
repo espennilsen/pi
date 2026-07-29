@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -35,7 +35,17 @@
     "README.md",
     "crm.html",
     "package.json",
-    "src"
+    "db-kysely.ts",
+    "db.ts",
+    "host.ts",
+    "index.ts",
+    "logger.ts",
+    "registry.ts",
+    "store.ts",
+    "tool.ts",
+    "types.ts",
+    "web.ts",
+    "pages"
   ],
   "repository": {
     "type": "git",

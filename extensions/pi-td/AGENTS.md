@@ -11,14 +11,14 @@ Extension that wraps the `td` CLI as a structured LLM tool, enforces mandatory t
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers tool, mounts web UI, handles session_start/switch/fork/shutdown.
-- `src/tool.ts` — `td` LLM tool (20 actions). Injects mandatory workflow into system prompt via `before_agent_start`. All td operations delegate to `pi.exec("td", args, { cwd })`.
-- `src/td-settings.ts` — Reads `pi-td` (or legacy `tdWebui`) from global + project settings. Provides `getCrossProjectConfig()` for multi-project root.
-- `src/cross-project.ts` — Scans subdirectories under `crossProjectRoot` for `.todos` folders, aggregates issues, builds project tree.
-- `src/http-helpers.ts` — Minimal HTTP helpers: `json()`, `html()`, `badRequest()`, `notFound()`, `serverError()`, `readBody()`.
-- `src/index.ts` (route handlers) — Implements REST API: list, detail, create, update, handoff, review, approve, reject, log, delete, and all `/global/*` cross-project variants.
-- `src/tasks.html` — Single-file web dashboard (embedded as static string at startup via `fs.readFileSync`).
-- `src/td-dashboard.css/js` — Dashboard assets referenced by tasks.html.
+- `index.ts` — Entry point. Registers tool, mounts web UI, handles session_start/switch/fork/shutdown.
+- `tool.ts` — `td` LLM tool (20 actions). Injects mandatory workflow into system prompt via `before_agent_start`. All td operations delegate to `pi.exec("td", args, { cwd })`.
+- `td-settings.ts` — Reads `pi-td` (or legacy `tdWebui`) from global + project settings. Provides `getCrossProjectConfig()` for multi-project root.
+- `cross-project.ts` — Scans subdirectories under `crossProjectRoot` for `.todos` folders, aggregates issues, builds project tree.
+- `http-helpers.ts` — Minimal HTTP helpers: `json()`, `html()`, `badRequest()`, `notFound()`, `serverError()`, `readBody()`.
+- `index.ts` (route handlers) — Implements REST API: list, detail, create, update, handoff, review, approve, reject, log, delete, and all `/global/*` cross-project variants.
+- `tasks.html` — Single-file web dashboard (embedded as static string at startup via `fs.readFileSync`).
+- `td-dashboard.css/js` — Dashboard assets referenced by tasks.html.
 
 ## Tool: `td`
 

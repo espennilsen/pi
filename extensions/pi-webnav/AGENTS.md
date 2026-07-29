@@ -11,8 +11,8 @@ Navigation shell extension. Mounts at the root path (`/`) of pi-webserver and se
 
 ## Architecture
 
-- `src/index.ts` — Full extension logic (small). Reads `nav.html` at module load via `fs.readFileSync`. Registers `mountNav()` on both `web:ready` and `session_start`. Emits `web:unmount` on `session_shutdown`.
-- `src/logger.ts` — Thin log helper emitting to `log` event with channel `"webnav"`.
+- `index.ts` — Full extension logic (small). Reads `nav.html` at module load via `fs.readFileSync`. Registers `mountNav()` on both `web:ready` and `session_start`. Emits `web:unmount` on `session_shutdown`.
+- `logger.ts` — Thin log helper emitting to `log` event with channel `"webnav"`.
 - `nav.html` — Self-contained navigation shell (vanilla JS + inline CSS). Fetches mount list from `/_api/mounts/dashboard`, renders nav buttons, routes to iframes. No build step — edit the file directly.
 
 ## Mount Config

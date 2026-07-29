@@ -11,7 +11,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "author": "Espen Nilsen <hi@e9n.dev>",
@@ -26,7 +26,10 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "config.ts",
+    "index.ts",
+    "types.ts",
+    "writer.ts"
   ],
   "repository": {
     "type": "git",

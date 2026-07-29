@@ -85,7 +85,7 @@ http://your-machine.tail12345.ts.net:<port>/mobile
 
 ```
 pi-mobile/
-├── src/
+├──
 │   └── index.ts          # Extension + API endpoints + SSE broadcasting
 ├── public/
 │   ├── app.html          # SPA — 11 Preact screens, dark theme (no build step)

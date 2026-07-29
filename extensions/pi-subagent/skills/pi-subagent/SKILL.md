@@ -18,7 +18,7 @@ Use the `subagent` tool to delegate tasks to isolated pi subprocesses. Each suba
 
 ### Single — one agent, one task
 ```json
-{ "agent": "scout", "task": "Find all REST endpoints in src/" }
+{ "agent": "scout", "task": "Find all REST endpoints in " }
 ```
 
 ### Parallel — multiple agents concurrently (streams progress as each completes)

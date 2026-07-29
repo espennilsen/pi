@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -30,7 +30,25 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "agent-card.ts",
+    "agent-executor.ts",
+    "client.ts",
+    "config.ts",
+    "cost.test.ts",
+    "hub.test.ts",
+    "hub.ts",
+    "index.ts",
+    "logger.ts",
+    "long-running-task-store.ts",
+    "port-finder.ts",
+    "server.ts",
+    "static-agents.ts",
+    "supervisor.test.ts",
+    "supervisor.ts",
+    "task-store.ts",
+    "tool-telemetry.test.ts",
+    "tool-telemetry.ts",
+    "types.ts"
   ],
   "repository": {
     "type": "git",

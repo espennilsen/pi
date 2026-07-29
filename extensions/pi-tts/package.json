@@ -24,7 +24,12 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "index.ts",
+    "logger.ts",
+    "settings.ts",
+    "tool.ts",
+    "tts-client.ts",
+    "voices.ts"
   ],
   "repository": {
     "type": "git",
@@ -33,7 +38,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   }
 }

@@ -11,14 +11,14 @@ Self-contained pi extension providing read-only access to a Supabase project. Us
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers tool (immediate), initializes client and store on `session_start`, starts realtime subscriptions.
-- `src/tool.ts` — `supabase` LLM tool with 6 actions: query, describe, tables, count, rpc, status.
-- `src/client.ts` — Thin wrapper around `createClient()`. Holds singleton `SupabaseClient`. `initClient()`, `resetClient()`, `getClient()`, `isClientReady()`.
-- `src/realtime.ts` — Subscribes to `postgres_changes` events for configured tables and emits `channel:send` to pi-channels.
-- `src/store.ts` — Optional query logging store (memory or Kysely). Logs table, action, filter summary, row count, duration.
-- `src/db-kysely.ts` — Kysely backend for query log persistence via pi-kysely event bus.
-- `src/settings.ts` — Reads `pi-supabase` from global + project settings. Handles url, keys, notifications, rpc allow-list.
-- `src/logger.ts` — Extension logger.
+- `index.ts` — Entry point. Registers tool (immediate), initializes client and store on `session_start`, starts realtime subscriptions.
+- `tool.ts` — `supabase` LLM tool with 6 actions: query, describe, tables, count, rpc, status.
+- `client.ts` — Thin wrapper around `createClient()`. Holds singleton `SupabaseClient`. `initClient()`, `resetClient()`, `getClient()`, `isClientReady()`.
+- `realtime.ts` — Subscribes to `postgres_changes` events for configured tables and emits `channel:send` to pi-channels.
+- `store.ts` — Optional query logging store (memory or Kysely). Logs table, action, filter summary, row count, duration.
+- `db-kysely.ts` — Kysely backend for query log persistence via pi-kysely event bus.
+- `settings.ts` — Reads `pi-supabase` from global + project settings. Handles url, keys, notifications, rpc allow-list.
+- `logger.ts` — Extension logger.
 
 ## Tool: `supabase`
 

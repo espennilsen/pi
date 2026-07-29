@@ -11,10 +11,10 @@ Passive event-recording extension. Listens to pi lifecycle events and appends on
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point. Subscribes to all lifecycle events, hashes PII, emits via `writeTelemetryEvent`. Registers `/telemetry` command.
-- `src/types.ts` — Union type `TelemetryEvent` with five variants: `session_start`, `session_end`, `model_call`, `tool_call`, `config_change`.
-- `src/config.ts` — `TelemetryConfig` (mode/level), `defaultTelemetryConfig`, `shouldLog()` (level ordering gate).
-- `src/writer.ts` — `writeTelemetryEvent()`: resolves today's JSONL path, `mkdirSync`, `appendFileSync`. Errors silently swallowed — telemetry must never break the agent.
+- `index.ts` — Extension entry point. Subscribes to all lifecycle events, hashes PII, emits via `writeTelemetryEvent`. Registers `/telemetry` command.
+- `types.ts` — Union type `TelemetryEvent` with five variants: `session_start`, `session_end`, `model_call`, `tool_call`, `config_change`.
+- `config.ts` — `TelemetryConfig` (mode/level), `defaultTelemetryConfig`, `shouldLog()` (level ordering gate).
+- `writer.ts` — `writeTelemetryEvent()`: resolves today's JSONL path, `mkdirSync`, `appendFileSync`. Errors silently swallowed — telemetry must never break the agent.
 
 ## Event Flow
 

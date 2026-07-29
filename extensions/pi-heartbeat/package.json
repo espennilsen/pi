@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ],
     "skills": [
       "./skills"
@@ -33,7 +33,15 @@
     "README.md",
     "package.json",
     "skills",
-    "src"
+    "db-kysely.ts",
+    "heartbeat.ts",
+    "index.ts",
+    "logger.ts",
+    "prompt.ts",
+    "settings.ts",
+    "store.ts",
+    "ui",
+    "web.ts"
   ],
   "repository": {
     "type": "git",

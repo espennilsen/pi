@@ -9,7 +9,7 @@ description: Pi extension that runs file and shell tools inside a Gondolin micro
 
 ## Key Files
 
-- `src/index.ts` — Extension entry point, tool overrides, VM lifecycle, settings resolution.
+- `index.ts` — Extension entry point, tool overrides, VM lifecycle, settings resolution.
 - `README.md` — Usage and configuration.
 - `CHANGELOG.md` — Release notes.
 

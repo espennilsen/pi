@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -32,9 +32,9 @@
   },
   "files": [
     "CHANGELOG.md",
-    "README.md",
     "package.json",
-    "src"
+    "index.ts",
+    "README.md"
   ],
   "repository": {
     "type": "git",

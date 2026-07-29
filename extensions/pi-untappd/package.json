@@ -11,11 +11,11 @@
     "rss"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "repository": {
@@ -43,6 +43,12 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "db",
+    "index.ts",
+    "logger.ts",
+    "maintenance",
+    "rss",
+    "scraper",
+    "web"
   ]
 }

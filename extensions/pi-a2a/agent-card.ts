@@ -13,6 +13,8 @@
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
 import type { A2AConfig } from "./types.ts";
+import type { AuthMode } from "./auth-types.ts";
+import { getInboundSupportedModes } from "./inbound-auth.ts";
 
 /** Minimal tool info matching pi's ToolInfo type. */
 export interface ToolInfo {
@@ -64,7 +66,7 @@ const PROTOCOL_VERSION = "0.3.0";
  * The SDK has its own field names (e.g. `additionalInterfaces`, `transport`) that
  * differ from the spec — the SDK maps these internally when processing requests.
  */
-export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
+export function buildAgentCard(config: A2AConfig, baseUrl: string, runtimeSupportedModes?: AuthMode[]): AgentCard {
 	const configSkills: AgentSkill[] | undefined = config.skills?.map((s) => ({
 		...s,
 		tags: s.tags ?? [],
@@ -103,15 +105,26 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string): AgentCard {
 		card.documentationUrl = config.documentationUrl;
 	}
 
-	if (config.local?.apiKey) {
-		card.securitySchemes = {
-			bearerAuth: {
-				type: "http",
-				scheme: "bearer",
-				description: "API key passed as Bearer token in the Authorization header",
-			},
-		};
-		card.security = [{ bearerAuth: [] }];
+	// Advertise only mechanisms the started server can enforce, never credential material.
+	const modes = runtimeSupportedModes ?? getInboundSupportedModes(config.local);
+	const schemes: Record<string, unknown> = {};
+	const requirements: Array<Record<string, string[]>> = [];
+	if (modes.includes("legacy-api-key")) {
+		schemes.bearerAuth = { type: "http", scheme: "bearer", description: "API key passed as Bearer token in the Authorization header" };
+		requirements.push({ bearerAuth: [] });
+	}
+	if (modes.includes("oauth2") || modes.includes("oauth2+mtls")) {
+		schemes.oauth2 = { type: "oauth2", flows: { clientCredentials: { tokenUrl: "", scopes: {} } }, description: "OAuth 2.0 bearer access token" };
+	}
+	if (modes.includes("oauth2")) requirements.push({ oauth2: [] });
+	if (modes.includes("oauth2+mtls")) {
+		schemes.mutualTLS = { type: "mutualTLS", description: "TLS client certificate bound to the OAuth access token" };
+		requirements.push({ oauth2: [], mutualTLS: [] });
+	}
+	if (requirements.length) {
+		// SDK's current AgentCard types only model a subset of OpenAPI schemes.
+		(card as any).securitySchemes = schemes;
+		(card as any).security = requirements;
 	}
 
 	return card;

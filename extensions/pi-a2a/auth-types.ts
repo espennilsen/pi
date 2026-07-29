@@ -46,6 +46,12 @@ export interface MtlsConfig {
 export interface OAuthClientCredentialsConfig {
 	clientId?: string;
 	clientSecret?: string;
+	/** Expected issuer for inbound access-token validation. */
+	issuer?: string;
+	/** Expected protected-resource audience for inbound access-token validation. */
+	audience?: string;
+	/** Required access-token scope for inbound requests, when configured. */
+	requiredScope?: string;
 }
 
 export interface LocalAuthOverride {

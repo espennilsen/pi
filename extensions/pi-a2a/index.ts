@@ -49,6 +49,7 @@ import {
 import { SQLiteTaskStore, SQLitePushNotificationStore } from "./task-store.ts";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
+import { getInboundSupportedModes } from "./inbound-auth.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
 import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
@@ -861,7 +862,10 @@ export default function (pi: ExtensionAPI) {
 		const publicUrl = serverConfig.publicUrl;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
-		const agentCard = buildAgentCard(config, publicUrl);
+		// This HTTP server has neither a TLS peer verifier nor a configured JWT verifier.
+		// Do not advertise configured modern intent until a verifier-backed HTTPS runtime exists.
+		const inboundAuthModes = getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key");
+		const agentCard = buildAgentCard(config, publicUrl, inboundAuthModes);
 
 		// Deregister previous instance from hub (before re-registering)
 		if (oldHubAgentId && config.hub?.apiKey) {
@@ -1056,7 +1060,7 @@ export default function (pi: ExtensionAPI) {
 			// Try to start server, retrying next port on EADDRINUSE
 			while (true) {
 				try {
-					await startServer({ port: agentPort, bind, apiKey: config.local?.apiKey, agentCard, rpcHandler, log });
+					await startServer({ port: agentPort, bind, apiKey: config.local?.apiKey, auth: config.local?.auth, supportedAuthModes: inboundAuthModes, agentCard, rpcHandler, log });
 					break;
 				} catch (e: unknown) {
 					const code = (e as NodeJS.ErrnoException).code;
@@ -1079,7 +1083,7 @@ export default function (pi: ExtensionAPI) {
 			const serverConfigFinal = buildServerConfig(config.local, agentPort, log);
 			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
-			updateAgentCard(buildAgentCard(config, publicUrl));
+			updateAgentCard(buildAgentCard(config, publicUrl, inboundAuthModes));
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start

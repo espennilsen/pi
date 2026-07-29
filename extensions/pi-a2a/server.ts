@@ -13,10 +13,11 @@
  */
 
 import * as http from "node:http";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { Extensions, HTTP_EXTENSION_HEADER, type AgentCard } from "@a2a-js/sdk";
 import { ServerCallContext, type JsonRpcTransportHandler, type User } from "@a2a-js/sdk/server";
 import type { LogFn } from "./logger.ts";
+import { authenticateInboundRequest, getInboundSupportedModes, type MtlsEvidence, type OAuthVerifier } from "./inbound-auth.ts";
+import type { AuthMode, LocalAuthOverride } from "./auth-types.ts";
 
 /** Authenticated user — created when API key auth succeeds. */
 class AuthenticatedUser implements User {
@@ -38,6 +39,14 @@ export interface ServerOptions {
 	bind?: string;
 	/** API key for authenticating RPC requests. */
 	apiKey?: string;
+	/** Additive inbound auth policy. Omitted preserves legacy API-key behavior. */
+	auth?: LocalAuthOverride;
+	/** Runtime-enforceable modes (mTLS is omitted for this HTTP server). */
+	supportedAuthModes?: AuthMode[];
+	/** Injected verifier; without one OAuth requests fail closed. */
+	verifyOAuth?: OAuthVerifier;
+	/** TLS peer evidence, for an HTTPS server integration. Forwarded headers are never trusted. */
+	getMtlsEvidence?: (req: http.IncomingMessage) => MtlsEvidence | undefined;
 	agentCard: AgentCard;
 	/** SDK JSON-RPC transport handler for A2A protocol dispatch. */
 	rpcHandler: JsonRpcTransportHandler;
@@ -60,7 +69,9 @@ export function startServer(opts: ServerOptions): Promise<void> {
 		const isLocalhost = !opts.bind || opts.bind === "127.0.0.1" || opts.bind === "::1";
 		// Only allow CORS on localhost; external bindings should use a reverse proxy for cross-origin access
 		const corsOrigin = isLocalhost ? "*" : "";
-		const corsHeaders = opts.apiKey ? "Content-Type, Authorization" : "Content-Type";
+		const corsHeaders = (opts.apiKey || opts.auth?.supportedAuthModes?.some((mode) => mode !== "legacy-api-key")) ? "Content-Type, Authorization" : "Content-Type";
+		const supportedAuthModes = opts.supportedAuthModes ?? getInboundSupportedModes({ apiKey: opts.apiKey, auth: opts.auth });
+		const authenticationRequired = opts.apiKey !== undefined || (opts.auth?.supportedAuthModes?.length ?? 0) > 0;
 
 		server = http.createServer(async (req, res) => {
 			const method = req.method ?? "GET";
@@ -117,18 +128,18 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
 					}
 
-					// API key auth when configured
-					let authenticatedKeyId: string | undefined;
-					if (opts.apiKey) {
-						const authHeader = req.headers.authorization ?? "";
-						const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-						if (!constantTimeEqual(token, opts.apiKey)) {
-							res.writeHead(401, { "Content-Type": "application/json" });
-							res.end(JSON.stringify({ error: "Unauthorized" }));
-							return;
-						}
-						// Generate a stable identifier from the API key for audit logging
-						authenticatedKeyId = `key-${createHmac("sha256", "a2a-key-id").update(token).digest("hex").slice(0, 12)}`;
+					// Authenticate before JSON-RPC dispatch. OAuth has no permissive fallback:
+					// missing verifier or invalid token is rejected by the pure policy.
+					const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : undefined;
+					let authentication = authenticationRequired ? await authenticateInboundRequest({
+						authorization: authHeader, local: { apiKey: opts.apiKey, auth: opts.auth },
+						supportedModes: supportedAuthModes, verifyOAuth: opts.verifyOAuth,
+						mtlsEvidence: opts.getMtlsEvidence?.(req),
+					}) : {};
+					if (authenticationRequired && !authentication.principal) {
+						res.writeHead(authentication.status ?? 401, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: authentication.status === 403 ? "Forbidden" : "Unauthorized" }));
+						return;
 					}
 
 					const body = await readBody(req);
@@ -146,6 +157,19 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						return;
 					}
 
+					// Enforce operation-level policy after extracting the JSON-RPC method, still before dispatch.
+					const operation = operationFromRpc(parsed);
+					if (authenticationRequired) authentication = await authenticateInboundRequest({
+						authorization: authHeader, local: { apiKey: opts.apiKey, auth: opts.auth },
+						supportedModes: supportedAuthModes, verifyOAuth: opts.verifyOAuth,
+						mtlsEvidence: opts.getMtlsEvidence?.(req), operation,
+					});
+					if (authenticationRequired && !authentication.principal) {
+						res.writeHead(authentication.status ?? 403, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ error: "Forbidden" }));
+						return;
+					}
+
 					// Build ServerCallContext with extensions and auth info.
 					// The SDK threads this through to RequestContext.context
 					// so the executor can inspect caller identity and extensions.
@@ -156,7 +180,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					} catch (err) {
 						opts.log("extensions_parse_error", { header: extensionsHeader, error: err instanceof Error ? err.message : String(err) }, "WARN");
 					}
-					const user: User | undefined = authenticatedKeyId ? new AuthenticatedUser(authenticatedKeyId) : undefined;
+					const user: User | undefined = authentication.principal ? new AuthenticatedUser(authentication.principal.identity) : undefined;
 					const callContext = new ServerCallContext(
 						requestedExtensions.length > 0 ? requestedExtensions : undefined,
 						user,
@@ -266,20 +290,21 @@ export function getAgentCard(): AgentCard | null {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-/** Constant-time string comparison using HMAC to avoid leaking input length. */
-function constantTimeEqual(a: string, b: string): boolean {
-	const key = "pi-a2a-auth"; // fixed key — only used to normalize comparison
-	const ha = createHmac("sha256", key).update(a).digest();
-	const hb = createHmac("sha256", key).update(b).digest();
-	// HMAC outputs are always 32 bytes — no length leak
-	return timingSafeEqual(ha, hb);
-}
 
 class PayloadTooLargeError extends Error {
 	constructor() {
 		super("Payload too large");
 		this.name = "PayloadTooLargeError";
 	}
+}
+
+/** Prefer an explicit A2A skill identifier when supplied; otherwise policy applies to the RPC method. */
+function operationFromRpc(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const rpc = value as { method?: unknown; params?: { skillId?: unknown; skill?: unknown } };
+	if (typeof rpc.params?.skillId === "string") return rpc.params.skillId;
+	if (typeof rpc.params?.skill === "string") return rpc.params.skill;
+	return typeof rpc.method === "string" ? rpc.method : undefined;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {

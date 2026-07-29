@@ -11,15 +11,15 @@ Single-responsibility extension that wires a local TTS server into pi. The LLM g
 
 ## Architecture
 
-Flat `src/` layout with one file per concern. Voice IDs are mapped to file paths in `voices.ts`. The TTS client handles HTTP communication, timeouts, and file saving.
+Flat extension layout with one file per concern. Voice IDs are mapped to file paths in `voices.ts`. The TTS client handles HTTP communication, timeouts, and file saving.
 
 ## Key Files
 
-- `src/index.ts` — Extension entry point. Registers the tool and `/tts` command. Loads settings on session_start, cleans up temp files on session_shutdown.
-- `src/tool.ts` — Registers the `generate_tts` LLM tool with TypeBox schema; formats results. Receives config via getter functions so settings changes are picked up dynamically.
-- `src/tts-client.ts` — TTS server API client (`fetch`-based). Handles request building, abort signal propagation (timeout + framework cancellation), error parsing, and WAV file saving to /tmp.
-- `src/voices.ts` — Voice ID to file path mapping. Add new voices here.
-- `src/settings.ts` — Loads `baseUrl` and `timeoutMs` from pi settings.json (global + project), falling back to defaults.
+- `index.ts` — Extension entry point. Registers the tool and `/tts` command. Loads settings on session_start, cleans up temp files on session_shutdown.
+- `tool.ts` — Registers the `generate_tts` LLM tool with TypeBox schema; formats results. Receives config via getter functions so settings changes are picked up dynamically.
+- `tts-client.ts` — TTS server API client (`fetch`-based). Handles request building, abort signal propagation (timeout + framework cancellation), error parsing, and WAV file saving to /tmp.
+- `voices.ts` — Voice ID to file path mapping. Add new voices here.
+- `settings.ts` — Loads `baseUrl` and `timeoutMs` from pi settings.json (global + project), falling back to defaults.
 
 ## Tools
 
@@ -35,7 +35,7 @@ Flat `src/` layout with one file per concern. Voice IDs are mapped to file paths
 |-----------|--------------------------------|
 | `espen`   | `/opt/tts/voices/espen.wav`     |
 
-To add a new voice, edit `src/voices.ts` and add an entry to `VOICE_MAP`.
+To add a new voice, edit `voices.ts` and add an entry to `VOICE_MAP`.
 
 ## Events
 

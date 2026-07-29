@@ -12,7 +12,7 @@ File-based cron scheduler for pi. Jobs are defined in `~/.pi/agent/pi-cron.tab` 
 ## Architecture
 
 ```
-src/
+
 ├── index.ts      # Entry — flags, lifecycle, /cron command, cron tool
 ├── scheduler.ts  # CronScheduler class — tick loop, cron expression parser, subprocess runner
 ├── crontab.ts    # File-based tab parser/serializer + CRUD helpers
@@ -26,12 +26,12 @@ src/
 
 ## Key Files
 
-- `src/index.ts` — Registers `--cron` flag, lifecycle hooks, `/cron` command, and `cron` tool.
-- `src/scheduler.ts` — Cron expression parser (5-field, no lib), `CronScheduler` class with `fs.watch` reload and `spawn`-based subprocess execution.
-- `src/crontab.ts` — Parses/serializes `pi-cron.tab` format; CRUD helpers (`addJob`, `removeJob`, `updateJob`, `getJob`).
-- `src/api.ts` — Registers `cron:list`, `cron:get`, `cron:status`, `cron:add`, `cron:update`, `cron:remove`, `cron:enable`, `cron:disable`, `cron:run` event handlers.
-- `src/lock.ts` — PID-based lock file; stale locks (dead PIDs) are auto-cleaned.
-- `src/web.ts` — Mounts `/cron` dashboard and `/api/cron` REST endpoints via `web:mount` / `web:mount-api`.
+- `index.ts` — Registers `--cron` flag, lifecycle hooks, `/cron` command, and `cron` tool.
+- `scheduler.ts` — Cron expression parser (5-field, no lib), `CronScheduler` class with `fs.watch` reload and `spawn`-based subprocess execution.
+- `crontab.ts` — Parses/serializes `pi-cron.tab` format; CRUD helpers (`addJob`, `removeJob`, `updateJob`, `getJob`).
+- `api.ts` — Registers `cron:list`, `cron:get`, `cron:status`, `cron:add`, `cron:update`, `cron:remove`, `cron:enable`, `cron:disable`, `cron:run` event handlers.
+- `lock.ts` — PID-based lock file; stale locks (dead PIDs) are auto-cleaned.
+- `web.ts` — Mounts `/cron` dashboard and `/api/cron` REST endpoints via `web:mount` / `web:mount-api`.
 
 ## Tools
 

@@ -11,13 +11,13 @@ Provides two LLM tools for project management: `workon` (switch context, show st
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Registers both tools on `session_start` after resolving settings.
-- `src/tool.ts` — `registerWorkonTool` and `registerProjectInitTool`. Holds module-level `activeProject` state. Contains git helpers (`getGitStatus`, `getGitLog`, `getGitStash`), td helper (`getTdIssues`), and `buildProjectContext()` (assembles markdown context for LLM).
-- `src/detector.ts` — `detectStack(path)` → `ProjectProfile`. Scans filesystem for language, package manager, frameworks, test framework, linting, workspaces, Docker, CI, git branch.
-- `src/resolver.ts` — `resolveProject(input, devDir)` → `ResolveResult`. Tries: absolute path → exact dir match → alias lookup → case-insensitive → fuzzy contains. `listProjectDirs()` scans devDir, excludes `.`, `!`, `Archive`.
-- `src/scaffold.ts` — `generateAgentsMd(profile)` → string, `generatePiSettings(profile)` → object, `initProject(path, profile, options)` → `InitResult`. Creates AGENTS.md, `.pi/settings.json`, runs `td init`.
-- `src/settings.ts` — `resolveSettings(cwd)` merges global (`~/.pi/agent/settings.json`) and project (`.pi/settings.json`) under key `"pi-workon"`. Expands `~` paths.
-- `src/logger.ts` — Log helper emitting to `log` event with channel `"workon"`.
+- `index.ts` — Entry point. Registers both tools on `session_start` after resolving settings.
+- `tool.ts` — `registerWorkonTool` and `registerProjectInitTool`. Holds module-level `activeProject` state. Contains git helpers (`getGitStatus`, `getGitLog`, `getGitStash`), td helper (`getTdIssues`), and `buildProjectContext()` (assembles markdown context for LLM).
+- `detector.ts` — `detectStack(path)` → `ProjectProfile`. Scans filesystem for language, package manager, frameworks, test framework, linting, workspaces, Docker, CI, git branch.
+- `resolver.ts` — `resolveProject(input, devDir)` → `ResolveResult`. Tries: absolute path → exact dir match → alias lookup → case-insensitive → fuzzy contains. `listProjectDirs()` scans devDir, excludes `.`, `!`, `Archive`.
+- `scaffold.ts` — `generateAgentsMd(profile)` → string, `generatePiSettings(profile)` → object, `initProject(path, profile, options)` → `InitResult`. Creates AGENTS.md, `.pi/settings.json`, runs `td init`.
+- `settings.ts` — `resolveSettings(cwd)` merges global (`~/.pi/agent/settings.json`) and project (`.pi/settings.json`) under key `"pi-workon"`. Expands `~` paths.
+- `logger.ts` — Log helper emitting to `log` event with channel `"workon"`.
 
 ## Tools
 
@@ -54,7 +54,7 @@ Options: `force` (overwrite AGENTS.md), `skip_td`, `skip_agents_md`, `skip_pi_di
 4. Case-insensitive match
 5. Fuzzy substring match (errors if ambiguous)
 
-To add a new alias, edit the `PROJECT_ALIASES` map in `src/resolver.ts`.
+To add a new alias, edit the `PROJECT_ALIASES` map in `resolver.ts`.
 
 ## Settings
 

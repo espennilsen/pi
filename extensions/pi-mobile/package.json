@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -28,6 +28,6 @@
     "README.md",
     "package.json",
     "public",
-    "src"
+    "index.ts"
   ]
 }

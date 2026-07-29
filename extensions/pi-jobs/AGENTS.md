@@ -11,15 +11,15 @@ Self-contained pi extension that auto-tracks all agent runs via lifecycle hooks.
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Initializes the store backend, calls `registerTracker()` and `registerJobsTool()`, mounts web routes, registers `/jobs` command.
-- `src/tracker.ts` — Lifecycle hooks: `model_select`, `turn_start`, `turn_end`, `tool_call`, `tool_result`. Also listens for `subagent:complete`, `heartbeat:result`, `cron:job_complete` to record external runs.
-- `src/tool.ts` — `jobs` LLM tool. Actions: `stats`, `recent`, `cost_report`, `models`, `tools`. Period parameter maps to days (today=1, week=7, month=30, all=3650).
-- `src/store.ts` — Store abstraction. Exports `getJobsStore()`, `setJobsStore()`, `isStoreReady()`. Two factory functions: `createSqliteStore(dbPath)` and `createKyselyStore(eventBus)`.
-- `src/db.ts` — SQLite backend via better-sqlite3. WAL mode. Tables: `jobs`, `job_tool_calls`. Migrations tracked in `jobs_migrations`.
-- `src/db-kysely.ts` — Kysely backend: same schema via pi-kysely event bus.
-- `src/settings.ts` — Loads `"pi-jobs"` from global + project `settings.json`.
-- `src/web.ts` — Mounts `/jobs` dashboard and `/api/jobs` API routes via pi-webserver event bus.
-- `src/logger.ts` — Extension logger (emits to pi-logger).
+- `index.ts` — Entry point. Initializes the store backend, calls `registerTracker()` and `registerJobsTool()`, mounts web routes, registers `/jobs` command.
+- `tracker.ts` — Lifecycle hooks: `model_select`, `turn_start`, `turn_end`, `tool_call`, `tool_result`. Also listens for `subagent:complete`, `heartbeat:result`, `cron:job_complete` to record external runs.
+- `tool.ts` — `jobs` LLM tool. Actions: `stats`, `recent`, `cost_report`, `models`, `tools`. Period parameter maps to days (today=1, week=7, month=30, all=3650).
+- `store.ts` — Store abstraction. Exports `getJobsStore()`, `setJobsStore()`, `isStoreReady()`. Two factory functions: `createSqliteStore(dbPath)` and `createKyselyStore(eventBus)`.
+- `db.ts` — SQLite backend via better-sqlite3. WAL mode. Tables: `jobs`, `job_tool_calls`. Migrations tracked in `jobs_migrations`.
+- `db-kysely.ts` — Kysely backend: same schema via pi-kysely event bus.
+- `settings.ts` — Loads `"pi-jobs"` from global + project `settings.json`.
+- `web.ts` — Mounts `/jobs` dashboard and `/api/jobs` API routes via pi-webserver event bus.
+- `logger.ts` — Extension logger (emits to pi-logger).
 
 ## Database Schema
 

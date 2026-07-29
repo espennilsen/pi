@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ],
     "skills": [
       "./skills"
@@ -35,7 +35,18 @@
     "README.md",
     "package.json",
     "skills",
-    "src"
+    "agents.ts",
+    "index.ts",
+    "logger.ts",
+    "pool-server.ts",
+    "pool.ts",
+    "router.ts",
+    "rpc-agent.ts",
+    "runner.ts",
+    "settings.ts",
+    "tool.ts",
+    "tracker.ts",
+    "types.ts"
   ],
   "repository": {
     "type": "git",

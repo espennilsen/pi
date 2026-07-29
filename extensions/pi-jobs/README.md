@@ -42,7 +42,7 @@ Query agent run telemetry.
 | `models` | `period?` | Token and cost breakdown by provider/model |
 | `tools` | `period?` | Tool call frequency, error count, and avg duration |
 
-**`period`**: `today` · `week` · `month` (default) · `all`  
+**`period`**: `today` · `week` · `month` (default) · `all`
 **`channel`**: `tui` · `cron` · `heartbeat` · `subagent`
 
 ## Commands

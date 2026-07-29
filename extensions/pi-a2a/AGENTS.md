@@ -10,7 +10,7 @@ pi-a2a makes Pi a fully compliant A2A (Agent-to-Agent) protocol v0.3.0 server. I
 ## Architecture
 
 ```
-src/
+
 ├── index.ts          # Extension entry point — lifecycle, commands, SDK wiring
 ├── types.ts          # Extension config types (A2A protocol types from SDK)
 ├── config.ts         # Settings.json loader via SettingsManager

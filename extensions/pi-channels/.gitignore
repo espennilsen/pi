@@ -3,4 +3,4 @@ node_modules/
 .todo/
 .todos/
 .todos/
-src/adapters/transcribe-apple-v2
+adapters/transcribe-apple-v2

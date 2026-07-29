@@ -48,7 +48,7 @@ Project settings override global settings.
 ## Architecture
 
 ```
-src/
+
 ├── index.ts        — Extension entry point
 ├── api-client.ts   — Shared Obsidian REST API client + settings.json config loader
 ├── tool.ts         — The `obsidian` tool (16 actions, API + filesystem fallback)

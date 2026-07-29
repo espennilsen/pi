@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -28,7 +28,9 @@
     "README.md",
     "dashboard.html",
     "package.json",
-    "src"
+    "index.ts",
+    "logger.ts",
+    "web.ts"
   ],
   "repository": {
     "type": "git",

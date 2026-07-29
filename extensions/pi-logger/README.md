@@ -76,7 +76,7 @@ Each line is a JSON object:
 {"ts":"2026-02-12T11:24:17.123+01:00","level":"INFO","channel":"heartbeat","event":"result","data":{"ok":true,"durationMs":3200}}
 ```
 
-The bus event name is split on the first `:` into `channel` and `event`:  
+The bus event name is split on the first `:` into `channel` and `event`:
 `heartbeat:result` → `channel: "heartbeat"`, `event: "result"`
 
 ### Known bus events captured

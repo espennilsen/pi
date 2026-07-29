@@ -8,15 +8,15 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/test-db.ts"
+    "test": "tsx test-db.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
@@ -39,7 +39,24 @@
     "README.md",
     "finance.html",
     "package.json",
-    "src"
+    "db-kysely.ts",
+    "db.ts",
+    "import-amex.ts",
+    "import-bank.ts",
+    "import-dnb.ts",
+    "import-sas.ts",
+    "import-types.ts",
+    "index.ts",
+    "insights.ts",
+    "logger.ts",
+    "store.ts",
+    "test-db.ts",
+    "test-import.ts",
+    "test-insights.ts",
+    "test-web.ts",
+    "tool.ts",
+    "types.ts",
+    "web.ts"
   ],
   "repository": {
     "type": "git",

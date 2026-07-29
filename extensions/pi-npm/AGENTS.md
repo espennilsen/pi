@@ -11,8 +11,8 @@ Minimal pi extension exposing a single `npm` LLM tool that runs npm commands via
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point and complete implementation. Registers the `npm` tool, tracks `cwd` via `session_start`, runs commands via `runNpm()`.
-- `src/logger.ts` — Extension logger (emits to pi-logger via `log` event).
+- `index.ts` — Extension entry point and complete implementation. Registers the `npm` tool, tracks `cwd` via `session_start`, runs commands via `runNpm()`.
+- `logger.ts` — Extension logger (emits to pi-logger via `log` event).
 
 ## Tool: `npm`
 

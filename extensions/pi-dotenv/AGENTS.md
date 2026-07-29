@@ -9,7 +9,7 @@ description: DEPRECATED no-op extension — safe to remove
 
 ## Key Files
 
-- `src/index.ts` — Exports a no-op default function. Zero logic.
+- `index.ts` — Exports a no-op default function. Zero logic.
 
 ## Conventions
 

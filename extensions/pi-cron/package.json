@@ -9,7 +9,7 @@
   "author": "Espen Nilsen <hi@e9n.dev>",
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -29,7 +29,16 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "api.ts",
+    "crontab.test.ts",
+    "crontab.ts",
+    "index.ts",
+    "lock.ts",
+    "logger.ts",
+    "scheduler.ts",
+    "settings.ts",
+    "ui",
+    "web.ts"
   ],
   "repository": {
     "type": "git",

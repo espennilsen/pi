@@ -2,7 +2,7 @@
 
 ## Status: Core Complete ✅
 
-Created: 2026-03-06  
+Created: 2026-03-06
 Location: `/Users/espen/Dev/pi/extensions/pi-untappd`
 
 ## What Was Built
@@ -16,12 +16,12 @@ Location: `/Users/espen/Dev/pi/extensions/pi-untappd`
 - `AGENTS.md` — Project context for AI agents
 - `.gitignore` / `.npmignore` — Ignore rules
 
-### ✅ Core Extension (src/)
+### ✅ Core Extension (root)
 - `index.ts` — Extension entry point, registers with pi
 - `logger.ts` — Logging utility
-- `schema.ts` — Complete database schema with 9 tables and migrations
+- `db/schema.ts` — Complete database schema with 9 tables and migrations
 
-### ✅ Database Layer (src/db/)
+### ✅ Database Layer (db/)
 - `operations.ts` — Full CRUD operations for all entities:
   - Venues: create, get, list, update
   - Breweries: create, get by slug, list
@@ -32,7 +32,7 @@ Location: `/Users/espen/Dev/pi/extensions/pi-untappd`
   - Venue Menus: create, get by venue
   - Menu Items: create, get, update last seen, decay confidence
 
-### ✅ HTML Scraping (src/scraper/)
+### ✅ HTML Scraping (scraper/)
 - `index.ts` — URL parsing and scraping framework:
   - `parseVenueUrl()` — Extract venue ID/slug
   - `parseBreweryUrl()` — Extract brewery ID/slug
@@ -45,7 +45,7 @@ Location: `/Users/espen/Dev/pi/extensions/pi-untappd`
 
 **Note:** Scraping functions return minimal placeholder data. Full HTML parsing not implemented.
 
-### ✅ RSS System (src/rss/)
+### ✅ RSS System (rss/)
 - `client.ts` — RSS fetcher and parser:
   - `fetchRSS()` — Fetch and parse RSS feed
   - `parseCheckinFromRSS()` — Extract check-in data from RSS item
@@ -55,19 +55,19 @@ Location: `/Users/espen/Dev/pi/extensions/pi-untappd`
   - Normalizes beers
   - Updates menu item `last_seen_at`
 
-### ✅ Maintenance (src/maintenance/)
+### ✅ Maintenance (maintenance/)
 - `decay.ts` — Confidence decay for menu items:
   - 7+ days: -0.1 confidence
   - 14+ days: -0.2 confidence
   - 30+ days: -0.3 confidence
   - Min: 0.0
 
-### ✅ Cron Jobs (src/)
+### ✅ Cron Jobs (root)
 - `cron.ts` — Job registration:
   - `untappd:poll-rss` — Every 15 minutes
   - `untappd:decay-confidence` — Daily at 2 AM
 
-### ✅ Web Interface (src/web/)
+### ✅ Web Interface (web/)
 - `index.ts` — Route mounting/unmounting
 - `ui.ts` — HTML web UI:
   - Dashboard with stats and recent activity
@@ -102,7 +102,7 @@ All tables have proper indexes, foreign keys with cascade/set null, and timestam
 ## What's NOT Implemented (Placeholders)
 
 ### ⚠️ HTML Scraping
-The scraping functions in `src/scraper/index.ts` are **placeholders**. They:
+The scraping functions in `scraper/index.ts` are **placeholders**. They:
 - Parse URLs correctly ✅
 - Return minimal mock data ⚠️
 - Do NOT fetch or parse HTML ❌
@@ -122,7 +122,7 @@ To implement:
 All DB operations use a placeholder `getDB()` function that **throws an error**. To fix:
 
 ```typescript
-// In src/db/operations.ts and src/web/*.ts
+// In db/operations.ts and web/*.ts
 import { requireDatabase } from "@mariozechner/pi-coding-agent";
 
 export function getDb(): Kysely<UntappdDatabase> {
@@ -133,7 +133,7 @@ export function getDb(): Kysely<UntappdDatabase> {
 Or use pi-kysely's event-based registry.
 
 ### ⚠️ RSS Poller in Maintenance
-`src/rss/poller.ts` also uses placeholder `getDatabase()`. Same fix needed.
+`rss/poller.ts` also uses placeholder `getDatabase()`. Same fix needed.
 
 ## Installation & Testing
 
@@ -214,11 +214,11 @@ pi-untappd/
 ├── AGENTS.md
 ├── .gitignore
 ├── .npmignore
-└── src/
-    ├── index.ts
-    ├── logger.ts
-    ├── schema.ts
-    ├── cron.ts
+├── index.ts
+├── logger.ts
+├── db/
+│   ├── schema.ts
+├── cron.ts
     ├── db/
     │   └── operations.ts
     ├── scraper/
@@ -288,5 +288,5 @@ pi-untappd/
 
 Built for Espen Nilsen's personal Untappd monitoring needs.
 
-Extension created: 2026-03-06  
+Extension created: 2026-03-06
 Task: td-0fdd16

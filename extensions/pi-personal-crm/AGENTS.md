@@ -10,7 +10,7 @@ pi install /path/to/pi-personal-crm
 pi install npm:pi-personal-crm
 
 # Or test without installing
-pi -e /path/to/pi-personal-crm/src/index.ts
+pi -e /path/to/pi-personal-crm/index.ts
 ```
 
 The extension auto-discovers and loads via the `pi` manifest in `package.json`.
@@ -47,8 +47,8 @@ Pi will auto-install on startup.
 Other pi extensions can import from this package:
 
 ```typescript
-import { crmApi } from "pi-personal-crm/src/db.ts";
-import { crmRegistry } from "pi-personal-crm/src/registry.ts";
+import { crmApi } from "pi-personal-crm/db.ts";
+import { crmRegistry } from "pi-personal-crm/registry.ts";
 
 // Use the API
 const contacts = crmApi.getContacts();
@@ -64,7 +64,7 @@ crmRegistry.on("contact.created", async (contact) => {
 Third-party extensions can attach read-only fields to contacts (displayed in the web UI but not editable there):
 
 ```typescript
-import { crmApi } from "pi-personal-crm/src/db.ts";
+import { crmApi } from "pi-personal-crm/db.ts";
 
 // Write fields (upsert — safe to call repeatedly)
 crmApi.setExtensionField({

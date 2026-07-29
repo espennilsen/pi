@@ -11,9 +11,9 @@ Web dashboard extension that streams live agent activity to a browser UI. Mounts
 
 ## Architecture
 
-- `src/index.ts` — Extension entry point. Subscribes to pi events (`agent_start/end`, `turn_start/end`, `tool_call`, `tool_result`) and calls `broadcast()`. Mounts/unmounts on `web:ready` and `session_start`. Unmounts on `session_shutdown`.
-- `src/web.ts` — All HTTP logic: SSE client registry, rate limiter, `handlePage()`, `handleApi()`, `mountDashboard()`, `unmountDashboard()`.
-- `src/logger.ts` — Thin log helper that emits to `log` event with channel `"dashboard"`.
+- `index.ts` — Extension entry point. Subscribes to pi events (`agent_start/end`, `turn_start/end`, `tool_call`, `tool_result`) and calls `broadcast()`. Mounts/unmounts on `web:ready` and `session_start`. Unmounts on `session_shutdown`.
+- `web.ts` — All HTTP logic: SSE client registry, rate limiter, `handlePage()`, `handleApi()`, `mountDashboard()`, `unmountDashboard()`.
+- `logger.ts` — Thin log helper that emits to `log` event with channel `"dashboard"`.
 - `dashboard.html` — Self-contained UI (vanilla JS + inline CSS). Read from disk at module load with `fs.readFileSync`. No build step.
 
 ## Routes

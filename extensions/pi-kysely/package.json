@@ -9,11 +9,11 @@
     "pi-extension"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "repository": {
@@ -44,6 +44,14 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "events.ts",
+    "index.ts",
+    "logger.ts",
+    "migrations.ts",
+    "registry.ts",
+    "schema.ts",
+    "settings.ts",
+    "shims.d.ts",
+    "table-api.ts"
   ]
 }

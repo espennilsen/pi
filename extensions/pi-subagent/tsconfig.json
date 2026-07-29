@@ -12,5 +12,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "shim/**/*.ts"]
+  "include": ["**/*.ts", "shim/**/*.ts"]
 }

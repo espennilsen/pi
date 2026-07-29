@@ -8,7 +8,7 @@
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   },
   "scripts": {
@@ -33,7 +33,15 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "cross-project.ts",
+    "http-helpers.ts",
+    "index.ts",
+    "tasks.html",
+    "td-dashboard.css",
+    "td-dashboard.html",
+    "td-dashboard.js",
+    "td-settings.ts",
+    "tool.ts"
   ],
   "repository": {
     "type": "git",

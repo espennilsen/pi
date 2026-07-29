@@ -38,8 +38,8 @@ The extension auto-discovers via the `pi` manifest in `package.json`.
 ## Mounting routes from another extension
 
 ```typescript
-import { mount } from "pi-webserver/src/server.ts";
-import { json, readBody } from "pi-webserver/src/helpers.ts";
+import { mount } from "pi-webserver/server.ts";
+import { json, readBody } from "pi-webserver/helpers.ts";
 
 mount({
   name: "my-ext",
@@ -65,8 +65,8 @@ pi.events.on("web:ready", () => {
 API routes live under `/api/*` and use Bearer token auth (when `apiToken` is configured in settings).
 
 ```typescript
-import { mountApi } from "pi-webserver/src/server.ts";
-import { json, readBody } from "pi-webserver/src/helpers.ts";
+import { mountApi } from "pi-webserver/server.ts";
+import { json, readBody } from "pi-webserver/helpers.ts";
 
 // Prefix is relative to /api — this mounts at /api/my-ext
 mountApi({

@@ -17,14 +17,14 @@ Monitors Untappd venues, users, and breweries. Tracks beers on tap, polls RSS fe
 
 ## Key Modules
 
-- `src/index.ts` — Extension entry point
-- `src/schema.ts` — Kysely database schema and migrations
-- `src/scraper/` — HTML scraping (manual only)
-- `src/rss/` — RSS client and polling logic
-- `src/db/operations.ts` — Database CRUD operations
-- `src/web/` — Web UI and JSON API
-- `src/cron.ts` — Cron job registration
-- `src/maintenance/` — Confidence decay and cleanup
+- `index.ts` — Extension entry point
+- `db/schema.ts` — Kysely database schema and migrations
+- `scraper/` — HTML scraping (manual only)
+- `rss/` — RSS client and polling logic
+- `db/operations.ts` — Database CRUD operations
+- `web/` — Web UI and JSON API
+- `cron.ts` — Cron job registration
+- `maintenance/` — Confidence decay and cleanup
 
 ## Database Schema
 

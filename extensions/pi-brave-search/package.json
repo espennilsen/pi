@@ -23,7 +23,11 @@
     "CHANGELOG.md",
     "README.md",
     "package.json",
-    "src"
+    "index.ts",
+    "logger.ts",
+    "search.ts",
+    "settings.ts",
+    "tool.ts"
   ],
   "repository": {
     "type": "git",
@@ -32,7 +36,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   }
 }

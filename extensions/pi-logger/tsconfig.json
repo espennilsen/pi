@@ -9,5 +9,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["**/*.ts"]
 }

@@ -42,11 +42,11 @@ The extension auto-detects cmux via environment variables (`CMUX_WORKSPACE_ID`, 
 
 Ask the agent:
 
-> Start a dev server in a split pane, then fix the bug in src/app.ts
+> Start a dev server in a split pane, then fix the bug in app.ts
 
 The agent will:
 1. `cmux_split` down → `npm run dev`
-2. Edit `src/app.ts`
+2. Edit `app.ts`
 3. `cmux_read` the dev server pane to check for errors
 4. Iterate until clean
 

@@ -3,7 +3,7 @@
  * Run with: node --import tsx/esm test-db.ts
  */
 
-import { initDb, crmApi } from "./src/db.ts";
+import { initDb, crmApi } from "./db.ts";
 import * as fs from "node:fs";
 
 const DB_PATH = "./test-crm.db";

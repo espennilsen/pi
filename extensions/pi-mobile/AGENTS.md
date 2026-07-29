@@ -11,7 +11,7 @@ Pi extension that serves a mobile-first PWA at `/mobile`. Uses Preact + HTM from
 
 ```
 pi-mobile/
-├── src/
+├──
 │   └── index.ts          # Extension entry — web:mount + web:mount-api + SSE broadcasting
 ├── public/
 │   ├── app.html          # SPA shell — all 11 screens (Preact + HTM from esm.sh CDN)

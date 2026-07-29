@@ -11,9 +11,9 @@ Self-contained pi extension that listens to `pi.events` and writes structured JS
 
 ## Architecture
 
-- `src/index.ts` — Entry point. Calls `setup()` on `session_start`, `teardown()` on `session_shutdown`. Registers `/logger` command. All subscription management is in-module.
-- `src/settings.ts` — Loads `"pi-logger"` from global + project `settings.json`. Exports `LoggerSettings`, `LogLevel`, `LogScope`.
-- `src/writer.ts` — `writeLogEntry(busEvent, level, data, scope, cwd, timezone)`. Writes one JSON line to `YYYY-MM-DD.jsonl`. Resolves log directory from scope. Errors are silently swallowed.
+- `index.ts` — Entry point. Calls `setup()` on `session_start`, `teardown()` on `session_shutdown`. Registers `/logger` command. All subscription management is in-module.
+- `settings.ts` — Loads `"pi-logger"` from global + project `settings.json`. Exports `LoggerSettings`, `LogLevel`, `LogScope`.
+- `writer.ts` — `writeLogEntry(busEvent, level, data, scope, cwd, timezone)`. Writes one JSON line to `YYYY-MM-DD.jsonl`. Resolves log directory from scope. Errors are silently swallowed.
 
 ## Log File Layout
 

@@ -7,10 +7,10 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "declaration": true,
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["**/*.ts"]
 }

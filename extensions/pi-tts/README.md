@@ -40,7 +40,7 @@ Add to your `settings.json` to override defaults:
 
 ### Adding Voices
 
-Edit `src/voices.ts` to register new voice samples:
+Edit `voices.ts` to register new voice samples:
 
 ```typescript
 export const VOICE_MAP: Record<string, string> = {

@@ -42,6 +42,12 @@ export interface MtlsConfig {
 	caPath?: string;
 }
 
+/** OAuth client-credentials settings kept in the existing local.auth namespace. */
+export interface OAuthClientCredentialsConfig {
+	clientId?: string;
+	clientSecret?: string;
+}
+
 export interface LocalAuthOverride {
 	/** Modes this agent is configured to use. Omit to retain legacy API-key-only behavior. */
 	supportedAuthModes?: AuthMode[];
@@ -51,6 +57,8 @@ export interface LocalAuthOverride {
 	modernOnlySkills?: string[];
 	/** Locally available transport capabilities. */
 	transport?: TransportCapabilities;
+	/** OAuth client credentials for the standard client-credentials grant. */
+	oauth2?: OAuthClientCredentialsConfig;
 	/** Certificate paths for mTLS transport; actual TLS setup occurs at the client/server boundary. */
 	mtls?: MtlsConfig;
 }

@@ -22,11 +22,11 @@ describe("normalizeConfig auth settings", () => {
 	it("deep merges local.auth and hub while retaining unknown auth settings", () => {
 		const result = normalizeConfig(
 			{
-				local: { auth: { supportedAuthModes: ["legacy-api-key", "oauth2"], transport: { tls: true }, futureOption: "keep" } },
+				local: { auth: { supportedAuthModes: ["legacy-api-key", "oauth2"], transport: { tls: true }, oauth2: { clientId: "client" }, futureOption: "keep" } },
 				hub: { url: "https://hub.example", apiKey: "hub-key", tags: ["global"] },
 			},
 			{
-				local: { auth: { supportedAuthModes: ["oauth2+mtls"], transport: { mtls: true, clientCertificate: true }, mtls: { certPath: "cert.pem", keyPath: "key.pem" } } },
+				local: { auth: { supportedAuthModes: ["oauth2+mtls"], transport: { mtls: true, clientCertificate: true }, oauth2: { clientSecret: "secret" }, mtls: { certPath: "cert.pem", keyPath: "key.pem" } } },
 				hub: { tags: ["project"] },
 			},
 		);
@@ -35,6 +35,7 @@ describe("normalizeConfig auth settings", () => {
 		assert.deepEqual(result.config.local?.auth, {
 			supportedAuthModes: ["oauth2+mtls"],
 			transport: { tls: true, mtls: true, clientCertificate: true },
+			oauth2: { clientId: "client", clientSecret: "secret" },
 			futureOption: "keep",
 			mtls: { certPath: "cert.pem", keyPath: "key.pem" },
 		});

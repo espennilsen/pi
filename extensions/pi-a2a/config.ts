@@ -133,6 +133,9 @@ export function normalizeConfig(globalSettings: Record<string, unknown>, project
 	if (globalAuth.mtls !== undefined || projectAuth.mtls !== undefined) {
 		auth.mtls = { ...asRecord(globalAuth.mtls), ...asRecord(projectAuth.mtls) };
 	}
+	if (globalAuth.oauth2 !== undefined || projectAuth.oauth2 !== undefined) {
+		auth.oauth2 = { ...asRecord(globalAuth.oauth2), ...asRecord(projectAuth.oauth2) };
+	}
 	const local = { ...globalLocal, ...projectLocal };
 	if (globalLocal.auth !== undefined || projectLocal.auth !== undefined) {
 		local.auth = normalizeAuth(auth, warnings, true);

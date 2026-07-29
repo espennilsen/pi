@@ -35,6 +35,21 @@ describe("selectPeerAuth", () => {
 		});
 	});
 
+	it("requires HTTPS and non-disabled TLS before selecting OAuth", () => {
+		assert.equal(
+			select({ peer: { ...peer(["oauth2"]), endpoint: "http://peer.example/a2a" } }).selectedAuthMode,
+			null,
+		);
+		assert.equal(
+			select({ peer: { ...peer(["oauth2"]), transport: { tls: false } } }).selectedAuthMode,
+			null,
+		);
+		assert.equal(
+			select({ local: { supportedAuthModes: ["oauth2"], transport: { tls: false } }, peer: peer(["oauth2"]) }).selectedAuthMode,
+			null,
+		);
+	});
+
 	it("does not select oauth2+mtls until a certificate-bound transport exists", () => {
 		assert.deepEqual(
 			select({ peer: peer(["oauth2+mtls"]), local: { supportedAuthModes: ["oauth2+mtls"], transport: { mtls: true, clientCertificate: true } } }),

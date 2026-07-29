@@ -41,31 +41,34 @@ export async function authenticateInboundRequest(input: InboundAuthInput): Promi
 	if (!token) return { status: 401, reason: "missing-bearer-token" };
 	const modernOnly = !!input.operation && (input.modernOnlySkills ?? input.local?.auth?.modernOnlySkills ?? []).includes(input.operation);
 
+	const oauthMode = modes.includes("oauth2+mtls") ? "oauth2+mtls" : modes.includes("oauth2") ? "oauth2" : undefined;
+	// When both modes are enabled, a valid OAuth credential takes precedence
+	// over a coincidentally equal legacy API key.
+	if (oauthMode && input.verifyOAuth) {
+		let principal: OAuthPrincipal | null;
+		try { principal = await input.verifyOAuth(token); } catch { principal = null; }
+		if (principal && principal.subject && principal.issuer && principal.audience && Number.isFinite(principal.expiresAt) && principal.expiresAt > Date.now()) {
+			const expected = input.local?.auth?.oauth2;
+			const audiences = Array.isArray(principal.audience) ? principal.audience : [principal.audience];
+			if ((expected?.issuer && principal.issuer !== expected.issuer) ||
+				(expected?.audience && !audiences.includes(expected.audience)) ||
+				(expected?.requiredScope && !principal.scopes?.includes(expected.requiredScope))) {
+				return { status: 401, reason: "oauth-claims-rejected" };
+			}
+			if (oauthMode === "oauth2+mtls") {
+				const evidence = input.mtlsEvidence;
+				if (!evidence?.verified || !evidence.thumbprint || !principal.cnfThumbprint || !constantTimeEqual(evidence.thumbprint, principal.cnfThumbprint)) {
+					return { status: 403, reason: "mtls-binding-required" };
+				}
+			}
+			return { principal: { mode: oauthMode, identity: `oauth-${redactedIdentity(principal.subject)}` } };
+		}
+	}
 	if (modes.includes("legacy-api-key") && input.local?.apiKey && constantTimeEqual(token, input.local.apiKey)) {
 		if (modernOnly) return { status: 403, reason: "modern-auth-required" };
 		return { principal: { mode: "legacy-api-key", identity: keyIdentity(token) } };
 	}
-	const oauthMode = modes.includes("oauth2+mtls") ? "oauth2+mtls" : modes.includes("oauth2") ? "oauth2" : undefined;
-	if (!oauthMode || !input.verifyOAuth) return { status: 401, reason: "invalid-credentials" };
-	let principal: OAuthPrincipal | null;
-	try { principal = await input.verifyOAuth(token); } catch { return { status: 401, reason: "invalid-oauth-token" }; }
-	if (!principal || !principal.subject || !principal.issuer || !principal.audience || !Number.isFinite(principal.expiresAt) || principal.expiresAt <= Date.now()) {
-		return { status: 401, reason: "invalid-oauth-token" };
-	}
-	const expected = input.local?.auth?.oauth2;
-	const audiences = Array.isArray(principal.audience) ? principal.audience : [principal.audience];
-	if ((expected?.issuer && principal.issuer !== expected.issuer) ||
-		(expected?.audience && !audiences.includes(expected.audience)) ||
-		(expected?.requiredScope && !principal.scopes?.includes(expected.requiredScope))) {
-		return { status: 401, reason: "oauth-claims-rejected" };
-	}
-	if (oauthMode === "oauth2+mtls") {
-		const evidence = input.mtlsEvidence;
-		if (!evidence?.verified || !evidence.thumbprint || !principal.cnfThumbprint || !constantTimeEqual(evidence.thumbprint, principal.cnfThumbprint)) {
-			return { status: 403, reason: "mtls-binding-required" };
-		}
-	}
-	return { principal: { mode: oauthMode, identity: `oauth-${redactedIdentity(principal.subject)}` } };
+	return { status: 401, reason: oauthMode && input.verifyOAuth ? "invalid-oauth-token" : "invalid-credentials" };
 }
 
 function bearerToken(value: string | undefined): string | undefined {

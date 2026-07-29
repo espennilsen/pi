@@ -15,11 +15,13 @@ export function selectPeerAuth(input: AuthSelectionInput): AuthSelection {
 	const modernOnly = input.modernOnly ?? (input.skillId !== undefined && local.modernOnlySkills?.includes(input.skillId));
 	const localModes = local.supportedAuthModes ?? ["legacy-api-key"];
 	const peerModes = peer.supportedAuthModes;
+	const oauthTransportUsable = isUsableOAuthTransport(peer.endpoint, peer.transport?.tls, local.transport?.tls);
 	const mutuallySupported = MODE_STRENGTH.filter(
 		(mode) =>
 			VALID_MODES.has(mode) &&
 			localModes.includes(mode) &&
 			peerModes.includes(mode) &&
+			(mode !== "oauth2" || oauthTransportUsable) &&
 			// mTLS is intentionally unavailable until the SDK client can install a
 			// certificate-bearing HTTPS transport for the actual request.
 			mode !== "oauth2+mtls",
@@ -40,6 +42,14 @@ export function selectPeerAuth(input: AuthSelectionInput): AuthSelection {
 
 	const mode = permittedModes[0];
 	return mode ? selected(mode, peer.source) : denied(peer.source, "no-mutual-auth-mode");
+}
+
+function isUsableOAuthTransport(endpoint: string, peerTls: boolean | undefined, localTls: boolean | undefined): boolean {
+	try {
+		return new URL(endpoint).protocol === "https:" && peerTls !== false && localTls !== false;
+	} catch {
+		return false;
+	}
 }
 
 function selected(mode: AuthMode, source: AuthSelection["source"]): AuthSelection {

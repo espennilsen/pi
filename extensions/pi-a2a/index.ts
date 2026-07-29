@@ -31,7 +31,7 @@
  * }
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
@@ -236,6 +236,8 @@ export default function (pi: ExtensionAPI) {
 	let configuredMaxHops: number = DEFAULT_MAX_HOPS;
 	/** Rate limiter for outbound response injection — 10 triggers per 60s window. */
 	const responseLimiter = new RateLimiter(10, 60_000);
+	/** Reuse token caches for repeated OAuth sends by the same peer and client. */
+	const oauthProviders = new Map<string, OAuthClientCredentialsProvider>();
 
 	// ── Main-process message handling ─────────────────────────
 	//
@@ -864,6 +866,12 @@ export default function (pi: ExtensionAPI) {
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
 		// This HTTP server has neither a TLS peer verifier nor a configured JWT verifier.
 		// Do not advertise configured modern intent until a verifier-backed HTTPS runtime exists.
+		const configuredUnenforceableInboundModes = config.local?.auth?.supportedAuthModes?.filter((mode) => mode === "oauth2" || mode === "oauth2+mtls") ?? [];
+		if (configuredUnenforceableInboundModes.length > 0) {
+			const message = `Configured inbound auth modes are unavailable in this HTTP runtime: ${configuredUnenforceableInboundModes.join(", ")}`;
+			ctx.ui.notify(`pi-a2a: WARNING — ${message}`, "warning");
+			log("a2a_auth_inbound_modes_unenforceable", { modes: configuredUnenforceableInboundModes, reason: "tls_or_oauth_verifier_unavailable" }, "WARN");
+		}
 		const inboundAuthModes = getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key");
 		const agentCard = buildAgentCard(config, publicUrl, inboundAuthModes);
 
@@ -2032,11 +2040,18 @@ export default function (pi: ExtensionAPI) {
 				if (!oauth2?.clientId || !oauth2.clientSecret) {
 					return txt(`Error: ${agentName} requires OAuth 2.0, but local.auth.oauth2 clientId/clientSecret are not configured. No request was sent.`);
 				}
-				provider = new OAuthClientCredentialsProvider({
+				const providerKey = JSON.stringify([
+					peer.agentId,
+					createHash("sha256").update(`${oauth2.clientId}\0${oauth2.clientSecret}`).digest("hex"),
+					oauth2.trustedTokenEndpointOrigins,
+				]);
+				const oauthProvider = oauthProviders.get(providerKey) ?? new OAuthClientCredentialsProvider({
 					clientId: oauth2.clientId,
 					clientSecret: oauth2.clientSecret,
 					trustedTokenEndpointOrigins: oauth2.trustedTokenEndpointOrigins,
 				});
+				oauthProviders.set(providerKey, oauthProvider);
+				provider = oauthProvider;
 			}
 
 			let authContext: OutboundAuthContext;

@@ -128,21 +128,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						opts.log("a2a_version_mismatch", { clientVersion, supported: "0.3.x" }, "WARN");
 					}
 
-					// Authenticate before JSON-RPC dispatch. OAuth has no permissive fallback:
-					// missing verifier or invalid token is rejected by the pure policy.
 					const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : undefined;
-					let authentication = authenticationRequired ? await authenticateInboundRequest({
-						authorization: authHeader, local: { apiKey: opts.apiKey, auth: opts.auth },
-						supportedModes: supportedAuthModes, verifyOAuth: opts.verifyOAuth,
-						mtlsEvidence: opts.getMtlsEvidence?.(req),
-					}) : {};
-					if (authenticationRequired && !authentication.principal) {
-						opts.log("a2a_auth_inbound_denied", { peerId: "unknown", taskId: undefined, operation: "unknown", metadataSource: "inbound", mode: "unknown", reason: authentication.reason }, "WARN");
-						res.writeHead(authentication.status ?? 401, { "Content-Type": "application/json" });
-						res.end(JSON.stringify({ error: authentication.status === 403 ? "Forbidden" : "Unauthorized" }));
-						return;
-					}
-
 					const body = await readBody(req);
 
 					let parsed: unknown;
@@ -158,13 +144,14 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						return;
 					}
 
-					// Enforce operation-level policy after extracting the JSON-RPC method, still before dispatch.
+					// Authenticate once after extracting the operation, still before dispatch.
+					// This avoids verifying an OAuth bearer token twice per request.
 					const operation = operationFromRpc(parsed);
-					if (authenticationRequired) authentication = await authenticateInboundRequest({
+					const authentication = authenticationRequired ? await authenticateInboundRequest({
 						authorization: authHeader, local: { apiKey: opts.apiKey, auth: opts.auth },
 						supportedModes: supportedAuthModes, verifyOAuth: opts.verifyOAuth,
 						mtlsEvidence: opts.getMtlsEvidence?.(req), operation,
-					});
+					}) : {};
 					if (authenticationRequired && !authentication.principal) {
 						opts.log("a2a_auth_policy_denied", { peerId: "unknown", taskId: rpcTaskId(parsed), operation: operation ?? "unknown", metadataSource: "inbound", mode: "unknown", reason: authentication.reason }, "WARN");
 						res.writeHead(authentication.status ?? 403, { "Content-Type": "application/json" });

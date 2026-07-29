@@ -4,7 +4,11 @@ import { resolvePeerMetadata } from "./peer-metadata.ts";
 
 const oauthCard = {
 	securitySchemes: {
-		oauth2: { type: "oauth2", flows: { clientCredentials: { tokenUrl: "https://issuer.example/token" } } },
+		oauth2: {
+			type: "oauth2",
+			authorizationServer: "https://issuer.example/.well-known/oauth-authorization-server",
+			flows: { clientCredentials: { tokenUrl: "https://issuer.example/token" } },
+		},
 		mtls: { type: "mutualTLS" },
 	},
 	security: [{ oauth2: [] }, { oauth2: [], mtls: [] }],
@@ -34,7 +38,15 @@ describe("resolvePeerMetadata", () => {
 			{ agentId: "static-1", endpoint: "https://peer.example", staticAgent: { name: "static-1", url: "https://peer.example" } },
 			{ fetchAgentCard: async () => oauthCard },
 		);
-		assert.deepEqual(metadata, { agentId: "static-1", endpoint: "https://peer.example", supportedAuthModes: ["oauth2", "oauth2+mtls"], source: "agent-card", authorizationServer: "https://issuer.example/token" });
+		assert.deepEqual(metadata, { agentId: "static-1", endpoint: "https://peer.example", supportedAuthModes: ["oauth2", "oauth2+mtls"], source: "agent-card", authorizationServer: "https://issuer.example/.well-known/oauth-authorization-server" });
+	});
+
+	it("does not treat a token URL as authorization-server metadata", async () => {
+		const metadata = await resolvePeerMetadata(
+			{ agentId: "static-1", endpoint: "https://peer.example", staticAgent: { name: "static-1", url: "https://peer.example" } },
+			{ fetchAgentCard: async () => ({ securitySchemes: { oauth2: { type: "oauth2", flows: { clientCredentials: { tokenUrl: "https://issuer.example/token" } } } }, security: [{ oauth2: [] }] }) },
+		);
+		assert.equal(metadata.authorizationServer, undefined);
 	});
 
 	it("fails closed for an unknown card scheme", async () => {

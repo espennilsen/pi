@@ -25,7 +25,6 @@ export interface PeerAuthMetadata {
 	agentId: string;
 	endpoint: string;
 	supportedAuthModes: AuthMode[];
-	selectedAuthMode?: AuthMode;
 	source: PeerMetadataSource;
 	/** OAuth 2.0 authorization-server metadata URL or issuer. */
 	authorizationServer?: string;
@@ -76,7 +75,6 @@ export interface LocalAuthOverride {
 /** Per-peer overrides, intended for a static directory entry's `auth` settings. */
 export interface StaticAuthOverride {
 	supportedAuthModes?: AuthMode[];
-	selectedAuthMode?: AuthMode;
 	authorizationServer?: string;
 	resource?: string;
 	transport?: TransportCapabilities;

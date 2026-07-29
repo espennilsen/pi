@@ -14,8 +14,9 @@
 
 - Preserve `local.apiKey`, `local.requireApiKey`, `hub.apiKey`, and `staticAgents[].apiKey` unchanged. Their current Bearer-header semantics remain the `legacy-api-key` mode.
 - Do **not** put Hub metadata, issued tokens, or Hub OAuth settings in settings.json. Hub peer details must expose their supported modes and authorization-server metadata. The extension uses `hub.apiKey` only to authenticate to the Hub itself.
-- Use standard OAuth client credentials, not a custom Hub token RPC. Hub metadata or Agent Card discovery identifies an authorization server/token endpoint; a token request is audience/resource restricted to the selected peer.
-- `oauth2+mtls` means OAuth bearer authentication plus mTLS client authentication and certificate-bound token verification. Do not advertise or select it unless the configured Node transport can present a client certificate and the server can verify peer certificates.
+- Use standard OAuth client credentials, not a custom Hub token RPC. The supported client-authentication method is `client_secret_post`: `local.auth.oauth2.clientId` and `clientSecret` are sent only in the form body of a TLS-protected token request. Secrets are read from the loaded local settings, never logged or published, and changing either value on configuration reload creates a distinct provider/cache entry; operators rotate by replacing the secret and retiring the old credential at the authorization server.
+- Token endpoints are accepted only from trusted Hub metadata or an explicit static-agent override, must be HTTPS and origin-pinned by `local.auth.oauth2.trustedTokenEndpointOrigins`, and credentialed fetches reject redirects. Agent Cards can describe supported modes but do not authorize a token endpoint.
+- `oauth2+mtls` means OAuth bearer authentication plus mTLS client authentication and certificate-bound token verification. The current HTTP server/client cannot install the required certificate-bearing transport, so this mode is explicitly unsupported: do not select or advertise it until both outbound client-certificate transport and inbound TLS client-certificate verification are implemented.
 - If peer metadata is absent or does not intersect local capability, fail closed. A sensitive skill must never retry as legacy after an OAuth/mTLS failure.
 - Agent Cards must contain no credentials and must reflect the modes that the server can actually enforce at startup.
 
@@ -33,6 +34,9 @@ Keep the current settings hierarchy. Add an optional `auth` object under existin
         "preferModern": true,
         "modernOnlySkills": ["deploy-production"],
         "oauth2": {
+          "clientId": "pi-a2a-client",
+          "clientSecret": "loaded-secret",
+          "trustedTokenEndpointOrigins": ["https://issuer.example"],
           "issuer": "https://issuer.example",
           "audience": "https://agent.example"
         },
@@ -89,9 +93,9 @@ Expected: FAIL because `selectAuthMode` and the auth contract types do not exist
 In `auth-types.ts`, define:
 - `AuthMode = "legacy-api-key" | "oauth2" | "oauth2+mtls"`
 - `PeerMetadataSource = "hub" | "static-directory" | "agent-card"`
-- `PeerAuthMetadata` with `agentId`, `endpoint`, `supportedAuthModes`, optional `selectedAuthMode`, `source`, optional authorization-server/resource metadata, and optional transport capability metadata
-- local and static-agent auth override types
-- an `AuthSelection` result that includes mode, source, and denial reason when no mode is available
+- immutable `PeerAuthMetadata` with `agentId`, `endpoint`, `supportedAuthModes`, `source`, optional authorization-server/resource metadata, and optional transport capability metadata
+- local and static-agent auth override types that describe capabilities, not a preselected mode
+- an `AuthSelection` result that is computed for each request and includes mode, source, and denial reason when no mode is available
 
 Extend `LocalConfig` and `StaticAgentConfig` in `types.ts` with optional `auth` fields. Do not rename or remove any existing fields. Extend `RemoteAgentDetail` only with optional Hub-provided auth metadata.
 
@@ -186,7 +190,7 @@ Create `resolvePeerMetadata()` with dependencies injected for deterministic test
 2. static-directory override when the peer is configured statically;
 3. cached/fetched Agent Card as a fallback.
 
-Update `getAgentFromHub()` to preserve optional Hub auth metadata without requiring settings.json changes. Update `StaticAgentRegistry` to cache normalized peer metadata with the fetched card. Parse only the security scheme forms that the extension itself publishes; unknown schemes are not treated as OAuth support. Preserve current name/URL resolution behavior in `a2a_send`, but replace its separate `credential`/`fromStatic` state with a resolved peer object.
+Update `getAgentFromHub()` to preserve optional trusted Hub auth metadata without requiring settings.json changes. Update `StaticAgentRegistry` to cache immutable normalized peer capabilities with the fetched card. Parse only the security scheme forms that the extension itself publishes; unknown schemes are not treated as OAuth support. Agent Card discovery may contribute supported modes but never an authorization-server/token endpoint; that endpoint must come from trusted Hub metadata or explicit static configuration. Preserve current name/URL resolution behavior in `a2a_send`, but replace its separate `credential`/`fromStatic` state with a resolved peer object and run selection anew for every request.
 
 **Step 4: Run peer metadata tests**
 
@@ -215,8 +219,9 @@ git commit -m "feat(pi-a2a): resolve per-peer auth metadata"
 
 Test a `TokenProvider` interface such as `getAccessToken(peer, selection): Promise<AccessToken>`:
 - `LegacyApiKeyProvider` returns the existing configured key and keeps the current `Authorization: Bearer <key>` behavior;
-- `OAuthClientCredentialsProvider` discovers/uses a standard token endpoint from peer/Hub metadata, sends client credentials through the configured standard mechanism, and requests the peer resource/audience;
-- token cache is keyed by peer ID + audience + mode, expires before `expires_in`, and refreshes once after a 401;
+- `OAuthClientCredentialsProvider` uses an HTTPS token endpoint from trusted Hub metadata or explicit static configuration, sends `client_id`/`client_secret` only as `client_secret_post` form fields, and requests the peer resource/audience;
+- token cache is keyed by peer ID + audience + mode, expires before `expires_in`, coalesces concurrent misses with one in-flight promise, and makes 401 invalidation generation-aware so only the failed token generation is evicted and a stale in-flight fetch cannot repopulate it;
+- tests cover form-body client authentication, secret redaction, configuration-reload credential rotation (new provider/cache key), trusted-origin rejection, and rejected redirects;
 - token provider errors never return the legacy key as an OAuth fallback;
 - mTLS mode creates an HTTPS dispatcher/agent from configured certificate paths and rejects selection when it cannot;
 - logs contain peer ID, task ID, metadata source, skill, and mode but never token/key values.
@@ -231,10 +236,10 @@ Expected: FAIL because providers and middleware do not exist.
 
 Implement a provider interface with three implementations:
 - legacy: existing static `apiKey` or Hub credential retrieval;
-- Hub/metadata OAuth: standards-based client-credentials request to the advertised authorization server, requesting the selected peer as `resource`/audience;
+- Hub/static OAuth: standards-based client-credentials request to a trusted, origin-pinned authorization server from Hub metadata or static configuration, requesting the selected peer as `resource`/audience; never obtain this endpoint from an Agent Card;
 - external provider placeholder: typed but disabled unless a future provider is explicitly configured.
 
-Do not create a custom Hub exchange method. For static modern peers, only use an authorization-server endpoint explicitly supplied by the static config or Agent Card metadata. Build outbound auth once and pass its headers/fetch/HTTPS transport to both `sendA2AMessage()` and `getRemoteTask()` so polling, retries, and input-required follow-ups retain the same mode.
+Do not create a custom Hub exchange method. For static modern peers, only use an authorization-server endpoint explicitly supplied by static configuration; fetched Agent Cards are not a trusted authority source. Reject redirects before a credential-bearing request is sent. Build outbound auth once and pass its headers/fetch/HTTPS transport to both `sendA2AMessage()` and `getRemoteTask()` so polling, retries, and input-required follow-ups retain the same mode.
 
 Change client option names from the ambiguous `credential` to a typed auth context. Retain a compatibility adapter until all callers are migrated. Ensure `createAuthenticatingFetchWithRetry` only refreshes OAuth tokens, not legacy API keys.
 
@@ -265,7 +270,7 @@ git commit -m "feat(pi-a2a): add OAuth and mTLS outbound auth"
 
 Test request authentication with injected JWT verification and TLS peer-certificate evidence:
 - legacy key succeeds only when `legacy-api-key` is enabled and the constant-time comparison matches;
-- bearer token succeeds only when OAuth mode is enabled and issuer, signature/JWKS, audience/resource, expiration, and required scope validate;
+- a JWT bearer token succeeds only when OAuth mode is enabled and issuer, signature/JWKS, audience/resource, expiration, and required scope validate; opaque access tokens are unsupported and rejected;
 - bearer token without valid mTLS certificate binding fails when `oauth2+mtls` is selected/required;
 - no configured matching mode returns 401/403 before SDK dispatch;
 - a modern-only skill/operation cannot be authorized with a legacy key;
@@ -281,7 +286,7 @@ Expected: FAIL because middleware and conditional Agent Card security do not exi
 
 **Step 3: Implement fail-closed inbound auth**
 
-Make `server.ts` call a pure `authenticateInboundRequest()` before parsing/dispatching JSON-RPC. It returns an authenticated principal containing mode and redacted identity. Keep API-key equality constant time. Validate OAuth access tokens via discovered issuer/JWKS and expected audience; do not accept opaque values as valid OAuth tokens. For mTLS, start an HTTPS server only when the configured certificate material is usable, request/verify peer certificates against configured trust, and compare the JWT `cnf` certificate thumbprint to the TLS peer certificate. If TLS terminates upstream, do not trust forwarded certificate headers; mark mTLS unsupported and omit it from advertised modes unless a future trusted-proxy integration is explicitly designed.
+Make `server.ts` call a pure `authenticateInboundRequest()` before parsing/dispatching JSON-RPC. It returns an authenticated principal containing mode and redacted identity. Keep API-key equality constant time. The negotiated `oauth2` mode is JWT-access-token-only: validate issuer, signature/JWKS, expected audience, expiration, and scope; reject opaque values because introspection is not implemented. Agent Card OAuth security therefore denotes this JWT-validated profile, not generic opaque-token OAuth. For mTLS, a future implementation must start an HTTPS server only when configured certificate material is usable, request/verify peer certificates against configured trust, and compare the JWT `cnf` certificate thumbprint to the TLS peer certificate. Until then, omit `oauth2+mtls` from runtime modes and Agent Cards. If TLS terminates upstream, do not trust forwarded certificate headers; retain mTLS as unsupported unless a future trusted-proxy integration is explicitly designed.
 
 Pass the authenticated principal and method/skill context to the policy check. Permit legacy only for operations not in `modernOnlySkills`; default-deny any mismatch.
 

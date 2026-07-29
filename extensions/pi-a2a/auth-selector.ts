@@ -26,9 +26,7 @@ export function selectPeerAuth(input: AuthSelectionInput): AuthSelection {
 			// certificate-bearing HTTPS transport for the actual request.
 			mode !== "oauth2+mtls",
 	);
-	const permittedModes = peer.selectedAuthMode
-		? mutuallySupported.filter((mode) => mode === peer.selectedAuthMode)
-		: mutuallySupported;
+	const permittedModes = mutuallySupported;
 
 	if (modernOnly) {
 		const modernMode = permittedModes.find((mode) => MODERN_MODES.has(mode));

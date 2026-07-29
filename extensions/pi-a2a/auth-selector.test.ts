@@ -57,23 +57,15 @@ describe("selectPeerAuth", () => {
 		);
 	});
 
-	it("honors a peer-selected mode instead of choosing a stronger alternative", () => {
+	it("re-evaluates the mode from immutable peer capabilities for every selection", () => {
+		const metadata = { ...peer(["legacy-api-key", "oauth2"]) };
 		assert.deepEqual(
-			select({ peer: { ...peer(["oauth2", "oauth2+mtls"]), selectedAuthMode: "oauth2", transport: { mtls: true } } }),
+			select({ peer: metadata, local: { supportedAuthModes: ["legacy-api-key", "oauth2"], preferModern: false } }),
+			{ selectedAuthMode: "legacy-api-key", source: "hub", denial: null },
+		);
+		assert.deepEqual(
+			select({ peer: metadata, local: { supportedAuthModes: ["legacy-api-key", "oauth2"] }, modernOnly: true }),
 			{ selectedAuthMode: "oauth2", source: "hub", denial: null },
-		);
-	});
-
-	it("fails closed when a peer-selected mode is unusable or violates modern-only policy", () => {
-		assert.deepEqual(
-			select({
-				peer: { ...peer(["oauth2", "oauth2+mtls"]), selectedAuthMode: "oauth2+mtls", transport: { mtls: false } },
-			}),
-			{ selectedAuthMode: null, source: "hub", denial: { reason: "no-mutual-auth-mode" } },
-		);
-		assert.deepEqual(
-			select({ peer: { ...peer(["legacy-api-key", "oauth2"]), selectedAuthMode: "legacy-api-key" }, modernOnly: true }),
-			{ selectedAuthMode: null, source: "hub", denial: { reason: "modern-auth-required" } },
 		);
 	});
 

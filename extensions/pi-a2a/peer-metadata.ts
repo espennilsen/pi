@@ -44,7 +44,6 @@ export async function resolvePeerMetadata(
 			agentId: input.agentId,
 			endpoint: input.endpoint,
 			supportedAuthModes: validModes(override.supportedAuthModes),
-			...(override.selectedAuthMode && isAuthMode(override.selectedAuthMode) ? { selectedAuthMode: override.selectedAuthMode } : {}),
 			source: "static-directory",
 			...(override.authorizationServer ? { authorizationServer: override.authorizationServer } : {}),
 			...(override.resource ? { resource: override.resource } : {}),
@@ -110,11 +109,6 @@ export function parseAgentCardAuthMetadata(
 function oauthServer(scheme: Record<string, unknown>): string | undefined {
 	if (typeof scheme.authorizationServer === "string") return scheme.authorizationServer;
 	if (typeof scheme.openIdConnectUrl === "string") return scheme.openIdConnectUrl;
-	const flows = scheme.flows;
-	if (!isRecord(flows)) return undefined;
-	for (const flow of Object.values(flows)) {
-		if (isRecord(flow) && typeof flow.tokenUrl === "string") return flow.tokenUrl;
-	}
 	return undefined;
 }
 

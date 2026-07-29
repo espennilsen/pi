@@ -92,10 +92,9 @@ function normalizeAuth(auth: Record<string, unknown>, warnings: string[]): Recor
 		}
 		normalized.supportedAuthModes = modes;
 	}
-	if (auth.selectedAuthMode !== undefined &&
-		(typeof auth.selectedAuthMode !== "string" || !AUTH_MODES.has(auth.selectedAuthMode))) {
+	if (auth.selectedAuthMode !== undefined) {
 		delete normalized.selectedAuthMode;
-		warnings.push("Invalid local.auth selectedAuthMode was ignored");
+		warnings.push("local.auth selectedAuthMode is ignored; selection is evaluated per request");
 	}
 	return normalized;
 }

@@ -17,6 +17,7 @@ import {
 } from "@a2a-js/sdk/client";
 import type { AgentCard, MessageSendParams, Task, Message, Part } from "@a2a-js/sdk";
 import type { LogFn } from "./logger.ts";
+import type { OutboundAuthContext } from "./outbound-auth.ts";
 import type { LoopMetadata } from "./supervisor.ts";
 import { injectLoopMetadata } from "./supervisor.ts";
 
@@ -37,6 +38,8 @@ export interface SendMessageOptions {
 	message: string;
 	/** Bearer token for authenticating with the remote agent. */
 	credential?: string | null;
+	/** Negotiated authentication. Takes precedence over the legacy credential. */
+	authContext?: OutboundAuthContext;
 	/** Timeout in milliseconds. No timeout by default (requests are async/background). */
 	timeoutMs?: number;
 	/** Local agent identity to include as sender metadata. */
@@ -93,6 +96,8 @@ export interface GetRemoteTaskOptions {
 	taskId: string;
 	/** Bearer token for authenticating with the remote agent. */
 	credential?: string | null;
+	/** Negotiated authentication. Takes precedence over the legacy credential. */
+	authContext?: OutboundAuthContext;
 	/** Callback to refresh a stale credential on 401. */
 	onRefreshCredential?: () => Promise<string | null>;
 	/** Per-request timeout in milliseconds. Defaults to 30000 (30s). */
@@ -121,12 +126,12 @@ export async function sendA2AMessage(
 	opts: SendMessageOptions,
 	log: LogFn,
 ): Promise<SendMessageResult> {
-	const { url, message, credential, timeoutMs, sender, onRefreshCredential, loopMetadata, contextId, taskId } = opts;
+	const { url, message, credential, authContext, timeoutMs, sender, onRefreshCredential, loopMetadata, contextId, taskId } = opts;
 
 	log("a2a_send_start", {
 		url,
 		messageLength: message.length,
-		hasCredential: !!credential,
+		hasCredential: !!(authContext ?? credential),
 		hopCount: loopMetadata?.hopCount,
 		...(contextId ? { contextId } : {}),
 		...(taskId ? { taskId } : {}),
@@ -139,12 +144,13 @@ export async function sendA2AMessage(
 
 	try {
 		// ── Build auth-aware fetch ─────────────────────────────────
-		let currentCredential = credential ?? null;
+		let currentCredential = authContext ? null : credential ?? null;
 		let retried = false;
+		const canRefresh = !authContext || isOAuthContext(authContext);
 
 		const authHandler: AuthenticationHandler = {
 			async headers() {
-				const hdrs: Record<string, string> = {};
+				const hdrs: Record<string, string> = authContext ? { ...authContext.headers } : {};
 				if (currentCredential) {
 					hdrs["Authorization"] = `Bearer ${currentCredential}`;
 				}
@@ -153,7 +159,7 @@ export async function sendA2AMessage(
 			async shouldRetryWithHeaders(_req, res) {
 				if (res.status === 401) {
 					sawUnauthorized = true;
-					if (!retried && onRefreshCredential) {
+					if (canRefresh && !retried && onRefreshCredential) {
 						retried = true;
 						log("credential_retry_via_auth_handler", { url });
 						try {
@@ -301,23 +307,24 @@ export async function getRemoteTask(
 	opts: GetRemoteTaskOptions,
 	log: LogFn,
 ): Promise<GetRemoteTaskResult> {
-	const { url, taskId, credential, onRefreshCredential } = opts;
+	const { url, taskId, credential, authContext, onRefreshCredential } = opts;
 
 	try {
 		// Build auth-aware fetch (same pattern as sendA2AMessage)
-		let currentCredential = credential ?? null;
+		let currentCredential = authContext ? null : credential ?? null;
 		let retried = false;
+		const canRefresh = !authContext || isOAuthContext(authContext);
 
 		const authHandler: AuthenticationHandler = {
 			async headers() {
-				const hdrs: Record<string, string> = {};
+				const hdrs: Record<string, string> = authContext ? { ...authContext.headers } : {};
 				if (currentCredential) {
 					hdrs["Authorization"] = `Bearer ${currentCredential}`;
 				}
 				return hdrs;
 			},
 			async shouldRetryWithHeaders(_req, res) {
-				if (res.status === 401 && !retried && onRefreshCredential) {
+				if (res.status === 401 && canRefresh && !retried && onRefreshCredential) {
 					retried = true;
 					const fresh = await onRefreshCredential();
 					if (fresh) {
@@ -376,6 +383,11 @@ export async function getRemoteTask(
 		log("a2a_poll_error", { url, taskId, error: msg }, "ERROR");
 		throw err;
 	}
+}
+
+/** True only for negotiated OAuth modes, which may safely refresh after a 401. */
+function isOAuthContext(context: OutboundAuthContext): boolean {
+	return context.mode === "oauth2" || context.mode === "oauth2+mtls";
 }
 
 /**

@@ -1988,12 +1988,16 @@ export default function (pi: ExtensionAPI) {
 			// peers; retain that behavior without guessing a modern mechanism.
 			if (peer.supportedAuthModes.length === 0 && credential) {
 				peer = { ...peer, supportedAuthModes: ["legacy-api-key"] };
-				log("a2a_auth_legacy_metadata_fallback", { agent: agentName, source: peer.source });
+				log("a2a_auth_legacy_metadata_fallback", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: "legacy-api-key" }, "WARN");
 			}
 			const selection = selectPeerAuth({ peer, local: localAuth });
 			if (!selection.selectedAuthMode) {
-				log("a2a_auth_selection_denied", { agent: agentName, source: peer.source, reason: selection.denial?.reason }, "WARN");
+				log("a2a_auth_selection_denied", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: peer.source, mode: null, reason: selection.denial?.reason }, "WARN");
 				return txt(`Error: No supported outbound authentication mode for ${agentName} (${selection.denial?.reason ?? "selection denied"}). No request was sent.`);
+			}
+			log("a2a_auth_selected", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode });
+			if (selection.selectedAuthMode === "legacy-api-key") {
+				log("a2a_auth_legacy_selected", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode }, "WARN");
 			}
 
 			let provider: TokenProvider;
@@ -2012,13 +2016,13 @@ export default function (pi: ExtensionAPI) {
 				authContext = await buildOutboundAuthContext({ peer, selection, provider, localAuth });
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				log("a2a_auth_context_failed", { agent: agentName, mode: selection.selectedAuthMode, error: message }, "WARN");
+				log("a2a_auth_context_failed", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode, error: message }, "WARN");
 				return txt(`Error: Could not authenticate to ${agentName}: ${message}. No request was sent.`);
 			}
 			// The SDK client currently accepts HTTP fetch only; do not advertise or
 			// silently downgrade mTLS until its cert/key transport is installed.
 			if (authContext.transport.kind === "mtls") {
-				log("a2a_auth_transport_unsupported", { agent: agentName, mode: selection.selectedAuthMode }, "WARN");
+				log("a2a_auth_transport_unsupported", { peerId: peer.agentId, taskId: params.taskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode }, "WARN");
 				return txt(`Error: ${agentName} requires OAuth 2.0 + mTLS, but outbound mTLS transport is not available. No request was sent.`);
 			}
 
@@ -2100,6 +2104,7 @@ export default function (pi: ExtensionAPI) {
 					// Retain the Hub credential refresh behavior for legacy peers.
 					if (resolvedFromStatic || !resolvedAgentId || !hubConfig) return null;
 					log("credential_retry", { agentId: resolvedAgentId });
+					log("a2a_auth_token_refresh", { peerId: peer.agentId, taskId: resolvedTaskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode });
 					credentialCache.delete(resolvedAgentId);
 					credential = await getCachedCredential(resolvedAgentId, hubConfig);
 					provider = new LegacyApiKeyProvider(credential ?? undefined);
@@ -2108,6 +2113,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				// A 401 may mean a revoked OAuth token. Evict the provider cache before
 				// rebuilding the context, so the SDK retry uses a newly fetched token.
+				log("a2a_auth_token_refresh", { peerId: peer.agentId, taskId: resolvedTaskId, operation: "a2a_send", metadataSource: selection.source, mode: selection.selectedAuthMode });
 				provider.invalidate?.(peer, selection);
 				authContext = await buildOutboundAuthContext({ peer, selection, provider, localAuth });
 				return authContext.headers.Authorization.slice("Bearer ".length);

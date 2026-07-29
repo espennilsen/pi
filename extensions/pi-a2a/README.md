@@ -229,6 +229,43 @@ All methods are handled by the SDK's `DefaultRequestHandler`.
 5. Push notifications are sent to registered webhooks on each task state change
 6. If hub config is present, registers with the A2A Discovery Hub on startup
 
+## Authentication migration
+
+Existing API-key installations need no changes. `local.apiKey`, `hub.apiKey`, and `staticAgents[].apiKey` retain their current `Authorization: Bearer <key>` behavior as the `legacy-api-key` mode.
+
+Enable OAuth incrementally by explicitly opting the local agent in, then let Hub metadata or a peer Agent Card advertise the remote mode and authorization server. Modern modes are never inferred from a Hub URL alone.
+
+```jsonc
+{
+  "pi-a2a": {
+    "local": {
+      "apiKey": "optional-legacy-key",
+      "auth": {
+        "supportedAuthModes": ["legacy-api-key", "oauth2"],
+        "preferModern": true,
+        "modernOnlySkills": ["deploy-production"],
+        "oauth2": { "clientId": "client-id", "clientSecret": "stored-by-settings", "audience": "https://this-agent.example" }
+      }
+    },
+    "staticAgents": [{
+      "name": "modern-peer",
+      "url": "https://peer.example",
+      "auth": {
+        "supportedAuthModes": ["oauth2"],
+        "authorizationServer": "https://issuer.example/token",
+        "resource": "https://peer.example"
+      }
+    }]
+  }
+}
+```
+
+Static-directory `auth` is an explicit override; otherwise pi-a2a reads only the authentication schemes it recognizes from the peer's Agent Card. A peer with missing or malformed metadata is denied rather than guessed. `preferModern: false` permits legacy only when both peers explicitly support it; `modernOnlySkills` never permit legacy fallback.
+
+For `oauth2+mtls`, configure `local.auth.mtls.certPath` and `keyPath` plus `local.auth.transport.mtls` and `clientCertificate`. Certificate paths are read locally and certificate/key **contents are never logged or published**. mTLS is unavailable when TLS is terminated by an untrusted proxy because pi-a2a cannot verify the peer certificate binding.
+
+Hub operators must expose each peer's supported modes and, for OAuth peers, an authorization-server/token endpoint and resource metadata. The Hub continues to use only `hub.apiKey` for its own API; it must not receive settings.json or OAuth credentials. Agent Cards and environment variables must never contain API keys, client secrets, tokens, or certificate/key content.
+
 ## Security
 
 When `apiKey` is configured:

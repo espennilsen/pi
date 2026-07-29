@@ -14,7 +14,13 @@ pi-a2a makes Pi a fully compliant A2A (Agent-to-Agent) protocol v0.3.0 server. I
 ├── index.ts          # Extension entry point — lifecycle, commands, SDK wiring
 ├── types.ts          # Extension config types (A2A protocol types from SDK)
 ├── config.ts         # Settings.json loader via SettingsManager
-├── logger.ts         # Structured logger via pi-logger event bus
+├── logger.ts         # Structured logger via pi-logger event bus (recursive secret redaction)
+├── auth-types.ts     # Additive peer/local auth capability contracts
+├── auth-selector.ts  # Fail-closed auth-mode negotiation policy
+├── peer-metadata.ts  # Hub/static-directory/Agent Card auth metadata resolution
+├── token-provider.ts # Legacy and OAuth client-credentials token providers
+├── outbound-auth.ts  # Selected-mode headers and mTLS transport descriptor
+├── inbound-auth.ts   # Inbound credential and modern-only operation policy
 ├── agent-card.ts     # Agent Card builder from config, dynamic tool enrichment
 ├── agent-executor.ts # AgentExecutor — inline main-process delegation + TaskStore persistence
 ├── supervisor.ts     # Loop control supervisor — cycle detection, hop limits, budget enforcement
@@ -76,6 +82,8 @@ The extension emits a `⚠️ A2A anti-pattern` warning in the chat if it detect
 - **Dynamic agent card** — Starts with a basic card from config, then enriches it with registered extension tools after all extensions load. Uses a two-phase approach: `queueMicrotask` after `session_start` catches most tools, `agent_start` catches stragglers.
 - **Inline main-process delegation** — Incoming A2A messages are injected into the main pi conversation via `pi.sendMessage({ triggerTurn: true })`. Full TUI visibility — tool calls, file edits, thinking — all visible in the chat. Serial queue (max 1 concurrent), additional requests queued in arrival order.
 - **Settings-driven** — All config via `pi-a2a` key in settings.json. No env vars.
+- **Dual-mode authentication is fail-closed** — API keys remain `legacy-api-key`; OAuth and OAuth+mTLS are selected only after mutually supported peer metadata is resolved. Do not add a legacy retry after a modern selection/provider failure. `modernOnlySkills` must reject legacy before dispatch. Agent Cards contain capabilities only, never credentials.
+- **Logging is redacted at the sink** — Auth logs identify peer, task (when known), operation, metadata source, and selected mode. Use `createLogger`; do not emit credentials directly or bypass its recursive redaction.
 - **Static agent registry** — Manually configured remote agents in `staticAgents[]`. Agent cards are fetched from `/.well-known/agent-card.json` on session start and cached in memory. No hub required. Refresh via `/a2a agents refresh` command. Static agents are resolved first in `a2a_send`, before hub lookup.
 
 ## Config

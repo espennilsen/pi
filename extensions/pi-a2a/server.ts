@@ -137,6 +137,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						mtlsEvidence: opts.getMtlsEvidence?.(req),
 					}) : {};
 					if (authenticationRequired && !authentication.principal) {
+						opts.log("a2a_auth_inbound_denied", { peerId: "unknown", taskId: undefined, operation: "unknown", metadataSource: "inbound", mode: "unknown", reason: authentication.reason }, "WARN");
 						res.writeHead(authentication.status ?? 401, { "Content-Type": "application/json" });
 						res.end(JSON.stringify({ error: authentication.status === 403 ? "Forbidden" : "Unauthorized" }));
 						return;
@@ -165,9 +166,13 @@ export function startServer(opts: ServerOptions): Promise<void> {
 						mtlsEvidence: opts.getMtlsEvidence?.(req), operation,
 					});
 					if (authenticationRequired && !authentication.principal) {
+						opts.log("a2a_auth_policy_denied", { peerId: "unknown", taskId: rpcTaskId(parsed), operation: operation ?? "unknown", metadataSource: "inbound", mode: "unknown", reason: authentication.reason }, "WARN");
 						res.writeHead(authentication.status ?? 403, { "Content-Type": "application/json" });
 						res.end(JSON.stringify({ error: "Forbidden" }));
 						return;
+					}
+					if (authenticationRequired && authentication.principal) {
+						opts.log("a2a_auth_inbound_allowed", { peerId: authentication.principal.identity, taskId: rpcTaskId(parsed), operation: operation ?? "unknown", metadataSource: "inbound", mode: authentication.principal.mode });
 					}
 
 					// Build ServerCallContext with extensions and auth info.
@@ -305,6 +310,14 @@ function operationFromRpc(value: unknown): string | undefined {
 	if (typeof rpc.params?.skillId === "string") return rpc.params.skillId;
 	if (typeof rpc.params?.skill === "string") return rpc.params.skill;
 	return typeof rpc.method === "string" ? rpc.method : undefined;
+}
+
+function rpcTaskId(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const params = (value as { params?: unknown }).params;
+	if (params === null || typeof params !== "object" || Array.isArray(params)) return undefined;
+	const taskId = (params as { taskId?: unknown }).taskId;
+	return typeof taskId === "string" ? taskId : undefined;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {

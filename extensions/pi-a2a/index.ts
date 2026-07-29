@@ -1047,15 +1047,19 @@ export default function (pi: ExtensionAPI) {
 		// A2A does not require callers to provide a skill identifier. Therefore a
 		// skill-scoped inbound legacy prohibition cannot be enforced for every
 		// request; refuse startup rather than silently exposing the skill to legacy.
-		const startupAuthRejection = config.local?.auth?.supportedAuthModes?.includes("oauth2+mtls")
+		const configuredInboundModes = config.local?.auth?.supportedAuthModes ?? [];
+		const oauthOnlyInbound = configuredInboundModes.includes("oauth2") && !configuredInboundModes.includes("legacy-api-key");
+		const startupAuthRejection = configuredInboundModes.includes("oauth2+mtls")
 			? "Refusing to start A2A server: OAuth 2.0 + mTLS requires certificate-bound transport, which this runtime cannot enforce."
-			: config.local?.auth?.modernOnlySkills?.length
-				? "Refusing to start A2A server: local.auth.modernOnlySkills requires mandatory inbound skill identity, which this transport cannot enforce."
-				: undefined;
+			: oauthOnlyInbound
+				? "Refusing to start A2A server: OAuth-only inbound authentication requires an OAuth token verifier, which this runtime does not provide."
+				: config.local?.auth?.modernOnlySkills?.length
+					? "Refusing to start A2A server: local.auth.modernOnlySkills requires mandatory inbound skill identity, which this transport cannot enforce."
+					: undefined;
 		if (startupAuthRejection) {
 			const msg = startupAuthRejection;
 			ctx.ui.notify(`pi-a2a: ERROR — ${msg}`, "warning");
-			log("server_start_rejected", { reason: config.local?.auth?.supportedAuthModes?.includes("oauth2+mtls") ? "mtls_transport_unavailable" : "modern_only_skill_identity_unenforceable" }, "ERROR");
+			log("server_start_rejected", { reason: configuredInboundModes.includes("oauth2+mtls") ? "mtls_transport_unavailable" : oauthOnlyInbound ? "oauth_verifier_unavailable" : "modern_only_skill_identity_unenforceable" }, "ERROR");
 			if (longRunningTaskPollerInterval) { clearInterval(longRunningTaskPollerInterval); longRunningTaskPollerInterval = null; }
 			if (longRunningTaskStore) { longRunningTaskStore.close(); longRunningTaskStore = null; }
 			if (expiryInterval) { clearInterval(expiryInterval); expiryInterval = null; }

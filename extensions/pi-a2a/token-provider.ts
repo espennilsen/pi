@@ -62,6 +62,8 @@ const EARLY_EXPIRY_MS = 30_000;
  */
 export class OAuthClientCredentialsProvider implements TokenProvider {
 	private readonly cache = new Map<string, CachedToken>();
+	/** One credential-bearing request per normalized peer/resource/mode key. */
+	private readonly inFlight = new Map<string, Promise<CachedToken>>();
 	private readonly fetchFn: typeof fetch;
 	private readonly now: () => number;
 	private readonly credentials: OAuthClientCredentials;
@@ -83,7 +85,22 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 		const cached = this.cache.get(key);
 		if (cached && cached.expiresAt > this.now()) return cached;
 		this.cache.delete(key);
+		const pending = this.inFlight.get(key);
+		if (pending) return pending;
 
+		const acquisition = this.acquireToken(tokenEndpoint, resource, mode);
+		this.inFlight.set(key, acquisition);
+		try {
+			const token = await acquisition;
+			// Do not restore a token invalidated while its request was in flight.
+			if (this.inFlight.get(key) === acquisition) this.cache.set(key, token);
+			return token;
+		} finally {
+			if (this.inFlight.get(key) === acquisition) this.inFlight.delete(key);
+		}
+	}
+
+	private async acquireToken(tokenEndpoint: string, resource: string, mode: "oauth2" | "oauth2+mtls"): Promise<CachedToken> {
 		const body = new URLSearchParams({ grant_type: "client_credentials", resource, audience: resource });
 		const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
 		if (this.credentials.clientAuthentication === "basic") {
@@ -106,14 +123,22 @@ export class OAuthClientCredentialsProvider implements TokenProvider {
 		if (!isTokenResponse(payload)) throw new TokenProviderError("OAuth token response was invalid");
 		const expiresIn = typeof payload.expires_in === "number" && Number.isFinite(payload.expires_in) ? payload.expires_in * 1000 : 0;
 		const expiresAt = this.now() + Math.max(0, expiresIn - EARLY_EXPIRY_MS);
-		const token: CachedToken = { value: payload.access_token, tokenType: "Bearer", mode, expiresAt };
-		this.cache.set(key, token);
-		return token;
+		return { value: payload.access_token, tokenType: "Bearer", mode, expiresAt };
 	}
 
 	invalidate(peer: PeerAuthMetadata, selection: AuthSelection): void {
 		const mode = selection.selectedAuthMode;
-		if (mode === "oauth2" || mode === "oauth2+mtls") this.cache.delete(cacheKey(peer.agentId, peer.resource ?? peer.endpoint, mode));
+		if (mode !== "oauth2" && mode !== "oauth2+mtls") return;
+		// Use the same validation/normalization as acquisition so a 401 always
+		// evicts the token that was actually used.
+		try {
+			const resource = validateResource(peer.resource ?? peer.endpoint);
+			const key = cacheKey(peer.agentId, resource, mode);
+			this.cache.delete(key);
+			this.inFlight.delete(key);
+		} catch {
+			// Invalid peer metadata cannot have produced a cached OAuth token.
+		}
 	}
 }
 

@@ -48,6 +48,8 @@ export interface OAuthClientCredentialsConfig {
 	clientSecret?: string;
 	/** Expected issuer for inbound access-token validation. */
 	issuer?: string;
+	/** HTTPS OAuth token endpoint advertised to peers for client-credentials tokens. */
+	authorizationServer?: string;
 	/** Expected protected-resource audience for inbound access-token validation. */
 	audience?: string;
 	/** Required access-token scope for inbound requests, when configured. */

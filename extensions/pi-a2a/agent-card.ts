@@ -113,11 +113,13 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string, runtimeSuppor
 		schemes.bearerAuth = { type: "http", scheme: "bearer", description: "API key passed as Bearer token in the Authorization header" };
 		requirements.push({ bearerAuth: [] });
 	}
-	if (modes.includes("oauth2") || modes.includes("oauth2+mtls")) {
-		schemes.oauth2 = { type: "oauth2", flows: { clientCredentials: { tokenUrl: "", scopes: {} } }, description: "OAuth 2.0 bearer access token" };
+	const tokenUrl = trustedOAuthTokenEndpoint(config);
+	const canAdvertiseOAuth = !!tokenUrl;
+	if (canAdvertiseOAuth) {
+		schemes.oauth2 = { type: "oauth2", flows: { clientCredentials: { tokenUrl, scopes: {} } }, description: "OAuth 2.0 bearer access token" };
 	}
-	if (modes.includes("oauth2")) requirements.push({ oauth2: [] });
-	if (modes.includes("oauth2+mtls")) {
+	if (canAdvertiseOAuth && modes.includes("oauth2")) requirements.push({ oauth2: [] });
+	if (canAdvertiseOAuth && modes.includes("oauth2+mtls")) {
 		schemes.mutualTLS = { type: "mutualTLS", description: "TLS client certificate bound to the OAuth access token" };
 		requirements.push({ oauth2: [], mutualTLS: [] });
 	}
@@ -128,6 +130,22 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string, runtimeSuppor
 	}
 
 	return card;
+}
+
+/** Return a token endpoint only when local configuration explicitly pins it. */
+function trustedOAuthTokenEndpoint(config: A2AConfig): string | undefined {
+	const oauth = config.local?.auth?.oauth2;
+	if (!oauth?.authorizationServer) return undefined;
+	try {
+		const endpoint = new URL(oauth.authorizationServer);
+		if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password) return undefined;
+		const trustedOrigins = new Set((oauth.trustedTokenEndpointOrigins ?? []).flatMap((origin) => {
+			try { return [new URL(origin).origin]; } catch { return []; }
+		}));
+		return trustedOrigins.has(endpoint.origin) ? endpoint.toString() : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**

@@ -37,6 +37,30 @@ describe("token providers", () => {
 		assert.equal(requests.length, 2);
 	});
 
+	it("coalesces concurrent cache misses and normalizes invalidation keys", async () => {
+		let requests = 0;
+		let resolveRequest!: () => void;
+		const provider = new OAuthClientCredentialsProvider(
+			{ clientId: "id", clientSecret: "secret", trustedTokenEndpointOrigins: ["https://issuer.example"] },
+			async () => {
+				requests++;
+				await new Promise<void>((resolve) => { resolveRequest = resolve; });
+				return new Response(JSON.stringify({ access_token: "token", expires_in: 3600 }));
+			},
+		);
+		const normalizedPeer = { ...peer, resource: "https://peer.example" };
+		const first = provider.getAccessToken(normalizedPeer, oauthSelection);
+		const second = provider.getAccessToken(normalizedPeer, oauthSelection);
+		assert.equal(requests, 1);
+		resolveRequest();
+		await Promise.all([first, second]);
+		provider.invalidate(normalizedPeer, oauthSelection);
+		const third = provider.getAccessToken(normalizedPeer, oauthSelection);
+		resolveRequest();
+		await third;
+		assert.equal(requests, 2);
+	});
+
 	it("does not fall back to a legacy key when an OAuth token request fails", async () => {
 		const provider = new OAuthClientCredentialsProvider({ clientId: "id", clientSecret: "secret", trustedTokenEndpointOrigins: ["https://issuer.example"] }, async () => new Response("denied", { status: 401 }));
 		await assert.rejects(() => provider.getAccessToken(peer, oauthSelection), /OAuth token request failed/);

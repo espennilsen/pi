@@ -4,6 +4,8 @@
  * A2A protocol types are imported directly from @a2a-js/sdk where needed.
  */
 
+import type { LocalAuthOverride, PeerAuthMetadata, StaticAuthOverride } from "./auth-types.ts";
+
 // ── Extension Config ────────────────────────────────────────────
 
 export interface LocalConfig {
@@ -29,6 +31,8 @@ export interface LocalConfig {
 	 *  Optional when requireApiKey is true, or when hub.url is configured for an external bind,
 	 *  as loadConfig() will auto-generate one if not provided. */
 	apiKey?: string;
+	/** Peer-auth policy and local transport capabilities. */
+	auth?: LocalAuthOverride;
 }
 
 export interface A2AConfig {
@@ -125,6 +129,8 @@ export interface StaticAgentConfig {
 	url: string;
 	/** API key for authenticating with this agent (sent as Bearer token). */
 	apiKey?: string;
+	/** Optional peer-auth metadata override for this static directory entry. */
+	auth?: StaticAuthOverride;
 	/** Optional description override (defaults to agent card description). */
 	description?: string;
 }
@@ -169,6 +175,8 @@ export interface RemoteAgentSummary {
 export interface RemoteAgentDetail {
 	id: string;
 	agentCard: Record<string, unknown>;
+	/** Optional peer-auth metadata supplied by the Hub's `agents.get` response. */
+	auth?: PeerAuthMetadata;
 	status: "pending" | "active" | "suspended" | "archived";
 	visibility: "public" | "private" | "unlisted";
 	category: string[];

@@ -62,7 +62,7 @@ export class StaticAgentRegistry {
 		let failed = 0;
 
 		const promises = Array.from(this.agents.values()).map(async (entry) => {
-			const card = await fetchAgentCard(entry.config.url, this.log, entry.config.apiKey);
+			const card = await fetchAgentCard(entry.config.url, this.log);
 			if (card) {
 				entry.card = card;
 				entry.fetchedAt = Date.now();
@@ -87,7 +87,7 @@ export class StaticAgentRegistry {
 		const entry = this.agents.get(name.toLowerCase());
 		if (!entry) return false;
 
-		const card = await fetchAgentCard(entry.config.url, this.log, entry.config.apiKey);
+		const card = await fetchAgentCard(entry.config.url, this.log);
 		if (card) {
 			entry.card = card;
 			entry.fetchedAt = Date.now();
@@ -132,13 +132,12 @@ export class StaticAgentRegistry {
  * Tries the canonical path first (/.well-known/agent-card.json),
  * then falls back to the compat path (/.well-known/agent.json).
  */
-async function fetchAgentCard(baseUrl: string, log: LogFn, apiKey?: string): Promise<Record<string, unknown> | null> {
+async function fetchAgentCard(baseUrl: string, log: LogFn): Promise<Record<string, unknown> | null> {
 	const base = baseUrl.replace(/\/+$/, "");
 	const canonicalUrl = `${base}/.well-known/agent-card.json`;
+	// Agent Cards are public discovery metadata. A static API key is reserved
+	// for a later authenticated task request and must never be leaked here.
 	const headers: Record<string, string> = { Accept: "application/json" };
-	if (apiKey) {
-		headers["Authorization"] = `Bearer ${apiKey}`;
-	}
 
 	try {
 		log("static_agent_card_fetch", { url: canonicalUrl });

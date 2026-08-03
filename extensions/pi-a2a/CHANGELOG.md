@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Dual-mode peer authentication negotiation for legacy API keys, OAuth 2.0 client credentials, and capability-gated OAuth+mTLS
+- Fail-closed modern-only skill policy, Agent Card auth capability publication, and redacted structured authentication logs
 - `/a2a apikey` command to show the current effective local API key
 
 ### Changed

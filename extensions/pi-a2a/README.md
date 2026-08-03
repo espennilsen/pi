@@ -229,6 +229,48 @@ All methods are handled by the SDK's `DefaultRequestHandler`.
 5. Push notifications are sent to registered webhooks on each task state change
 6. If hub config is present, registers with the A2A Discovery Hub on startup
 
+## Authentication migration
+
+Existing API-key installations need no changes. `local.apiKey`, `hub.apiKey`, and `staticAgents[].apiKey` retain their current `Authorization: Bearer <key>` behavior as the `legacy-api-key` mode.
+
+Enable OAuth incrementally by explicitly opting the local agent in, then let Hub metadata or a peer Agent Card advertise the remote mode and authorization server. Modern modes are never inferred from a Hub URL alone.
+
+```jsonc
+{
+  "pi-a2a": {
+    "local": {
+      "apiKey": "optional-legacy-key",
+      "auth": {
+        "supportedAuthModes": ["legacy-api-key", "oauth2"],
+        "preferModern": true,
+        "modernOnlySkills": ["deploy-production"],
+        "oauth2": {
+          "clientId": "client-id",
+          "clientSecret": "stored-by-settings",
+          "audience": "https://this-agent.example",
+          "trustedTokenEndpointOrigins": ["https://issuer.example"]
+        }
+      }
+    },
+    "staticAgents": [{
+      "name": "modern-peer",
+      "url": "https://peer.example",
+      "auth": {
+        "supportedAuthModes": ["oauth2"],
+        "authorizationServer": "https://issuer.example/token",
+        "resource": "https://peer.example"
+      }
+    }]
+  }
+}
+```
+
+Static-directory `auth` is an explicit override; otherwise pi-a2a reads only the authentication schemes it recognizes from the peer's Agent Card. A peer with missing or malformed metadata is denied rather than guessed. OAuth token endpoints and resources must be HTTPS; client credentials are sent only to an exact configured `trustedTokenEndpointOrigins` origin and token redirects are refused. `preferModern: false` permits legacy only when both peers explicitly support it; `modernOnlySkills` never permit legacy fallback for outbound sends (pass `skillId` to `a2a_send`). The server refuses to start with `modernOnlySkills`, because inbound A2A requests do not mandate a skill ID and the policy would not be enforceable.
+
+`oauth2+mtls` is rejected until pi-a2a has a certificate-bound outbound HTTPS transport; certificate paths must not be configured as an indication that this runtime can enforce mTLS.
+
+Hub operators must expose each peer's supported modes and, for OAuth peers, an authorization-server/token endpoint and resource metadata. The Hub continues to use only `hub.apiKey` for its own API; it must not receive settings.json or OAuth credentials. Agent Cards and environment variables must never contain API keys, client secrets, tokens, or certificate/key content.
+
 ## Security
 
 When `apiKey` is configured:

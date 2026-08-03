@@ -16,7 +16,11 @@ herdr --help
 herdr integration status
 ```
 
-If `herdr` is absent, explain that it supports Linux and macOS (use WSL on Windows). Ask before running the upstream installer:
+If `herdr` is absent, explain that it supports Linux and macOS. On Windows, the native preview installer is available; use WSL only if the native preview is unsuitable. Ask before running either upstream installer:
+
+```powershell
+irm https://herdr.dev/install.ps1 | iex
+```
 
 ```bash
 curl -fsSL https://herdr.dev/install.sh | sh

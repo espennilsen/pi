@@ -52,8 +52,8 @@ herdr pane split <pane_id> --direction right --no-focus
 Wait rather than polling:
 
 ```bash
-herdr agent wait <target> --status idle --timeout 300000
-herdr wait output <pane_id> --match "<text>" --timeout 300000
+herdr agent wait <target> --until idle --timeout 300000
+herdr pane wait-output <pane_id> --match "<text>" --timeout 300000
 ```
 
 ## Safety

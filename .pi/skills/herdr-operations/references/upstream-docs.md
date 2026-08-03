@@ -6,7 +6,8 @@ When installed `herdr --help` does not provide enough information, use the upstr
 - Versioned docs pattern: `https://github.com/ogulcancelik/herdr/tree/master/docs/versions/<version>/website/src/content/docs`
 - CLI reference: `https://github.com/ogulcancelik/herdr/blob/master/docs/versions/<version>/website/src/content/docs/cli-reference.mdx`
 - Install/update: `https://github.com/ogulcancelik/herdr/blob/master/docs/versions/<version>/website/src/content/docs/install.mdx`
-- Agents and integrations: `https://github.com/ogulcancelik/herdr/blob/master/docs/versions/<version>/website/src/content/docs/agents.mdx`
+- Agents: `https://github.com/ogulcancelik/herdr/blob/master/docs/versions/<version>/website/src/content/docs/agents.mdx`
+- Integrations: `https://github.com/ogulcancelik/herdr/blob/master/docs/versions/<version>/website/src/content/docs/integrations.mdx`
 - Releases: https://github.com/ogulcancelik/herdr/releases
 
 ## Procedure

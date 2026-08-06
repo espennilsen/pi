@@ -52,7 +52,7 @@ import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { getInboundSupportedModes } from "./inbound-auth.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, deregisterFromHub, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, issueHubRuntimeCredential, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills, type CachedStaticAgent } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
@@ -221,6 +221,8 @@ export default function (pi: ExtensionAPI) {
 	let hubAgentId: string | null = null;
 	/** Stable instance ID for this extension process, used by hub lease telemetry. */
 	const hubInstanceId = randomUUID();
+	/** Hub-issued legacy fallback; never written to settings or disk. */
+	let runtimeInboundCredential: string | undefined;
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
@@ -740,8 +742,13 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	/** Persist hub registration state for lease tools, deregistration, and telemetry. */
-	function activateHubRegistration(agentId: string, config: ReturnType<typeof loadConfig>["config"]): void {
+	function activateHubRegistration(
+		agentId: string,
+		instanceSession: { accessToken: string } | null,
+		config: ReturnType<typeof loadConfig>["config"],
+	): void {
 		hubAgentId = agentId;
+		if (config.hub) setHubRuntimeSession(config.hub, instanceSession?.accessToken);
 		executor?.setHubAgentId(agentId);
 		if (!telemetryInterval) {
 			telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
@@ -861,6 +868,19 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		const serverConfig = buildServerConfig(config.local, agentPort, log);
+		// A Hub-connected Pi without a configured local API key gets a temporary
+		// fallback from Hub before its RPC listener starts. It remains process-only.
+		runtimeInboundCredential = config.local?.apiKey;
+		if (!runtimeInboundCredential && config.hub?.apiKey) {
+			const runtimeCredential = await issueHubRuntimeCredential(config.hub, log);
+			// This Pi server currently enforces the legacy inbound scheme. Do not
+			// start or advertise OAuth until its verifier is installed.
+			if (!runtimeCredential || runtimeCredential.mode !== "legacy-api-key") {
+				ctx.ui.notify("pi-a2a: Hub did not issue a usable legacy runtime credential", "warning");
+				return;
+			}
+			runtimeInboundCredential = runtimeCredential.credential;
+		}
 		const publicUrl = serverConfig.publicUrl;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
@@ -872,13 +892,16 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(`pi-a2a: WARNING — ${message}`, "warning");
 			log("a2a_auth_inbound_modes_unenforceable", { modes: configuredUnenforceableInboundModes, reason: "tls_or_oauth_verifier_unavailable" }, "WARN");
 		}
-		const inboundAuthModes = getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key");
+		const inboundAuthModes = runtimeInboundCredential
+			? ["legacy-api-key" as const]
+			: getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key");
 		const agentCard = buildAgentCard(config, publicUrl, inboundAuthModes);
 
 		// Deregister previous instance from hub (before re-registering)
 		if (oldHubAgentId && config.hub?.apiKey) {
-			deregisterFromHub(oldHubAgentId, config.hub, log).catch(() => {});
+			await deregisterFromHub(oldHubAgentId, hubInstanceId, config.hub, log).catch(() => {});
 		}
+		if (config.hub?.apiKey) clearHubRuntimeSession(config.hub);
 
 		// Initialize persistent task store (must be created before executor)
 		const dbPath = join(getAgentDir(), "db", "a2a.db");
@@ -1072,7 +1095,7 @@ export default function (pi: ExtensionAPI) {
 		// Start the A2A server
 		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
-		const hasApiKey = !!config.local?.apiKey;
+		const hasApiKey = !!runtimeInboundCredential;
 		const autoGenDisabled = config.local?.requireApiKey !== true;
 		if (!isLocalhost && !hasApiKey && autoGenDisabled) {
 		// Security: refuse to start when binding to external interfaces without authentication
@@ -1093,7 +1116,7 @@ export default function (pi: ExtensionAPI) {
 			// Try to start server, retrying next port on EADDRINUSE
 			while (true) {
 				try {
-					await startServer({ port: agentPort, bind, apiKey: config.local?.apiKey, auth: config.local?.auth, supportedAuthModes: inboundAuthModes, agentCard, rpcHandler, log });
+					await startServer({ port: agentPort, bind, apiKey: runtimeInboundCredential, auth: config.local?.auth, supportedAuthModes: inboundAuthModes, agentCard, rpcHandler, log });
 					break;
 				} catch (e: unknown) {
 					const code = (e as NodeJS.ErrnoException).code;
@@ -1150,16 +1173,16 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(agentPublicUrl, config.hub, log);
+			const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId, runtimeInboundCredential);
 			if (result) {
-				activateHubRegistration(result.agentId, config);
+				activateHubRegistration(result.agentId, result.instanceSession, config);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may
 				// have been a no-op (conflict/existing) and the credential may
 				// have changed since last registration.
-				if (config.local?.apiKey) {
-					await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
+				if (runtimeInboundCredential) {
+					await setCredentialOnHub(result.agentId, runtimeInboundCredential, config.hub, log);
 				}
 			}
 		}
@@ -1258,13 +1281,13 @@ export default function (pi: ExtensionAPI) {
 		resetToolTelemetryState(toolCallsInProgress, recentToolCalls);
 		totalCompletedToolCalls = 0;
 		lastTaskCostInfo = null;
-		// Deregister this instance from the hub
-		if (hubAgentId) {
-			const { config } = loadConfig(cwd);
-			if (config.hub?.apiKey) {
-				deregisterFromHub(hubAgentId, config.hub, log).catch(() => {});
-			}
+		// Deregister this exact instance before clearing its runtime session.
+		const { config: shutdownConfig } = loadConfig(cwd);
+		if (hubAgentId && shutdownConfig.hub?.apiKey) {
+			await deregisterFromHub(hubAgentId, hubInstanceId, shutdownConfig.hub, log).catch(() => {});
 		}
+		if (shutdownConfig.hub?.apiKey) clearHubRuntimeSession(shutdownConfig.hub);
+		runtimeInboundCredential = undefined;
 		hubAgentId = null;
 		staticRegistry = null;
 
@@ -2584,9 +2607,9 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(agentPublicUrl, config.hub, log);
+				const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId);
 				if (result) {
-					activateHubRegistration(result.agentId, config);
+					activateHubRegistration(result.agentId, result.instanceSession, config);
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, instanceId=${hubInstanceId}, status=${result.status}`, "info");
 					if (config.local?.apiKey) {
 						await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
@@ -2610,13 +2633,13 @@ export default function (pi: ExtensionAPI) {
 
 				// We need the agentId. Use registerWithHub which handles conflict
 				// (returns existing agentId if already registered).
-				const reg = await registerWithHub(agentPublicUrl, config.hub, log);
+				const reg = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
 					return;
 				}
 
-				activateHubRegistration(reg.agentId, config);
+				activateHubRegistration(reg.agentId, reg.instanceSession, config);
 				const result = await setCredentialOnHub(reg.agentId, config.local.apiKey, config.hub, log);
 				if (result) {
 					ctx.ui.notify(

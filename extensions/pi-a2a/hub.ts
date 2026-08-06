@@ -112,6 +112,24 @@ function hubRpcUrl(hubConfig: HubConfig): string {
 	return `${hubConfig.url.replace(/\/$/, "")}/rpc`;
 }
 
+const runtimeSessions = new Map<string, string>();
+
+function runtimeSessionKey(hubConfig: HubConfig): string {
+	return hubConfig.url.replace(/\/$/, "");
+}
+
+/** Set the short-lived Hub session issued for this runtime instance. */
+export function setHubRuntimeSession(hubConfig: HubConfig, instanceSession: string | null | undefined): void {
+	const key = runtimeSessionKey(hubConfig);
+	if (instanceSession) runtimeSessions.set(key, instanceSession);
+	else runtimeSessions.delete(key);
+}
+
+/** Remove the Hub session when the corresponding runtime instance stops. */
+export function clearHubRuntimeSession(hubConfig: HubConfig): void {
+	runtimeSessions.delete(runtimeSessionKey(hubConfig));
+}
+
 async function hubRpcResponse(
 	rpcUrl: string,
 	method: string,
@@ -123,11 +141,15 @@ async function hubRpcResponse(
 	const payload = { jsonrpc: "2.0" as const, method, params, id: 1 };
 
 	try {
+		const instanceSession = runtimeSessions.get(rpcUrl.replace(/\/rpc$/, ""));
 		const res = await fetch(rpcUrl, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"X-API-Key": hubApiKey,
+				...(instanceSession && (method === "agents.deregister" || method === "agents.reportTelemetry" ||
+			method === "tasks.claim" || method === "tasks.heartbeat")
+			? { Authorization: `Bearer ${instanceSession}` }
+			: { "X-API-Key": hubApiKey }),
 			},
 			body: JSON.stringify(payload),
 			signal: AbortSignal.timeout(10_000),
@@ -186,11 +208,37 @@ async function hubRpc(
  * If the agent is already registered (conflict), falls back to finding
  * the existing agent by URL and returns its agentId.
  */
+export interface HubInstanceSession {
+	accessToken: string;
+	expiresAt: string;
+	scopes: string[];
+}
+
+export interface HubRuntimeCredential {
+	mode: "legacy-api-key" | "oauth2";
+	credential: string;
+}
+
+/** Get a Hub-issued runtime credential without persisting it locally. */
+export async function issueHubRuntimeCredential(
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubRuntimeCredential | null> {
+	const result = await hubRpc(hubRpcUrl(hubConfig), "agents.issueRuntimeCredential", {}, hubConfig.apiKey, log, "hub_runtime_credential");
+	const mode = result?.mode;
+	return (mode === "legacy-api-key" || mode === "oauth2") && typeof result.credential === "string"
+		? { mode, credential: result.credential }
+		: null;
+}
+
 export async function registerWithHub(
 	agentUrl: string,
 	hubConfig: HubConfig,
 	log: LogFn,
-): Promise<{ agentId: string; status: string } | null> {
+	instanceId: string,
+	credential?: string,
+	managedOAuth = false,
+): Promise<{ agentId: string; status: string; instanceSession: HubInstanceSession | null } | null> {
 	const rpcUrl = hubRpcUrl(hubConfig);
 
 	const params: Record<string, unknown> = {
@@ -198,6 +246,11 @@ export async function registerWithHub(
 		category: hubConfig.categories ?? ["development-tools"],
 		tags: hubConfig.tags ?? [],
 		visibility: hubConfig.visibility ?? "public",
+		instanceId,
+		...(managedOAuth
+			? { instanceAuth: { supportedModes: ["oauth2"], managedByHub: true } }
+			: credential ? { instanceAuth: { supportedModes: ["legacy-api-key"], managedByHub: false } } : {}),
+		...(credential ? { credential } : {}),
 	};
 
 	log("hub_register_start", { url: rpcUrl, agentUrl });
@@ -206,8 +259,15 @@ export async function registerWithHub(
 	if (result) {
 		const agentId = result.agentId as string;
 		const status = result.status as string;
-		log("hub_register_success", { agentId, status });
-		return { agentId, status };
+		const rawSession = result.instanceSession;
+		const instanceSession = rawSession && typeof rawSession === "object" &&
+			typeof (rawSession as Record<string, unknown>).accessToken === "string" &&
+			typeof (rawSession as Record<string, unknown>).expiresAt === "string" &&
+			Array.isArray((rawSession as Record<string, unknown>).scopes)
+			? rawSession as unknown as HubInstanceSession
+			: null;
+		log("hub_register_success", { agentId, status, hasInstanceSession: instanceSession !== null });
+		return { agentId, status, instanceSession };
 	}
 
 	// Registration failed — check if it was a conflict (already registered).
@@ -215,7 +275,7 @@ export async function registerWithHub(
 	const existing = await findAgentByUrl(agentUrl, hubConfig, log);
 	if (existing) {
 		log("hub_register_existing", { agentId: existing.agentId, url: agentUrl });
-		return { agentId: existing.agentId, status: "existing" };
+		return { agentId: existing.agentId, status: "existing", instanceSession: null };
 	}
 
 	return null;
@@ -224,6 +284,7 @@ export async function registerWithHub(
 /** Deregister an agent instance from the hub (e.g., on session shutdown). */
 export async function deregisterFromHub(
 	agentId: string,
+	instanceId: string,
 	hubConfig: HubConfig,
 	log: LogFn,
 ): Promise<boolean> {
@@ -231,7 +292,7 @@ export async function deregisterFromHub(
 	const result = await hubRpc(
 		rpcUrl,
 		"agents.deregister",
-		{ agentId },
+		{ agentId, instanceId },
 		hubConfig.apiKey,
 		log,
 		"hub_deregister",

@@ -199,7 +199,9 @@ export function loadConfig(cwd: string): ConfigResult {
 	// ── Auto-generate apiKey when required or implied by hub-backed external exposure ──
 	const hubImpliesApiKey = isExternalBind(local) && typeof (merged.hub as Record<string, unknown> | undefined)?.url === "string";
 	const requireApiKeyImpliesApiKey = local.requireApiKey === true;
-	const shouldAutoGenerateApiKey = !local.apiKey && (requireApiKeyImpliesApiKey || hubImpliesApiKey);
+	// Hub-connected sessions receive a runtime-only fallback credential during
+	// startup. Never generate and inject a local key into effective settings.
+	const shouldAutoGenerateApiKey = !local.apiKey && !hubImpliesApiKey && requireApiKeyImpliesApiKey;
 	if (shouldAutoGenerateApiKey) {
 		// Check for existing generated key before creating a new one
 		if (!cachedGeneratedApiKey) {

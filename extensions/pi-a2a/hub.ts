@@ -116,7 +116,6 @@ const runtimeSessions = new Map<string, string>();
 
 const RUNTIME_SESSION_METHODS = new Set([
 	"agents.deregister",
-	"agents.introspectRuntimeToken",
 	"agents.reportTelemetry",
 	"tasks.claim",
 	"tasks.heartbeat",

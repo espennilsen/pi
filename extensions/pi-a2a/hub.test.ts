@@ -2,7 +2,7 @@
  * pi-a2a — Hub RPC tests for task claiming, leases, and telemetry.
  */
 
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert";
 import { claimHubTask, heartbeatHubTask, reportTelemetryToHub, registerWithHub, issueHubRuntimeCredential, getHubRuntimeAuthMetadata, introspectHubRuntimeToken, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, HubRpcError } from "./hub.ts";
 import type { HubConfig, TelemetrySnapshot } from "./types.ts";
@@ -178,6 +178,7 @@ describe("reportTelemetryToHub", () => {
 describe("introspectHubRuntimeToken", () => {
 	const token = "task-token-never-log";
 
+	beforeEach(() => clearHubRuntimeSession(hubConfig));
 	afterEach(() => clearHubRuntimeSession(hubConfig));
 
 	it("uses the exact instance session and expected JSON-RPC request", async () => {

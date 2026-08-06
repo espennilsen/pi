@@ -15,7 +15,11 @@ export interface HubOAuthBinding {
 }
 
 /** Build a fail-closed RS256 verifier bound to one logical agent instance. */
-export function createHubOAuthVerifier(metadata: HubRuntimeAuthMetadata, binding: HubOAuthBinding): OAuthVerifier {
+export function createHubOAuthVerifier(
+	metadata: HubRuntimeAuthMetadata,
+	binding: HubOAuthBinding,
+	introspect: (token: string) => Promise<boolean>,
+): OAuthVerifier {
 	return async (token: string): Promise<OAuthPrincipal | null> => {
 		try {
 			const [headerPart, payloadPart, signaturePart, ...extra] = token.split(".");
@@ -46,6 +50,10 @@ export function createHubOAuthVerifier(metadata: HubRuntimeAuthMetadata, binding
 				? claims.scope.filter((scope): scope is string => typeof scope === "string")
 				: typeof claims.scope === "string" ? claims.scope.split(/\s+/).filter(Boolean) : undefined;
 			if (!scopes?.length) return null;
+
+			// Revocation and live instance/task capabilities are authoritative at the
+			// Hub. Check them only after all local, non-network validation succeeds.
+			if (!await introspect(token)) throw new Error("Hub token is inactive");
 			return {
 				subject: claims.sub,
 				issuer: claims.iss,

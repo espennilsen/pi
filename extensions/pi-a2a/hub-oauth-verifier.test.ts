@@ -30,10 +30,15 @@ function jwt(overrides: Record<string, unknown> = {}): string {
 	return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url")}`;
 }
 
-const verifier = createHubOAuthVerifier(
-	{ mode: "oauth2", issuer, jwks: { keys: [jwk] } },
-	{ agentId, instanceId },
-);
+function createVerifier(introspect: (token: string) => Promise<boolean> = async () => true) {
+	return createHubOAuthVerifier(
+		{ mode: "oauth2", issuer, jwks: { keys: [jwk] } },
+		{ agentId, instanceId },
+		introspect,
+	);
+}
+
+const verifier = createVerifier();
 
 test("accepts a valid Hub JWT bound to the logical agent and exact instance", async () => {
 	const principal = await verifier(jwt());
@@ -48,8 +53,9 @@ test("rejects task JWTs bound to a different instance or logical agent", async (
 });
 
 test("rejects invalid signatures, algorithms, and expired tokens", async () => {
-	const invalid = jwt().replace(/.$/, (value) => value === "a" ? "b" : "a");
-	assert.equal(await verifier(invalid), null);
+	const invalidParts = jwt().split(".");
+	invalidParts[2] = `${invalidParts[2]?.startsWith("a") ? "b" : "a"}${invalidParts[2]?.slice(1)}`;
+	assert.equal(await verifier(invalidParts.join(".")), null);
 	const now = Math.floor(Date.now() / 1000);
 	assert.equal(await verifier(jwt({ exp: now - 1 })), null);
 	assert.equal(await verifier(jwt({ iat: now + 30, exp: now + 20 })), null);
@@ -58,4 +64,25 @@ test("rejects invalid signatures, algorithms, and expired tokens", async () => {
 	const parts = jwt().split(".");
 	parts[0] = Buffer.from(JSON.stringify({ alg: "none", kid })).toString("base64url");
 	assert.equal(await verifier(parts.join(".")), null);
+});
+
+test("introspects every locally valid request without a positive cache", async () => {
+	const tokens: string[] = [];
+	const verifier = createVerifier(async (token) => { tokens.push(token); return true; });
+	const token = jwt();
+	assert.ok(await verifier(token));
+	assert.ok(await verifier(token));
+	assert.deepEqual(tokens, [token, token]);
+});
+
+test("fails closed when introspection is inactive or rejects", async () => {
+	assert.equal(await createVerifier(async () => false)(jwt()), null);
+	assert.equal(await createVerifier(async () => { throw new Error("timeout"); })(jwt()), null);
+});
+
+test("never introspects a locally invalid token", async () => {
+	let calls = 0;
+	const verifier = createVerifier(async () => { calls++; return true; });
+	assert.equal(await verifier(jwt({ target_instance_id: "other-instance" })), null);
+	assert.equal(calls, 0);
 });

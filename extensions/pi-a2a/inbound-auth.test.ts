@@ -13,10 +13,13 @@ test("legacy authentication is constant-time policy gated", async () => {
 
 test("OAuth takes precedence over legacy credentials when both inbound modes are enabled", async () => {
 	let verifications = 0;
-	const result = await authenticateInboundRequest({
+	const input = {
 		authorization: "Bearer shared-token",
-		local: { apiKey: "shared-token", auth: { supportedAuthModes: ["legacy-api-key", "oauth2"] } },
-		supportedModes: ["legacy-api-key", "oauth2"],
+		local: { apiKey: "shared-token", auth: { supportedAuthModes: ["legacy-api-key" as const, "oauth2" as const] } },
+		supportedModes: ["legacy-api-key" as const, "oauth2" as const],
+	};
+	const result = await authenticateInboundRequest({
+		...input,
 		verifyOAuth: async () => {
 			verifications++;
 			return { subject: "agent", issuer: "https://issuer", audience: "api", expiresAt: Date.now() + 60_000 };
@@ -24,6 +27,10 @@ test("OAuth takes precedence over legacy credentials when both inbound modes are
 	});
 	assert.equal(verifications, 1);
 	assert.equal(result.principal?.mode, "oauth2");
+	assert.deepEqual(await authenticateInboundRequest({ ...input, verifyOAuth: async () => null }), {
+		status: 401,
+		reason: "invalid-oauth-token",
+	});
 });
 
 test("OAuth task claims must match the inbound request and required scope", async () => {

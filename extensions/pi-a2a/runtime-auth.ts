@@ -1,7 +1,7 @@
 /** Select the strongest Hub runtime authentication mode Pi can enforce. */
 
 import type { AuthMode } from "./auth-types.ts";
-import { getHubRuntimeAuthMetadata, issueHubRuntimeCredential, type HubRuntimeAuthMetadata, type HubRuntimeCredential } from "./hub.ts";
+import { getHubRuntimeAuthMetadata, introspectHubRuntimeToken, issueHubRuntimeCredential, type HubRuntimeAuthMetadata, type HubRuntimeCredential } from "./hub.ts";
 import { createHubOAuthVerifier, type HubOAuthBinding } from "./hub-oauth-verifier.ts";
 import type { OAuthVerifier } from "./inbound-auth.ts";
 import type { LogFn } from "./logger.ts";
@@ -19,6 +19,7 @@ export interface HubRuntimeAuth {
 interface Dependencies {
 	getMetadata?: (hub: HubConfig, log: LogFn) => Promise<HubRuntimeAuthMetadata>;
 	issueCredential?: (hub: HubConfig, log: LogFn) => Promise<HubRuntimeCredential | null>;
+	introspectToken?: (token: string) => Promise<boolean>;
 }
 
 export async function initializeHubRuntimeAuth(
@@ -34,7 +35,7 @@ export async function initializeHubRuntimeAuth(
 		const verifyOAuth = createHubOAuthVerifier({
 			...metadata,
 			jwks: { keys: metadata.jwks.keys },
-		}, binding);
+		}, binding, dependencies.introspectToken ?? ((token) => introspectHubRuntimeToken(token, hub, log)));
 		return {
 			supportedModes: ["oauth2"],
 			verifyOAuth,

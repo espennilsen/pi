@@ -66,7 +66,12 @@ const PROTOCOL_VERSION = "0.3.0";
  * The SDK has its own field names (e.g. `additionalInterfaces`, `transport`) that
  * differ from the spec — the SDK maps these internally when processing requests.
  */
-export function buildAgentCard(config: A2AConfig, baseUrl: string, runtimeSupportedModes?: AuthMode[]): AgentCard {
+export function buildAgentCard(
+	config: A2AConfig,
+	baseUrl: string,
+	runtimeSupportedModes?: AuthMode[],
+	runtimeOAuthProfile?: "hub-jwt",
+): AgentCard {
 	const configSkills: AgentSkill[] | undefined = config.skills?.map((s) => ({
 		...s,
 		tags: s.tags ?? [],
@@ -114,9 +119,11 @@ export function buildAgentCard(config: A2AConfig, baseUrl: string, runtimeSuppor
 		requirements.push({ bearerAuth: [] });
 	}
 	const tokenUrl = trustedOAuthTokenEndpoint(config);
-	const canAdvertiseOAuth = !!tokenUrl;
-	if (canAdvertiseOAuth) {
+	const canAdvertiseOAuth = !!tokenUrl || runtimeOAuthProfile === "hub-jwt";
+	if (tokenUrl) {
 		schemes.oauth2 = { type: "oauth2", flows: { clientCredentials: { tokenUrl, scopes: {} } }, description: "OAuth 2.0 bearer access token" };
+	} else if (runtimeOAuthProfile === "hub-jwt") {
+		schemes.oauth2 = { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Hub-managed OAuth 2.0 JWT access token" };
 	}
 	if (canAdvertiseOAuth && modes.includes("oauth2")) requirements.push({ oauth2: [] });
 	if (canAdvertiseOAuth && modes.includes("oauth2+mtls")) {

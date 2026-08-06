@@ -219,6 +219,28 @@ export interface HubRuntimeCredential {
 	credential: string;
 }
 
+export type HubRuntimeAuthMetadata =
+	| { mode: "oauth2"; issuer: string; jwks: { keys: Array<Record<string, unknown>> } }
+	| { mode: "legacy-api-key" };
+
+/** Get public verification material for Hub-issued task JWTs. */
+export async function getHubRuntimeAuthMetadata(
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<HubRuntimeAuthMetadata> {
+	const result = await hubRpc(hubRpcUrl(hubConfig), "agents.getRuntimeAuthMetadata", {}, hubConfig.apiKey, log, "hub_runtime_auth_metadata");
+	const jwks = result?.jwks;
+	const keys = jwks && typeof jwks === "object" && !Array.isArray(jwks)
+		? (jwks as Record<string, unknown>).keys
+		: undefined;
+	if (!result) throw new HubRpcError(-1, "Runtime authentication metadata is unavailable");
+	if (result.mode === "legacy-api-key") return { mode: "legacy-api-key" };
+	if (result.mode !== "oauth2" || typeof result.issuer !== "string" || !Array.isArray(keys) || keys.length === 0) {
+		throw new HubRpcError(-1, "Runtime authentication metadata is malformed");
+	}
+	return { mode: "oauth2", issuer: result.issuer, jwks: { keys: keys as Array<Record<string, unknown>> } };
+}
+
 /** Get a Hub-issued runtime credential without persisting it locally. */
 export async function issueHubRuntimeCredential(
 	hubConfig: HubConfig,
@@ -226,7 +248,7 @@ export async function issueHubRuntimeCredential(
 ): Promise<HubRuntimeCredential | null> {
 	const result = await hubRpc(hubRpcUrl(hubConfig), "agents.issueRuntimeCredential", {}, hubConfig.apiKey, log, "hub_runtime_credential");
 	const mode = result?.mode;
-	return (mode === "legacy-api-key" || mode === "oauth2") && typeof result.credential === "string"
+	return result && (mode === "legacy-api-key" || mode === "oauth2") && typeof result.credential === "string"
 		? { mode, credential: result.credential }
 		: null;
 }
@@ -270,8 +292,12 @@ export async function registerWithHub(
 		return { agentId, status, instanceSession };
 	}
 
-	// Registration failed — check if it was a conflict (already registered).
-	// hubRpc already logged the error; try to find the existing agent by URL.
+	// Managed OAuth must receive a successful instance registration so the Hub
+	// has the exact capability/session binding. Never convert an arbitrary
+	// registration error into an apparently usable OAuth runtime.
+	if (managedOAuth) return null;
+	// Legacy compatibility: older Hubs may report an already-registered URL as
+	// a conflict, so resolve that existing logical agent by URL.
 	const existing = await findAgentByUrl(agentUrl, hubConfig, log);
 	if (existing) {
 		log("hub_register_existing", { agentId: existing.agentId, url: agentUrl });

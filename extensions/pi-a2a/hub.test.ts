@@ -4,7 +4,7 @@
 
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert";
-import { claimHubTask, heartbeatHubTask, reportTelemetryToHub, registerWithHub, issueHubRuntimeCredential, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, HubRpcError } from "./hub.ts";
+import { claimHubTask, heartbeatHubTask, reportTelemetryToHub, registerWithHub, issueHubRuntimeCredential, getHubRuntimeAuthMetadata, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, HubRpcError } from "./hub.ts";
 import type { HubConfig, TelemetrySnapshot } from "./types.ts";
 
 const hubConfig: HubConfig = {
@@ -176,6 +176,18 @@ describe("reportTelemetryToHub", () => {
 });
 
 describe("Hub runtime instance sessions", () => {
+	it("gets public Hub JWT verification metadata", async () => {
+		mockFetch(async (_input, init) => {
+			const body = JSON.parse(init?.body as string) as { method: string };
+			assert.strictEqual(body.method, "agents.getRuntimeAuthMetadata");
+			assert.strictEqual(new Headers(init?.headers).get("X-API-Key"), "secret");
+			return rpcResponse({ mode: "oauth2", issuer: "https://hub.example", jwks: { keys: [{ kty: "RSA", kid: "key-1", n: "n", e: "AQAB" }] } });
+		});
+		assert.deepStrictEqual(await getHubRuntimeAuthMetadata(hubConfig, log), {
+			mode: "oauth2", issuer: "https://hub.example", jwks: { keys: [{ kty: "RSA", kid: "key-1", n: "n", e: "AQAB" }] },
+		});
+	});
+
 	it("gets a Hub-issued fallback credential without adding it to settings", async () => {
 		mockFetch(async (_input, init) => {
 			const body = JSON.parse(init?.body as string) as { method: string };

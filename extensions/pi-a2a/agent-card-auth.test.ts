@@ -26,6 +26,15 @@ test("security reflects runtime-supported modes without leaking configuration se
 	assert.equal(mixed.securitySchemes.oauth2.flows.clientCredentials.tokenUrl, "https://issuer.example/token");
 });
 
+test("advertises verifier-backed Hub JWT OAuth without local client credentials", () => {
+	const card = buildAgentCard({}, "https://agent.example", ["oauth2"], "hub-jwt") as any;
+	assert.deepEqual(card.security, [{ oauth2: [] }]);
+	assert.deepEqual(card.securitySchemes.oauth2, {
+		type: "http", scheme: "bearer", bearerFormat: "JWT",
+		description: "Hub-managed OAuth 2.0 JWT access token",
+	});
+});
+
 test("does not advertise OAuth without a pinned HTTPS token endpoint", () => {
 	const card = buildAgentCard(
 		{ local: { auth: { supportedAuthModes: ["oauth2"], oauth2: { authorizationServer: "https://issuer.example/token" } } } },

@@ -71,7 +71,7 @@ export function startServer(opts: ServerOptions): Promise<void> {
 		const corsOrigin = isLocalhost ? "*" : "";
 		const corsHeaders = (opts.apiKey || opts.auth?.supportedAuthModes?.some((mode) => mode !== "legacy-api-key")) ? "Content-Type, Authorization" : "Content-Type";
 		const supportedAuthModes = opts.supportedAuthModes ?? getInboundSupportedModes({ apiKey: opts.apiKey, auth: opts.auth });
-		const authenticationRequired = opts.apiKey !== undefined || (opts.auth?.supportedAuthModes?.length ?? 0) > 0;
+		const authenticationRequired = supportedAuthModes.length > 0;
 
 		server = http.createServer(async (req, res) => {
 			const method = req.method ?? "GET";
@@ -147,10 +147,14 @@ export function startServer(opts: ServerOptions): Promise<void> {
 					// Authenticate once after extracting the operation, still before dispatch.
 					// This avoids verifying an OAuth bearer token twice per request.
 					const operation = operationFromRpc(parsed);
+					const taskId = rpcTaskId(parsed);
 					const authentication = authenticationRequired ? await authenticateInboundRequest({
 						authorization: authHeader, local: { apiKey: opts.apiKey, auth: opts.auth },
 						supportedModes: supportedAuthModes, verifyOAuth: opts.verifyOAuth,
-						mtlsEvidence: opts.getMtlsEvidence?.(req), operation,
+						mtlsEvidence: opts.getMtlsEvidence?.(req), operation, taskId,
+						requireTaskBinding: supportedAuthModes.some((mode) => mode === "oauth2" || mode === "oauth2+mtls"),
+						requestedSkill: skillFromRpc(parsed),
+						...(supportedAuthModes.some((mode) => mode === "oauth2" || mode === "oauth2+mtls") ? { requiredOAuthScope: "tasks:run" } : {}),
 					}) : {};
 					if (authenticationRequired && !authentication.principal) {
 						opts.log("a2a_auth_policy_denied", { peerId: "unknown", taskId: rpcTaskId(parsed), operation: operation ?? "unknown", metadataSource: "inbound", mode: "unknown", reason: authentication.reason }, "WARN");
@@ -299,11 +303,20 @@ function operationFromRpc(value: unknown): string | undefined {
 	return typeof rpc.method === "string" ? rpc.method : undefined;
 }
 
+function skillFromRpc(value: unknown): string | undefined {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const params = (value as { params?: unknown }).params;
+	if (params === null || typeof params !== "object" || Array.isArray(params)) return undefined;
+	const candidate = params as { skillId?: unknown; skill?: unknown };
+	return typeof candidate.skillId === "string" ? candidate.skillId : typeof candidate.skill === "string" ? candidate.skill : undefined;
+}
+
 function rpcTaskId(value: unknown): string | undefined {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const params = (value as { params?: unknown }).params;
 	if (params === null || typeof params !== "object" || Array.isArray(params)) return undefined;
-	const taskId = (params as { taskId?: unknown }).taskId;
+	const candidate = params as { taskId?: unknown; id?: unknown; message?: { taskId?: unknown } };
+	const taskId = candidate.taskId ?? candidate.id ?? candidate.message?.taskId;
 	return typeof taskId === "string" ? taskId : undefined;
 }
 

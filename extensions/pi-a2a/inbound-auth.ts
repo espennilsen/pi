@@ -10,6 +10,10 @@ export interface OAuthPrincipal {
 	audience: string | string[];
 	expiresAt: number;
 	scopes?: string[];
+	/** Hub task and authorization claims retained for request-level binding. */
+	taskId?: string;
+	skill?: string;
+	tokenId?: string;
 	/** RFC 8705 JWT confirmation thumbprint (`x5t#S256`). */
 	cnfThumbprint?: string;
 }
@@ -24,6 +28,10 @@ export interface InboundAuthInput {
 	verifyOAuth?: OAuthVerifier;
 	mtlsEvidence?: MtlsEvidence;
 	operation?: string;
+	taskId?: string;
+	requireTaskBinding?: boolean;
+	requiredOAuthScope?: string;
+	requestedSkill?: string;
 	modernOnlySkills?: string[];
 }
 export interface InboundAuthResult { principal?: AuthenticatedPrincipal; status?: 401 | 403; reason?: string; }
@@ -54,6 +62,18 @@ export async function authenticateInboundRequest(input: InboundAuthInput): Promi
 				(expected?.audience && !audiences.includes(expected.audience)) ||
 				(expected?.requiredScope && !principal.scopes?.includes(expected.requiredScope))) {
 				return { status: 401, reason: "oauth-claims-rejected" };
+			}
+			if (input.requireTaskBinding && (!input.taskId || principal.taskId !== input.taskId)) {
+				return { status: 403, reason: "oauth-task-binding-rejected" };
+			}
+			if (!input.requireTaskBinding && input.taskId !== undefined && principal.taskId !== input.taskId) {
+				return { status: 403, reason: "oauth-task-binding-rejected" };
+			}
+			if (input.requiredOAuthScope && !principal.scopes?.includes(input.requiredOAuthScope)) {
+				return { status: 403, reason: "oauth-scope-rejected" };
+			}
+			if (input.requestedSkill && principal.skill !== input.requestedSkill) {
+				return { status: 403, reason: "oauth-skill-binding-rejected" };
 			}
 			if (oauthMode === "oauth2+mtls") {
 				const evidence = input.mtlsEvidence;

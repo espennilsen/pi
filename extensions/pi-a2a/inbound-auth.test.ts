@@ -26,6 +26,17 @@ test("OAuth takes precedence over legacy credentials when both inbound modes are
 	assert.equal(result.principal?.mode, "oauth2");
 });
 
+test("OAuth task claims must match the inbound request and required scope", async () => {
+	const verifier = async () => ({
+		subject: "agent", issuer: "https://issuer", audience: "target", expiresAt: Date.now() + 60_000,
+		scopes: ["tasks:run"], taskId: "task-1", skill: "coding", tokenId: "jti-1",
+	});
+	const base = { authorization: "Bearer jwt", local: { auth: { supportedAuthModes: ["oauth2" as const] } }, supportedModes: ["oauth2" as const], verifyOAuth: verifier };
+	assert.equal((await authenticateInboundRequest({ ...base, taskId: "task-1", requiredOAuthScope: "tasks:run" })).principal?.mode, "oauth2");
+	assert.deepEqual(await authenticateInboundRequest({ ...base, taskId: "task-2", requiredOAuthScope: "tasks:run" }), { status: 403, reason: "oauth-task-binding-rejected" });
+	assert.deepEqual(await authenticateInboundRequest({ ...base, taskId: "task-1", requiredOAuthScope: "tasks:cancel" }), { status: 403, reason: "oauth-scope-rejected" });
+});
+
 test("OAuth is verified and mTLS bindings are required when mTLS is the only enabled mode", async () => {
 	const local: LocalConfig = { auth: { supportedAuthModes: ["oauth2+mtls"] } };
 	const verifier = async () => ({ subject: "agent", issuer: "https://issuer", audience: "api", expiresAt: Date.now() + 60_000, scopes: ["a2a"], cnfThumbprint: "bound" });

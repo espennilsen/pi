@@ -50,9 +50,10 @@ import { SQLiteTaskStore, SQLitePushNotificationStore } from "./task-store.ts";
 import { loadConfig } from "./config.ts";
 import { buildAgentCard, enrichAgentCard } from "./agent-card.ts";
 import { getInboundSupportedModes } from "./inbound-auth.ts";
+import { initializeHubRuntimeAuth, type HubRuntimeAuth } from "./runtime-auth.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, issueHubRuntimeCredential, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills, type CachedStaticAgent } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
@@ -223,6 +224,8 @@ export default function (pi: ExtensionAPI) {
 	const hubInstanceId = randomUUID();
 	/** Hub-issued legacy fallback; never written to settings or disk. */
 	let runtimeInboundCredential: string | undefined;
+	/** Verifier-backed Hub OAuth state for the current runtime, when available. */
+	let runtimeHubAuth: HubRuntimeAuth | undefined;
 	let staticRegistry: StaticAgentRegistry | null = null;
 	/** Active SQLite task store — closed on session restart/shutdown. */
 	let taskStore: SQLiteTaskStore | null = null;
@@ -868,34 +871,42 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		const serverConfig = buildServerConfig(config.local, agentPort, log);
-		// A Hub-connected Pi without a configured local API key gets a temporary
-		// fallback from Hub before its RPC listener starts. It remains process-only.
+		// An explicitly configured local key retains legacy semantics. Otherwise
+		// prefer verifier-backed Hub OAuth and request a memory-only legacy
+		// credential only when the Hub has no usable JWT verification metadata.
 		runtimeInboundCredential = config.local?.apiKey;
+		runtimeHubAuth = undefined;
 		if (!runtimeInboundCredential && config.hub?.apiKey) {
-			const runtimeCredential = await issueHubRuntimeCredential(config.hub, log);
-			// This Pi server currently enforces the legacy inbound scheme. Do not
-			// start or advertise OAuth until its verifier is installed.
-			if (!runtimeCredential || runtimeCredential.mode !== "legacy-api-key") {
-				ctx.ui.notify("pi-a2a: Hub did not issue a usable legacy runtime credential", "warning");
+			try {
+				runtimeHubAuth = await initializeHubRuntimeAuth(config.hub, hubInstanceId, log);
+				runtimeInboundCredential = runtimeHubAuth.credential;
+			} catch (error) {
+				ctx.ui.notify(`pi-a2a: ${error instanceof Error ? error.message : String(error)}`, "warning");
 				return;
 			}
-			runtimeInboundCredential = runtimeCredential.credential;
+		}
+		if (runtimeHubAuth?.managedOAuth && config.hub?.autoRegister === false) {
+			ctx.ui.notify("pi-a2a: Hub-managed OAuth requires automatic instance registration", "warning");
+			return;
 		}
 		const publicUrl = serverConfig.publicUrl;
 		agentPublicUrl = publicUrl;
 		configuredMaxHops = config.maxHops ?? DEFAULT_MAX_HOPS;
-		// This HTTP server has neither a TLS peer verifier nor a configured JWT verifier.
-		// Do not advertise configured modern intent until a verifier-backed HTTPS runtime exists.
-		const configuredUnenforceableInboundModes = config.local?.auth?.supportedAuthModes?.filter((mode) => mode === "oauth2" || mode === "oauth2+mtls") ?? [];
+		// This HTTP server still cannot enforce mTLS. OAuth is enforceable only when
+		// the authenticated Hub supplied public signing metadata for this runtime.
+		const configuredUnenforceableInboundModes = config.local?.auth?.supportedAuthModes?.filter((mode) =>
+			mode === "oauth2+mtls" || (mode === "oauth2" && !runtimeHubAuth?.verifyOAuth)
+		) ?? [];
 		if (configuredUnenforceableInboundModes.length > 0) {
 			const message = `Configured inbound auth modes are unavailable in this HTTP runtime: ${configuredUnenforceableInboundModes.join(", ")}`;
 			ctx.ui.notify(`pi-a2a: WARNING — ${message}`, "warning");
 			log("a2a_auth_inbound_modes_unenforceable", { modes: configuredUnenforceableInboundModes, reason: "tls_or_oauth_verifier_unavailable" }, "WARN");
 		}
-		const inboundAuthModes = runtimeInboundCredential
+		const inboundAuthModes = runtimeHubAuth?.supportedModes ?? (runtimeInboundCredential
 			? ["legacy-api-key" as const]
-			: getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key");
-		const agentCard = buildAgentCard(config, publicUrl, inboundAuthModes);
+			: getInboundSupportedModes(config.local).filter((mode) => mode === "legacy-api-key"));
+		const runtimeOAuthProfile = runtimeHubAuth?.managedOAuth ? "hub-jwt" as const : undefined;
+		const agentCard = buildAgentCard(config, publicUrl, inboundAuthModes, runtimeOAuthProfile);
 
 		// Deregister previous instance from hub (before re-registering)
 		if (oldHubAgentId && config.hub?.apiKey) {
@@ -1071,7 +1082,7 @@ export default function (pi: ExtensionAPI) {
 		// skill-scoped inbound legacy prohibition cannot be enforced for every
 		// request; refuse startup rather than silently exposing the skill to legacy.
 		const configuredInboundModes = config.local?.auth?.supportedAuthModes ?? [];
-		const oauthOnlyInbound = configuredInboundModes.includes("oauth2") && !configuredInboundModes.includes("legacy-api-key");
+		const oauthOnlyInbound = configuredInboundModes.includes("oauth2") && !configuredInboundModes.includes("legacy-api-key") && !runtimeHubAuth?.verifyOAuth;
 		const startupAuthRejection = configuredInboundModes.includes("oauth2+mtls")
 			? "Refusing to start A2A server: OAuth 2.0 + mTLS requires certificate-bound transport, which this runtime cannot enforce."
 			: oauthOnlyInbound
@@ -1095,9 +1106,9 @@ export default function (pi: ExtensionAPI) {
 		// Start the A2A server
 		let bind = serverConfig.bind;
 		const isLocalhost = !bind || bind === "127.0.0.1" || bind === "::1";
-		const hasApiKey = !!runtimeInboundCredential;
+		const hasInboundAuthentication = inboundAuthModes.length > 0;
 		const autoGenDisabled = config.local?.requireApiKey !== true;
-		if (!isLocalhost && !hasApiKey && autoGenDisabled) {
+		if (!isLocalhost && !hasInboundAuthentication && autoGenDisabled) {
 		// Security: refuse to start when binding to external interfaces without authentication
 		// and auto-generation is disabled (requireApiKey is not true).
 		const msg = "Refusing to start A2A server: binding to external interface without apiKey and requireApiKey is not enabled. Set pi-a2a.local.apiKey or pi-a2a.local.requireApiKey in settings.json.";
@@ -1116,7 +1127,7 @@ export default function (pi: ExtensionAPI) {
 			// Try to start server, retrying next port on EADDRINUSE
 			while (true) {
 				try {
-					await startServer({ port: agentPort, bind, apiKey: runtimeInboundCredential, auth: config.local?.auth, supportedAuthModes: inboundAuthModes, agentCard, rpcHandler, log });
+					await startServer({ port: agentPort, bind, apiKey: runtimeInboundCredential, auth: config.local?.auth, supportedAuthModes: inboundAuthModes, verifyOAuth: runtimeHubAuth?.verifyOAuth, agentCard, rpcHandler, log });
 					break;
 				} catch (e: unknown) {
 					const code = (e as NodeJS.ErrnoException).code;
@@ -1139,7 +1150,7 @@ export default function (pi: ExtensionAPI) {
 			const serverConfigFinal = buildServerConfig(config.local, agentPort, log);
 			const publicUrl = serverConfigFinal.publicUrl;
 			agentPublicUrl = publicUrl;
-			updateAgentCard(buildAgentCard(config, publicUrl, inboundAuthModes));
+			updateAgentCard(buildAgentCard(config, publicUrl, inboundAuthModes, runtimeOAuthProfile));
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			// Clean up resources allocated before server start
@@ -1173,8 +1184,9 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId, runtimeInboundCredential);
+			const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId, runtimeInboundCredential, runtimeHubAuth?.managedOAuth ?? false);
 			if (result) {
+				runtimeHubAuth?.bindAgent(result.agentId);
 				activateHubRegistration(result.agentId, result.instanceSession, config);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
@@ -1184,6 +1196,10 @@ export default function (pi: ExtensionAPI) {
 				if (runtimeInboundCredential) {
 					await setCredentialOnHub(result.agentId, runtimeInboundCredential, config.hub, log);
 				}
+			} else if (runtimeHubAuth?.managedOAuth) {
+				await stopServer(log);
+				ctx.ui.notify("pi-a2a: OAuth instance registration failed; server stopped fail-closed", "warning");
+				return;
 			}
 		}
 
@@ -1288,6 +1304,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (shutdownConfig.hub?.apiKey) clearHubRuntimeSession(shutdownConfig.hub);
 		runtimeInboundCredential = undefined;
+		runtimeHubAuth = undefined;
 		hubAgentId = null;
 		staticRegistry = null;
 

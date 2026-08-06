@@ -383,15 +383,19 @@ export async function registerWithHub(
 
 	const result = await hubRpc(rpcUrl, "agents.register", params, hubConfig.apiKey, log, "hub_register");
 	if (result) {
-		const agentId = result.agentId as string;
-		const status = result.status as string;
-		const instanceSession = parseUsableHubInstanceSession(result.instanceSession);
-		if (managedOAuth && !instanceSession) {
-			log("hub_register_invalid_instance_session", { agentId }, "ERROR");
-			return null;
+		const agentId = result.agentId;
+		const status = result.status;
+		if (typeof agentId === "string" && agentId.trim().length > 0 &&
+			typeof status === "string" && status.trim().length > 0) {
+			const instanceSession = parseUsableHubInstanceSession(result.instanceSession);
+			if (managedOAuth && !instanceSession) {
+				log("hub_register_invalid_instance_session", { agentId }, "ERROR");
+				return null;
+			}
+			log("hub_register_success", { agentId, status, hasInstanceSession: instanceSession !== null });
+			return { agentId, status, instanceSession };
 		}
-		log("hub_register_success", { agentId, status, hasInstanceSession: instanceSession !== null });
-		return { agentId, status, instanceSession };
+		log("hub_register_malformed", {}, "ERROR");
 	}
 
 	// Managed OAuth must receive a successful instance registration so the Hub

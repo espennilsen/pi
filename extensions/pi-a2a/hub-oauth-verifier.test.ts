@@ -66,14 +66,14 @@ test("rejects invalid signatures, algorithms, and expired tokens", async () => {
 	assert.equal(await verifier(parts.join(".")), null);
 });
 
-test("rejects malformed scopes and nbf outside the temporal tolerance", async () => {
+test("rejects malformed scopes and enforces nbf without future tolerance", async () => {
 	const now = Math.floor(Date.now() / 1000);
 	for (const scope of [["valid", 1], ["valid", ""], [], "", "   "]) {
 		assert.equal(await verifier(jwt({ scope })), null);
 	}
 	assert.equal(await verifier(jwt({ nbf: "soon" })), null);
-	assert.equal(await verifier(jwt({ nbf: now + 61 })), null);
-	assert.ok(await verifier(jwt({ nbf: now + 60, scope: "one two" })));
+	assert.equal(await verifier(jwt({ nbf: now + 1 })), null);
+	assert.ok(await verifier(jwt({ nbf: now, scope: "one two" })));
 });
 
 test("coalesces concurrent introspection of the same token and does not cache after settlement", async () => {
@@ -111,6 +111,7 @@ test("fails closed above the concurrent distinct introspection limit", async () 
 
 test("fails closed when introspection is inactive or rejects", async () => {
 	assert.equal(await createVerifier(async () => false)(jwt()), null);
+	assert.equal(await createVerifier(() => { throw new Error("synchronous timeout"); })(jwt()), null);
 	assert.equal(await createVerifier(async () => { throw new Error("timeout"); })(jwt()), null);
 	const token = jwt();
 	let reject!: (error: Error) => void;

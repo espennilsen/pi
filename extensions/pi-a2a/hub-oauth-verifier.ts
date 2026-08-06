@@ -29,7 +29,13 @@ export function createHubOAuthVerifier(
 		let pending = inFlightIntrospections.get(identity);
 		if (!pending) {
 			if (inFlightIntrospections.size >= MAX_CONCURRENT_INTROSPECTIONS) return false;
-			pending = Promise.resolve().then(() => introspect(token));
+			try {
+				// Invoke immediately so session-scoped callbacks capture their current
+				// generation before the caller can synchronously rotate registration.
+				pending = Promise.resolve(introspect(token));
+			} catch (error) {
+				pending = Promise.reject(error);
+			}
 			inFlightIntrospections.set(identity, pending);
 		}
 		try {
@@ -63,7 +69,7 @@ export function createHubOAuthVerifier(
 				typeof claims.exp !== "number" || !Number.isInteger(claims.exp) || claims.exp <= now ||
 				typeof claims.iat !== "number" || !Number.isInteger(claims.iat) || claims.iat > now + 60 ||
 				claims.exp <= claims.iat || claims.exp - claims.iat > 5 * 60 ||
-				(claims.nbf !== undefined && (typeof claims.nbf !== "number" || !Number.isInteger(claims.nbf) || claims.nbf > now + 60)) ||
+				(claims.nbf !== undefined && (typeof claims.nbf !== "number" || !Number.isInteger(claims.nbf) || claims.nbf > now)) ||
 				typeof claims.task_id !== "string" || !claims.task_id || typeof claims.skill !== "string" || !claims.skill ||
 				typeof claims.jti !== "string" || !claims.jti) return null;
 			const scopes = Array.isArray(claims.scope)

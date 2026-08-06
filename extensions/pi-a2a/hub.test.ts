@@ -300,6 +300,39 @@ describe("Hub runtime instance sessions", () => {
 		}
 	});
 
+	it("rejects managed OAuth registration responses with malformed identity fields", async () => {
+		const expiresAt = new Date(Date.now() + 60_000).toISOString();
+		for (const malformed of [
+			{ agentId: undefined, status: "registered" },
+			{ agentId: "", status: "registered" },
+			{ agentId: "   ", status: "registered" },
+			{ agentId: "agent-1", status: undefined },
+			{ agentId: "agent-1", status: "" },
+			{ agentId: "agent-1", status: "   " },
+		]) {
+			mockFetch(() => rpcResponse({
+				...malformed,
+				instanceSession: { accessToken: "session-1", expiresAt, scopes: ["a2a:token:introspect"] },
+			}));
+			assert.equal(await registerWithHub("http://agent.local", hubConfig, log, "instance-1", undefined, true), null);
+		}
+	});
+
+	it("fails legacy registration safely when identity fields are malformed", async () => {
+		for (const malformed of [
+			{ agentId: 123, status: "registered" },
+			{ agentId: "agent-1", status: null },
+		]) {
+			mockFetch((_input, init) => {
+				const body = JSON.parse(init?.body as string) as { method: string };
+				return body.method === "agents.register"
+					? rpcResponse(malformed)
+					: rpcResponse({ agents: [] });
+			});
+			assert.equal(await registerWithHub("http://agent.local", hubConfig, log, "instance-1"), null);
+		}
+	});
+
 	it("falls back to the API key when an older registration response has no session", async () => {
 		mockFetch(async (_input, init) => {
 			assert.strictEqual(new Headers(init?.headers).get("X-API-Key"), "secret");

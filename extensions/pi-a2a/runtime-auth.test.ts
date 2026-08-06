@@ -51,11 +51,11 @@ test("captures the exact session for each introspection and rotates only for the
 	assert.equal(auth.activateRegistration("agent-1", session("session-old")), true);
 	const oldToken = jwt();
 	const oldCall = auth.verifyOAuth?.(oldToken);
-	await new Promise<void>((resolve) => setImmediate(resolve));
+	// Rotation before any microtask must not change the session captured by oldCall.
 	assert.equal(auth.activateRegistration("agent-1", session("session-new")), true);
+	assert.deepEqual(seen, [{ token: oldToken, session: "session-old" }]);
 	const newToken = oldToken;
 	const newCall = auth.verifyOAuth?.(newToken);
-	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.deepEqual(seen, [{ token: oldToken, session: "session-old" }, { token: newToken, session: "session-new" }]);
 	releaseOld();
 	assert.ok(await oldCall);
@@ -64,15 +64,25 @@ test("captures the exact session for each introspection and rotates only for the
 
 test("fails before registration and after deactivation without stale introspection", async () => {
 	const seen: string[] = [];
+	let release!: () => void;
+	const pending = new Promise<void>((resolve) => { release = resolve; });
 	const auth = await initializeHubRuntimeAuth(hub, "instance-1", log, {
 		getMetadata: async () => metadata,
-		introspectToken: async (_token, session) => { seen.push(session); return true; },
+		introspectToken: async (_token, capturedSession) => {
+			seen.push(capturedSession);
+			await pending;
+			return true;
+		},
 	});
 	assert.equal(await auth.verifyOAuth?.(jwt()), null);
 	assert.equal(auth.activateRegistration("agent-1", session("session-1")), true);
-	assert.ok(await auth.verifyOAuth?.(jwt()));
+	const activeCall = auth.verifyOAuth?.(jwt());
+	// Deactivation before any microtask must not change activeCall's captured session.
 	auth.deactivateRegistration();
+	assert.deepEqual(seen, ["session-1"]);
 	assert.equal(await auth.verifyOAuth?.(jwt()), null);
+	release();
+	assert.ok(await activeCall);
 	assert.deepEqual(seen, ["session-1"]);
 });
 

@@ -114,6 +114,15 @@ function hubRpcUrl(hubConfig: HubConfig): string {
 
 const runtimeSessions = new Map<string, string>();
 
+const RUNTIME_SESSION_METHODS = new Set([
+	"agents.deregister",
+	"agents.introspectRuntimeToken",
+	"agents.reportTelemetry",
+	"tasks.claim",
+	"tasks.heartbeat",
+	"tasks.reportStatus",
+]);
+
 function runtimeSessionKey(hubConfig: HubConfig): string {
 	return hubConfig.url.replace(/\/$/, "");
 }
@@ -146,10 +155,9 @@ async function hubRpcResponse(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				...(instanceSession && (method === "agents.deregister" || method === "agents.reportTelemetry" ||
-			method === "tasks.claim" || method === "tasks.heartbeat" || method === "tasks.reportStatus")
-			? { Authorization: `Bearer ${instanceSession}` }
-			: { "X-API-Key": hubApiKey }),
+				...(instanceSession && RUNTIME_SESSION_METHODS.has(method)
+					? { Authorization: `Bearer ${instanceSession}` }
+					: { "X-API-Key": hubApiKey }),
 			},
 			body: JSON.stringify(payload),
 			signal: AbortSignal.timeout(10_000),
@@ -239,6 +247,70 @@ export async function getHubRuntimeAuthMetadata(
 		throw new HubRpcError(-1, "Runtime authentication metadata is malformed");
 	}
 	return { mode: "oauth2", issuer: result.issuer, jwks: { keys: keys as Array<Record<string, unknown>> } };
+}
+
+/** Validate a Hub-issued task token using this exact runtime instance session. */
+export async function introspectHubRuntimeToken(
+	token: string,
+	hubConfig: HubConfig,
+	log: LogFn,
+): Promise<boolean> {
+	const rpcUrl = hubRpcUrl(hubConfig);
+	const instanceSession = runtimeSessions.get(runtimeSessionKey(hubConfig));
+	if (!instanceSession) {
+		log("hub_runtime_token_introspection_unavailable", { reason: "missing_instance_session" }, "WARN");
+		return false;
+	}
+
+	try {
+		const res = await fetch(rpcUrl, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${instanceSession}`,
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				method: "agents.introspectRuntimeToken",
+				params: { token },
+				id: 1,
+			}),
+			signal: AbortSignal.timeout(10_000),
+		});
+
+		if (!res.ok) {
+			log("hub_runtime_token_introspection_http_error", { status: res.status }, "ERROR");
+			return false;
+		}
+
+		const data: unknown = await res.json();
+		if (!data || typeof data !== "object" || Array.isArray(data)) {
+			log("hub_runtime_token_introspection_malformed", {}, "WARN");
+			return false;
+		}
+		const response = data as Record<string, unknown>;
+		if (response.error !== undefined) {
+			log("hub_runtime_token_introspection_rpc_error", {}, "ERROR");
+			return false;
+		}
+		const result = response.result;
+		const exactEnvelope = Object.keys(response).length === 3
+			&& response.jsonrpc === "2.0"
+			&& response.id === 1;
+		const exactActiveResult = result !== null
+			&& typeof result === "object"
+			&& !Array.isArray(result)
+			&& Object.keys(result).length === 1
+			&& (result as Record<string, unknown>).active === true;
+		if (exactEnvelope && exactActiveResult) return true;
+
+		log("hub_runtime_token_introspection_malformed", {}, "WARN");
+		return false;
+	} catch {
+		// Never include the error or response body: either may echo the supplied token.
+		log("hub_runtime_token_introspection_error", {}, "ERROR");
+		return false;
+	}
 }
 
 /** Get a Hub-issued runtime credential without persisting it locally. */

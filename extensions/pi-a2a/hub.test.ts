@@ -4,7 +4,7 @@
 
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert";
-import { claimHubTask, heartbeatHubTask, reportTelemetryToHub, registerWithHub, issueHubRuntimeCredential, getHubRuntimeAuthMetadata, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, HubRpcError } from "./hub.ts";
+import { claimHubTask, heartbeatHubTask, reportTelemetryToHub, registerWithHub, issueHubRuntimeCredential, getHubRuntimeAuthMetadata, introspectHubRuntimeToken, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, HubRpcError } from "./hub.ts";
 import type { HubConfig, TelemetrySnapshot } from "./types.ts";
 
 const hubConfig: HubConfig = {
@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 function mockFetch(handler: (input: unknown, init?: RequestInit) => Promise<Response> | Response): void {
-	originalFetch = globalThis.fetch;
+	originalFetch ??= globalThis.fetch;
 	globalThis.fetch = handler as typeof fetch;
 }
 
@@ -172,6 +172,67 @@ describe("reportTelemetryToHub", () => {
 
 		const result = await reportTelemetryToHub("agent-1", telemetry, hubConfig, log, "instance-1");
 		assert.deepStrictEqual(result, { telemetryUpdatedAt: "2026-01-01T00:00:00.000Z" });
+	});
+});
+
+describe("introspectHubRuntimeToken", () => {
+	const token = "task-token-never-log";
+
+	afterEach(() => clearHubRuntimeSession(hubConfig));
+
+	it("uses the exact instance session and expected JSON-RPC request", async () => {
+		setHubRuntimeSession(hubConfig, "instance-session");
+		mockFetch(async (_input, init) => {
+			const body = JSON.parse(init?.body as string) as { method: string; params: Record<string, unknown> };
+			assert.strictEqual(body.method, "agents.introspectRuntimeToken");
+			assert.deepStrictEqual(body.params, { token });
+			const headers = new Headers(init?.headers);
+			assert.strictEqual(headers.get("Authorization"), "Bearer instance-session");
+			assert.strictEqual(headers.get("X-API-Key"), null);
+			return rpcResponse({ active: true });
+		});
+
+		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), true);
+	});
+
+	it("fails closed without making an API-key-authenticated request when no instance session exists", async () => {
+		let called = false;
+		mockFetch(async () => {
+			called = true;
+			return rpcResponse({ active: true });
+		});
+
+		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), false);
+		assert.strictEqual(called, false);
+	});
+
+	it("accepts only the exact minimal active response schema", async () => {
+		setHubRuntimeSession(hubConfig, "instance-session");
+		for (const result of [{ active: false }, {}, { active: "true" }, { active: true, subject: "extra" }]) {
+			mockFetch(() => rpcResponse(result));
+			assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), false);
+		}
+	});
+
+	it("returns false for timeout, network, HTTP, RPC, and malformed responses without leaking secrets", async () => {
+		setHubRuntimeSession(hubConfig, "instance-session");
+		const entries: unknown[] = [];
+		const captureLog = (...args: unknown[]) => { entries.push(args); };
+		const cases: Array<() => Response | Promise<Response>> = [
+			async () => { throw new DOMException(`timeout ${token}`, "TimeoutError"); },
+			async () => { throw new Error(`network failure ${token}`); },
+			() => new Response(`HTTP body ${token}`, { status: 500 }),
+			() => rpcError(-32000, `RPC message ${token}`, { token }),
+			() => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { active: true }, raw: token })),
+			() => new Response(`not-json ${token}`),
+		];
+
+		for (const handler of cases) {
+			mockFetch(handler);
+			assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, captureLog), false);
+		}
+		assert.ok(entries.length > 0);
+		assert.strictEqual(JSON.stringify(entries).includes(token), false);
 	});
 });
 

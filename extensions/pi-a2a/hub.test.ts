@@ -215,6 +215,16 @@ describe("introspectHubRuntimeToken", () => {
 		}
 	});
 
+	it("rejects oversized introspection responses without logging their contents", async () => {
+		setHubRuntimeSession(hubConfig, "instance-session");
+		const oversizedSecret = `oversized-${token}`;
+		const entries: unknown[] = [];
+		mockFetch(() => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { active: true }, padding: oversizedSecret.repeat(500) })));
+		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, (...args: unknown[]) => { entries.push(args); }), false);
+		assert.strictEqual(JSON.stringify(entries).includes(token), false);
+		assert.strictEqual(JSON.stringify(entries).includes(oversizedSecret), false);
+	});
+
 	it("returns false for timeout, network, HTTP, RPC, and malformed responses without leaking secrets", async () => {
 		setHubRuntimeSession(hubConfig, "instance-session");
 		const entries: unknown[] = [];

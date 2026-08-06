@@ -66,18 +66,50 @@ test("rejects invalid signatures, algorithms, and expired tokens", async () => {
 	assert.equal(await verifier(parts.join(".")), null);
 });
 
-test("introspects every locally valid request without a positive cache", async () => {
+test("coalesces concurrent introspection of the same token and does not cache after settlement", async () => {
 	const tokens: string[] = [];
-	const verifier = createVerifier(async (token) => { tokens.push(token); return true; });
+	let release!: (active: boolean) => void;
+	const pending = new Promise<boolean>((resolve) => { release = resolve; });
+	const verifier = createVerifier(async (token) => { tokens.push(token); return pending; });
 	const token = jwt();
-	assert.ok(await verifier(token));
+	const first = verifier(token);
+	const second = verifier(token);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.deepEqual(tokens, [token]);
+	release(true);
+	assert.ok(await first);
+	assert.ok(await second);
 	assert.ok(await verifier(token));
 	assert.deepEqual(tokens, [token, token]);
+});
+
+test("fails closed above the concurrent distinct introspection limit", async () => {
+	const releases: Array<(active: boolean) => void> = [];
+	let calls = 0;
+	const verifier = createVerifier(async () => {
+		calls++;
+		return new Promise<boolean>((resolve) => { releases.push(resolve); });
+	});
+	const pending = Array.from({ length: 16 }, (_, index) => verifier(jwt({ jti: `jti-${index}` })));
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(calls, 16);
+	assert.equal(await verifier(jwt({ jti: "jti-over-limit" })), null);
+	assert.equal(calls, 16);
+	for (const release of releases) release(true);
+	assert.equal((await Promise.all(pending)).every(Boolean), true);
 });
 
 test("fails closed when introspection is inactive or rejects", async () => {
 	assert.equal(await createVerifier(async () => false)(jwt()), null);
 	assert.equal(await createVerifier(async () => { throw new Error("timeout"); })(jwt()), null);
+	const token = jwt();
+	let reject!: (error: Error) => void;
+	const verifier = createVerifier(() => new Promise<boolean>((_resolve, rejectPromise) => { reject = rejectPromise; }));
+	const first = verifier(token);
+	const second = verifier(token);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	reject(new Error("shared timeout"));
+	assert.deepEqual(await Promise.all([first, second]), [null, null]);
 });
 
 test("never introspects a locally invalid token", async () => {

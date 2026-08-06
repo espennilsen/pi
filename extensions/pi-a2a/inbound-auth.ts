@@ -83,8 +83,13 @@ export async function authenticateInboundRequest(input: InboundAuthInput): Promi
 			}
 			return { principal: { mode: oauthMode, identity: `oauth-${redactedIdentity(principal.subject)}` } };
 		}
-		// A credential presented to an available OAuth verifier must never be
-		// reinterpreted as a legacy key after OAuth verification fails.
+		// Mixed deployments retain their explicitly configured legacy key, but
+		// only an exact constant-time match may be reinterpreted after OAuth
+		// rejection. Arbitrary malformed or invalid JWTs never downgrade.
+		if (modes.includes("legacy-api-key") && input.local?.apiKey && constantTimeEqual(token, input.local.apiKey)) {
+			if (modernOnly) return { status: 403, reason: "modern-auth-required" };
+			return { principal: { mode: "legacy-api-key", identity: keyIdentity(token) } };
+		}
 		return { status: 401, reason: "invalid-oauth-token" };
 	}
 	if (modes.includes("legacy-api-key") && input.local?.apiKey && constantTimeEqual(token, input.local.apiKey)) {

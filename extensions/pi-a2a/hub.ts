@@ -282,7 +282,12 @@ export async function introspectHubRuntimeToken(
 			return false;
 		}
 
-		const data: unknown = await res.json();
+		const responseText = await readBoundedResponseText(res, 8 * 1024);
+		if (responseText === null) {
+			log("hub_runtime_token_introspection_malformed", {}, "WARN");
+			return false;
+		}
+		const data: unknown = JSON.parse(responseText);
 		if (!data || typeof data !== "object" || Array.isArray(data)) {
 			log("hub_runtime_token_introspection_malformed", {}, "WARN");
 			return false;
@@ -310,6 +315,34 @@ export async function introspectHubRuntimeToken(
 		log("hub_runtime_token_introspection_error", {}, "ERROR");
 		return false;
 	}
+}
+
+async function readBoundedResponseText(response: Response, maximumBytes: number): Promise<string | null> {
+	const declaredLength = Number(response.headers.get("content-length"));
+	if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+		await response.body?.cancel();
+		return null;
+	}
+	if (!response.body) return "";
+
+	const reader = response.body.getReader();
+	const chunks: Buffer[] = [];
+	let totalBytes = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			totalBytes += value.byteLength;
+			if (totalBytes > maximumBytes) {
+				await reader.cancel();
+				return null;
+			}
+			chunks.push(Buffer.from(value));
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
 /** Get a Hub-issued runtime credential without persisting it locally. */

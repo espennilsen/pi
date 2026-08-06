@@ -27,7 +27,21 @@ test("OAuth takes precedence over legacy credentials when both inbound modes are
 	});
 	assert.equal(verifications, 1);
 	assert.equal(result.principal?.mode, "oauth2");
-	assert.deepEqual(await authenticateInboundRequest({ ...input, verifyOAuth: async () => null }), {
+	assert.equal((await authenticateInboundRequest({ ...input, verifyOAuth: async () => null })).principal?.mode, "legacy-api-key");
+});
+
+test("dual-mode auth permits only the exact configured legacy key after OAuth rejection", async () => {
+	const input = {
+		local: { apiKey: "distinct-legacy-key", auth: { supportedAuthModes: ["legacy-api-key" as const, "oauth2" as const] } },
+		supportedModes: ["legacy-api-key" as const, "oauth2" as const],
+		verifyOAuth: async () => null,
+	};
+	assert.equal((await authenticateInboundRequest({ ...input, authorization: "Bearer distinct-legacy-key" })).principal?.mode, "legacy-api-key");
+	assert.deepEqual(await authenticateInboundRequest({ ...input, authorization: "Bearer malformed.jwt.value" }), {
+		status: 401,
+		reason: "invalid-oauth-token",
+	});
+	assert.deepEqual(await authenticateInboundRequest({ ...input, authorization: "Bearer nonmatching-key" }), {
 		status: 401,
 		reason: "invalid-oauth-token",
 	});

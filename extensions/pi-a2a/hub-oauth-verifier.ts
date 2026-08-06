@@ -1,7 +1,9 @@
 /** Verification of Hub-issued, instance-bound A2A task JWTs. */
 
-import { createPublicKey, createVerify } from "node:crypto";
+import { createHash, createPublicKey, createVerify } from "node:crypto";
 import type { OAuthPrincipal, OAuthVerifier } from "./inbound-auth.ts";
+
+const MAX_CONCURRENT_INTROSPECTIONS = 16;
 
 export interface HubRuntimeAuthMetadata {
 	mode: "oauth2";
@@ -20,6 +22,22 @@ export function createHubOAuthVerifier(
 	binding: HubOAuthBinding,
 	introspect: (token: string) => Promise<boolean>,
 ): OAuthVerifier {
+	const inFlightIntrospections = new Map<string, Promise<boolean>>();
+
+	async function introspectValidatedToken(identity: string, token: string): Promise<boolean> {
+		let pending = inFlightIntrospections.get(identity);
+		if (!pending) {
+			if (inFlightIntrospections.size >= MAX_CONCURRENT_INTROSPECTIONS) return false;
+			pending = Promise.resolve().then(() => introspect(token));
+			inFlightIntrospections.set(identity, pending);
+		}
+		try {
+			return await pending;
+		} finally {
+			if (inFlightIntrospections.get(identity) === pending) inFlightIntrospections.delete(identity);
+		}
+	}
+
 	return async (token: string): Promise<OAuthPrincipal | null> => {
 		try {
 			const [headerPart, payloadPart, signaturePart, ...extra] = token.split(".");
@@ -53,7 +71,8 @@ export function createHubOAuthVerifier(
 
 			// Revocation and live instance/task capabilities are authoritative at the
 			// Hub. Check them only after all local, non-network validation succeeds.
-			if (!await introspect(token)) throw new Error("Hub token is inactive");
+			const introspectionIdentity = `${claims.jti}:${createHash("sha256").update(token).digest("base64url")}`;
+			if (!await introspectValidatedToken(introspectionIdentity, token)) throw new Error("Hub token is inactive");
 			return {
 				subject: claims.sub,
 				issuer: claims.iss,

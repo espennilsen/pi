@@ -251,12 +251,12 @@ export async function getHubRuntimeAuthMetadata(
 /** Validate a Hub-issued task token using this exact runtime instance session. */
 export async function introspectHubRuntimeToken(
 	token: string,
+	instanceSessionAccessToken: string,
 	hubConfig: HubConfig,
 	log: LogFn,
 ): Promise<boolean> {
 	const rpcUrl = hubRpcUrl(hubConfig);
-	const instanceSession = runtimeSessions.get(runtimeSessionKey(hubConfig));
-	if (!instanceSession) {
+	if (!instanceSessionAccessToken) {
 		log("hub_runtime_token_introspection_unavailable", { reason: "missing_instance_session" }, "WARN");
 		return false;
 	}
@@ -266,7 +266,7 @@ export async function introspectHubRuntimeToken(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${instanceSession}`,
+				Authorization: `Bearer ${instanceSessionAccessToken}`,
 			},
 			body: JSON.stringify({
 				jsonrpc: "2.0",
@@ -385,13 +385,11 @@ export async function registerWithHub(
 	if (result) {
 		const agentId = result.agentId as string;
 		const status = result.status as string;
-		const rawSession = result.instanceSession;
-		const instanceSession = rawSession && typeof rawSession === "object" &&
-			typeof (rawSession as Record<string, unknown>).accessToken === "string" &&
-			typeof (rawSession as Record<string, unknown>).expiresAt === "string" &&
-			Array.isArray((rawSession as Record<string, unknown>).scopes)
-			? rawSession as unknown as HubInstanceSession
-			: null;
+		const instanceSession = parseUsableHubInstanceSession(result.instanceSession);
+		if (managedOAuth && !instanceSession) {
+			log("hub_register_invalid_instance_session", { agentId }, "ERROR");
+			return null;
+		}
 		log("hub_register_success", { agentId, status, hasInstanceSession: instanceSession !== null });
 		return { agentId, status, instanceSession };
 	}
@@ -409,6 +407,19 @@ export async function registerWithHub(
 	}
 
 	return null;
+}
+
+export function parseUsableHubInstanceSession(value: unknown): HubInstanceSession | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const session = value as Record<string, unknown>;
+	if (typeof session.accessToken !== "string" || session.accessToken.trim().length === 0 ||
+		typeof session.expiresAt !== "string" || !session.expiresAt ||
+		!Array.isArray(session.scopes) || session.scopes.length === 0 ||
+		!session.scopes.every((scope) => typeof scope === "string" && scope.trim().length > 0) ||
+		!session.scopes.includes("a2a:token:introspect")) return null;
+	const expiresAt = Date.parse(session.expiresAt);
+	if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+	return { accessToken: session.accessToken, expiresAt: session.expiresAt, scopes: [...session.scopes] as string[] };
 }
 
 /** Deregister an agent instance from the hub (e.g., on session shutdown). */

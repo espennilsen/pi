@@ -53,7 +53,7 @@ import { getInboundSupportedModes } from "./inbound-auth.ts";
 import { initializeHubRuntimeAuth, type HubRuntimeAuth } from "./runtime-auth.ts";
 import { PiAgentExecutor, type ProcessResult } from "./agent-executor.ts";
 import { startServer, stopServer, isRunning, updateAgentCard, getAgentCard } from "./server.ts";
-import { registerWithHub, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority } from "./hub.ts";
+import { registerWithHub, deregisterFromHub, setHubRuntimeSession, clearHubRuntimeSession, setCredentialOnHub, discoverAgentsOnHub, getAgentFromHub, getCredentialFromHub, reportTelemetryToHub, requestClarification, pollClarification, cancelClarification, listAnsweredClarifications, acknowledgeClarification, type AnsweredClarification, createHubTask, getHubTask, listHubTasks, updateHubTask, transitionHubTask, deleteHubTask, getHubTaskHistory, getHubTaskBoard, reportHubTaskStatus, claimHubTask, heartbeatHubTask, HubRpcError, registerPushEndpoint, sendPushEvent, sendTaskStateChanged, sendTaskProgress, sendTaskError, sendHeartbeat, selectAgent, listStrategies, getProject, listProjects, createProject, updateProject, connectToPipelineStream, listenToSSEStream, type HubTask, type PipelineState, type TaskPriority, type HubInstanceSession } from "./hub.ts";
 import { sendA2AMessage, getRemoteTask, type SenderIdentity } from "./client.ts";
 import { StaticAgentRegistry, extractSkills, type CachedStaticAgent } from "./static-agents.ts";
 import { createLogger, type LogFn } from "./logger.ts";
@@ -747,9 +747,12 @@ export default function (pi: ExtensionAPI) {
 	/** Persist hub registration state for lease tools, deregistration, and telemetry. */
 	function activateHubRegistration(
 		agentId: string,
-		instanceSession: { accessToken: string } | null,
+		instanceSession: HubInstanceSession | null,
 		config: ReturnType<typeof loadConfig>["config"],
-	): void {
+	): boolean {
+		// Runtime verifier state is authoritative. Do not replace the general Hub
+		// session unless this exact managed registration can be activated first.
+		if (runtimeHubAuth?.managedOAuth && (!instanceSession || !runtimeHubAuth.activateRegistration(agentId, instanceSession))) return false;
 		hubAgentId = agentId;
 		if (config.hub) setHubRuntimeSession(config.hub, instanceSession?.accessToken);
 		executor?.setHubAgentId(agentId);
@@ -757,6 +760,16 @@ export default function (pi: ExtensionAPI) {
 			telemetryInterval = setInterval(() => { sendTelemetry(config).catch(() => {}); }, 30_000);
 		}
 		sendTelemetry(config).catch(() => {});
+		return true;
+	}
+
+	async function registerAndActivateHub(config: ReturnType<typeof loadConfig>["config"]) {
+		if (!config.hub) return null;
+		const result = await registerWithHub(
+			agentPublicUrl, config.hub, log, hubInstanceId,
+			runtimeInboundCredential, runtimeHubAuth?.managedOAuth ?? false,
+		);
+		return result && activateHubRegistration(result.agentId, result.instanceSession, config) ? result : null;
 	}
 
 	const sseConnections = new Map<string, { abort: () => void }>();
@@ -875,6 +888,7 @@ export default function (pi: ExtensionAPI) {
 		// prefer verifier-backed Hub OAuth and request a memory-only legacy
 		// credential only when the Hub has no usable JWT verification metadata.
 		runtimeInboundCredential = config.local?.apiKey;
+		runtimeHubAuth?.deactivateRegistration();
 		runtimeHubAuth = undefined;
 		if (!runtimeInboundCredential && config.hub?.apiKey) {
 			try {
@@ -1184,10 +1198,8 @@ export default function (pi: ExtensionAPI) {
 
 		// Optional: register with A2A Hub
 		if (config.hub && config.hub.apiKey && (config.hub.autoRegister !== false)) {
-			const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId, runtimeInboundCredential, runtimeHubAuth?.managedOAuth ?? false);
+			const result = await registerAndActivateHub(config);
 			if (result) {
-				runtimeHubAuth?.bindAgent(result.agentId);
-				activateHubRegistration(result.agentId, result.instanceSession, config);
 				ctx.ui.notify(`pi-a2a: Registered with hub (${result.status})`, "info");
 
 				// Always push credential via setCredential — registration may
@@ -1302,6 +1314,7 @@ export default function (pi: ExtensionAPI) {
 		if (hubAgentId && shutdownConfig.hub?.apiKey) {
 			await deregisterFromHub(hubAgentId, hubInstanceId, shutdownConfig.hub, log).catch(() => {});
 		}
+		runtimeHubAuth?.deactivateRegistration();
 		if (shutdownConfig.hub?.apiKey) clearHubRuntimeSession(shutdownConfig.hub);
 		runtimeInboundCredential = undefined;
 		runtimeHubAuth = undefined;
@@ -2624,9 +2637,8 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				const result = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId);
+				const result = await registerAndActivateHub(config);
 				if (result) {
-					activateHubRegistration(result.agentId, result.instanceSession, config);
 					ctx.ui.notify(`Registered with hub: agentId=${result.agentId}, instanceId=${hubInstanceId}, status=${result.status}`, "info");
 					if (config.local?.apiKey) {
 						await setCredentialOnHub(result.agentId, config.local.apiKey, config.hub, log);
@@ -2650,13 +2662,12 @@ export default function (pi: ExtensionAPI) {
 
 				// We need the agentId. Use registerWithHub which handles conflict
 				// (returns existing agentId if already registered).
-				const reg = await registerWithHub(agentPublicUrl, config.hub, log, hubInstanceId);
+				const reg = await registerAndActivateHub(config);
 				if (!reg) {
 					ctx.ui.notify("Could not determine agentId — registration failed", "warning");
 					return;
 				}
 
-				activateHubRegistration(reg.agentId, reg.instanceSession, config);
 				const result = await setCredentialOnHub(reg.agentId, config.local.apiKey, config.hub, log);
 				if (result) {
 					ctx.ui.notify(

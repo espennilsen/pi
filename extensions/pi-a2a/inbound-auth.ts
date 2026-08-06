@@ -72,7 +72,7 @@ export async function authenticateInboundRequest(input: InboundAuthInput): Promi
 			if (input.requiredOAuthScope && !principal.scopes?.includes(input.requiredOAuthScope)) {
 				return { status: 403, reason: "oauth-scope-rejected" };
 			}
-			if (input.requestedSkill && principal.skill !== input.requestedSkill) {
+			if (principal.skill !== input.requestedSkill) {
 				return { status: 403, reason: "oauth-skill-binding-rejected" };
 			}
 			if (oauthMode === "oauth2+mtls") {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildAgentCard } from "./agent-card.ts";
+import { parseAgentCardAuthMetadata } from "./peer-metadata.ts";
 import type { A2AConfig } from "./types.ts";
 
 test("security reflects runtime-supported modes without leaking configuration secrets", () => {
@@ -32,7 +33,10 @@ test("advertises verifier-backed Hub JWT OAuth without local client credentials"
 	assert.deepEqual(card.securitySchemes.oauth2, {
 		type: "http", scheme: "bearer", bearerFormat: "JWT",
 		description: "Hub-managed OAuth 2.0 JWT access token",
+		"x-a2a-hub-managed": true,
 	});
+	assert.deepEqual(parseAgentCardAuthMetadata(card, "agent-1", card.url).supportedAuthModes, ["oauth2"]);
+	assert.equal(JSON.stringify(card).includes("secret"), false);
 });
 
 test("does not advertise OAuth without a pinned HTTPS token endpoint", () => {

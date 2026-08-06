@@ -178,11 +178,7 @@ describe("reportTelemetryToHub", () => {
 describe("introspectHubRuntimeToken", () => {
 	const token = "task-token-never-log";
 
-	beforeEach(() => clearHubRuntimeSession(hubConfig));
-	afterEach(() => clearHubRuntimeSession(hubConfig));
-
-	it("uses the exact instance session and expected JSON-RPC request", async () => {
-		setHubRuntimeSession(hubConfig, "instance-session");
+	it("uses the explicit captured instance session and expected JSON-RPC request", async () => {
 		mockFetch(async (_input, init) => {
 			const body = JSON.parse(init?.body as string) as { method: string; params: Record<string, unknown> };
 			assert.strictEqual(body.method, "agents.introspectRuntimeToken");
@@ -193,40 +189,26 @@ describe("introspectHubRuntimeToken", () => {
 			return rpcResponse({ active: true });
 		});
 
-		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), true);
-	});
-
-	it("fails closed without making an API-key-authenticated request when no instance session exists", async () => {
-		let called = false;
-		mockFetch(async () => {
-			called = true;
-			return rpcResponse({ active: true });
-		});
-
-		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), false);
-		assert.strictEqual(called, false);
+		assert.strictEqual(await introspectHubRuntimeToken(token, "instance-session", hubConfig, log), true);
 	});
 
 	it("accepts only the exact minimal active response schema", async () => {
-		setHubRuntimeSession(hubConfig, "instance-session");
 		for (const result of [{ active: false }, {}, { active: "true" }, { active: true, subject: "extra" }]) {
 			mockFetch(() => rpcResponse(result));
-			assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, log), false);
+			assert.strictEqual(await introspectHubRuntimeToken(token, "instance-session", hubConfig, log), false);
 		}
 	});
 
 	it("rejects oversized introspection responses without logging their contents", async () => {
-		setHubRuntimeSession(hubConfig, "instance-session");
 		const oversizedSecret = `oversized-${token}`;
 		const entries: unknown[] = [];
 		mockFetch(() => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { active: true }, padding: oversizedSecret.repeat(500) })));
-		assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, (...args: unknown[]) => { entries.push(args); }), false);
+		assert.strictEqual(await introspectHubRuntimeToken(token, "instance-session", hubConfig, (...args: unknown[]) => { entries.push(args); }), false);
 		assert.strictEqual(JSON.stringify(entries).includes(token), false);
 		assert.strictEqual(JSON.stringify(entries).includes(oversizedSecret), false);
 	});
 
 	it("returns false for timeout, network, HTTP, RPC, and malformed responses without leaking secrets", async () => {
-		setHubRuntimeSession(hubConfig, "instance-session");
 		const entries: unknown[] = [];
 		const captureLog = (...args: unknown[]) => { entries.push(args); };
 		const cases: Array<() => Response | Promise<Response>> = [
@@ -240,7 +222,7 @@ describe("introspectHubRuntimeToken", () => {
 
 		for (const handler of cases) {
 			mockFetch(handler);
-			assert.strictEqual(await introspectHubRuntimeToken(token, hubConfig, captureLog), false);
+			assert.strictEqual(await introspectHubRuntimeToken(token, "instance-session", hubConfig, captureLog), false);
 		}
 		assert.ok(entries.length > 0);
 		assert.strictEqual(JSON.stringify(entries).includes(token), false);
@@ -284,18 +266,38 @@ describe("Hub runtime instance sessions", () => {
 		clearHubRuntimeSession(hubConfig);
 	});
 
-	it("registers an instance with managed OAuth capability and accepts its optional session", async () => {
+	it("registers managed OAuth only with a usable introspection session", async () => {
+		const expiresAt = new Date(Date.now() + 60_000).toISOString();
 		mockFetch(async (_input, init) => {
 			const body = JSON.parse(init?.body as string) as { method: string; params: Record<string, unknown> };
 			assert.strictEqual(body.method, "agents.register");
 			assert.strictEqual(body.params.instanceId, "instance-1");
 			assert.deepStrictEqual(body.params.instanceAuth, { supportedModes: ["oauth2"], managedByHub: true });
 			assert.strictEqual(new Headers(init?.headers).get("X-API-Key"), "secret");
-			return rpcResponse({ agentId: "agent-1", status: "registered", instanceSession: { accessToken: "session-1", expiresAt: "2026-01-01T01:00:00.000Z", scopes: ["agents.deregister"] } });
+			return rpcResponse({ agentId: "agent-1", status: "registered", instanceSession: { accessToken: "session-1", expiresAt, scopes: ["agents.deregister", "a2a:token:introspect"] } });
 		});
 
 		const result = await registerWithHub("http://agent.local", hubConfig, log, "instance-1", undefined, true);
-		assert.deepStrictEqual(result, { agentId: "agent-1", status: "registered", instanceSession: { accessToken: "session-1", expiresAt: "2026-01-01T01:00:00.000Z", scopes: ["agents.deregister"] } });
+		assert.deepStrictEqual(result, { agentId: "agent-1", status: "registered", instanceSession: { accessToken: "session-1", expiresAt, scopes: ["agents.deregister", "a2a:token:introspect"] } });
+	});
+
+	it("rejects managed OAuth registrations with missing or malformed sessions", async () => {
+		const future = new Date(Date.now() + 60_000).toISOString();
+		const invalidSessions = [
+			undefined,
+			{ accessToken: "", expiresAt: future, scopes: ["a2a:token:introspect"] },
+			{ accessToken: "   ", expiresAt: future, scopes: ["a2a:token:introspect"] },
+			{ accessToken: "token", expiresAt: future, scopes: [] },
+			{ accessToken: "token", expiresAt: new Date(Date.now() - 1000).toISOString(), scopes: ["a2a:token:introspect"] },
+			{ accessToken: "token", expiresAt: "not-a-date", scopes: ["a2a:token:introspect"] },
+			{ accessToken: "token", expiresAt: future, scopes: ["agents.deregister"] },
+			{ accessToken: "token", expiresAt: future, scopes: ["a2a:token:introspect", ""] },
+			{ accessToken: "token", expiresAt: future, scopes: ["a2a:token:introspect", "   "] },
+		];
+		for (const instanceSession of invalidSessions) {
+			mockFetch(() => rpcResponse({ agentId: "agent-1", status: "registered", instanceSession }));
+			assert.equal(await registerWithHub("http://agent.local", hubConfig, log, "instance-1", undefined, true), null);
+		}
 	});
 
 	it("falls back to the API key when an older registration response has no session", async () => {

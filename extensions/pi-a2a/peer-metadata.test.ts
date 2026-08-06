@@ -41,6 +41,26 @@ describe("resolvePeerMetadata", () => {
 		assert.deepEqual(metadata, { agentId: "static-1", endpoint: "https://peer.example", supportedAuthModes: ["oauth2", "oauth2+mtls"], source: "agent-card", authorizationServer: "https://issuer.example/.well-known/oauth-authorization-server" });
 	});
 
+	it("recognizes only explicitly marked Hub-managed bearer JWT as OAuth", async () => {
+		const marked = await resolvePeerMetadata(
+			{ agentId: "marked", endpoint: "https://peer.example", staticAgent: { name: "marked", url: "https://peer.example" } },
+			{ fetchAgentCard: async () => ({ securitySchemes: { oauth2: { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Hub-managed OAuth 2.0 JWT access token", "x-a2a-hub-managed": true } }, security: [{ oauth2: [] }] }) },
+		);
+		assert.deepEqual(marked.supportedAuthModes, ["oauth2"]);
+		for (const scheme of [
+			{ type: "oauth2" },
+			{ type: "http", scheme: "bearer" },
+			{ type: "http", scheme: "bearer", bearerFormat: "JWT" },
+			{ type: "http", scheme: "bearer", bearerFormat: "JWT", "x-a2a-hub-managed": true },
+		]) {
+			const arbitrary = await resolvePeerMetadata(
+				{ agentId: "arbitrary", endpoint: "https://peer.example", staticAgent: { name: "arbitrary", url: "https://peer.example" } },
+				{ fetchAgentCard: async () => ({ securitySchemes: { custom: scheme }, security: [{ custom: [] }] }) },
+			);
+			assert.deepEqual(arbitrary.supportedAuthModes, []);
+		}
+	});
+
 	it("does not treat a token URL as authorization-server metadata", async () => {
 		const metadata = await resolvePeerMetadata(
 			{ agentId: "static-1", endpoint: "https://peer.example", staticAgent: { name: "static-1", url: "https://peer.example" } },

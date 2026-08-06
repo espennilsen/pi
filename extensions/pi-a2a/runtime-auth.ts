@@ -1,7 +1,7 @@
 /** Select the strongest Hub runtime authentication mode Pi can enforce. */
 
 import type { AuthMode } from "./auth-types.ts";
-import { getHubRuntimeAuthMetadata, introspectHubRuntimeToken, issueHubRuntimeCredential, type HubRuntimeAuthMetadata, type HubRuntimeCredential } from "./hub.ts";
+import { getHubRuntimeAuthMetadata, introspectHubRuntimeToken, issueHubRuntimeCredential, parseUsableHubInstanceSession, type HubInstanceSession, type HubRuntimeAuthMetadata, type HubRuntimeCredential } from "./hub.ts";
 import { createHubOAuthVerifier, type HubOAuthBinding } from "./hub-oauth-verifier.ts";
 import type { OAuthVerifier } from "./inbound-auth.ts";
 import type { LogFn } from "./logger.ts";
@@ -12,14 +12,16 @@ export interface HubRuntimeAuth {
 	credential?: string;
 	verifyOAuth?: OAuthVerifier;
 	managedOAuth: boolean;
-	binding?: HubOAuthBinding;
-	bindAgent(agentId: string): void;
+	/** Atomically bind once, or rotate the session for the same logical agent. */
+	activateRegistration(agentId: string, instanceSession: HubInstanceSession): boolean;
+	/** Disable future introspections while retaining the one-shot agent binding. */
+	deactivateRegistration(): void;
 }
 
 interface Dependencies {
 	getMetadata?: (hub: HubConfig, log: LogFn) => Promise<HubRuntimeAuthMetadata>;
 	issueCredential?: (hub: HubConfig, log: LogFn) => Promise<HubRuntimeCredential | null>;
-	introspectToken?: (token: string) => Promise<boolean>;
+	introspectToken?: (token: string, instanceSessionAccessToken: string) => Promise<boolean>;
 }
 
 export async function initializeHubRuntimeAuth(
@@ -32,16 +34,34 @@ export async function initializeHubRuntimeAuth(
 	const metadata = await getMetadata(hub, log);
 	if (metadata.mode === "oauth2") {
 		const binding: HubOAuthBinding = { agentId: "", instanceId };
+		let sessionAccessToken: string | undefined;
+		let registrationGeneration = 0;
+		const introspect = dependencies.introspectToken ?? ((token, session) => introspectHubRuntimeToken(token, session, hub, log));
 		const verifyOAuth = createHubOAuthVerifier({
 			...metadata,
 			jwks: { keys: metadata.jwks.keys },
-		}, binding, dependencies.introspectToken ?? ((token) => introspectHubRuntimeToken(token, hub, log)));
+		}, binding, async (token) => {
+			// Capture synchronously for this call so later rotation cannot change it.
+			const capturedSession = sessionAccessToken;
+			if (!capturedSession) return false;
+			return introspect(token, capturedSession);
+		}, () => String(registrationGeneration));
 		return {
 			supportedModes: ["oauth2"],
 			verifyOAuth,
 			managedOAuth: true,
-			binding,
-			bindAgent(agentId: string) { binding.agentId = agentId; },
+			activateRegistration(agentId, instanceSession) {
+				const validated = parseUsableHubInstanceSession(instanceSession);
+				if (!agentId || !validated || (binding.agentId && binding.agentId !== agentId)) return false;
+				binding.agentId = agentId;
+				sessionAccessToken = validated.accessToken;
+				registrationGeneration++;
+				return true;
+			},
+			deactivateRegistration() {
+				sessionAccessToken = undefined;
+				registrationGeneration++;
+			},
 		};
 	}
 
@@ -54,6 +74,7 @@ export async function initializeHubRuntimeAuth(
 		supportedModes: ["legacy-api-key"],
 		credential: fallback.credential,
 		managedOAuth: false,
-		bindAgent() {},
+		activateRegistration() { return true; },
+		deactivateRegistration() {},
 	};
 }

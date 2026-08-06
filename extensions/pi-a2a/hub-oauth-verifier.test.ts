@@ -66,6 +66,16 @@ test("rejects invalid signatures, algorithms, and expired tokens", async () => {
 	assert.equal(await verifier(parts.join(".")), null);
 });
 
+test("rejects malformed scopes and nbf outside the temporal tolerance", async () => {
+	const now = Math.floor(Date.now() / 1000);
+	for (const scope of [["valid", 1], ["valid", ""], [], "", "   "]) {
+		assert.equal(await verifier(jwt({ scope })), null);
+	}
+	assert.equal(await verifier(jwt({ nbf: "soon" })), null);
+	assert.equal(await verifier(jwt({ nbf: now + 61 })), null);
+	assert.ok(await verifier(jwt({ nbf: now + 60, scope: "one two" })));
+});
+
 test("coalesces concurrent introspection of the same token and does not cache after settlement", async () => {
 	const tokens: string[] = [];
 	let release!: (active: boolean) => void;

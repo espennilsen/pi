@@ -123,7 +123,7 @@ export function buildAgentCard(
 	if (tokenUrl) {
 		schemes.oauth2 = { type: "oauth2", flows: { clientCredentials: { tokenUrl, scopes: {} } }, description: "OAuth 2.0 bearer access token" };
 	} else if (runtimeOAuthProfile === "hub-jwt") {
-		schemes.oauth2 = { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Hub-managed OAuth 2.0 JWT access token" };
+		schemes.oauth2 = { type: "http", scheme: "bearer", bearerFormat: "JWT", description: "Hub-managed OAuth 2.0 JWT access token", "x-a2a-hub-managed": true };
 	}
 	if (canAdvertiseOAuth && modes.includes("oauth2")) requirements.push({ oauth2: [] });
 	if (canAdvertiseOAuth && modes.includes("oauth2+mtls")) {

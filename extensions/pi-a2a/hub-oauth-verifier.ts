@@ -21,6 +21,7 @@ export function createHubOAuthVerifier(
 	metadata: HubRuntimeAuthMetadata,
 	binding: HubOAuthBinding,
 	introspect: (token: string) => Promise<boolean>,
+	introspectionContext: () => string = () => "",
 ): OAuthVerifier {
 	const inFlightIntrospections = new Map<string, Promise<boolean>>();
 
@@ -62,16 +63,17 @@ export function createHubOAuthVerifier(
 				typeof claims.exp !== "number" || !Number.isInteger(claims.exp) || claims.exp <= now ||
 				typeof claims.iat !== "number" || !Number.isInteger(claims.iat) || claims.iat > now + 60 ||
 				claims.exp <= claims.iat || claims.exp - claims.iat > 5 * 60 ||
+				(claims.nbf !== undefined && (typeof claims.nbf !== "number" || !Number.isInteger(claims.nbf) || claims.nbf > now + 60)) ||
 				typeof claims.task_id !== "string" || !claims.task_id || typeof claims.skill !== "string" || !claims.skill ||
 				typeof claims.jti !== "string" || !claims.jti) return null;
 			const scopes = Array.isArray(claims.scope)
-				? claims.scope.filter((scope): scope is string => typeof scope === "string")
+				? claims.scope.every((scope) => typeof scope === "string" && scope.length > 0) ? claims.scope as string[] : undefined
 				: typeof claims.scope === "string" ? claims.scope.split(/\s+/).filter(Boolean) : undefined;
 			if (!scopes?.length) return null;
 
 			// Revocation and live instance/task capabilities are authoritative at the
 			// Hub. Check them only after all local, non-network validation succeeds.
-			const introspectionIdentity = `${claims.jti}:${createHash("sha256").update(token).digest("base64url")}`;
+			const introspectionIdentity = `${claims.jti}:${createHash("sha256").update(token).digest("base64url")}:${introspectionContext()}`;
 			if (!await introspectValidatedToken(introspectionIdentity, token)) throw new Error("Hub token is inactive");
 			return {
 				subject: claims.sub,

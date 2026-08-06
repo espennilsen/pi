@@ -79,7 +79,7 @@ export function parseAgentCardAuthMetadata(
 				legacy = true;
 				continue;
 			}
-			if (scheme.type === "oauth2") {
+			if (name === "oauth2" && (scheme.type === "oauth2" || isHubManagedBearerJwt(scheme))) {
 				oauth = true;
 				authorizationServer ??= oauthServer(scheme);
 				continue;
@@ -104,6 +104,11 @@ export function parseAgentCardAuthMetadata(
 		...(authorizationServer ? { authorizationServer } : {}),
 		...(typeof card.resource === "string" ? { resource: card.resource } : {}),
 	};
+}
+
+function isHubManagedBearerJwt(scheme: Record<string, unknown>): boolean {
+	return scheme.type === "http" && scheme.scheme === "bearer" && scheme.bearerFormat === "JWT" &&
+		scheme.description === "Hub-managed OAuth 2.0 JWT access token" && scheme["x-a2a-hub-managed"] === true;
 }
 
 function oauthServer(scheme: Record<string, unknown>): string | undefined {

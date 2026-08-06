@@ -147,7 +147,7 @@ async function hubRpcResponse(
 			headers: {
 				"Content-Type": "application/json",
 				...(instanceSession && (method === "agents.deregister" || method === "agents.reportTelemetry" ||
-			method === "tasks.claim" || method === "tasks.heartbeat")
+			method === "tasks.claim" || method === "tasks.heartbeat" || method === "tasks.reportStatus")
 			? { Authorization: `Bearer ${instanceSession}` }
 			: { "X-API-Key": hubApiKey }),
 			},

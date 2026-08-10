@@ -2,11 +2,11 @@
 
 ## Unreleased
 
+## [0.3.0] - 2026-08-10
+
 ### Added
 
 - Added a synchronous `web:info` event reply with the actual listening port and URL for extension discovery
-
-## [0.3.0] - 2026-05-08
 
 ### Changed
 

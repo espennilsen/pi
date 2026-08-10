@@ -1,5 +1,7 @@
 # pi-a2a
 
+> **Discontinued:** This extension is no longer maintained and will not receive future fixes or releases.
+
 A2A (Agent-to-Agent) protocol v0.3.0 extension for [Pi](https://github.com/mariozechner/pi-coding-agent). Makes your Pi agent discoverable and callable by other A2A-compliant agents.
 
 ## What It Does

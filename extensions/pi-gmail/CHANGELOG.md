@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `/gmail-auth` now discovers a running pi-webserver, refreshes the OAuth callback origin after manual server startup, uses shell-free browser launchers, and always provides a clickable, copyable local URL fallback
+- Authentication now accurately asks users to start pi-webserver when no callback server is running and directs unconfigured users to `settings.json` rather than unsupported environment variables
+
 ## [0.3.0] - 2026-05-08
 
 ### Changed

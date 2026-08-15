@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `readOnly` setting to disable `send` and `send_draft` actions while preserving inbox and draft access
+
 ## [0.3.1] - 2026-08-10
 
 ### Changed

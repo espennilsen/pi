@@ -22,6 +22,7 @@ import {
 	formatSize,
 } from "./formatter.ts";
 import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
+import { isSendActionBlocked, sendingDisabledMessage } from "./policy.ts";
 import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -51,9 +52,15 @@ function text(s: string) {
 	return { content: [{ type: "text" as const, text: s }], details: {} };
 }
 
+interface GmailToolDependencies {
+	getAgentDir: () => string;
+	isAuthenticated: (agentDir: string) => boolean;
+}
+
 export function registerGmailTool(
 	pi: ExtensionAPI,
 	getSettings: () => GmailSettings,
+	dependencies: GmailToolDependencies = { getAgentDir, isAuthenticated },
 ): void {
 	pi.registerTool({
 		name: "gmail",
@@ -129,14 +136,18 @@ export function registerGmailTool(
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const agentDir = getAgentDir();
+			const agentDir = dependencies.getAgentDir();
 			const settings = getSettings();
 
-			if (!isAuthenticated(agentDir)) {
+			if (!dependencies.isAuthenticated(agentDir)) {
 				return text("❌ Not authenticated. Run `/gmail-auth` to connect your Gmail account.");
 			}
 
 			const maxResults = params.max_results ?? settings.maxResults ?? 20;
+
+			if (isSendActionBlocked(settings, params.action)) {
+				return text(sendingDisabledMessage());
+			}
 
 			switch (params.action) {
 				// ── Read operations ─────────────────────────────

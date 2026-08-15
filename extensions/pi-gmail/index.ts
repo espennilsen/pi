@@ -14,6 +14,7 @@
  *     "clientId": "your-client-id",
  *     "clientSecret": "your-client-secret",
  *     "maxResults": 20,
+ *     "readOnly": true,
  *     "notifications": {
  *       "enabled": false,
  *       "query": "is:unread",

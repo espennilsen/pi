@@ -102,6 +102,7 @@ pi.events.emit("web:mount-api", {
 | Event | Direction | Payload |
 |-------|-----------|---------|
 | `web:ready` | ← emitted by webserver on session start | `{}` |
+| `web:info` | → webserver replies synchronously when listening | `{ reply: ({ port, url }) => void }` |
 | `web:mount` | → webserver listens | `MountConfig` |
 | `web:unmount` | → webserver listens | `{ name: string }` |
 | `web:mount-api` | → webserver listens | `MountConfig` |

@@ -54,7 +54,6 @@ export function setLogger(fn: LogFn): void {
 // ── State ───────────────────────────────────────────────────────
 
 let server: http.Server | null = null;
-let serverPort: number | null = null;
 const mounts = new Map<string, MountConfig>();
 let authCredentials: { username: string; password: string } | null = null;
 let apiToken: string | null = null;
@@ -345,15 +344,18 @@ function handleLoginPost(req: http.IncomingMessage, res: http.ServerResponse): v
 // ── Server Lifecycle ────────────────────────────────────────────
 
 export function isRunning(): boolean {
-	return server !== null;
-}
-
-export function getUrl(): string | null {
-	return serverPort ? `http://localhost:${serverPort}` : null;
+	return server?.listening ?? false;
 }
 
 export function getPort(): number | null {
-	return serverPort;
+	if (!server?.listening) return null;
+	const address = server.address();
+	return address && typeof address === "object" ? address.port : null;
+}
+
+export function getUrl(): string | null {
+	const port = getPort();
+	return port === null ? null : `http://localhost:${port}`;
 }
 
 /**
@@ -506,7 +508,6 @@ export function start(port: number = 4100): string {
 	});
 
 	server.listen(port);
-	serverPort = port;
 	return `http://localhost:${port}`;
 }
 
@@ -516,6 +517,5 @@ export function stop(): boolean {
 	server.closeAllConnections();
 	server.close();
 	server = null;
-	serverPort = null;
 	return true;
 }

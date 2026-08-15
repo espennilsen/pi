@@ -14,6 +14,7 @@ import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus, setLogger } from "./server.ts";
 import { createLogger } from "./logger.ts";
 import type { MountConfig } from "./server.ts";
+import { registerWebInfoListener } from "./web-info.ts";
 
 interface WebServerSettings {
 	autostart: boolean;
@@ -66,6 +67,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.events.on("web:unmount-api", (data: unknown) => {
 		unmountApi((data as { name: string }).name);
+	});
+
+	registerWebInfoListener(pi.events, () => {
+		const port = getPort();
+		const url = getUrl();
+		return port !== null && url !== null ? { port, url } : null;
 	});
 
 	// ── /web command ─────────────────────────────────────────────

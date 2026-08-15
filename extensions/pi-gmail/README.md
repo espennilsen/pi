@@ -35,11 +35,11 @@ Add to `~/.pi/agent/settings.json`:
 }
 ```
 
-Values can use `env:VAR_NAME` syntax to read from environment variables.
+Set `clientId` and `clientSecret` directly in `settings.json`; `env:VAR_NAME` substitution is not supported.
 
 ### 3. Authenticate
 
-Run `/gmail-auth` in pi to start the OAuth flow — opens a browser for Google sign-in and stores tokens locally.
+Start pi-webserver with `/web`, then run `/gmail-auth`. Pi requests the default browser and also prints a clickable, copyable local authentication URL in the conversation as a fallback. The running webserver handles the OAuth callback and Gmail stores the resulting tokens locally.
 
 ### Settings
 

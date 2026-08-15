@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Deprecated
+- Mark `pi-a2a` as discontinued; it will no longer receive fixes or releases
+
 ### Added
 - Dual-mode peer authentication negotiation for legacy API keys, OAuth 2.0 client credentials, and capability-gated OAuth+mTLS
 - Fail-closed modern-only skill policy, Agent Card auth capability publication, and redacted structured authentication logs

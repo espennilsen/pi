@@ -1,12 +1,23 @@
 # Changelog
 
-## [Unreleased]
+## Unreleased
 
 ### Added
 
 - `readOnly` setting to disable `send` and `send_draft` actions while preserving inbox and draft access
 
-## [0.3.0] - 2026-05-08
+## [0.3.1] - 2026-08-10
+
+### Changed
+
+- Publish the finalized 0.3.0 release notes in the package tarball
+
+## [0.3.0] - 2026-08-10
+
+### Fixed
+
+- `/gmail-auth` now discovers a running pi-webserver, refreshes the OAuth callback origin after manual server startup, uses shell-free browser launchers, and always provides a clickable, copyable local URL fallback
+- Authentication now accurately asks users to start pi-webserver when no callback server is running and directs unconfigured users to `settings.json` rather than unsupported environment variables
 
 ### Changed
 

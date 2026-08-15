@@ -29,7 +29,8 @@ Add to `~/.pi/agent/settings.json`:
 {
   "pi-gmail": {
     "clientId": "your-client-id.apps.googleusercontent.com",
-    "clientSecret": "your-client-secret"
+    "clientSecret": "your-client-secret",
+    "readOnly": true
   }
 }
 ```
@@ -46,6 +47,7 @@ Run `/gmail-auth` in pi to start the OAuth flow — opens a browser for Google s
 |-----|------|---------|-------------|
 | `clientId` | string | — | Google OAuth client ID (required) |
 | `clientSecret` | string | — | Google OAuth client secret (required) |
+| `readOnly` | boolean | `false` | Disable the `send` and `send_draft` actions; composing and reading drafts remains available |
 | `notifications.enabled` | boolean | `false` | Enable background polling for new mail |
 | `notifications.intervalMinutes` | number | `5` | Polling interval in minutes |
 | `notifications.query` | string | `"is:unread"` | Gmail search query for notifications |
@@ -66,8 +68,8 @@ All actions are accessed through a single `gmail` tool with an `action` paramete
 | `list_labels` | List all Gmail labels | — |
 | `compose` | Create a draft email | `to`, `subject`, `body`, `cc`, `bcc` |
 | `reply` | Reply to a thread | `thread_id`, `body`, `reply_all` |
-| `send` | Compose and send immediately | `to`, `subject`, `body` |
-| `send_draft` | Send an existing draft | `draft_id` |
+| `send` | Compose and send immediately (disabled when `readOnly` is `true`) | `to`, `subject`, `body` |
+| `send_draft` | Send an existing draft (disabled when `readOnly` is `true`) | `draft_id` |
 | `list_drafts` | List all drafts | — |
 | `delete_draft` | Delete a draft | `draft_id` |
 | `archive` | Archive messages (remove from inbox) | `id` or `ids` |

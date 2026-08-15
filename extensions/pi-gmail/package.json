@@ -35,6 +35,7 @@
     "formatter.ts",
     "index.ts",
     "logger.ts",
+    "policy.ts",
     "tool.ts",
     "types.ts",
     "utils.ts",

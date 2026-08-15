@@ -41,6 +41,7 @@ OAuth tokens persisted as `db/gmail-tokens.json` under agent home directory. Sim
     "clientId": "env:GMAIL_CLIENT_ID",        // Google OAuth client ID
     "clientSecret": "env:GMAIL_CLIENT_SECRET", // Google OAuth client secret
     "maxResults": 20,                          // Default max results per query
+    "readOnly": true,                          // Block send and send_draft actions
     "notifications": {
       "enabled": false,                        // Enable email polling
       "query": "is:unread",                    // Gmail query for notifications

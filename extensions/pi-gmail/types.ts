@@ -115,4 +115,6 @@ export interface GmailSettings {
 	clientId?: string;
 	clientSecret?: string;
 	maxResults?: number;
+	/** Prevent send and send_draft actions while leaving drafts and inbox access available. */
+	readOnly?: boolean;
 }

@@ -12,6 +12,7 @@ test("readOnly settings preserve draft creation and inbox actions", () => {
 	assert.equal(isSendActionBlocked({ readOnly: true }, "compose"), false);
 	assert.equal(isSendActionBlocked({ readOnly: true }, "reply"), false);
 	assert.equal(isSendActionBlocked({ readOnly: true }, "search"), false);
+	assert.equal(isSendActionBlocked({ readOnly: true }, "list_inbox"), false);
 });
 
 test("sending is allowed unless readOnly is explicitly enabled", () => {

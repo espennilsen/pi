@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Install the Pi API development dependency to prevent startup failures after package-store cleanup
+
 ## [0.2.0] - 2026-05-08
 
 ### Changed

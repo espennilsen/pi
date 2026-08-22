@@ -54,3 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Trash operation now handles per-message failures gracefully — reports partial success instead of failing the entire batch
 - Logout form body parsing no longer destroys the request socket on oversized payloads; returns HTTP 413 instead
+
+### Removed
+
+- `resolveEnv()` utility function (no longer needed after removing `env:` pattern support)
+
+## [0.1.0] - 2026-02-17 (7839f93)
+
+### Added
+
+- Initial release.

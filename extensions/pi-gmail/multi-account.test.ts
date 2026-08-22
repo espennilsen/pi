@@ -188,6 +188,13 @@ test("OAuth state generates, verifies, and isolates concurrent flows", () => {
 	assert.equal(defaultResult.valid, true);
 	assert.equal(defaultResult.account, undefined);
 
+	// Capacity eviction test (generate 105 states, oldest should be evicted)
+	const firstState = generateOAuthState("first");
+	for (let i = 0; i < 105; i++) {
+		generateOAuthState(`acc_${i}`);
+	}
+	assert.equal(verifyOAuthState(firstState).valid, false); // evicted
+
 	// Invalid state rejected
 	assert.equal(verifyOAuthState("invalid-state").valid, false);
 	assert.throws(() => generateOAuthState("invalid:name"), /Invalid account name/);

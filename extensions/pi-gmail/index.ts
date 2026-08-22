@@ -205,14 +205,14 @@ function startNotifications(
 			const newIds = messageIds.filter((id) => !notifiedMessageIds.has(id));
 
 			if (newIds.length > 0) {
-				for (const id of newIds) trackNotified(id);
-
 				log("notifications", { newMessages: newIds.length });
 
 				// Fetch snippets for notification text
 				const messages = await Promise.all(
 					newIds.slice(0, 3).map((id) => client.getMessage(settings, agentDir, id, "metadata")),
 				);
+
+				for (const id of newIds) trackNotified(id);
 
 				const summary = messages.map((m, i) => formatSearchResult(m, i + 1)).join("\n");
 				const countText =
@@ -386,6 +386,16 @@ export default function (pi: ExtensionAPI) {
 					validateAccountName(target);
 				} catch (err: any) {
 					ctx.ui.notify(err.message, "error");
+					return;
+				}
+
+				if (
+					settings.accounts &&
+					Object.keys(settings.accounts).length > 0 &&
+					!settings.accounts[target] &&
+					!isAuthenticated(agentDir, target)
+				) {
+					ctx.ui.notify(`Account "${target}" is not configured in settings.json.`, "error");
 					return;
 				}
 			}

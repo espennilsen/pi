@@ -50,6 +50,7 @@ interface OAuthStateEntry {
 
 const pendingOAuthStates = new Map<string, OAuthStateEntry>();
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_PENDING_OAUTH_STATES = 100;
 
 export function generateOAuthState(accountName?: string): string {
 	validateAccountName(accountName);
@@ -60,6 +61,12 @@ export function generateOAuthState(accountName?: string): string {
 		if (now - val.createdAt > OAUTH_STATE_TTL_MS) {
 			pendingOAuthStates.delete(key);
 		}
+	}
+
+	// Enforce maximum capacity by evicting oldest entry if limit reached
+	if (pendingOAuthStates.size >= MAX_PENDING_OAUTH_STATES) {
+		const oldestKey = pendingOAuthStates.keys().next().value;
+		if (oldestKey) pendingOAuthStates.delete(oldestKey);
 	}
 
 	const state = crypto.randomBytes(32).toString("hex");

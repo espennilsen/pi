@@ -231,7 +231,9 @@ export function mountGmailRoutes(
 			// Start OAuth flow
 			if (req.method === "GET" && p === "/auth") {
 				try {
-					const url = getConsentUrl(settings, getRedirectUri());
+					const urlObj = new URL(req.url ?? "/", `${serverOrigin}/`);
+					const account = urlObj.searchParams.get("account") || undefined;
+					const url = getConsentUrl(settings, getRedirectUri(), account);
 					res.writeHead(302, { Location: url });
 					res.end();
 				} catch (err: any) {
@@ -252,7 +254,8 @@ export function mountGmailRoutes(
 					return;
 				}
 
-				if (!verifyOAuthState(state)) {
+				const stateResult = verifyOAuthState(state);
+				if (!stateResult.valid) {
 					html(res, errorPage("Invalid or missing OAuth state parameter. Please try again."), 403);
 					return;
 				}
@@ -263,7 +266,7 @@ export function mountGmailRoutes(
 				}
 
 				try {
-					const tokens = await exchangeCode(settings, code, getRedirectUri(), agentDir);
+					const tokens = await exchangeCode(settings, code, getRedirectUri(), agentDir, stateResult.account);
 					html(res, successPage(tokens.email));
 				} catch (err: any) {
 					html(res, errorPage(err.message));

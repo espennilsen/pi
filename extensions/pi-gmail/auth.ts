@@ -4,7 +4,7 @@
  * Handles:
  *   - Token storage in JSON files (~/.pi/agent/db/gmail-tokens.json or gmail-tokens-[account].json)
  *   - Multi-account configuration & dynamic account switching
- *   - OAuth consent URL generation
+ *   - OAuth consent URL generation with concurrent state isolation
  *   - Authorization code exchange
  *   - Automatic access token refresh
  */
@@ -26,37 +26,60 @@ const SCOPES = [
 
 // Token refresh buffer — refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
 const TOKENS_FILENAME = "gmail-tokens.json";
+const SAFE_ACCOUNT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
-// ── OAuth state for CSRF protection ─────────────────────────────
+// ── Account name validation ─────────────────────────────────────
 
-let pendingOAuthState: string | null = null;
+export function validateAccountName(name?: string): void {
+	if (!name || name === "default") return;
+	if (!SAFE_ACCOUNT_NAME_RE.test(name)) {
+		throw new Error(
+			`Invalid account name "${name}". Account names may only contain letters, numbers, underscores, and hyphens.`,
+		);
+	}
+}
+
+// ── OAuth state for CSRF protection & concurrency ───────────────
+
+interface OAuthStateEntry {
+	account?: string;
+	createdAt: number;
+}
+
+const pendingOAuthStates = new Map<string, OAuthStateEntry>();
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export function generateOAuthState(accountName?: string): string {
-	const random = crypto.randomBytes(32).toString("hex");
-	pendingOAuthState = accountName ? `${accountName}:${random}` : random;
-	return pendingOAuthState;
+	validateAccountName(accountName);
+
+	// Prune expired states
+	const now = Date.now();
+	for (const [key, val] of pendingOAuthStates) {
+		if (now - val.createdAt > OAUTH_STATE_TTL_MS) {
+			pendingOAuthStates.delete(key);
+		}
+	}
+
+	const state = crypto.randomBytes(32).toString("hex");
+	pendingOAuthStates.set(state, {
+		account: accountName && accountName !== "default" ? accountName : undefined,
+		createdAt: now,
+	});
+	return state;
 }
 
 export function verifyOAuthState(state: string | null): { valid: boolean; account?: string } {
-	if (!state || !pendingOAuthState) return { valid: false };
-	const stateBuffer = Buffer.from(state);
-	const expectedBuffer = Buffer.from(pendingOAuthState);
-	// timingSafeEqual throws RangeError if lengths differ
-	if (stateBuffer.length !== expectedBuffer.length) {
-		pendingOAuthState = null;
+	if (!state) return { valid: false };
+	const entry = pendingOAuthStates.get(state);
+	if (!entry) return { valid: false };
+
+	pendingOAuthStates.delete(state); // single use
+	if (Date.now() - entry.createdAt > OAUTH_STATE_TTL_MS) {
 		return { valid: false };
 	}
-	const valid = crypto.timingSafeEqual(stateBuffer, expectedBuffer);
-	const savedState = pendingOAuthState;
-	pendingOAuthState = null; // consume — single use
-	if (!valid) return { valid: false };
-
-	const colonIdx = savedState.indexOf(":");
-	if (colonIdx !== -1) {
-		return { valid: true, account: savedState.slice(0, colonIdx) };
-	}
-	return { valid: true };
+	return { valid: true, account: entry.account };
 }
 
 // ── Token refresh mutex per account ─────────────────────────────
@@ -70,13 +93,19 @@ export function getAccountConfig(
 	accountName?: string,
 ): GmailAccountConfig {
 	const target = accountName || settings.account || settings.defaultAccount;
-	if (target && settings.accounts?.[target]) {
-		const acc = settings.accounts[target];
-		return {
-			clientId: acc.clientId ?? settings.clientId,
-			clientSecret: acc.clientSecret ?? settings.clientSecret,
-			readOnly: acc.readOnly ?? settings.readOnly,
-		};
+	if (target && target !== "default") {
+		validateAccountName(target);
+		if (settings.accounts && Object.keys(settings.accounts).length > 0) {
+			const acc = settings.accounts[target];
+			if (!acc) {
+				throw new Error(`Account "${target}" is not configured in settings.json`);
+			}
+			return {
+				clientId: acc.clientId ?? settings.clientId,
+				clientSecret: acc.clientSecret ?? settings.clientSecret,
+				readOnly: acc.readOnly ?? settings.readOnly,
+			};
+		}
 	}
 	return {
 		clientId: settings.clientId,
@@ -90,6 +119,7 @@ export function getAccountConfig(
 export function getTokensPath(agentDir: string, accountName?: string): string {
 	const name = accountName?.trim();
 	if (name && name !== "default") {
+		validateAccountName(name);
 		return path.join(agentDir, "db", `gmail-tokens-${name}.json`);
 	}
 	return path.join(agentDir, "db", TOKENS_FILENAME);
@@ -103,16 +133,6 @@ export function loadTokens(agentDir: string, accountName?: string): OAuthTokens 
 		const data = fs.readFileSync(tokensPath, "utf-8");
 		return JSON.parse(data) as OAuthTokens;
 	} catch {
-		// Fallback to default tokens file if account-specific file is missing and no explicit account specified
-		if (!accountName || accountName === "default") {
-			const fallbackPath = path.join(agentDir, "db", TOKENS_FILENAME);
-			try {
-				const data = fs.readFileSync(fallbackPath, "utf-8");
-				return JSON.parse(data) as OAuthTokens;
-			} catch {
-				return null;
-			}
-		}
 		return null;
 	}
 }
@@ -131,6 +151,7 @@ export async function clearTokens(agentDir: string, accountName?: string): Promi
 			await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tokens.refresh_token)}`, {
 				method: "POST",
 				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 			});
 		} catch {
 			// Best-effort — continue with local cleanup
@@ -196,6 +217,7 @@ export async function exchangeCode(
 			redirect_uri: redirectUri,
 			grant_type: "authorization_code",
 		}),
+		signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 	});
 
 	if (!resp.ok) {
@@ -277,6 +299,7 @@ async function refreshAccessToken(
 			refresh_token: tokens.refresh_token,
 			grant_type: "refresh_token",
 		}),
+		signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 	});
 
 	if (!resp.ok) {
@@ -328,32 +351,34 @@ export function listAccounts(
 ): AccountInfo[] {
 	const names = new Set<string>();
 
-	if (settings.accounts && Object.keys(settings.accounts).length > 0) {
+	if (settings.accounts) {
 		for (const name of Object.keys(settings.accounts)) {
 			names.add(name);
 		}
-	} else {
-		const dbDir = path.join(agentDir, "db");
-		if (fs.existsSync(dbDir)) {
-			try {
-				const files = fs.readdirSync(dbDir);
-				for (const file of files) {
-					if (file === "gmail-tokens.json") {
+	}
+
+	const dbDir = path.join(agentDir, "db");
+	if (fs.existsSync(dbDir)) {
+		try {
+			const files = fs.readdirSync(dbDir);
+			for (const file of files) {
+				if (file === "gmail-tokens.json") {
+					if (!settings.accounts || Object.keys(settings.accounts).length === 0) {
 						names.add("default");
-					} else if (file.startsWith("gmail-tokens-") && file.endsWith(".json")) {
-						const name = file.slice("gmail-tokens-".length, -".json".length);
-						if (name) names.add(name);
 					}
+				} else if (file.startsWith("gmail-tokens-") && file.endsWith(".json")) {
+					const name = file.slice("gmail-tokens-".length, -".json".length);
+					if (name) names.add(name);
 				}
-			} catch {}
-		}
+			}
+		} catch {}
 	}
 
 	if (names.size === 0 && (settings.clientId || isAuthenticated(agentDir))) {
 		names.add("default");
 	}
 
-	const defaultName = settings.defaultAccount || "default";
+	const defaultName = settings.defaultAccount || (names.has("default") ? "default" : names.values().next().value || "default");
 	const currentActive = activeAccount || settings.account || defaultName;
 
 	const list: AccountInfo[] = [];
@@ -380,6 +405,7 @@ export async function fetchUserEmail(accessToken: string): Promise<string> {
 	try {
 		const resp = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
 			headers: { Authorization: `Bearer ${accessToken}` },
+			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 		});
 		if (resp.ok) {
 			const data = (await resp.json()) as any;
@@ -391,6 +417,7 @@ export async function fetchUserEmail(accessToken: string): Promise<string> {
 	try {
 		const resp = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
 			headers: { Authorization: `Bearer ${accessToken}` },
+			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 		});
 		if (resp.ok) {
 			const data = (await resp.json()) as any;

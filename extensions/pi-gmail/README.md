@@ -26,7 +26,8 @@ Full Gmail integration for [pi](https://github.com/mariozechner/pi-coding-agent)
 
 Add to `~/.pi/agent/settings.json`:
 
-#### Single account:
+#### Single account
+
 ```json
 {
   "pi-gmail": {
@@ -37,7 +38,8 @@ Add to `~/.pi/agent/settings.json`:
 }
 ```
 
-#### Multiple accounts:
+#### Multiple accounts
+
 ```json
 {
   "pi-gmail": {
@@ -71,10 +73,12 @@ Start pi-webserver with `/web`, then run `/gmail-auth` (or `/gmail-auth <account
 | `clientSecret` | string | — | Google OAuth client secret (for single account) |
 | `defaultAccount` | string | — | Name of the default account in multi-account setups |
 | `accounts` | object | — | Map of account configurations (`{ [name]: { clientId, clientSecret, readOnly? } }`) |
-| `readOnly` | boolean | `false` | Disable the `send` and `send_draft` actions; composing and reading drafts remains available |
+| `maxResults` | number | `20` | Default maximum results returned for message listings and searches |
+| `readOnly` | boolean | `false` | Disable `send` and `send_draft` actions; composing/reading drafts remains available. Overridden per-account by `accounts[name].readOnly` |
 | `notifications.enabled` | boolean | `false` | Enable background polling for new mail |
 | `notifications.intervalMinutes` | number | `5` | Polling interval in minutes |
 | `notifications.query` | string | `"is:unread"` | Gmail search query for notifications |
+| `notifications.channel` | string | `"default"` | Target pi-channels route for notification dispatch |
 
 ## Tool: `gmail`
 
@@ -117,10 +121,10 @@ All actions are accessed through a single `gmail` tool with an `action` paramete
 
 When [pi-webserver](../pi-webserver) is running, the extension mounts:
 
-- `/gmail` — Auth status page with connect/disconnect
+- `/gmail` — Auth status page with connect/disconnect (supports `?account=<name>`)
 - `/gmail/auth` — OAuth redirect to Google (supports `?account=<name>`)
 - `/gmail/callback` — OAuth callback handler
-- `/api/gmail/status` — JSON auth status endpoint
+- `/api/gmail/status` — JSON auth status endpoint (supports `?account=<name>`)
 
 ## Install
 

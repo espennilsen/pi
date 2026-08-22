@@ -1,10 +1,11 @@
 /**
- * Gmail web routes — OAuth callback + auth status page.
+ * Web routes for pi-gmail.
  *
- * Web page:  /gmail       — Auth status page
- * Auth:      /gmail/auth  — Start OAuth flow (redirects to Google)
- * Callback:  /gmail/callback — OAuth callback from Google
- * API:       /api/gmail/status — Auth status JSON endpoint
+ * Mounts on pi-webserver:
+ *   /gmail          — Auth status page with connect/disconnect
+ *   /gmail/auth     — Redirect to Google OAuth consent
+ *   /gmail/callback — Handle OAuth redirect and exchange code
+ *   /api/gmail/status — JSON auth status endpoint
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -16,9 +17,28 @@ import {
 	getAuthenticatedEmail,
 	clearTokens,
 	verifyOAuthState,
+	validateAccountName,
 } from "./auth.ts";
 import * as crypto from "node:crypto";
 import { escapeHtml } from "./utils.ts";
+
+export interface EventBus {
+	emit(event: string, data: unknown): void;
+	on(event: string, handler: (data: unknown) => void): void;
+}
+
+export interface MountConfig {
+	name: string;
+	label: string;
+	description: string;
+	prefix: string;
+	skipAuth?: boolean;
+	handler: (
+		req: IncomingMessage,
+		res: ServerResponse,
+		subPath: string,
+	) => Promise<void> | void;
+}
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
@@ -30,23 +50,6 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 function html(res: ServerResponse, content: string, status = 200): void {
 	res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
 	res.end(content);
-}
-
-// ── Types for pi-webserver ──────────────────────────────────────
-
-type RouteHandler = (req: IncomingMessage, res: ServerResponse, subPath: string) => void | Promise<void>;
-
-interface MountConfig {
-	name: string;
-	label?: string;
-	description?: string;
-	prefix: string;
-	handler: RouteHandler;
-}
-
-interface EventBus {
-	emit(event: string, data: unknown): void;
-	on(event: string, handler: (...args: any[]) => void): void;
 }
 
 // ── Detect server origin from webserver ─────────────────────────
@@ -93,7 +96,15 @@ function verifyLogoutCsrf(token: string | null): boolean {
 
 // ── HTML pages ──────────────────────────────────────────────────
 
-function authStatusPage(authenticated: boolean, email: string | null, csrfToken: string): string {
+function authStatusPage(
+	authenticated: boolean,
+	email: string | null,
+	csrfToken: string,
+	accountName?: string,
+): string {
+	const authHref = accountName ? `/gmail/auth?account=${encodeURIComponent(accountName)}` : "/gmail/auth";
+	const accTitle = accountName ? ` (${escapeHtml(accountName)})` : "";
+
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -114,22 +125,23 @@ function authStatusPage(authenticated: boolean, email: string | null, csrfToken:
 </style>
 </head>
 <body>
-<h1>📧 Gmail</h1>
+<h1> Gmail${accTitle}</h1>
 ${
 	authenticated
 		? `<div class="status connected">
 			<p>✅ <strong>Connected</strong> as <code>${escapeHtml(email ?? "")}</code></p>
 		</div>
-		<p><a href="/gmail/auth" class="btn btn-primary">Re-authenticate</a></p>
+		<p><a href="${authHref}" class="btn btn-primary">Re-authenticate</a></p>
 		<form method="POST" action="/gmail/logout" style="display:inline">
 			<input type="hidden" name="_csrf" value="${csrfToken}" />
+			${accountName ? `<input type="hidden" name="account" value="${escapeHtml(accountName)}" />` : ""}
 			<button type="submit" class="btn btn-danger" style="border:none;cursor:pointer;font-size:inherit">Disconnect</button>
 		</form>`
 		: `<div class="status disconnected">
 			<p>⚠️ <strong>Not connected</strong></p>
 			<p>Click below to authorize pi to access your Gmail account.</p>
 		</div>
-		<p><a href="/gmail/auth" class="btn btn-primary">Connect Gmail</a></p>`
+		<p><a href="${authHref}" class="btn btn-primary">Connect Gmail</a></p>`
 }
 <h3>Setup</h3>
 <ol>
@@ -187,53 +199,56 @@ function errorPage(error: string): string {
 </head>
 <body>
 <div class="error">
-  <h1>❌ Authentication Failed</h1>
+  <h1>⚠️ Gmail Error</h1>
   <p>${escapeHtml(error)}</p>
-  <p><a href="/gmail">Try again</a></p>
+  <p><a href="/gmail">Back to Gmail status</a></p>
 </div>
 </body>
 </html>`;
 }
 
-// ── Mount / unmount ─────────────────────────────────────────────
+// ── Route definitions ───────────────────────────────────────────
 
 export function mountGmailRoutes(
 	bus: EventBus,
 	settings: GmailSettings,
 	agentDir: string,
 ): void {
-	// Try to detect the webserver port
-	bus.emit("web:info", {
-		reply: (info: any) => {
-			if (typeof info?.port === "number" && typeof info.url === "string") {
-				updateGmailWebInfo(info);
-			}
-		},
-	});
-
 	const webMount: MountConfig = {
 		name: "gmail",
 		label: "Gmail",
-		description: "Gmail integration — auth and email management",
+		description: "Gmail integration and OAuth setup",
 		prefix: "/gmail",
+		skipAuth: true, // OAuth callback needs public access
 		handler: async (req, res, subPath) => {
 			const p = subPath.replace(/\/+$/, "") || "/";
+			const urlObj = new URL(req.url ?? "/", `${serverOrigin}/`);
+			const accountParam = urlObj.searchParams.get("account") || undefined;
+
+			if (accountParam && accountParam !== "default") {
+				try {
+					validateAccountName(accountParam);
+				} catch (err: any) {
+					html(res, errorPage(err.message), 400);
+					return;
+				}
+			}
+
+			const target = accountParam === "default" ? undefined : accountParam;
 
 			// Status page
 			if (req.method === "GET" && p === "/") {
-				const authed = isAuthenticated(agentDir);
-				const email = getAuthenticatedEmail(agentDir);
+				const authed = isAuthenticated(agentDir, target);
+				const email = getAuthenticatedEmail(agentDir, target);
 				const csrf = generateLogoutCsrf();
-				html(res, authStatusPage(authed, email, csrf));
+				html(res, authStatusPage(authed, email, csrf, target));
 				return;
 			}
 
 			// Start OAuth flow
 			if (req.method === "GET" && p === "/auth") {
 				try {
-					const urlObj = new URL(req.url ?? "/", `${serverOrigin}/`);
-					const account = urlObj.searchParams.get("account") || undefined;
-					const url = getConsentUrl(settings, getRedirectUri(), account);
+					const url = getConsentUrl(settings, getRedirectUri(), target);
 					res.writeHead(302, { Location: url });
 					res.end();
 				} catch (err: any) {
@@ -244,10 +259,9 @@ export function mountGmailRoutes(
 
 			// OAuth callback
 			if (req.method === "GET" && p === "/callback") {
-				const url = new URL(req.url ?? "/", `${serverOrigin}/`);
-				const code = url.searchParams.get("code");
-				const error = url.searchParams.get("error");
-				const state = url.searchParams.get("state");
+				const code = urlObj.searchParams.get("code");
+				const error = urlObj.searchParams.get("error");
+				const state = urlObj.searchParams.get("state");
 
 				if (error) {
 					html(res, errorPage(`Google returned error: ${error}`));
@@ -296,15 +310,27 @@ export function mountGmailRoutes(
 
 				const params = new URLSearchParams(body);
 				const csrfToken = params.get("_csrf");
+				const postAccount = params.get("account") || undefined;
+
+				if (postAccount && postAccount !== "default") {
+					try {
+						validateAccountName(postAccount);
+					} catch (err: any) {
+						html(res, errorPage(err.message), 400);
+						return;
+					}
+				}
 
 				if (!verifyLogoutCsrf(csrfToken)) {
 					html(res, errorPage("Invalid CSRF token. Please go back and try again."), 403);
 					return;
 				}
 
-				await clearTokens(agentDir);
-				bus.emit("gmail:disconnected", {});
-				res.writeHead(302, { Location: "/gmail" });
+				const logoutTarget = postAccount === "default" ? undefined : postAccount;
+				await clearTokens(agentDir, logoutTarget);
+				bus.emit("gmail:disconnected", { account: logoutTarget });
+				const redirectLoc = logoutTarget ? `/gmail?account=${encodeURIComponent(logoutTarget)}` : "/gmail";
+				res.writeHead(302, { Location: redirectLoc });
 				res.end();
 				return;
 			}
@@ -320,11 +346,25 @@ export function mountGmailRoutes(
 		prefix: "/gmail",
 		handler: async (req, res, subPath) => {
 			const p = subPath.replace(/\/+$/, "") || "/";
+			const urlObj = new URL(req.url ?? "/", `${serverOrigin}/`);
+			const accountParam = urlObj.searchParams.get("account") || undefined;
+
+			if (accountParam && accountParam !== "default") {
+				try {
+					validateAccountName(accountParam);
+				} catch (err: any) {
+					json(res, 400, { error: err.message });
+					return;
+				}
+			}
+
+			const target = accountParam === "default" ? undefined : accountParam;
 
 			if (req.method === "GET" && p === "/status") {
 				json(res, 200, {
-					authenticated: isAuthenticated(agentDir),
-					email: getAuthenticatedEmail(agentDir),
+					account: target || "default",
+					authenticated: isAuthenticated(agentDir, target),
+					email: getAuthenticatedEmail(agentDir, target),
 				});
 				return;
 			}

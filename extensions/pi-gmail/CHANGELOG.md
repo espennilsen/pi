@@ -10,6 +10,10 @@
 - `/gmail-auth [account]` and `/gmail-logout [account]` commands for managing individual accounts without disconnecting others
 - `readOnly` setting to disable `send` and `send_draft` actions while preserving inbox and draft access
 
+### Changed
+
+- Email notification polling now dispatches notifications via `channel:send` with `{ route, text, source: "pi-gmail" }` payload to align with pi-channels
+
 ### Fixed
 
 - Authenticated email address detection in `fetchUserEmail` now queries the Gmail `users/me/profile` endpoint (covered by `gmail.readonly`), resolving `unknown` email statuses on new authentications

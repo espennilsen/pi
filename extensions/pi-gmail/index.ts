@@ -19,7 +19,7 @@
  *     "defaultAccount": "personal",
  *     "accounts": {
  *       "personal": { "clientId": "...", "clientSecret": "..." },
- *       "work": { "clientId": "...", "clientSecret": "..." }
+ *       "work": { "clientId": "...", "clientSecret": "...", "readOnly": true }
  *     },
  *     "maxResults": 20,
  *     "readOnly": true,
@@ -43,11 +43,19 @@ import {
 	clearTokens,
 	listAccounts,
 	getAccountConfig,
+	validateAccountName,
 } from "./auth.ts";
-import type { GmailSettings, AccountInfo } from "./types.ts";
+import type { GmailSettings, GmailAccountConfig, AccountInfo } from "./types.ts";
 import * as client from "./client.ts";
 import { formatSearchResult } from "./formatter.ts";
 import { openUrl } from "./utils.ts";
+
+// ── Shared helpers ──────────────────────────────────────────────
+
+export function resolveAccountTarget(name?: string): string | undefined {
+	if (!name || name === "default") return undefined;
+	return name.trim();
+}
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -69,13 +77,22 @@ function getSettings(cwd: string): FullGmailSettings {
 	const project = sm.getProjectSettings() as Record<string, any>;
 	const globalSettings = global?.["pi-gmail"] ?? {};
 	const projectSettings = project?.["pi-gmail"] ?? {};
+
+	// Deep merge per-account configurations
+	const globalAccounts: Record<string, GmailAccountConfig> = globalSettings?.accounts ?? {};
+	const projectAccounts: Record<string, GmailAccountConfig> = projectSettings?.accounts ?? {};
+	const mergedAccounts: Record<string, GmailAccountConfig> = {};
+	for (const name of new Set([...Object.keys(globalAccounts), ...Object.keys(projectAccounts)])) {
+		mergedAccounts[name] = {
+			...globalAccounts[name],
+			...projectAccounts[name],
+		};
+	}
+
 	return {
 		...globalSettings,
 		...projectSettings,
-		accounts: {
-			...globalSettings?.accounts,
-			...projectSettings?.accounts,
-		},
+		accounts: mergedAccounts,
 		// Deep merge nested notifications so project keys don't clobber global defaults
 		notifications: {
 			...globalSettings?.notifications,
@@ -93,7 +110,7 @@ function updateStatus(
 	log?: ReturnType<typeof createLogger>,
 ): void {
 	const activeName = settings.account || settings.defaultAccount;
-	const target = activeName === "default" ? undefined : activeName;
+	const target = resolveAccountTarget(activeName);
 	const config = getAccountConfig(settings, target);
 
 	if (!config.clientId) {
@@ -174,15 +191,14 @@ function startNotifications(
 		if (notificationTimer === null || generation !== pollGeneration) return;
 
 		try {
-			const target = settings.account === "default" ? undefined : settings.account;
+			const target = resolveAccountTarget(settings.account);
 			if (!isAuthenticated(agentDir, target)) return;
 
-			// Search for new messages since last check (epoch seconds for precise filtering)
+			const pollTimestamp = Date.now();
 			const sinceSec = Math.floor(lastCheckTimestamp / 1000);
 			const fullQuery = `${query} after:${sinceSec}`;
-			lastCheckTimestamp = Date.now();
 
-			const list = await client.listMessages(settings, agentDir, fullQuery, 5);
+			const list = await client.listMessages(settings, agentDir, fullQuery, 20);
 			const messageIds = list.messages?.map((m) => m.id) ?? [];
 
 			// Filter out already-notified messages
@@ -204,14 +220,16 @@ function startNotifications(
 						? "1 new email"
 						: `${newIds.length} new emails`;
 
-				// Forward notification via pi-channels
-				pi.events.emit("channel:notify", {
-					channel,
-					title: `Gmail: ${countText}`,
-					body: summary,
-					data: { source: "pi-gmail", count: newIds.length, messageIds: newIds },
+				// Forward notification via pi-channels using channel:send event
+				pi.events.emit("channel:send", {
+					route: channel,
+					text: `Gmail (${resolveAccountTarget(settings.account) || "default"}): ${countText}\n\n${summary}`,
+					source: "pi-gmail",
 				});
 			}
+
+			// Advance timestamp only after successful fetch/processing
+			lastCheckTimestamp = pollTimestamp;
 		} catch (err: any) {
 			log("notification-error", { error: err.message }, "ERROR");
 		}
@@ -258,7 +276,7 @@ export default function (pi: ExtensionAPI) {
 
 		updateStatus(ctx, agentDir, cachedSettings, log);
 
-		const target = cachedSettings.account === "default" ? undefined : cachedSettings.account;
+		const target = resolveAccountTarget(cachedSettings.account);
 		if (isAuthenticated(agentDir, target)) {
 			// Start notification polling if configured
 			startNotifications(pi, cachedSettings, agentDir, log);
@@ -291,7 +309,17 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args: string | undefined, ctx: any) => {
 			const settings = getSettings(ctx.cwd);
 			const requestedAccount = args?.trim() || settings.account || settings.defaultAccount;
-			const target = requestedAccount === "default" ? undefined : requestedAccount;
+			const target = resolveAccountTarget(requestedAccount);
+
+			if (target) {
+				try {
+					validateAccountName(target);
+				} catch (err: any) {
+					ctx.ui.notify(err.message, "error");
+					return;
+				}
+			}
+
 			const config = getAccountConfig(settings, target);
 
 			if (!config.clientId) {
@@ -350,20 +378,29 @@ export default function (pi: ExtensionAPI) {
 					display: true,
 					details: { type: "info" },
 				});
-				ctx.ui.notify(formatted, "info");
 				return;
 			}
 
-			// Update active account in cachedSettings
-			settings.account = target === "default" ? undefined : target;
+			if (target !== "default") {
+				try {
+					validateAccountName(target);
+				} catch (err: any) {
+					ctx.ui.notify(err.message, "error");
+					return;
+				}
+			}
+
+			// Update active account in cachedSettings (preserving the target name)
+			settings.account = target;
 			cachedSettings = settings;
 
 			updateStatus(ctx, agentDir, settings, log);
 
+			const resolvedTarget = resolveAccountTarget(target);
 			stopNotifications();
-			if (isAuthenticated(agentDir, settings.account)) {
+			if (isAuthenticated(agentDir, resolvedTarget)) {
 				startNotifications(pi, settings, agentDir, log);
-				const email = getAuthenticatedEmail(agentDir, settings.account);
+				const email = getAuthenticatedEmail(agentDir, resolvedTarget);
 				ctx.ui.notify(`✅ Switched to Gmail account "${target}" (${email}).`, "info");
 			} else {
 				ctx.ui.notify(`Switched to Gmail account "${target}" (not connected). Run \`/gmail-auth ${target}\` to connect.`, "info");
@@ -373,9 +410,9 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("gmail-accounts", {
 		description: "List all configured and connected Gmail accounts",
-		handler: async (_args: string | undefined, ctx: any) => {
+		handler: async (_args: string | undefined, _ctx: any) => {
 			const agentDir = getAgentDir();
-			const settings = cachedSettings ?? getSettings(ctx.cwd);
+			const settings = cachedSettings ?? getSettings(process.cwd());
 			const accounts = listAccounts(settings, agentDir, settings.account);
 			const formatted = formatAccountsList(accounts);
 			pi.sendMessage({
@@ -384,7 +421,6 @@ export default function (pi: ExtensionAPI) {
 				display: true,
 				details: { type: "info" },
 			});
-			ctx.ui.notify(formatted, "info");
 		},
 	});
 
@@ -393,8 +429,8 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args: string | undefined, ctx: any) => {
 			const agentDir = getAgentDir();
 			const settings = cachedSettings ?? getSettings(ctx.cwd);
-			const requestedAccount = args?.trim() || settings.account;
-			const target = requestedAccount === "default" ? undefined : requestedAccount;
+			const requestedAccount = args?.trim() || settings.account || settings.defaultAccount;
+			const target = resolveAccountTarget(requestedAccount);
 			const email = getAuthenticatedEmail(agentDir, target);
 
 			if (!email && !isAuthenticated(agentDir, target)) {
@@ -410,7 +446,12 @@ export default function (pi: ExtensionAPI) {
 			if (!confirmed) return;
 
 			await clearTokens(agentDir, target);
-			stopNotifications();
+
+			// Stop notifications only if the logged out account is the currently active/polled account
+			if (resolveAccountTarget(settings.account) === target) {
+				stopNotifications();
+			}
+
 			updateStatus(ctx, agentDir, settings, log);
 			ctx.ui.notify(`Gmail disconnected (${email || requestedAccount || "default"}).`, "info");
 		},
@@ -421,7 +462,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args: string | undefined, ctx: any) => {
 			const agentDir = getAgentDir();
 			const settings = cachedSettings ?? getSettings(ctx.cwd);
-			const target = settings.account === "default" ? undefined : settings.account;
+			const target = resolveAccountTarget(settings.account);
 
 			if (isAuthenticated(agentDir, target)) {
 				const email = getAuthenticatedEmail(agentDir, target);
@@ -439,7 +480,7 @@ export default function (pi: ExtensionAPI) {
 		const { source } = data as { args: string; source?: string };
 		const agentDir = getAgentDir();
 		const settings = cachedSettings ?? getSettings(process.cwd());
-		const target = settings.account === "default" ? undefined : settings.account;
+		const target = resolveAccountTarget(settings.account);
 		if (isAuthenticated(agentDir, target)) {
 			const email = getAuthenticatedEmail(agentDir, target);
 			const msg = `✅ Gmail connected as ${email}${target ? ` [account: ${target}]` : ""}`;

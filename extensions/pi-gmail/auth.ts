@@ -328,25 +328,25 @@ export function listAccounts(
 ): AccountInfo[] {
 	const names = new Set<string>();
 
-	if (settings.accounts) {
+	if (settings.accounts && Object.keys(settings.accounts).length > 0) {
 		for (const name of Object.keys(settings.accounts)) {
 			names.add(name);
 		}
-	}
-
-	const dbDir = path.join(agentDir, "db");
-	if (fs.existsSync(dbDir)) {
-		try {
-			const files = fs.readdirSync(dbDir);
-			for (const file of files) {
-				if (file === "gmail-tokens.json") {
-					names.add("default");
-				} else if (file.startsWith("gmail-tokens-") && file.endsWith(".json")) {
-					const name = file.slice("gmail-tokens-".length, -".json".length);
-					if (name) names.add(name);
+	} else {
+		const dbDir = path.join(agentDir, "db");
+		if (fs.existsSync(dbDir)) {
+			try {
+				const files = fs.readdirSync(dbDir);
+				for (const file of files) {
+					if (file === "gmail-tokens.json") {
+						names.add("default");
+					} else if (file.startsWith("gmail-tokens-") && file.endsWith(".json")) {
+						const name = file.slice("gmail-tokens-".length, -".json".length);
+						if (name) names.add(name);
+					}
 				}
-			}
-		} catch {}
+			} catch {}
+		}
 	}
 
 	if (names.size === 0 && (settings.clientId || isAuthenticated(agentDir))) {

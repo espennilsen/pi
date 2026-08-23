@@ -36,6 +36,7 @@
     "helpers.ts",
     "index.ts",
     "logger.ts",
-    "server.ts"
+    "server.ts",
+    "web-info.ts"
   ]
 }

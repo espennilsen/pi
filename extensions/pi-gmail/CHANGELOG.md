@@ -4,7 +4,20 @@
 
 ### Added
 
+- Multi-account support: configure multiple accounts under `settings.json` (`accounts` map and `defaultAccount`), connect tokens independently per account (`gmail-tokens-[account].json`), and pass `account` option to the `gmail` tool (closes #209)
+- `/gmail-switch [account]` command to switch active Gmail account or list accounts when run without arguments
+- `/gmail-accounts` command to list all configured and connected accounts with their authentication status
+- `/gmail-auth [account]` and `/gmail-logout [account]` commands for managing individual accounts without disconnecting others
 - `readOnly` setting to disable `send` and `send_draft` actions while preserving inbox and draft access
+
+### Changed
+
+- Email notification polling now dispatches notifications via `channel:send` with `{ route, text, source: "pi-gmail" }` payload to align with pi-channels
+
+### Fixed
+
+- Authenticated email address detection in `fetchUserEmail` now queries the Gmail `users/me/profile` endpoint (covered by `gmail.readonly`), resolving `unknown` email statuses on new authentications
+- `loadTokens` reads fresh token state from disk to avoid stale in-memory cached tokens across account switches
 
 ## [0.3.1] - 2026-08-10
 

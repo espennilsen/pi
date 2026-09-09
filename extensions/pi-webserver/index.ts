@@ -19,6 +19,7 @@ import { registerWebInfoListener } from "./web-info.ts";
 interface WebServerSettings {
 	autostart: boolean;
 	port: number;
+	host: string;
 	auth: string | null;
 	apiToken: string | null;
 	apiReadToken: string | null;
@@ -37,12 +38,13 @@ function resolveSettings(cwd: string): WebServerSettings {
 		return {
 			autostart: cfg.autostart ?? false,
 			port: cfg.port ?? 4100,
+			host: cfg.host ?? "127.0.0.1",
 			auth: cfg.auth ?? null,
 			apiToken: cfg.apiToken ?? null,
 			apiReadToken: cfg.apiReadToken ?? null,
 		};
 	} catch {
-		return { autostart: false, port: 4100, auth: null, apiToken: null, apiReadToken: null };
+		return { autostart: false, port: 4100, host: "127.0.0.1", auth: null, apiToken: null, apiReadToken: null };
 	}
 }
 
@@ -417,9 +419,9 @@ export default function (pi: ExtensionAPI) {
 
 		// Autostart if configured
 		if (settings.autostart && !isRunning()) {
-			const url = start(settings.port);
+			const url = start(settings.port, settings.host);
 			ctx.ui.notify(`Web server auto-started: ${url}`, "info");
-			log("start", { port: settings.port, url });
+			log("start", { port: settings.port, host: settings.host, url });
 		}
 
 		pi.events.emit("web:ready", {});

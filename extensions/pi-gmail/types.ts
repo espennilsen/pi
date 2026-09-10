@@ -111,10 +111,24 @@ export interface ParsedEmail {
 
 // ── Settings ────────────────────────────────────────────────────
 
-export interface GmailSettings {
+export interface GmailAccountConfig {
 	clientId?: string;
 	clientSecret?: string;
-	maxResults?: number;
 	/** Prevent send and send_draft actions while leaving drafts and inbox access available. */
 	readOnly?: boolean;
+}
+
+export interface GmailSettings extends GmailAccountConfig {
+	maxResults?: number;
+	defaultAccount?: string;
+	account?: string;
+	accounts?: Record<string, GmailAccountConfig>;
+}
+
+export interface AccountInfo {
+	name: string;
+	email: string | null;
+	authenticated: boolean;
+	isDefault: boolean;
+	isActive: boolean;
 }

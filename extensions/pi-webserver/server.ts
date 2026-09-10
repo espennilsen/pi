@@ -362,7 +362,7 @@ export function getUrl(): string | null {
  * Start the web server. Returns the URL.
  * If already running, stops and restarts.
  */
-export function start(port: number = 4100): string {
+export function start(port: number = 4100, host: string = "127.0.0.1"): string {
 	if (server) stop();
 	sessionSecret = crypto.randomBytes(32).toString("hex");
 
@@ -372,7 +372,7 @@ export function start(port: number = 4100): string {
 	);
 
 	server = http.createServer(async (req, res) => {
-		const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+		const url = new URL(req.url ?? "/", `http://${host}:${port}`);
 		const pathname = url.pathname;
 
 		// CORS for local development
@@ -507,7 +507,7 @@ export function start(port: number = 4100): string {
 		}
 	});
 
-	server.listen(port);
+	server.listen(port, host);
 	return `http://localhost:${port}`;
 }
 

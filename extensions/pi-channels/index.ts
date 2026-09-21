@@ -26,7 +26,8 @@ import { registerChannelTool } from "./tool.ts";
 import { ChatBridge } from "./bridge/bridge.ts";
 import { getAllCommands, type SlashCommandInfo as ChannelSlashCommand } from "./bridge/commands.ts";
 import { createLogger } from "./logger.ts";
-import { MessageHistory, type MessageRow } from "./history.ts";
+import type { MessageHistory, MessageRow } from "./history.ts";
+import { startHistory } from "./history-lifecycle.ts";
 
 /** Convert pi's SlashCommandInfo to the bridge's simplified format. */
 function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashCommand[] {
@@ -39,36 +40,6 @@ function toChannelSlashCommands(commands: SlashCommandInfo[]): ChannelSlashComma
 			baseDir: cmd.sourceInfo.baseDir,
 		},
 	}));
-}
-
-/** Wait for pi-kysely to be ready (or timeout after 10s). */
-async function waitForKysely(pi: ExtensionAPI): Promise<void> {
-	return new Promise((resolve, reject) => {
-		let unsubscribe: (() => void) | undefined;
-		let resolved = false;
-
-		const done = () => {
-			if (!resolved) {
-				resolved = true;
-				clearTimeout(timeout);
-				unsubscribe?.();
-				resolve();
-			}
-		};
-
-		const timeout = setTimeout(() => {
-			unsubscribe?.();
-			if (!resolved) reject(new Error("Timed out waiting for pi-kysely"));
-		}, 10_000);
-
-		// Subscribe to kysely:ready BEFORE probing
-		unsubscribe = pi.events.on("kysely:ready", done);
-
-		// Try probing — if already ready, the reply callback fires synchronously
-		pi.events.emit("kysely:info", {
-			reply: (_info: unknown) => done(),
-		});
-	});
 }
 
 /** Show message history in a TUI overlay popup. */
@@ -141,12 +112,21 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 	});
 }
 
+/**
+ * Registers channel tools, commands, event handlers, and session-scoped resources.
+ * History readiness is handled in the background so later startup handlers can run.
+ * @param pi - Pi extension API used for registration and inter-extension events.
+ */
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	const registry = new ChannelRegistry();
 	registry.setLogger(log);
 	let bridge: ChatBridge | null = null;
 	let history: MessageHistory | null = null;
+	let stopHistory: (() => void) | undefined;
+
+	// Register once; consumers resolve the current session's history at call time.
+	registerChannelTool(pi, registry, () => history);
 
 	// ── Flag: --chat-bridge ───────────────────────────────────
 
@@ -166,26 +146,13 @@ export default function (pi: ExtensionAPI) {
 		const config = loadConfig(ctx.cwd);
 		registry.setModelRegistry(ctx.modelRegistry);
 
-		// Initialize message history (waits for pi-kysely to be ready)
-		const retentionDays = config.messageRetentionDays ?? 30;
-		history = new MessageHistory(pi.events, retentionDays);
-		history.setErrorLogger(log);
-		try {
-			await waitForKysely(pi);
-			await history.init();
-			registry.setHistory(history);
-			setHistory(history);
-			log("history-init", { retentionDays });
-		} catch (error) {
-			log("history-init-failed", { error }, "ERROR");
-			ctx.ui.notify("pi-channels: Message history unavailable (pi-kysely not ready)", "warning");
-			history = null;
-			// Clear shared history hooks to avoid stale references
-			setHistory(null);
-		}
-
-		// Register channel tools (history tool only when history is ready)
-		registerChannelTool(pi, registry, history ?? undefined);
+		// Never await Kysely here: its session_start handler may run after ours.
+		stopHistory?.();
+		stopHistory = startHistory(pi.events, config.messageRetentionDays ?? 30, value => {
+			history = value;
+			registry.setHistory(value);
+			setHistory(value);
+		}, log, message => ctx.ui.notify(message, "warning"));
 
 		await registry.loadConfig(config, ctx.cwd);
 
@@ -229,9 +196,8 @@ export default function (pi: ExtensionAPI) {
 		if (bridge?.isActive()) log("bridge-stop", {});
 		bridge?.stop();
 		setBridge(null);
-		// Clear shared history hooks on shutdown
-		setHistory(null);
-		history = null;
+		stopHistory?.();
+		stopHistory = undefined;
 		await registry.stopAll();
 	});
 
@@ -287,10 +253,6 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
-
-	// ── LLM tool ──────────────────────────────────────────────
-
-	// Tool registered in session_start after history is available (line ~170)
 
 	// ── Command: /channel-history ─────────────────────────────
 

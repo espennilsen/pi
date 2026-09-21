@@ -43,6 +43,13 @@ function truncateText(text: string | null, maxLen: number = 200): string {
 	return text.slice(0, maxLen) + "…";
 }
 
+/**
+ * Registers notification tools and, when a history getter is supplied, the history tool.
+ * History is resolved at execution time to follow readiness and session changes.
+ * @param pi - Pi extension API used to register tools.
+ * @param registry - Adapter registry used for delivery and adapter discovery.
+ * @param getHistory - Optional getter returning the current ready history instance or null.
+ */
 export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry, getHistory?: () => MessageHistory | null): void {
 	pi.registerTool({
 		name: "notify",

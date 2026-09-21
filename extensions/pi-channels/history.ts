@@ -223,10 +223,24 @@ INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, 1);`,
 
 	// ── Internal ─────────────────────────────────────────────
 
+	/**
+	 * Runs parameterized history SQL through Kysely's query event.
+	 * @param sql - SQL statement with positional question-mark placeholders.
+	 * @param params - Values bound to the placeholders in order.
+	 * @returns Query rows and the affected-row count when provided by Kysely.
+	 */
 	private async queryRaw(sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; numAffectedRows?: number }> {
 		return this.request("kysely:query", { input: { sql, params } });
 	}
 
+	/**
+	 * Sends a Kysely request and settles once on a reply, failure, timeout, or disposal.
+	 * Clears the request timer and cancellation hook when the request settles.
+	 * @param event - Kysely event that handles the operation.
+	 * @param payload - Operation-specific fields accompanying the actor and callbacks.
+	 * @returns The successful reply payload.
+	 * @throws If the operation fails, no reply arrives within ten seconds, or history is disposed.
+	 */
 	private async request<T>(event: string, payload: Record<string, unknown>): Promise<T> {
 		if (this.disposed) throw new Error("Message history disposed");
 		const TIMEOUT_MS = 10_000;

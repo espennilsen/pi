@@ -112,6 +112,11 @@ async function showHistoryPopup(ctx: any, rows: MessageRow[]): Promise<void> {
 	});
 }
 
+/**
+ * Registers channel tools, commands, event handlers, and session-scoped resources.
+ * History readiness is handled in the background so later startup handlers can run.
+ * @param pi - Pi extension API used for registration and inter-extension events.
+ */
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	const registry = new ChannelRegistry();

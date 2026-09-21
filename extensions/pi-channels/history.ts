@@ -5,7 +5,7 @@
  * Supports querying, retention cleanup, and TUI display.
  *
  * Table: pi_channels__messages
- * Migrations: pi_channels_migrations (tracks schema version)
+ * Migrations: Kysely migration API (legacy pi_channels_migrations retained)
  *
  * Config: messageRetentionDays in pi-channels settings (default: 30)
  */
@@ -15,7 +15,6 @@ import type { ChannelMessage, IncomingMessage } from "./types.ts";
 
 export const TABLE_NAME = "pi_channels__messages";
 export const MIGRATIONS_TABLE = "pi_channels_migrations";
-const CURRENT_SCHEMA_VERSION = 1;
 
 export interface MessageRow {
 	id: number;
@@ -36,6 +35,8 @@ export interface HistoryQuery {
 	since?: string; // ISO datetime string
 }
 
+// Preserve the existing schema, including constraints and timestamp defaults.
+// This is migration 0001: add new migrations rather than changing its checksum.
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +59,8 @@ export class MessageHistory {
 	private events: EventBus;
 	private retentionDays: number;
 	private initialized = false;
+	private disposed = false;
+	private pending = new Set<() => void>();
 	private logErrors: ((event: string, data: unknown, level?: string) => void) | null = null;
 
 	constructor(events: EventBus, retentionDays: number = 30) {
@@ -76,50 +79,52 @@ export class MessageHistory {
 		// Enable WAL mode first (separate statement)
 		await this.execute("PRAGMA journal_mode = WAL");
 
-		// Create migrations table if it doesn't exist
-		await this.execute(`
-			CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
-				id INTEGER PRIMARY KEY CHECK (id = 1),
-				version INTEGER NOT NULL DEFAULT 0
-			)
-		`);
+		// DDL belongs on the migration API, not the RBAC-checked DML query API.
+		await this.request("kysely:migration:apply", {
+			migrations: [{
+				name: "0001_channel_history",
+				sql: `${SCHEMA_SQL}
+CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	version INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, 1);`,
+			}],
+		});
 
-		// Get current version
-		const versionResult = await this.queryRaw(
-			`SELECT COALESCE((SELECT version FROM ${MIGRATIONS_TABLE} WHERE id = 1), 0) as version`
-		);
-		const currentVersion = Number(versionResult.rows[0]?.version ?? 0);
-
-		// Run migrations if needed
-		if (currentVersion < CURRENT_SCHEMA_VERSION) {
-			await this.migrate(currentVersion);
-		}
+		// Register ownership on every session, including when migrations are skipped.
+		// Existing tables are preserved by the additive schema API.
+		await this.request("kysely:schema:register", {
+			tables: {
+				[TABLE_NAME]: { columns: {
+					id: { type: "integer", primaryKey: true, autoIncrement: true },
+					adapter: { type: "text", notNull: true },
+					direction: { type: "text", notNull: true },
+					sender: { type: "text" },
+					recipient: { type: "text" },
+					text: { type: "text" },
+					metadata: { type: "text" },
+					created_at: { type: "text" },
+				} },
+				[MIGRATIONS_TABLE]: { columns: {
+					id: { type: "integer", primaryKey: true },
+					version: { type: "integer", notNull: true, default: 0 },
+				} },
+			},
+		});
 
 		// Run initial cleanup
 		await this.cleanup();
 
+		if (this.disposed) throw new Error("Message history disposed");
 		this.initialized = true;
 	}
 
-	/** Run schema migrations from currentVersion to CURRENT_SCHEMA_VERSION. */
-	private async migrate(currentVersion: number): Promise<void> {
-		if (currentVersion === 0) {
-			// Initial schema
-			const statements = SCHEMA_SQL.split(";").map(s => s.trim()).filter(Boolean);
-			for (const stmt of statements) {
-				await this.execute(stmt);
-			}
-		}
-
-		// Add future migrations here as needed:
-		// if (currentVersion < 2) { ... }
-
-		// Update version
-		await this.execute(
-			`INSERT INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, ?)
-			ON CONFLICT(id) DO UPDATE SET version = ?`,
-			[CURRENT_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION]
-		);
+	/** Cancel local query waits and prevent further work for this session. */
+	dispose(): void {
+		this.disposed = true;
+		this.initialized = false;
+		for (const cancel of this.pending) cancel();
 	}
 
 	/** Log an incoming message (fire-and-forget). */
@@ -219,21 +224,41 @@ export class MessageHistory {
 	// ── Internal ─────────────────────────────────────────────
 
 	private async queryRaw(sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; numAffectedRows?: number }> {
+		return this.request("kysely:query", { input: { sql, params } });
+	}
+
+	private async request<T>(event: string, payload: Record<string, unknown>): Promise<T> {
+		if (this.disposed) throw new Error("Message history disposed");
 		const TIMEOUT_MS = 10_000;
 		return new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => reject(new Error("History query timed out (kysely not responding)")), TIMEOUT_MS);
+			let settled = false;
+			const finish = (complete: () => void) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				this.pending.delete(cancel);
+				complete();
+			};
+			const cancel = () => finish(() => reject(new Error("Message history disposed")));
+			const timeout = setTimeout(() => finish(() => reject(new Error("History query timed out (kysely not responding)"))), TIMEOUT_MS);
+			this.pending.add(cancel);
 			try {
-				this.events.emit("kysely:query", {
+				this.events.emit(event, {
 					actor: "pi-channels",
-					input: { sql, params },
-					reply: (result: { rows: Record<string, unknown>[]; numAffectedRows?: number }) => {
-						clearTimeout(timeout);
-						resolve(result);
+					...payload,
+					reply: (result: T & { ok?: boolean; errors?: string[] }) => {
+						if (result.ok === false) {
+							finish(() => reject(new Error(result.errors?.join("; ") || "History request failed")));
+						} else {
+							finish(() => resolve(result));
+						}
+					},
+					ack: (ack: { ok: boolean; error?: string }) => {
+						if (!ack.ok) finish(() => reject(new Error(ack.error ?? "History query failed")));
 					},
 				} as any);
 			} catch (err) {
-				clearTimeout(timeout);
-				reject(err);
+				finish(() => reject(err));
 			}
 		});
 	}

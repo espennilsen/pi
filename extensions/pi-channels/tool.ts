@@ -43,7 +43,7 @@ function truncateText(text: string | null, maxLen: number = 200): string {
 	return text.slice(0, maxLen) + "…";
 }
 
-export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry, history?: MessageHistory): void {
+export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry, getHistory?: () => MessageHistory | null): void {
 	pi.registerTool({
 		name: "notify",
 		label: "Channel",
@@ -238,7 +238,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 
 	// ── channel_history tool ───────────────────────────────
 
-	if (history) {
+	if (getHistory) {
 		pi.registerTool({
 			name: "channel_history",
 			label: "Channel History",
@@ -269,6 +269,13 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 			}) as any,
 
 			async execute(_toolCallId, _params) {
+				const history = getHistory();
+				if (!history) {
+					return {
+						content: [{ type: "text" as const, text: "Message history not ready yet." }],
+						details: {},
+					};
+				}
 				const params = _params as {
 					action: "query" | "stats";
 					adapter?: string;
@@ -286,7 +293,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 					const lines: string[] = ["**Message counts by adapter:**"];
 					let total = 0;
 					for (const a of adapters) {
-						const count = await history!.count({ adapter: a });
+						const count = await history.count({ adapter: a });
 						lines.push(`- ${a}: ${count}`);
 						total += count;
 					}
@@ -307,7 +314,7 @@ export function registerChannelTool(pi: ExtensionAPI, registry: ChannelRegistry,
 
 				let rows: MessageRow[];
 				try {
-					rows = await history!.query(filters);
+					rows = await history.query(filters);
 				} catch (error) {
 					return {
 						content: [{ type: "text" as const, text: `Failed to query history: ${error instanceof Error ? error.message : String(error)}` }],

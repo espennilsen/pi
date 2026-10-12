@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.3.2]
+
+### Fixed
+
+- Include `web-info.ts` in the published package (fixes #217: extension failed to load with `Cannot find module ./web-info.ts`)
+
 ## [0.3.1] - 2026-08-10
 
 ### Changed

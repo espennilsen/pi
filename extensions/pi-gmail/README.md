@@ -20,7 +20,7 @@ Full Gmail integration for [pi](https://github.com/mariozechner/pi-coding-agent)
 2. Create a project (or use an existing one)
 3. Enable the **Gmail API**
 4. Create **OAuth 2.0 Client ID** credentials (Desktop or Web application)
-5. Add `http://localhost:<port>/gmail/callback` as an authorized redirect URI
+5. Add the callback URI shown on the Gmail setup page as an authorized redirect URI (for the default listener: `http://127.0.0.1:<port>/gmail/callback`)
 
 ### 2. Configure pi settings
 
@@ -78,7 +78,11 @@ Start pi-webserver with `/web`, then run `/gmail-auth` (or `/gmail-auth <account
 | `notifications.enabled` | boolean | `false` | Enable background polling for new mail |
 | `notifications.intervalMinutes` | number | `5` | Polling interval in minutes |
 | `notifications.query` | string | `"is:unread"` | Gmail search query for notifications |
-| `notifications.channel` | string | `"default"` | Target pi-channels route for notification dispatch |
+| `notifications.channel` | string | `"default"` | pi-channels adapter name or route alias; route aliases supply the recipient |
+
+The literal account name `default` selects top-level credentials and `gmail-tokens.json`, even when a named account is active. Omitted web account selections use the active/default account. Token-file-only accounts remain visible in listings, but must be added to `accounts` before switching when named account configuration is present.
+
+Notifications count every matching result page and include up to three message summaries. They emit `channel:send` with `adapter`, an empty `recipient` (resolved by the configured route), `text`, and `source: "pi-gmail"`.
 
 ## Tool: `gmail`
 

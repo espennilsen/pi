@@ -32,6 +32,9 @@ const SAFE_ACCOUNT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
 // ── Account name validation ─────────────────────────────────────
 
+/** Reject names that cannot safely identify an account or token file.
+ * @param name - Optional account name; `default` denotes the legacy token file.
+ */
 export function validateAccountName(name?: string): void {
 	if (!name || name === "default") return;
 	if (!SAFE_ACCOUNT_NAME_RE.test(name)) {
@@ -52,6 +55,10 @@ const pendingOAuthStates = new Map<string, OAuthStateEntry>();
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_PENDING_OAUTH_STATES = 100;
 
+/** Create a single-use, ten-minute OAuth state while bounding pending flows to 100.
+ * @param accountName - Logical account to preserve through the callback.
+ * @returns An opaque random state value.
+ */
 export function generateOAuthState(accountName?: string): string {
 	validateAccountName(accountName);
 
@@ -71,12 +78,16 @@ export function generateOAuthState(accountName?: string): string {
 
 	const state = crypto.randomBytes(32).toString("hex");
 	pendingOAuthStates.set(state, {
-		account: accountName && accountName !== "default" ? accountName : undefined,
+		account: accountName,
 		createdAt: now,
 	});
 	return state;
 }
 
+/** Consume an OAuth state and recover its account if it has not expired.
+ * @param state - State supplied by the OAuth callback.
+ * @returns Validation result and the original logical account.
+ */
 export function verifyOAuthState(state: string | null): { valid: boolean; account?: string } {
 	if (!state) return { valid: false };
 	const entry = pendingOAuthStates.get(state);
@@ -95,6 +106,11 @@ const refreshPromises = new Map<string, Promise<string>>();
 
 // ── Account config resolution ───────────────────────────────────
 
+/** Resolve per-account credentials and read-only policy over global defaults.
+ * @param settings - Gmail configuration containing active and default selections.
+ * @param accountName - Explicit selection; `default` bypasses named accounts.
+ * @returns Merged configuration; throws for an unknown configured-account selection.
+ */
 export function getAccountConfig(
 	settings: GmailSettings,
 	accountName?: string,
@@ -123,6 +139,11 @@ export function getAccountConfig(
 
 // ── Token file path ─────────────────────────────────────────────
 
+/** Resolve an isolated token path, normalizing `default` only at storage boundaries.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Named account, or omitted/`default` for legacy storage.
+ * @returns Absolute token filename under the agent's db directory.
+ */
 export function getTokensPath(agentDir: string, accountName?: string): string {
 	const name = accountName?.trim();
 	if (name && name !== "default") {
@@ -134,6 +155,11 @@ export function getTokensPath(agentDir: string, accountName?: string): string {
 
 // ── Token storage ───────────────────────────────────────────────
 
+/** Read tokens without falling back to another account's token file.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Account whose stored tokens should be read.
+ * @returns Stored tokens, or null when missing or unreadable.
+ */
 export function loadTokens(agentDir: string, accountName?: string): OAuthTokens | null {
 	const tokensPath = getTokensPath(agentDir, accountName);
 	try {
@@ -144,12 +170,21 @@ export function loadTokens(agentDir: string, accountName?: string): OAuthTokens 
 	}
 }
 
+/** Persist tokens in the selected account's file, creating it with owner-only access.
+ * @param agentDir - Agent data directory.
+ * @param tokens - OAuth credentials to persist.
+ * @param accountName - Account whose token file should be written.
+ */
 export function saveTokens(agentDir: string, tokens: OAuthTokens, accountName?: string): void {
 	const tokensPath = getTokensPath(agentDir, accountName);
 	fs.mkdirSync(path.dirname(tokensPath), { recursive: true });
 	fs.writeFileSync(tokensPath, JSON.stringify(tokens, null, 2), { encoding: "utf-8", mode: 0o600 });
 }
 
+/** Attempt bounded remote revocation, then remove only the selected account's tokens.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Account to disconnect.
+ */
 export async function clearTokens(agentDir: string, accountName?: string): Promise<void> {
 	// Revoke refresh token at Google before deleting locally
 	const tokens = loadTokens(agentDir, accountName);
@@ -175,6 +210,12 @@ export async function clearTokens(agentDir: string, accountName?: string): Promi
 
 // ── OAuth flow ──────────────────────────────────────────────────
 
+/** Build Google consent parameters and bind the selected account to OAuth state.
+ * @param settings - Gmail credentials and account selections.
+ * @param redirectUri - Registered callback URL.
+ * @param accountName - Explicit account, otherwise the active/default selection.
+ * @returns Google authorization URL.
+ */
 export function getConsentUrl(
 	settings: GmailSettings,
 	redirectUri: string,
@@ -184,7 +225,8 @@ export function getConsentUrl(
 	const clientId = config.clientId ?? "";
 	if (!clientId) throw new Error(`Gmail clientId not configured${accountName ? ` for account "${accountName}"` : ""}`);
 
-	const state = generateOAuthState(accountName);
+	// Bind omitted selections now, not against possibly changed settings at callback time.
+	const state = generateOAuthState(accountName || settings.account || settings.defaultAccount || "default");
 
 	const params = new URLSearchParams({
 		client_id: clientId,
@@ -199,6 +241,14 @@ export function getConsentUrl(
 	return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
+/** Exchange an authorization code and persist the resulting account tokens.
+ * @param settings - Gmail credentials and account selections.
+ * @param code - Authorization code from Google.
+ * @param redirectUri - Callback URL used for consent.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Logical account recovered from OAuth state.
+ * @returns Persisted OAuth tokens, including the discovered email address.
+ */
 export async function exchangeCode(
 	settings: GmailSettings,
 	code: string,
@@ -251,16 +301,22 @@ export async function exchangeCode(
 
 // ── Token refresh ───────────────────────────────────────────────
 
+/** Obtain a usable token, sharing concurrent refresh requests for the same account.
+ * @param settings - Gmail credentials and account selections.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Explicit account, otherwise the active/default selection.
+ * @returns A valid access token, or rejects if authentication/refresh fails.
+ */
 export async function getAccessToken(
 	settings: GmailSettings,
 	agentDir: string,
 	accountName?: string,
 ): Promise<string> {
-	const accountKey = accountName || settings.account || "default";
-	const tokens = loadTokens(agentDir, accountName || settings.account);
+	const accountKey = accountName || settings.account || settings.defaultAccount || "default";
+	const tokens = loadTokens(agentDir, accountKey);
 	if (!tokens) {
 		throw new Error(
-			`Not authenticated${accountName || settings.account ? ` for account "${accountName || settings.account}"` : ""}. Run /gmail-auth to connect.`,
+			`Not authenticated for account "${accountKey}". Run /gmail-auth to connect.`,
 		);
 	}
 
@@ -273,7 +329,7 @@ export async function getAccessToken(
 	const existing = refreshPromises.get(accountKey);
 	if (existing) return existing;
 
-	const promise = refreshAccessToken(settings, agentDir, tokens, accountName || settings.account).finally(() => {
+	const promise = refreshAccessToken(settings, agentDir, tokens, accountKey).finally(() => {
 		refreshPromises.delete(accountKey);
 	});
 
@@ -281,6 +337,7 @@ export async function getAccessToken(
 	return promise;
 }
 
+/** Refresh and persist one account's credentials with a bounded HTTP timeout. */
 async function refreshAccessToken(
 	settings: GmailSettings,
 	agentDir: string,
@@ -339,11 +396,21 @@ async function refreshAccessToken(
 	return updated.access_token;
 }
 
+/** Check for readable stored tokens; this does not validate them against Google.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Account to inspect.
+ * @returns Whether a token file was successfully loaded.
+ */
 export function isAuthenticated(agentDir: string, accountName?: string): boolean {
 	const tokens = loadTokens(agentDir, accountName);
 	return tokens !== null;
 }
 
+/** Read the email recorded with an account's stored tokens.
+ * @param agentDir - Agent data directory.
+ * @param accountName - Account to inspect.
+ * @returns Cached email, or null if unavailable.
+ */
 export function getAuthenticatedEmail(agentDir: string, accountName?: string): string | null {
 	const tokens = loadTokens(agentDir, accountName);
 	return tokens?.email ?? null;
@@ -351,6 +418,12 @@ export function getAuthenticatedEmail(agentDir: string, accountName?: string): s
 
 // ── Multi-account discovery & listing ───────────────────────────
 
+/** Merge configured accounts and discovered token files into an account listing.
+ * @param settings - Configured accounts and default selection.
+ * @param agentDir - Agent data directory to scan.
+ * @param activeAccount - Optional current selection overriding settings.
+ * @returns Account status entries, with the default account sorted first.
+ */
 export function listAccounts(
 	settings: GmailSettings,
 	agentDir: string,
@@ -407,6 +480,10 @@ export function listAccounts(
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+/** Discover email via Gmail profile, then UserInfo, using bounded requests.
+ * @param accessToken - Google access token authorized for profile lookup.
+ * @returns The discovered email, or `unknown` when both lookups fail.
+ */
 export async function fetchUserEmail(accessToken: string): Promise<string> {
 	// 1. Try Gmail user profile API (covered by gmail.readonly scope)
 	try {

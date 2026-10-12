@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus, setLogger } from "./server.ts";
+import { start, stop, mount, unmount, mountApi, unmountApi, isRunning, getUrl, getPort, getMounts, getApiMounts, setAuth, getAuth, setApiToken, setApiReadToken, getApiTokenStatus, setLogger, getHttpExposureWarning } from "./server.ts";
 import { createLogger } from "./logger.ts";
 import type { MountConfig } from "./server.ts";
 import { registerWebInfoListener } from "./web-info.ts";
@@ -51,6 +51,14 @@ function resolveSettings(cwd: string): WebServerSettings {
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	setLogger(log);
+	let configuredHost = "127.0.0.1";
+
+	/** Start on the configured interface and surface cleartext exposure to the caller. */
+	function startConfigured(port: number, notify: (message: string, type: "warning") => void): string {
+		const warning = getHttpExposureWarning(configuredHost);
+		if (warning) notify(warning, "warning");
+		return start(port, configuredHost);
+	}
 
 	// ── Event bus integration ────────────────────────────────────
 	// Other extensions can emit these without importing anything.
@@ -199,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("Invalid port number (must be 1–65535)", "error");
 					return;
 				}
-				const url = start(newPort);
+				const url = startConfigured(newPort, (message, type) => ctx.ui.notify(message, type));
 				ctx.ui.notify(`Web server restarted on port ${newPort}: ${url}`, "info");
 				return;
 			}
@@ -238,7 +246,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const url = start(port);
+			const url = startConfigured(port, (message, type) => ctx.ui.notify(message, type));
 			const mountList = getMounts();
 			let msg = `Web server: ${url}`;
 			if (mountList.length > 0) {
@@ -345,7 +353,7 @@ export default function (pi: ExtensionAPI) {
 				notify("Invalid port number (must be 1–65535)", "error");
 				return;
 			}
-			const url = start(newPort);
+			const url = startConfigured(newPort, notify);
 			notify(`Web server restarted on port ${newPort}: ${url}`);
 			return;
 		}
@@ -382,7 +390,7 @@ export default function (pi: ExtensionAPI) {
 			notify("Web server stopped");
 			return;
 		}
-		const url = start(port);
+		const url = startConfigured(port, notify);
 		const mountList = getMounts();
 		let msg = `Web server: ${url}`;
 		if (mountList.length > 0) {
@@ -396,6 +404,7 @@ export default function (pi: ExtensionAPI) {
 	// Pick up auth from settings and notify other extensions
 	pi.on("session_start", async (_event: any, ctx: any) => {
 		const settings = resolveSettings(ctx.cwd);
+		configuredHost = settings.host;
 
 		if (settings.auth) {
 			const colon = settings.auth.indexOf(":");
@@ -419,7 +428,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Autostart if configured
 		if (settings.autostart && !isRunning()) {
-			const url = start(settings.port, settings.host);
+			const url = startConfigured(settings.port, (message, type) => ctx.ui.notify(message, type));
 			ctx.ui.notify(`Web server auto-started: ${url}`, "info");
 			log("start", { port: settings.port, host: settings.host, url });
 		}

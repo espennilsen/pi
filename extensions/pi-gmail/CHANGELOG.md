@@ -12,10 +12,13 @@
 
 ### Changed
 
-- Email notification polling now dispatches notifications via `channel:send` with `{ route, text, source: "pi-gmail" }` payload to align with pi-channels
+- Email notification polling now dispatches notifications via `channel:send` with `{ adapter, recipient, text, source: "pi-gmail" }` payload to align with pi-channels
 
 ### Fixed
 
+- Preserve explicit `default` and implicit active-account selections through OAuth consent, callback state and token storage
+- Drain all notification result pages before advancing the poll window; retain retry eligibility after page or metadata failures
+- Honor `defaultAccount` during access-token lookup and reject unconfigured account switches before mutating the active selection
 - Authenticated email address detection in `fetchUserEmail` now queries the Gmail `users/me/profile` endpoint (covered by `gmail.readonly`), resolving `unknown` email statuses on new authentications
 - `loadTokens` reads fresh token state from disk to avoid stale in-memory cached tokens across account switches
 

@@ -52,9 +52,9 @@ import { openUrl } from "./utils.ts";
 
 // ── Shared helpers ──────────────────────────────────────────────
 
+/** Trim account input without losing the explicit default-account sentinel. */
 export function resolveAccountTarget(name?: string): string | undefined {
-	if (!name || name === "default") return undefined;
-	return name.trim();
+	return name?.trim() || undefined;
 }
 
 // ── Settings ────────────────────────────────────────────────────
@@ -70,6 +70,7 @@ interface FullGmailSettings extends GmailSettings {
 	notifications?: NotificationSettings;
 }
 
+/** Merge project settings over global settings, preserving individual account fields. */
 function getSettings(cwd: string): FullGmailSettings {
 	const agentDir = getAgentDir();
 	const sm = SettingsManager.create(cwd, agentDir);
@@ -103,6 +104,7 @@ function getSettings(cwd: string): FullGmailSettings {
 
 // ── UI Status helpers ───────────────────────────────────────────
 
+/** Render configuration/authentication status for the selected logical account. */
 function updateStatus(
 	ctx: any,
 	agentDir: string,
@@ -131,6 +133,7 @@ function updateStatus(
 	}
 }
 
+/** Render account connection status and switching instructions as Markdown. */
 function formatAccountsList(accounts: AccountInfo[]): string {
 	if (accounts.length === 0) {
 		return "No Gmail accounts configured or connected.";
@@ -156,6 +159,7 @@ let pollGeneration = 0;
 const MAX_SEEN_IDS = 500;
 const notifiedMessageIds = new Set<string>();
 
+/** Record a notified ID while retaining only the latest 500 entries. */
 function trackNotified(id: string): void {
 	notifiedMessageIds.add(id);
 	// Evict oldest entries when set grows too large
@@ -168,6 +172,7 @@ function trackNotified(id: string): void {
 	}
 }
 
+/** Start account-bound polling; advance the window only after all pages are processed. */
 function startNotifications(
 	pi: ExtensionAPI,
 	settings: FullGmailSettings,
@@ -182,10 +187,15 @@ function startNotifications(
 	const query = notif.query ?? "is:unread";
 	const channel = notif.channel ?? "default";
 	const generation = ++pollGeneration;
+	// Keep an in-flight poll bound to its account if settings change during a switch.
+	settings = { ...settings, account: settings.account || settings.defaultAccount || "default" };
+	lastCheckTimestamp = Date.now();
+	notifiedMessageIds.clear();
 
 	log("notifications", { status: "starting", intervalMs, query, channel, account: settings.account });
 
 	// Self-scheduling setTimeout pattern to avoid overlapping polls
+	/** Collect one complete result window and summarize newly discovered messages. */
 	async function poll() {
 		// Quiesce if stop was called or a new generation started
 		if (notificationTimer === null || generation !== pollGeneration) return;
@@ -198,11 +208,17 @@ function startNotifications(
 			const sinceSec = Math.floor(lastCheckTimestamp / 1000);
 			const fullQuery = `${query} after:${sinceSec}`;
 
-			const list = await client.listMessages(settings, agentDir, fullQuery, 20);
-			const messageIds = list.messages?.map((m) => m.id) ?? [];
+			const messageIds = new Set<string>();
+			let pageToken: string | undefined;
+			do {
+				const list = await client.listMessages(settings, agentDir, fullQuery, 20, undefined, pageToken);
+				if (notificationTimer === null || generation !== pollGeneration) return;
+				for (const message of list.messages ?? []) messageIds.add(message.id);
+				pageToken = list.nextPageToken;
+			} while (pageToken);
 
 			// Filter out already-notified messages
-			const newIds = messageIds.filter((id) => !notifiedMessageIds.has(id));
+			const newIds = [...messageIds].filter((id) => !notifiedMessageIds.has(id));
 
 			if (newIds.length > 0) {
 				log("notifications", { newMessages: newIds.length });
@@ -212,7 +228,7 @@ function startNotifications(
 					newIds.slice(0, 3).map((id) => client.getMessage(settings, agentDir, id, "metadata")),
 				);
 
-				for (const id of newIds) trackNotified(id);
+				if (notificationTimer === null || generation !== pollGeneration) return;
 
 				const summary = messages.map((m, i) => formatSearchResult(m, i + 1)).join("\n");
 				const countText =
@@ -222,10 +238,12 @@ function startNotifications(
 
 				// Forward notification via pi-channels using channel:send event
 				pi.events.emit("channel:send", {
-					route: channel,
+					adapter: channel,
+					recipient: "",
 					text: `Gmail (${resolveAccountTarget(settings.account) || "default"}): ${countText}\n\n${summary}`,
 					source: "pi-gmail",
 				});
+				for (const id of newIds) trackNotified(id);
 			}
 
 			// Advance timestamp only after successful fetch/processing
@@ -243,6 +261,7 @@ function startNotifications(
 	notificationTimer = setTimeout(poll, intervalMs);
 }
 
+/** Cancel scheduled notification polling. In-flight polls check their generation. */
 function stopNotifications(): void {
 	if (notificationTimer) {
 		clearTimeout(notificationTimer);
@@ -252,6 +271,7 @@ function stopNotifications(): void {
 
 // ── Extension entry point ───────────────────────────────────────
 
+/** Register Gmail commands, tools, web routes and session-scoped notification polling. */
 export default function (pi: ExtensionAPI) {
 	const log = createLogger(pi);
 	let cachedSettings: FullGmailSettings | null = null;
@@ -392,8 +412,7 @@ export default function (pi: ExtensionAPI) {
 				if (
 					settings.accounts &&
 					Object.keys(settings.accounts).length > 0 &&
-					!settings.accounts[target] &&
-					!isAuthenticated(agentDir, target)
+					!settings.accounts[target]
 				) {
 					ctx.ui.notify(`Account "${target}" is not configured in settings.json.`, "error");
 					return;

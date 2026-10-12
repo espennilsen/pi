@@ -96,6 +96,7 @@ function verifyLogoutCsrf(token: string | null): boolean {
 
 // ── HTML pages ──────────────────────────────────────────────────
 
+/** Render account-specific connection links and a CSRF-protected logout form. */
 function authStatusPage(
 	authenticated: boolean,
 	email: string | null,
@@ -209,6 +210,11 @@ function errorPage(error: string): string {
 
 // ── Route definitions ───────────────────────────────────────────
 
+/** Mount account-aware OAuth, status and logout handlers on the shared webserver.
+ * @param bus - Shared extension event bus.
+ * @param settings - Gmail credentials and selected account.
+ * @param agentDir - Directory containing isolated account token files.
+ */
 export function mountGmailRoutes(
 	bus: EventBus,
 	settings: GmailSettings,
@@ -234,7 +240,7 @@ export function mountGmailRoutes(
 				}
 			}
 
-			const target = accountParam === "default" ? undefined : accountParam;
+			const target = accountParam || settings.account || settings.defaultAccount || "default";
 
 			// Status page
 			if (req.method === "GET" && p === "/") {
@@ -326,7 +332,7 @@ export function mountGmailRoutes(
 					return;
 				}
 
-				const logoutTarget = postAccount === "default" ? undefined : postAccount;
+				const logoutTarget = postAccount || settings.account || settings.defaultAccount || "default";
 				await clearTokens(agentDir, logoutTarget);
 				bus.emit("gmail:disconnected", { account: logoutTarget });
 				const redirectLoc = logoutTarget ? `/gmail?account=${encodeURIComponent(logoutTarget)}` : "/gmail";
@@ -358,7 +364,7 @@ export function mountGmailRoutes(
 				}
 			}
 
-			const target = accountParam === "default" ? undefined : accountParam;
+			const target = accountParam || settings.account || settings.defaultAccount || "default";
 
 			if (req.method === "GET" && p === "/status") {
 				json(res, 200, {
@@ -377,6 +383,9 @@ export function mountGmailRoutes(
 	bus.emit("web:mount-api", apiMount);
 }
 
+/** Remove Gmail's web and API mounts.
+ * @param bus - Shared extension event bus.
+ */
 export function unmountGmailRoutes(bus: EventBus): void {
 	bus.emit("web:unmount", { name: "gmail" });
 	bus.emit("web:unmount-api", { name: "gmail-api" });

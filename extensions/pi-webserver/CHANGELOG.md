@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Configurable listener `host` (default `127.0.0.1`) for autostart and manual start/restart, with a cleartext HTTP warning for non-loopback access
+
+### Fixed
+
+- Bracket IPv6 addresses in request and discovery URLs and advertise loopback URLs for wildcard listeners
+
 ## [0.3.1] - 2026-08-10
 
 ### Changed

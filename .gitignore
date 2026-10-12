@@ -7,8 +7,10 @@ pnpm-debug.log*
 
 *.lock
 .pi/
+.pi-subagents/
 telemetry/
 memory/
+/MEMORY.md
 db/
 *.db
 *.db-shm

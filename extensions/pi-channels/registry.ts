@@ -47,7 +47,7 @@ export class ChannelRegistry {
 
 	private log?: AdapterLogger;
 	private modelRegistry?: ModelRegistry;
-	private history?: MessageHistory;
+	private history: MessageHistory | null = null;
 
 	/**
 	 * Set the callback for incoming messages (called by the extension entry).
@@ -59,7 +59,7 @@ export class ChannelRegistry {
 	/**
 	 * Set message history for logging outgoing messages.
 	 */
-	setHistory(history: MessageHistory): void {
+	setHistory(history: MessageHistory | null): void {
 		this.history = history;
 	}
 

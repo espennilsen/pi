@@ -80,6 +80,8 @@ Start pi-webserver with `/web`, then run `/gmail-auth` (or `/gmail-auth <account
 | `notifications.query` | string | `"is:unread"` | Gmail search query for notifications |
 | `notifications.channel` | string | `"default"` | pi-channels adapter name or route alias; route aliases supply the recipient |
 
+Tool account names must match exactly (letters, numbers, underscores or hyphens); whitespace-padded and unknown configured-account names are rejected before token access, even when a token has not expired. The same validated account determines its `readOnly` policy and credentials.
+
 The literal account name `default` selects top-level credentials and `gmail-tokens.json`, even when a named account is active. Omitted web account selections use the active/default account. Token-file-only accounts remain visible in listings, but must be added to `accounts` before switching when named account configuration is present.
 
 Notifications count every matching result page and include up to three message summaries. They emit `channel:send` with `adapter`, an empty `recipient` (resolved by the configured route), `text`, and `source: "pi-gmail"`.

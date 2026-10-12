@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Validate Gmail tool account names and configured membership before policy/token lookup, including the unexpired access-token fast path, preventing whitespace or unconfigured token-file selections from bypassing account-level `readOnly`
 - Preserve explicit `default` and implicit active-account selections through OAuth consent, callback state and token storage
 - Drain all notification result pages before advancing the poll window; retain retry eligibility after page or metadata failures
 - Honor `defaultAccount` during access-token lookup and reject unconfigured account switches before mutating the active selection

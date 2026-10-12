@@ -45,6 +45,8 @@ The default listener is loopback-only. To allow another computer to connect, exp
 
 **The server speaks plain HTTP, not HTTPS.** Non-loopback startup emits a warning: Basic credentials, bearer tokens and session cookies can be exposed without transport encryption. Use an HTTPS reverse proxy with a protected backend (preferably loopback) or an encrypted tunnel, and restrict network access. Authentication is not encryption; a private LAN alone does not guarantee confidentiality. TLS enforcement, CIDR allowlists and additional authentication policy are not implemented here.
 
+Authentication remains optional, including for explicitly configured remote listeners. With no authentication configured, reachable clients can access the dashboard and mounted routes unless an individual extension supplies its own protection. This is a deliberate deployment-policy choice, not an access-control safeguard; the operator accepts responsibility for network reachability and protection. Neither a configured host nor a startup warning provides authentication or encryption.
+
 IPv6 URLs use brackets, for example `http://[::1]:4100`. Wildcard listeners advertise a same-machine URL (`127.0.0.1` for `0.0.0.0`, `[::1]` for `::`); remote clients must replace that loopback address with the server's reachable address. OAuth redirect URIs must match the origin used by the integration; wildcard binding does not discover an external proxy origin.
 
 ## Commands

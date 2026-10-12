@@ -109,7 +109,7 @@ const refreshPromises = new Map<string, Promise<string>>();
 /** Resolve per-account credentials and read-only policy over global defaults.
  * @param settings - Gmail configuration containing active and default selections.
  * @param accountName - Explicit selection; `default` bypasses named accounts.
- * @returns Merged configuration; throws for an unknown configured-account selection.
+ * @returns Merged configuration; rejects invalid names and unknown configured-account selections.
  */
 export function getAccountConfig(
 	settings: GmailSettings,
@@ -119,7 +119,7 @@ export function getAccountConfig(
 	if (target && target !== "default") {
 		validateAccountName(target);
 		if (settings.accounts && Object.keys(settings.accounts).length > 0) {
-			const acc = settings.accounts[target];
+			const acc = Object.hasOwn(settings.accounts, target) ? settings.accounts[target] : undefined;
 			if (!acc) {
 				throw new Error(`Account "${target}" is not configured in settings.json`);
 			}
@@ -305,7 +305,7 @@ export async function exchangeCode(
  * @param settings - Gmail credentials and account selections.
  * @param agentDir - Agent data directory.
  * @param accountName - Explicit account, otherwise the active/default selection.
- * @returns A valid access token, or rejects if authentication/refresh fails.
+ * @returns A valid access token, or rejects if account validation, authentication or refresh fails.
  */
 export async function getAccessToken(
 	settings: GmailSettings,
@@ -313,6 +313,8 @@ export async function getAccessToken(
 	accountName?: string,
 ): Promise<string> {
 	const accountKey = accountName || settings.account || settings.defaultAccount || "default";
+	// Enforce identity and configured membership even when no refresh is needed.
+	getAccountConfig(settings, accountKey);
 	const tokens = loadTokens(agentDir, accountKey);
 	if (!tokens) {
 		throw new Error(

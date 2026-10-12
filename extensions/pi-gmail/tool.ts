@@ -21,7 +21,7 @@ import {
 	buildRawMessage,
 	formatSize,
 } from "./formatter.ts";
-import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
+import { isAuthenticated, getAuthenticatedEmail, getAccountConfig } from "./auth.ts";
 import { isSendActionBlocked, sendingDisabledMessage } from "./policy.ts";
 import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
 import * as fs from "node:fs";
@@ -143,10 +143,12 @@ export function registerGmailTool(
 			const agentDir = dependencies.getAgentDir();
 			const baseSettings = getSettings();
 			const effectiveAccount = params.account || baseSettings.account || baseSettings.defaultAccount;
+			// Validate the exact identity before token lookup can trim it or use cached tokens.
+			const accountConfig = getAccountConfig(baseSettings, effectiveAccount);
 			const settings: GmailSettings = {
 				...baseSettings,
 				account: effectiveAccount,
-				readOnly: baseSettings.accounts?.[effectiveAccount ?? ""]?.readOnly ?? baseSettings.readOnly,
+				readOnly: accountConfig.readOnly,
 			};
 
 			if (!dependencies.isAuthenticated(agentDir, settings.account)) {

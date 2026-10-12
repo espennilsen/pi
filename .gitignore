@@ -10,6 +10,7 @@ pnpm-debug.log*
 .pi-subagents/
 telemetry/
 memory/
+/MEMORY.md
 db/
 *.db
 *.db-shm

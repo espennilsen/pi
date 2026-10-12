@@ -9,6 +9,13 @@ const { default: channels } = await import('../index.ts');
 const ready = { databases: [{ name: 'custom', driver: 'sqlite' }], defaultDatabase: 'custom', defaultDriver: 'sqlite' };
 const empty = { ...ready, databases: [] };
 
+/**
+ * Creates an isolated channel session with controllable Kysely replies and captured output.
+ * Registers shutdown with the test context so listeners are cleaned up after each test.
+ * @param t - Test context used to register teardown.
+ * @param info - Initial registry snapshot, or null to leave the info probe unanswered.
+ * @returns Session controls, captured tools and output, and Kysely response controls.
+ */
 function harness(t, info = empty) {
   const listeners = new Map();
   const hooks = new Map();
@@ -48,6 +55,11 @@ function harness(t, info = empty) {
   };
 }
 
+/**
+ * Asserts that session startup finishes within one event-loop turn without waiting for Kysely.
+ * @param h - Channel harness whose session should be started.
+ * @returns A promise that resolves after the startup assertion and pending start complete.
+ */
 async function startWithoutWaiting(h) {
   let finished = false;
   const pending = h.start().then(() => { finished = true; });

@@ -246,6 +246,10 @@ INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, 1);`,
 		const TIMEOUT_MS = 10_000;
 		return new Promise((resolve, reject) => {
 			let settled = false;
+			/**
+			 * Settles this request once, removing its timer and cancellation hook first.
+			 * @param complete - Callback that resolves or rejects the pending promise.
+			 */
 			const finish = (complete: () => void) => {
 				if (settled) return;
 				settled = true;
@@ -253,6 +257,7 @@ INSERT OR IGNORE INTO ${MIGRATIONS_TABLE} (id, version) VALUES (1, 1);`,
 				this.pending.delete(cancel);
 				complete();
 			};
+			/** Rejects the pending request on disposal; does nothing if already settled. */
 			const cancel = () => finish(() => reject(new Error("Message history disposed")));
 			const timeout = setTimeout(() => finish(() => reject(new Error("History query timed out (kysely not responding)"))), TIMEOUT_MS);
 			this.pending.add(cancel);

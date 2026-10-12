@@ -30,6 +30,11 @@ export function startHistory(
 	}, 10_000);
 	timeout.unref?.();
 
+	/**
+	 * Starts initialization for a usable default database unless stopped, busy, or ready.
+	 * Publishes only while the session is active; failures allow a later readiness retry.
+	 * @param info - Registry snapshot received from the info probe or readiness event.
+	 */
 	const onReady = (info: unknown) => {
 		if (stopped || initializing || initialized || !hasDefaultDatabase(info)) return;
 		initializing = true;

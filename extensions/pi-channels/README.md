@@ -185,6 +185,42 @@ For webhook sends, `notify` supports:
 | `/chat-bridge on` | Start the chat bridge |
 | `/chat-bridge off` | Stop the chat bridge |
 
+## Message history
+
+History requires pi-kysely with an available default **SQLite** database. Channels
+subscribes to database readiness and probes the current registry, so either extension
+may start first. Adapter and bridge startup does not wait for history initialization.
+
+`channel_history` and `/channel-history` report "not ready" until initialization
+succeeds. Incoming/outgoing logging begins then; earlier messages are not buffered.
+If the default database is still unavailable after 10 seconds, channels warns but
+continues listening for readiness. Initialization failures include the underlying
+error and can retry on a later `kysely:ready` event. There is no polling retry loop.
+
+Schema creation uses Kysely's migration API, followed by schema ownership registration
+for query access. Existing `pi_channels__messages` data and the legacy
+`pi_channels_migrations` table are preserved. New migration tracking is maintained
+by pi-kysely. Shutdown removes readiness listeners, cancels local request timers,
+and clears history consumers; SQL already submitted to Kysely cannot be recalled.
+
+After installing updated code, use `/reload` or restart the relevant Pi session to
+activate it. Existing running sessions are not changed automatically.
+
+### Tests
+
+With Node.js 24.19+ and dependencies installed in `extensions/pi-channels`:
+
+```bash
+npm test
+npm run typecheck
+```
+
+The tests mock configuration to avoid loading real adapters or owner settings.
+Node's experimental module-mocking and module-type warnings are expected.
+For actual Kysely/SQLite integration tests, also install dependencies in the sibling
+`extensions/pi-kysely`, then run `npm run test:integration` from pi-channels.
+Integration tests use only in-memory databases, including a legacy-history fixture.
+
 ## Install
 
 ```bash

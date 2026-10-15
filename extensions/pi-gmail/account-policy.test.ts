@@ -49,7 +49,8 @@ for (const account of [" work ", "orphan", "toString", "   "]) {
 	test(`fresh tokens do not bypass validation for ${JSON.stringify(account)}`, async (t) => {
 		const dir = mkdtempSync(join(tmpdir(), "gmail-policy-"));
 		t.after(() => rmSync(dir, { recursive: true, force: true }));
-		saveTokens(dir, { email: "protected@example.test", access_token: "fresh", refresh_token: "refresh", expires_at: Date.now() + 3600000, scope: "" }, account);
+		// Seed the valid file that the old trimming behavior could access.
+		saveTokens(dir, { email: "protected@example.test", access_token: "fresh", refresh_token: "refresh", expires_at: Date.now() + 3600000, scope: "" }, account.trim());
 		t.mock.method(globalThis, "fetch", () => { throw new Error("network access must not occur"); });
 		await assert.rejects(getAccessToken(settings, dir, account), /Invalid account name|not configured/);
 		await assert.rejects(getAccessToken({ ...settings, account }, dir), /Invalid account name|not configured/);

@@ -62,9 +62,15 @@ export interface GmailWebInfo {
 let serverOrigin = "http://localhost:3100"; // fallback until pi-webserver replies
 
 /** Keep OAuth redirects aligned with the currently listening pi-webserver. */
-export function updateGmailWebInfo(info: GmailWebInfo): boolean {
+export function updateGmailWebInfo(info: unknown): boolean {
 	try {
-		const url = new URL(info.url);
+		if (!info || typeof info !== "object") return false;
+		const candidate = info as Partial<GmailWebInfo>;
+		if (
+			typeof candidate.port !== "number" || !Number.isInteger(candidate.port) ||
+			candidate.port < 1 || candidate.port > 65535 || typeof candidate.url !== "string"
+		) return false;
+		const url = new URL(candidate.url);
 		if (url.protocol !== "http:" && url.protocol !== "https:") return false;
 		serverOrigin = url.origin;
 		return true;
@@ -220,6 +226,13 @@ export function mountGmailRoutes(
 	settings: GmailSettings,
 	agentDir: string,
 ): void {
+	/** Refresh the origin from a validated reply; absent replies preserve the last known origin. */
+	function discoverWebInfo(): void {
+		bus.emit("web:info", { reply: (info: unknown) => { updateGmailWebInfo(info); } });
+	}
+	// Discovery also runs on web:ready remounts, regardless of extension startup order.
+	discoverWebInfo();
+
 	const webMount: MountConfig = {
 		name: "gmail",
 		label: "Gmail",
@@ -254,6 +267,8 @@ export function mountGmailRoutes(
 			// Start OAuth flow
 			if (req.method === "GET" && p === "/auth") {
 				try {
+					// A listener can become ready after the mount (or change port on restart).
+					discoverWebInfo();
 					const url = getConsentUrl(settings, getRedirectUri(), target);
 					res.writeHead(302, { Location: url });
 					res.end();

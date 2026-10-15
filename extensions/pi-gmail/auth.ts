@@ -145,7 +145,7 @@ export function getAccountConfig(
  * @returns Absolute token filename under the agent's db directory.
  */
 export function getTokensPath(agentDir: string, accountName?: string): string {
-	const name = accountName?.trim();
+	const name = accountName;
 	if (name && name !== "default") {
 		validateAccountName(name);
 		return path.join(agentDir, "db", `gmail-tokens-${name}.json`);

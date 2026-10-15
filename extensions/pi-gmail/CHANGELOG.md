@@ -4,7 +4,26 @@
 
 ### Added
 
+- Multi-account support: configure multiple accounts under `settings.json` (`accounts` map and `defaultAccount`), connect tokens independently per account (`gmail-tokens-[account].json`), and pass `account` option to the `gmail` tool (closes #209)
+- `/gmail-switch [account]` command to switch active Gmail account or list accounts when run without arguments
+- `/gmail-accounts` command to list all configured and connected accounts with their authentication status
+- `/gmail-auth [account]` and `/gmail-logout [account]` commands for managing individual accounts without disconnecting others
 - `readOnly` setting to disable `send` and `send_draft` actions while preserving inbox and draft access
+
+### Changed
+
+- Email notification polling now dispatches notifications via `channel:send` with `{ adapter, recipient, text, source: "pi-gmail" }` payload to align with pi-channels
+
+### Fixed
+
+- Reject whitespace-padded account names at the token-path boundary for all direct token reads, writes and deletion
+- Rediscover the active webserver origin on Gmail route mount/remount and direct OAuth start, ignoring malformed discovery replies
+- Validate Gmail tool account names and configured membership before policy/token lookup, including the unexpired access-token fast path, preventing whitespace or unconfigured token-file selections from bypassing account-level `readOnly`
+- Preserve explicit `default` and implicit active-account selections through OAuth consent, callback state and token storage
+- Drain all notification result pages before advancing the poll window; retain retry eligibility after page or metadata failures
+- Honor `defaultAccount` during access-token lookup and reject unconfigured account switches before mutating the active selection
+- Authenticated email address detection in `fetchUserEmail` now queries the Gmail `users/me/profile` endpoint (covered by `gmail.readonly`), resolving `unknown` email statuses on new authentications
+- `loadTokens` reads fresh token state from disk to avoid stale in-memory cached tokens across account switches
 
 ## [0.3.1] - 2026-08-10
 

@@ -10,6 +10,7 @@ import * as http from "node:http";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isIP } from "node:net";
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ export function setLogger(fn: LogFn): void {
 // ── State ───────────────────────────────────────────────────────
 
 let server: http.Server | null = null;
+let serverHost = "127.0.0.1";
 const mounts = new Map<string, MountConfig>();
 let authCredentials: { username: string; password: string } | null = null;
 let apiToken: string | null = null;
@@ -355,15 +357,32 @@ export function getPort(): number | null {
 
 export function getUrl(): string | null {
 	const port = getPort();
-	return port === null ? null : `http://localhost:${port}`;
+	return port === null ? null : listenerUrl(serverHost, port);
+}
+
+/** Build a browser URL; wildcard listeners advertise a same-machine loopback address. */
+function listenerUrl(host: string, port: number): string {
+	const reachable = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
+	const authority = isIP(reachable) === 6 ? `[${reachable}]` : reachable;
+	return `http://${authority}:${port}`;
+}
+
+/** Describe cleartext exposure for explicit non-loopback listeners; this does not enforce TLS. */
+export function getHttpExposureWarning(host: string): string | undefined {
+	if (host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127."))) return;
+	return `HTTP listener on ${host} may expose credentials, API tokens and session cookies without encryption. Use an HTTPS reverse proxy with a protected backend or an encrypted tunnel; do not expose this listener directly to untrusted networks.`;
 }
 
 /**
  * Start the web server. Returns the URL.
  * If already running, stops and restarts.
  */
-export function start(port: number = 4100): string {
+export function start(port: number = 4100, host: string = "127.0.0.1"): string {
 	if (server) stop();
+	serverHost = host;
+	const baseUrl = listenerUrl(host, port);
+	const warning = getHttpExposureWarning(host);
+	if (warning) log("insecure-listener", { host, warning }, "WARN");
 	sessionSecret = crypto.randomBytes(32).toString("hex");
 
 	const dashboardHtml = fs.readFileSync(
@@ -372,7 +391,7 @@ export function start(port: number = 4100): string {
 	);
 
 	server = http.createServer(async (req, res) => {
-		const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+		const url = new URL(req.url ?? "/", baseUrl);
 		const pathname = url.pathname;
 
 		// CORS for local development
@@ -507,8 +526,8 @@ export function start(port: number = 4100): string {
 		}
 	});
 
-	server.listen(port);
-	return `http://localhost:${port}`;
+	server.listen(port, host);
+	return baseUrl;
 }
 
 /** Stop the server. Returns true if it was running. */

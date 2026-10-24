@@ -22,6 +22,7 @@ Add to `~/.pi/agent/settings.json` (project overrides in `<project>/.pi/settings
   "pi-webserver": {
     "autostart": true,
     "port": 4100,
+    "host": "127.0.0.1",
     "auth": "mypassword",
     "apiToken": "my-secret-token",
     "apiReadToken": "my-read-token"
@@ -33,9 +34,20 @@ Add to `~/.pi/agent/settings.json` (project overrides in `<project>/.pi/settings
 |-----|------|---------|-------------|
 | `autostart` | boolean | `false` | Start the server automatically on session start |
 | `port` | number | `4100` | HTTP port |
+| `host` | string | `"127.0.0.1"` | Bind interface for autostart, manual start and port changes (e.g. `::1`, a LAN IP, `0.0.0.0` or `::`) |
 | `auth` | string \| null | `null` | Basic auth — `"password"` or `"user:password"` |
 | `apiToken` | string \| null | `null` | Bearer token for full API access (all methods) |
 | `apiReadToken` | string \| null | `null` | Bearer token for read-only API access (GET/HEAD) |
+
+### Remote access and transport security
+
+The default listener is loopback-only. To allow another computer to connect, explicitly set `host` to the server's LAN IP, or use `0.0.0.0` (all IPv4 interfaces) / `::` (all IPv6 interfaces; dual-stack behavior depends on the OS).
+
+**The server speaks plain HTTP, not HTTPS.** Non-loopback startup emits a warning: Basic credentials, bearer tokens and session cookies can be exposed without transport encryption. Use an HTTPS reverse proxy with a protected backend (preferably loopback) or an encrypted tunnel, and restrict network access. Authentication is not encryption; a private LAN alone does not guarantee confidentiality. TLS enforcement, CIDR allowlists and additional authentication policy are not implemented here.
+
+Authentication remains optional, including for explicitly configured remote listeners. With no authentication configured, reachable clients can access the dashboard and mounted routes unless an individual extension supplies its own protection. This is a deliberate deployment-policy choice, not an access-control safeguard; the operator accepts responsibility for network reachability and protection. Neither a configured host nor a startup warning provides authentication or encryption.
+
+IPv6 URLs use brackets, for example `http://[::1]:4100`. Wildcard listeners advertise a same-machine URL (`127.0.0.1` for `0.0.0.0`, `[::1]` for `::`); remote clients must replace that loopback address with the server's reachable address. OAuth redirect URIs must match the origin used by the integration; wildcard binding does not discover an external proxy origin.
 
 ## Commands
 

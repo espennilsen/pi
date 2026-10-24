@@ -58,7 +58,7 @@ describe("registerWebInfoListener", () => {
 			assert.ok(info.port > 0);
 			assert.equal(info.port, getPort());
 			assert.equal(info.url, getUrl());
-			assert.equal(info.url, `http://localhost:${info.port}`);
+			assert.equal(info.url, `http://127.0.0.1:${info.port}`);
 		} finally {
 			stop();
 		}

@@ -21,7 +21,7 @@ import {
 	buildRawMessage,
 	formatSize,
 } from "./formatter.ts";
-import { isAuthenticated, getAuthenticatedEmail } from "./auth.ts";
+import { isAuthenticated, getAuthenticatedEmail, getAccountConfig } from "./auth.ts";
 import { isSendActionBlocked, sendingDisabledMessage } from "./policy.ts";
 import type { GmailSettings, GmailMessage, GmailDraft } from "./types.ts";
 import * as fs from "node:fs";
@@ -54,7 +54,7 @@ function text(s: string) {
 
 interface GmailToolDependencies {
 	getAgentDir: () => string;
-	isAuthenticated: (agentDir: string) => boolean;
+	isAuthenticated: (agentDir: string, accountName?: string) => boolean;
 }
 
 export function registerGmailTool(
@@ -133,14 +133,27 @@ export function registerGmailTool(
 			save_path: Type.Optional(
 				Type.String({ description: "Path to save attachment (for download_attachment)" }),
 			),
+			// Account selection
+			account: Type.Optional(
+				Type.String({ description: "Account name to use (for multi-account setups, e.g. 'work', 'personal')" }),
+			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const agentDir = dependencies.getAgentDir();
-			const settings = getSettings();
+			const baseSettings = getSettings();
+			const effectiveAccount = params.account || baseSettings.account || baseSettings.defaultAccount;
+			// Validate the exact identity before token lookup can trim it or use cached tokens.
+			const accountConfig = getAccountConfig(baseSettings, effectiveAccount);
+			const settings: GmailSettings = {
+				...baseSettings,
+				account: effectiveAccount,
+				readOnly: accountConfig.readOnly,
+			};
 
-			if (!dependencies.isAuthenticated(agentDir)) {
-				return text("❌ Not authenticated. Run `/gmail-auth` to connect your Gmail account.");
+			if (!dependencies.isAuthenticated(agentDir, settings.account)) {
+				const accountMsg = settings.account ? ` for account "${settings.account}"` : "";
+				return text(`❌ Not authenticated${accountMsg}. Run \`/gmail-auth${settings.account ? ` ${settings.account}` : ""}\` to connect your Gmail account.`);
 			}
 
 			const maxResults = params.max_results ?? settings.maxResults ?? 20;
@@ -213,7 +226,7 @@ export function registerGmailTool(
 					if (!params.subject) return text("Missing required field: subject");
 					if (!params.body) return text("Missing required field: body");
 
-					const email = getAuthenticatedEmail(agentDir);
+					const email = getAuthenticatedEmail(agentDir, settings.account);
 					const raw = buildRawMessage({
 						from: email ?? undefined,
 						to: params.to,
@@ -253,7 +266,7 @@ export function registerGmailTool(
 					const messageId = getHeader("Message-ID");
 					const references = getHeader("References");
 
-					const email = getAuthenticatedEmail(agentDir);
+					const email = getAuthenticatedEmail(agentDir, settings.account);
 					const replyTo = params.reply_all
 						? filterAddresses([from, to].join(", "), email ?? "")  || from
 						: from;
@@ -289,7 +302,7 @@ export function registerGmailTool(
 					);
 					if (!confirmed) return text("❌ Send cancelled by user.");
 
-					const email = getAuthenticatedEmail(agentDir);
+					const email = getAuthenticatedEmail(agentDir, settings.account);
 					const raw = buildRawMessage({
 						from: email ?? undefined,
 						to: params.to,
